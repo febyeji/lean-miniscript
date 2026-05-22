@@ -17,6 +17,17 @@ def KTypeGuarantee (m : CoreFragment) : Prop :=
     ∃ (keyElem : StackElement),
       Eval (compile m) stack flags ctx (.success (keyElem :: stack))
 
+/-- Soundness for pk_k: a pk_k fragment has K-type behavior.
+
+    pk_k(key) compiles to `[pushData key]`.
+    Executing this on any stack pushes `key` on top, which is exactly the
+    current K-type guarantee predicate. -/
+theorem pk_k_soundness (key : PubKey) :
+    KTypeGuarantee (.pk_k key) := by
+  intro stack flags ctx
+  exact ⟨key, Eval.pushData key [] stack flags ctx _
+    (Eval.empty (key :: stack) flags ctx)⟩
+
 /-- What a B-type fragment with 'o' modifier guarantees:
     Consumes exactly one witness element from the stack and pushes
     exactly one result element (nonzero for success, zero for failure).
@@ -26,6 +37,31 @@ def BTypeOGuarantee (m : CoreFragment) : Prop :=
     ∃ (result : StackElement),
       Eval (compile m) (wit :: stack) flags ctx (.success (result :: stack))
 
+/-- Soundness for c(pk_k(key)): the wrapped form has Bo-type behavior.
+
+    c(pk_k(key)) compiles to `[pushData key] ++ [OP_CHECKSIG]`.
+    Given a signature `wit`, the script pushes the key, checks the signature,
+    consumes the witness, and leaves a boolean result on the original stack. -/
+theorem c_pk_k_soundness (key : PubKey) :
+    BTypeOGuarantee (.c (.pk_k key)) := by
+  intro wit stack flags ctx
+  by_cases h : checkSig wit key ctx.sigHash = true
+  · exact ⟨trueElement,
+      Eval.seq [.pushData key] [.op .OP_CHECKSIG] (wit :: stack)
+        (key :: wit :: stack) flags ctx _
+        (Eval.pushData key [] (wit :: stack) flags ctx _
+          (Eval.empty (key :: wit :: stack) flags ctx))
+        (Eval.checksig_success key wit stack [] flags ctx _
+          h (Eval.empty (trueElement :: stack) flags ctx))⟩
+  · simp at h
+    exact ⟨falseElement,
+      Eval.seq [.pushData key] [.op .OP_CHECKSIG] (wit :: stack)
+        (key :: wit :: stack) flags ctx _
+        (Eval.pushData key [] (wit :: stack) flags ctx _
+          (Eval.empty (key :: wit :: stack) flags ctx))
+        (Eval.checksig_failure key wit stack [] flags ctx _
+          h (Eval.empty (falseElement :: stack) flags ctx))⟩
+
 /-- What a V-type fragment with 'o' modifier guarantees:
     Consumes one witness element. On success, the stack below is unchanged
     (V-type pushes nothing). On failure, the script aborts.
@@ -34,6 +70,40 @@ def VTypeOGuarantee (m : CoreFragment) : Prop :=
   ∀ (wit : StackElement) (stack : Stack) (flags : ScriptFlags) (ctx : TxContext),
     Eval (compile m) (wit :: stack) flags ctx (.success stack) ∨
     ∃ (msg : String), Eval (compile m) (wit :: stack) flags ctx (.failure msg)
+
+/-- Soundness for v(c(pk_k(key))): wrapper composition produces V-type behavior.
+
+    v(c(pk_k(key))) compiles to `[pushData key, OP_CHECKSIG] ++ [OP_VERIFY]`.
+    A valid signature verifies and leaves the original stack unchanged; an
+    invalid signature reaches the modeled VERIFY failure. -/
+theorem v_c_pk_k_soundness (key : PubKey) :
+    VTypeOGuarantee (.v (.c (.pk_k key))) := by
+  intro wit stack flags ctx
+  by_cases h : checkSig wit key ctx.sigHash = true
+  · left
+    apply Eval.seq [.pushData key, .op .OP_CHECKSIG] [.op .OP_VERIFY]
+      (wit :: stack) (trueElement :: stack)
+    · apply Eval.seq [.pushData key] [.op .OP_CHECKSIG]
+        (wit :: stack) (key :: wit :: stack)
+      · exact Eval.pushData key [] (wit :: stack) flags ctx _
+          (Eval.empty (key :: wit :: stack) flags ctx)
+      · exact Eval.checksig_success key wit stack [] flags ctx _
+          h (Eval.empty (trueElement :: stack) flags ctx)
+    · exact Eval.verify_success trueElement stack [] flags ctx _
+        (by native_decide) (Eval.empty stack flags ctx)
+  · right
+    simp at h
+    exact ⟨"VERIFY failed",
+      Eval.seq [.pushData key, .op .OP_CHECKSIG] [.op .OP_VERIFY]
+        (wit :: stack) (falseElement :: stack) flags ctx _
+        (Eval.seq [.pushData key] [.op .OP_CHECKSIG]
+          (wit :: stack) (key :: wit :: stack) flags ctx _
+          (Eval.pushData key [] (wit :: stack) flags ctx _
+            (Eval.empty (key :: wit :: stack) flags ctx))
+          (Eval.checksig_failure key wit stack [] flags ctx _
+            h (Eval.empty (falseElement :: stack) flags ctx)))
+        (Eval.verify_failure falseElement stack [] flags ctx
+          (by native_decide))⟩
 
 /-!
 TODO(theorem): promote these AST-level leaf and wrapper lemmas into the main
