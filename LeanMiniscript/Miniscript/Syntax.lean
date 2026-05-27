@@ -97,8 +97,7 @@ inductive Policy where
   | thresh : Nat → List Policy → Policy
   deriving Repr
 
--- TODO(ast): encode fragment well-formedness constraints for CoreFragment
---            and SurfaceFragment after parser/key-expression modeling.
+-- AST side conditions live in `Miniscript.Validation`.
 -- TODO(ast): define fragment size/resource accounting over CoreFragment.
 
 end LeanMiniscript.Miniscript

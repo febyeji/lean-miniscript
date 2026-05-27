@@ -6,6 +6,7 @@ import LeanMiniscript.Script.Equivalence
 import LeanMiniscript.Miniscript.KeyExpr
 import LeanMiniscript.Miniscript.Syntax
 import LeanMiniscript.Miniscript.Context
+import LeanMiniscript.Miniscript.Validation
 import LeanMiniscript.Miniscript.Types
 import LeanMiniscript.Miniscript.Compile
 import LeanMiniscript.Miniscript.Satisfaction
