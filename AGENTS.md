@@ -15,6 +15,6 @@
   `<type>(<scope>): <imperative verb> <what changed>`.
 - Allowed types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`,
   `style`.
-- For non-trivial changes, include a body with `WHAT changed` bullets.
+- For non-trivial changes, include a concise commit body when useful.
 - Keep rationale and tradeoffs in the user-facing explanation, not in the
   commit body.
