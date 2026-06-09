@@ -77,6 +77,37 @@ def falseElement : StackElement := ⟨#[]⟩
 def boolToElement (b : Bool) : StackElement :=
   if b then trueElement else falseElement
 
+/-- Byte-array equality for stack elements, kept local to script-state
+    predicates instead of introducing a global `BEq ByteArray` instance. -/
+def stackElementEq (x y : StackElement) : Bool :=
+  x.data == y.data
+
+/-- MINIMALIF accepts only the canonical false and true stack elements as
+    OP_IF/OP_NOTIF arguments. -/
+def minimalIfArg (b : StackElement) : Bool :=
+  stackElementEq b falseElement || stackElementEq b trueElement
+
+/-- Whether an IF-like opcode argument satisfies the active script flags. -/
+def minimalIfSatisfied (flags : ScriptFlags) (b : StackElement) : Prop :=
+  flags.minimalIf = false ∨ minimalIfArg b = true
+
+theorem falseElement_minimalIfArg : minimalIfArg falseElement = true :=
+  by native_decide
+
+theorem trueElement_minimalIfArg : minimalIfArg trueElement = true :=
+  by native_decide
+
+/-- A concrete non-minimal truthy element used by MINIMALIF regression tests. -/
+def nonMinimalTruthyElement : StackElement := ⟨#[0x02]⟩
+
+theorem nonMinimalTruthyElement_truthy :
+    castToBool nonMinimalTruthyElement = true := by
+  native_decide
+
+theorem nonMinimalTruthyElement_not_minimalIfArg :
+    minimalIfArg nonMinimalTruthyElement = false := by
+  native_decide
+
 /-- Abstract hash160 function (RIPEMD160 ∘ SHA256).
     Opaque in the formal model — we only reason about its properties. -/
 opaque hash160 (x : StackElement) : StackElement

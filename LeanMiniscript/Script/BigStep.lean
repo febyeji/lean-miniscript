@@ -120,10 +120,12 @@ inductive Eval : Script → Stack → ScriptFlags → TxContext → ExecResult �
         flags ctx result →
       Eval (.op .OP_BOOLAND :: script) (a :: b :: rest) flags ctx result
 
-  -- OP_IF/OP_ELSE/OP_ENDIF (structural model for compiled Miniscript)
+  -- OP_IF/OP_NOTIF/OP_ELSE/OP_ENDIF
+  -- Structural model for compiled Miniscript control-flow blocks.
   | if_true : (top : StackElement) → (rest : Stack) →
       (thenBranch elseBranch after : Script) →
       (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      minimalIfSatisfied flags top →
       castToBool top = true →
       Eval (thenBranch ++ after) rest flags ctx result →
       Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ELSE] ++
@@ -133,11 +135,102 @@ inductive Eval : Script → Stack → ScriptFlags → TxContext → ExecResult �
   | if_false : (top : StackElement) → (rest : Stack) →
       (thenBranch elseBranch after : Script) →
       (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      minimalIfSatisfied flags top →
       castToBool top = false →
       Eval (elseBranch ++ after) rest flags ctx result →
       Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ELSE] ++
             elseBranch ++ [.op .OP_ENDIF] ++ after)
            (top :: rest) flags ctx result
+
+  | if_else_minimalif_failure : (top : StackElement) → (rest : Stack) →
+      (thenBranch elseBranch after : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) →
+      flags.minimalIf = true →
+      minimalIfArg top = false →
+      Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ELSE] ++
+            elseBranch ++ [.op .OP_ENDIF] ++ after)
+           (top :: rest) flags ctx (.failure "MINIMALIF failed")
+
+  | if_no_else_true : (top : StackElement) → (rest : Stack) →
+      (thenBranch after : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      minimalIfSatisfied flags top →
+      castToBool top = true →
+      Eval (thenBranch ++ after) rest flags ctx result →
+      Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ENDIF] ++ after)
+           (top :: rest) flags ctx result
+
+  | if_no_else_false : (top : StackElement) → (rest : Stack) →
+      (thenBranch after : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      minimalIfSatisfied flags top →
+      castToBool top = false →
+      Eval after rest flags ctx result →
+      Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ENDIF] ++ after)
+           (top :: rest) flags ctx result
+
+  | if_no_else_minimalif_failure : (top : StackElement) → (rest : Stack) →
+      (thenBranch after : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) →
+      flags.minimalIf = true →
+      minimalIfArg top = false →
+      Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ENDIF] ++ after)
+           (top :: rest) flags ctx (.failure "MINIMALIF failed")
+
+  | notif_true : (top : StackElement) → (rest : Stack) →
+      (thenBranch elseBranch after : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      minimalIfSatisfied flags top →
+      castToBool top = true →
+      Eval (elseBranch ++ after) rest flags ctx result →
+      Eval ([.op .OP_NOTIF] ++ thenBranch ++ [.op .OP_ELSE] ++
+            elseBranch ++ [.op .OP_ENDIF] ++ after)
+           (top :: rest) flags ctx result
+
+  | notif_false : (top : StackElement) → (rest : Stack) →
+      (thenBranch elseBranch after : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      minimalIfSatisfied flags top →
+      castToBool top = false →
+      Eval (thenBranch ++ after) rest flags ctx result →
+      Eval ([.op .OP_NOTIF] ++ thenBranch ++ [.op .OP_ELSE] ++
+            elseBranch ++ [.op .OP_ENDIF] ++ after)
+           (top :: rest) flags ctx result
+
+  | notif_else_minimalif_failure : (top : StackElement) → (rest : Stack) →
+      (thenBranch elseBranch after : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) →
+      flags.minimalIf = true →
+      minimalIfArg top = false →
+      Eval ([.op .OP_NOTIF] ++ thenBranch ++ [.op .OP_ELSE] ++
+            elseBranch ++ [.op .OP_ENDIF] ++ after)
+           (top :: rest) flags ctx (.failure "MINIMALIF failed")
+
+  | notif_no_else_true : (top : StackElement) → (rest : Stack) →
+      (thenBranch after : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      minimalIfSatisfied flags top →
+      castToBool top = true →
+      Eval after rest flags ctx result →
+      Eval ([.op .OP_NOTIF] ++ thenBranch ++ [.op .OP_ENDIF] ++ after)
+           (top :: rest) flags ctx result
+
+  | notif_no_else_false : (top : StackElement) → (rest : Stack) →
+      (thenBranch after : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      minimalIfSatisfied flags top →
+      castToBool top = false →
+      Eval (thenBranch ++ after) rest flags ctx result →
+      Eval ([.op .OP_NOTIF] ++ thenBranch ++ [.op .OP_ENDIF] ++ after)
+           (top :: rest) flags ctx result
+
+  | notif_no_else_minimalif_failure : (top : StackElement) → (rest : Stack) →
+      (thenBranch after : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) →
+      flags.minimalIf = true →
+      minimalIfArg top = false →
+      Eval ([.op .OP_NOTIF] ++ thenBranch ++ [.op .OP_ENDIF] ++ after)
+           (top :: rest) flags ctx (.failure "MINIMALIF failed")
 
   -- OP_SWAP
   | swap : (a b : StackElement) → (rest : Stack) → (script : Script) →
@@ -177,5 +270,32 @@ inductive Eval : Script → Stack → ScriptFlags → TxContext → ExecResult �
       Eval s1 stack flags ctx (.success midStack) →
       Eval s2 midStack flags ctx result →
       Eval (s1 ++ s2) stack flags ctx result
+
+/-- A concrete non-minimal truthy IF argument fails when MINIMALIF is active. -/
+theorem nonMinimalTruthy_if_else_minimalif_failure
+    (rest : Stack) (thenBranch elseBranch after : Script)
+    (flags : ScriptFlags) (ctx : TxContext)
+    (hflags : flags.minimalIf = true) :
+    Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ELSE] ++
+          elseBranch ++ [.op .OP_ENDIF] ++ after)
+         (nonMinimalTruthyElement :: rest) flags ctx
+         (.failure "MINIMALIF failed") := by
+  exact Eval.if_else_minimalif_failure nonMinimalTruthyElement rest
+    thenBranch elseBranch after flags ctx
+    hflags nonMinimalTruthyElement_not_minimalIfArg
+
+/-- Without MINIMALIF, the same concrete non-minimal truthy IF argument selects
+    the true branch. -/
+theorem nonMinimalTruthy_if_else_relaxed_true
+    (rest : Stack) (thenBranch elseBranch after : Script)
+    (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult)
+    (hflags : flags.minimalIf = false)
+    (hthen : Eval (thenBranch ++ after) rest flags ctx result) :
+    Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ELSE] ++
+          elseBranch ++ [.op .OP_ENDIF] ++ after)
+         (nonMinimalTruthyElement :: rest) flags ctx result := by
+  exact Eval.if_true nonMinimalTruthyElement rest thenBranch elseBranch after
+    flags ctx result
+    (Or.inl hflags) nonMinimalTruthyElement_truthy hthen
 
 end LeanMiniscript.Script
