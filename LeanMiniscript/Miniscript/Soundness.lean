@@ -106,6 +106,53 @@ theorem v_c_pk_k_soundness (key : PubKey) :
         (Eval.verify_failure falseElement stack [] altStack flags ctx
           (by native_decide))⟩
 
+/-- What a W-type fragment with 'o' modifier guarantees in the current
+    stack-shape model:
+    Temporarily protects the top stack element on the alt stack, executes a
+    B-type one-argument fragment below it, and restores the protected element
+    above the boolean result. -/
+def WTypeOGuarantee (m : CoreFragment) : Prop :=
+  ∀ (saved wit : StackElement) (stack altStack : Stack)
+      (flags : ScriptFlags) (ctx : TxContext),
+    ∃ (result : StackElement),
+      Eval (compile m) (saved :: wit :: stack) altStack flags ctx
+        (.success (saved :: result :: stack) altStack)
+
+/-- Soundness for a(c(pk_k(key))): wrapper `a` turns the Bo behavior of
+    c(pk_k(key)) into the corresponding W-type behavior by moving the protected
+    top stack element through the alt stack. -/
+theorem a_c_pk_k_soundness (key : PubKey) :
+    WTypeOGuarantee (.a (.c (.pk_k key))) := by
+  intro saved wit stack altStack flags ctx
+  by_cases h : checkSig wit key ctx.sigHash = true
+  · refine ⟨trueElement, ?_⟩
+    change Eval [.op .OP_TOALTSTACK, .pushData key, .op .OP_CHECKSIG,
+        .op .OP_FROMALTSTACK] (saved :: wit :: stack) altStack flags ctx
+        (.success (saved :: trueElement :: stack) altStack)
+    exact Eval.toAltStack saved (wit :: stack) altStack
+      [.pushData key, .op .OP_CHECKSIG, .op .OP_FROMALTSTACK] flags ctx _
+      (Eval.pushData key [.op .OP_CHECKSIG, .op .OP_FROMALTSTACK]
+        (wit :: stack) (saved :: altStack) flags ctx _
+        (Eval.checksig_success key wit stack [.op .OP_FROMALTSTACK]
+          (saved :: altStack) flags ctx _
+          h
+          (Eval.fromAltStack saved (trueElement :: stack) altStack [] flags ctx _
+            (Eval.empty (saved :: trueElement :: stack) altStack flags ctx))))
+  · simp at h
+    refine ⟨falseElement, ?_⟩
+    change Eval [.op .OP_TOALTSTACK, .pushData key, .op .OP_CHECKSIG,
+        .op .OP_FROMALTSTACK] (saved :: wit :: stack) altStack flags ctx
+        (.success (saved :: falseElement :: stack) altStack)
+    exact Eval.toAltStack saved (wit :: stack) altStack
+      [.pushData key, .op .OP_CHECKSIG, .op .OP_FROMALTSTACK] flags ctx _
+      (Eval.pushData key [.op .OP_CHECKSIG, .op .OP_FROMALTSTACK]
+        (wit :: stack) (saved :: altStack) flags ctx _
+        (Eval.checksig_failure key wit stack [.op .OP_FROMALTSTACK]
+          (saved :: altStack) flags ctx _
+          h
+          (Eval.fromAltStack saved (falseElement :: stack) altStack [] flags ctx _
+            (Eval.empty (saved :: falseElement :: stack) altStack flags ctx))))
+
 /-!
 TODO(theorem): promote these AST-level leaf and wrapper lemmas into the main
 core type-soundness theorem.
