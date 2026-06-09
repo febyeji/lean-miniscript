@@ -13,9 +13,9 @@ open LeanMiniscript.Script
     Given a witness stack, executing the compiled script pushes exactly one
     element (the key) onto the stack, preserving the rest. -/
 def KTypeGuarantee (m : CoreFragment) : Prop :=
-  ∀ (stack : Stack) (flags : ScriptFlags) (ctx : TxContext),
+  ∀ (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext),
     ∃ (keyElem : StackElement),
-      Eval (compile m) stack flags ctx (.success (keyElem :: stack))
+      Eval (compile m) stack altStack flags ctx (.success (keyElem :: stack) altStack)
 
 /-- Soundness for pk_k: a pk_k fragment has K-type behavior.
 
@@ -24,18 +24,19 @@ def KTypeGuarantee (m : CoreFragment) : Prop :=
     current K-type guarantee predicate. -/
 theorem pk_k_soundness (key : PubKey) :
     KTypeGuarantee (.pk_k key) := by
-  intro stack flags ctx
-  exact ⟨key, Eval.pushData key [] stack flags ctx _
-    (Eval.empty (key :: stack) flags ctx)⟩
+  intro stack altStack flags ctx
+  exact ⟨key, Eval.pushData key [] stack altStack flags ctx _
+    (Eval.empty (key :: stack) altStack flags ctx)⟩
 
 /-- What a B-type fragment with 'o' modifier guarantees:
     Consumes exactly one witness element from the stack and pushes
     exactly one result element (nonzero for success, zero for failure).
     Stack below the witness is preserved. -/
 def BTypeOGuarantee (m : CoreFragment) : Prop :=
-  ∀ (wit : StackElement) (stack : Stack) (flags : ScriptFlags) (ctx : TxContext),
+  ∀ (wit : StackElement) (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext),
     ∃ (result : StackElement),
-      Eval (compile m) (wit :: stack) flags ctx (.success (result :: stack))
+      Eval (compile m) (wit :: stack) altStack flags ctx
+        (.success (result :: stack) altStack)
 
 /-- Soundness for c(pk_k(key)): the wrapped form has Bo-type behavior.
 
@@ -44,32 +45,32 @@ def BTypeOGuarantee (m : CoreFragment) : Prop :=
     consumes the witness, and leaves a boolean result on the original stack. -/
 theorem c_pk_k_soundness (key : PubKey) :
     BTypeOGuarantee (.c (.pk_k key)) := by
-  intro wit stack flags ctx
+  intro wit stack altStack flags ctx
   by_cases h : checkSig wit key ctx.sigHash = true
   · exact ⟨trueElement,
       Eval.seq [.pushData key] [.op .OP_CHECKSIG] (wit :: stack)
-        (key :: wit :: stack) flags ctx _
-        (Eval.pushData key [] (wit :: stack) flags ctx _
-          (Eval.empty (key :: wit :: stack) flags ctx))
-        (Eval.checksig_success key wit stack [] flags ctx _
-          h (Eval.empty (trueElement :: stack) flags ctx))⟩
+        (key :: wit :: stack) altStack altStack flags ctx _
+        (Eval.pushData key [] (wit :: stack) altStack flags ctx _
+          (Eval.empty (key :: wit :: stack) altStack flags ctx))
+        (Eval.checksig_success key wit stack [] altStack flags ctx _
+          h (Eval.empty (trueElement :: stack) altStack flags ctx))⟩
   · simp at h
     exact ⟨falseElement,
       Eval.seq [.pushData key] [.op .OP_CHECKSIG] (wit :: stack)
-        (key :: wit :: stack) flags ctx _
-        (Eval.pushData key [] (wit :: stack) flags ctx _
-          (Eval.empty (key :: wit :: stack) flags ctx))
-        (Eval.checksig_failure key wit stack [] flags ctx _
-          h (Eval.empty (falseElement :: stack) flags ctx))⟩
+        (key :: wit :: stack) altStack altStack flags ctx _
+        (Eval.pushData key [] (wit :: stack) altStack flags ctx _
+          (Eval.empty (key :: wit :: stack) altStack flags ctx))
+        (Eval.checksig_failure key wit stack [] altStack flags ctx _
+          h (Eval.empty (falseElement :: stack) altStack flags ctx))⟩
 
 /-- What a V-type fragment with 'o' modifier guarantees:
     Consumes one witness element. On success, the stack below is unchanged
     (V-type pushes nothing). On failure, the script aborts.
     This is the key property: V-type either passes silently or kills execution. -/
 def VTypeOGuarantee (m : CoreFragment) : Prop :=
-  ∀ (wit : StackElement) (stack : Stack) (flags : ScriptFlags) (ctx : TxContext),
-    Eval (compile m) (wit :: stack) flags ctx (.success stack) ∨
-    ∃ (msg : String), Eval (compile m) (wit :: stack) flags ctx (.failure msg)
+  ∀ (wit : StackElement) (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext),
+    Eval (compile m) (wit :: stack) altStack flags ctx (.success stack altStack) ∨
+    ∃ (msg : String), Eval (compile m) (wit :: stack) altStack flags ctx (.failure msg)
 
 /-- Soundness for v(c(pk_k(key))): wrapper composition produces V-type behavior.
 
@@ -78,31 +79,31 @@ def VTypeOGuarantee (m : CoreFragment) : Prop :=
     invalid signature reaches the modeled VERIFY failure. -/
 theorem v_c_pk_k_soundness (key : PubKey) :
     VTypeOGuarantee (.v (.c (.pk_k key))) := by
-  intro wit stack flags ctx
+  intro wit stack altStack flags ctx
   by_cases h : checkSig wit key ctx.sigHash = true
   · left
     apply Eval.seq [.pushData key, .op .OP_CHECKSIG] [.op .OP_VERIFY]
-      (wit :: stack) (trueElement :: stack)
+      (wit :: stack) (trueElement :: stack) altStack altStack
     · apply Eval.seq [.pushData key] [.op .OP_CHECKSIG]
-        (wit :: stack) (key :: wit :: stack)
-      · exact Eval.pushData key [] (wit :: stack) flags ctx _
-          (Eval.empty (key :: wit :: stack) flags ctx)
-      · exact Eval.checksig_success key wit stack [] flags ctx _
-          h (Eval.empty (trueElement :: stack) flags ctx)
-    · exact Eval.verify_success trueElement stack [] flags ctx _
-        (by native_decide) (Eval.empty stack flags ctx)
+        (wit :: stack) (key :: wit :: stack) altStack altStack
+      · exact Eval.pushData key [] (wit :: stack) altStack flags ctx _
+          (Eval.empty (key :: wit :: stack) altStack flags ctx)
+      · exact Eval.checksig_success key wit stack [] altStack flags ctx _
+          h (Eval.empty (trueElement :: stack) altStack flags ctx)
+    · exact Eval.verify_success trueElement stack [] altStack flags ctx _
+        (by native_decide) (Eval.empty stack altStack flags ctx)
   · right
     simp at h
     exact ⟨"VERIFY failed",
       Eval.seq [.pushData key, .op .OP_CHECKSIG] [.op .OP_VERIFY]
-        (wit :: stack) (falseElement :: stack) flags ctx _
+        (wit :: stack) (falseElement :: stack) altStack altStack flags ctx _
         (Eval.seq [.pushData key] [.op .OP_CHECKSIG]
-          (wit :: stack) (key :: wit :: stack) flags ctx _
-          (Eval.pushData key [] (wit :: stack) flags ctx _
-            (Eval.empty (key :: wit :: stack) flags ctx))
-          (Eval.checksig_failure key wit stack [] flags ctx _
-            h (Eval.empty (falseElement :: stack) flags ctx)))
-        (Eval.verify_failure falseElement stack [] flags ctx
+          (wit :: stack) (key :: wit :: stack) altStack altStack flags ctx _
+          (Eval.pushData key [] (wit :: stack) altStack flags ctx _
+            (Eval.empty (key :: wit :: stack) altStack flags ctx))
+          (Eval.checksig_failure key wit stack [] altStack flags ctx _
+            h (Eval.empty (falseElement :: stack) altStack flags ctx)))
+        (Eval.verify_failure falseElement stack [] altStack flags ctx
           (by native_decide))⟩
 
 /-!

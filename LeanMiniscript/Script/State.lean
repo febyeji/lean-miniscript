@@ -49,9 +49,9 @@ structure ExecState where
 
 /-- Execution result. -/
 inductive ExecResult where
-  | success : Stack → ExecResult        -- Script succeeded with final stack
-  | failure : String → ExecResult       -- Script failed with error message
-  | running : ExecState → ExecResult    -- Still executing (for small-step)
+  | success : Stack → Stack → ExecResult -- Script succeeded with final main and alt stacks
+  | failure : String → ExecResult        -- Script failed with error message
+  | running : ExecState → ExecResult     -- Still executing (for small-step)
   deriving Repr
 
 /-- Bitcoin's truthiness check: a byte array is true iff it is not all-zero
