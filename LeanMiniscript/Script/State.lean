@@ -170,7 +170,19 @@ theorem nonMinimalTruthyElement_not_minimalIfArg :
     minimalIfArg nonMinimalTruthyElement = false := by
   native_decide
 
-/-- Abstract hash160 function (RIPEMD160 ∘ SHA256).
+/-- Abstract SHA256 function.
+    Opaque in the formal model — we only reason about its properties. -/
+opaque sha256 (x : StackElement) : StackElement
+
+/-- Abstract HASH256 function (SHA256 ∘ SHA256).
+    Opaque in the formal model — we only reason about its properties. -/
+opaque hash256 (x : StackElement) : StackElement
+
+/-- Abstract RIPEMD160 function.
+    Opaque in the formal model — we only reason about its properties. -/
+opaque ripemd160 (x : StackElement) : StackElement
+
+/-- Abstract HASH160 function (RIPEMD160 ∘ SHA256).
     Opaque in the formal model — we only reason about its properties. -/
 opaque hash160 (x : StackElement) : StackElement
 
