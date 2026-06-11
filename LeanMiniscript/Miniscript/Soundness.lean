@@ -25,8 +25,9 @@ def KTypeGuarantee (m : CoreFragment) : Prop :=
 theorem pk_k_soundness (key : PubKey) :
     KTypeGuarantee (.pk_k key) := by
   intro stack altStack flags ctx
-  exact ⟨key, Eval.pushData key [] stack altStack flags ctx _
-    (Eval.empty (key :: stack) altStack flags ctx)⟩
+  exact ⟨key, by
+    simpa [compile] using Eval.pushData key [] stack altStack flags ctx _
+      (Eval.empty (key :: stack) altStack flags ctx)⟩
 
 /-- What a B-type fragment with 'o' modifier guarantees:
     Consumes exactly one witness element from the stack and pushes
@@ -48,20 +49,22 @@ theorem c_pk_k_soundness (key : PubKey) :
   intro wit stack altStack flags ctx
   by_cases h : checkSig wit key ctx.sigHash = true
   · exact ⟨trueElement,
-      Eval.seq [.pushData key] [.op .OP_CHECKSIG] (wit :: stack)
+      by simpa [compile] using
+      (Eval.seq [.pushData key] [.op .OP_CHECKSIG] (wit :: stack)
         (key :: wit :: stack) altStack altStack flags ctx _
         (Eval.pushData key [] (wit :: stack) altStack flags ctx _
           (Eval.empty (key :: wit :: stack) altStack flags ctx))
         (Eval.checksig_success key wit stack [] altStack flags ctx _
-          h (Eval.empty (trueElement :: stack) altStack flags ctx))⟩
+          h (Eval.empty (trueElement :: stack) altStack flags ctx)))⟩
   · simp at h
     exact ⟨falseElement,
-      Eval.seq [.pushData key] [.op .OP_CHECKSIG] (wit :: stack)
+      by simpa [compile] using
+      (Eval.seq [.pushData key] [.op .OP_CHECKSIG] (wit :: stack)
         (key :: wit :: stack) altStack altStack flags ctx _
         (Eval.pushData key [] (wit :: stack) altStack flags ctx _
           (Eval.empty (key :: wit :: stack) altStack flags ctx))
         (Eval.checksig_failure key wit stack [] altStack flags ctx _
-          h (Eval.empty (falseElement :: stack) altStack flags ctx))⟩
+          h (Eval.empty (falseElement :: stack) altStack flags ctx)))⟩
 
 /-- What a V-type fragment with 'o' modifier guarantees:
     Consumes one witness element. On success, the stack below is unchanged
@@ -82,20 +85,22 @@ theorem v_c_pk_k_soundness (key : PubKey) :
   intro wit stack altStack flags ctx
   by_cases h : checkSig wit key ctx.sigHash = true
   · left
-    apply Eval.seq [.pushData key, .op .OP_CHECKSIG] [.op .OP_VERIFY]
-      (wit :: stack) (trueElement :: stack) altStack altStack
-    · apply Eval.seq [.pushData key] [.op .OP_CHECKSIG]
-        (wit :: stack) (key :: wit :: stack) altStack altStack
-      · exact Eval.pushData key [] (wit :: stack) altStack flags ctx _
-          (Eval.empty (key :: wit :: stack) altStack flags ctx)
-      · exact Eval.checksig_success key wit stack [] altStack flags ctx _
-          h (Eval.empty (trueElement :: stack) altStack flags ctx)
-    · exact Eval.verify_success trueElement stack [] altStack flags ctx _
-        (by native_decide) (Eval.empty stack altStack flags ctx)
+    simpa [compile] using
+      (Eval.seq [.pushData key, .op .OP_CHECKSIG] [.op .OP_VERIFY]
+        (wit :: stack) (trueElement :: stack) altStack altStack flags ctx _
+        (Eval.seq [.pushData key] [.op .OP_CHECKSIG]
+          (wit :: stack) (key :: wit :: stack) altStack altStack flags ctx _
+          (Eval.pushData key [] (wit :: stack) altStack flags ctx _
+            (Eval.empty (key :: wit :: stack) altStack flags ctx))
+          (Eval.checksig_success key wit stack [] altStack flags ctx _
+            h (Eval.empty (trueElement :: stack) altStack flags ctx)))
+        (Eval.verify_success trueElement stack [] altStack flags ctx _
+          (by native_decide) (Eval.empty stack altStack flags ctx)))
   · right
     simp at h
     exact ⟨"VERIFY failed",
-      Eval.seq [.pushData key, .op .OP_CHECKSIG] [.op .OP_VERIFY]
+      by simpa [compile] using
+      (Eval.seq [.pushData key, .op .OP_CHECKSIG] [.op .OP_VERIFY]
         (wit :: stack) (falseElement :: stack) altStack altStack flags ctx _
         (Eval.seq [.pushData key] [.op .OP_CHECKSIG]
           (wit :: stack) (key :: wit :: stack) altStack altStack flags ctx _
@@ -104,7 +109,7 @@ theorem v_c_pk_k_soundness (key : PubKey) :
           (Eval.checksig_failure key wit stack [] altStack flags ctx _
             h (Eval.empty (falseElement :: stack) altStack flags ctx)))
         (Eval.verify_failure falseElement stack [] altStack flags ctx
-          (by native_decide))⟩
+          (by native_decide)))⟩
 
 /-- What a W-type fragment with 'o' modifier guarantees in the current
     stack-shape model:
@@ -126,10 +131,8 @@ theorem a_c_pk_k_soundness (key : PubKey) :
   intro saved wit stack altStack flags ctx
   by_cases h : checkSig wit key ctx.sigHash = true
   · refine ⟨trueElement, ?_⟩
-    change Eval [.op .OP_TOALTSTACK, .pushData key, .op .OP_CHECKSIG,
-        .op .OP_FROMALTSTACK] (saved :: wit :: stack) altStack flags ctx
-        (.success (saved :: trueElement :: stack) altStack)
-    exact Eval.toAltStack saved (wit :: stack) altStack
+    simpa [compile] using
+    (Eval.toAltStack saved (wit :: stack) altStack
       [.pushData key, .op .OP_CHECKSIG, .op .OP_FROMALTSTACK] flags ctx _
       (Eval.pushData key [.op .OP_CHECKSIG, .op .OP_FROMALTSTACK]
         (wit :: stack) (saved :: altStack) flags ctx _
@@ -137,13 +140,11 @@ theorem a_c_pk_k_soundness (key : PubKey) :
           (saved :: altStack) flags ctx _
           h
           (Eval.fromAltStack saved (trueElement :: stack) altStack [] flags ctx _
-            (Eval.empty (saved :: trueElement :: stack) altStack flags ctx))))
+            (Eval.empty (saved :: trueElement :: stack) altStack flags ctx)))))
   · simp at h
     refine ⟨falseElement, ?_⟩
-    change Eval [.op .OP_TOALTSTACK, .pushData key, .op .OP_CHECKSIG,
-        .op .OP_FROMALTSTACK] (saved :: wit :: stack) altStack flags ctx
-        (.success (saved :: falseElement :: stack) altStack)
-    exact Eval.toAltStack saved (wit :: stack) altStack
+    simpa [compile] using
+    (Eval.toAltStack saved (wit :: stack) altStack
       [.pushData key, .op .OP_CHECKSIG, .op .OP_FROMALTSTACK] flags ctx _
       (Eval.pushData key [.op .OP_CHECKSIG, .op .OP_FROMALTSTACK]
         (wit :: stack) (saved :: altStack) flags ctx _
@@ -151,7 +152,7 @@ theorem a_c_pk_k_soundness (key : PubKey) :
           (saved :: altStack) flags ctx _
           h
           (Eval.fromAltStack saved (falseElement :: stack) altStack [] flags ctx _
-            (Eval.empty (saved :: falseElement :: stack) altStack flags ctx))))
+            (Eval.empty (saved :: falseElement :: stack) altStack flags ctx)))))
 
 /-!
 TODO(theorem): promote these AST-level leaf and wrapper lemmas into the main
