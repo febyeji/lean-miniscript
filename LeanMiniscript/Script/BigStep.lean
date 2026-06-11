@@ -106,6 +106,27 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval script (x :: x :: rest) altStack flags ctx result →
       Eval (.op .OP_DUP :: script) (x :: rest) altStack flags ctx result
 
+  -- OP_SHA256
+  | op_sha256 : (x : StackElement) → (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      Eval script (sha256 x :: rest) altStack flags ctx result →
+      Eval (.op .OP_SHA256 :: script) (x :: rest) altStack flags ctx result
+
+  -- OP_HASH256
+  | op_hash256 : (x : StackElement) → (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      Eval script (hash256 x :: rest) altStack flags ctx result →
+      Eval (.op .OP_HASH256 :: script) (x :: rest) altStack flags ctx result
+
+  -- OP_RIPEMD160
+  | op_ripemd160 : (x : StackElement) → (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      Eval script (ripemd160 x :: rest) altStack flags ctx result →
+      Eval (.op .OP_RIPEMD160 :: script) (x :: rest) altStack flags ctx result
+
   -- OP_HASH160
   | op_hash160 : (x : StackElement) → (rest : Stack) → (script : Script) →
       (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
