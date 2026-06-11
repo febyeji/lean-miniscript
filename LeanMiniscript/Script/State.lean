@@ -139,6 +139,18 @@ theorem scriptNum_128 : scriptNum 128 = ⟨#[0x80, 0x00]⟩ := by
 theorem scriptNum_neg_one : scriptNum (-1) = ⟨#[0x81]⟩ := by
   native_decide
 
+/-- Simplified locktime check used by `OP_CHECKLOCKTIMEVERIFY`.
+    The full Bitcoin rule also checks locktime classes and final sequence;
+    Miniscript AST validation tracks the class-level side conditions. -/
+def locktimeSatisfied (required : Nat) (ctx : TxContext) : Prop :=
+  required ≤ ctx.locktime
+
+/-- Simplified sequence check used by `OP_CHECKSEQUENCEVERIFY`.
+    The full Bitcoin rule also interprets BIP 68 disable/type bits; Miniscript
+    AST validation tracks the class-level side conditions. -/
+def sequenceSatisfied (required : Nat) (ctx : TxContext) : Prop :=
+  required ≤ ctx.sequence
+
 /-- Byte-array equality for stack elements, kept local to script-state
     predicates instead of introducing a global `BEq ByteArray` instance. -/
 def stackElementEq (x y : StackElement) : Bool :=
