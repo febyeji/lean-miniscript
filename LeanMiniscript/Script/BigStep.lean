@@ -33,10 +33,10 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval rest (data :: stack) altStack flags ctx result →
       Eval (.pushData data :: rest) stack altStack flags ctx result
 
-  | pushNum : (n : Int) → (numBytes : StackElement) → (rest : Script) →
+  | pushNum : (n : Int) → (rest : Script) →
       (stack altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
       (result : ExecResult) →
-      Eval rest (numBytes :: stack) altStack flags ctx result →
+      Eval rest (scriptNum n :: stack) altStack flags ctx result →
       Eval (.pushNum n :: rest) stack altStack flags ctx result
 
   -- OP_CHECKSIG: pubkey on top, sig below (Bitcoin Core convention)
@@ -279,10 +279,10 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op .OP_IFDUP :: script) (x :: rest) altStack flags ctx result
 
   -- OP_SIZE
-  | size : (x : StackElement) → (sizeBytes : StackElement) →
-      (rest altStack : Stack) → (script : Script) → (flags : ScriptFlags) →
+  | size : (x : StackElement) → (rest altStack : Stack) →
+      (script : Script) → (flags : ScriptFlags) →
       (ctx : TxContext) → (result : ExecResult) →
-      Eval script (sizeBytes :: x :: rest) altStack flags ctx result →
+      Eval script (scriptNat x.size :: x :: rest) altStack flags ctx result →
       Eval (.op .OP_SIZE :: script) (x :: rest) altStack flags ctx result
 
   -- Sequential composition
