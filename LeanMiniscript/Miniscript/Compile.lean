@@ -24,6 +24,23 @@ def compileThresholdSumCompiled : List Script → Script
 def compileThresholdCompiled (k : Nat) (scripts : List Script) : Script :=
   compileThresholdSumCompiled scripts ++ [.pushNum k, .op .OP_NUMEQUAL]
 
+/-- Compile legacy multisig as `<k> <key_1> ... <key_n> <n> OP_CHECKMULTISIG`. -/
+def compileMulti (k : Nat) (keys : List PubKey) : Script :=
+  [.pushNum k] ++ keys.map ScriptElement.pushData ++
+    [.pushNum keys.length, .op .OP_CHECKMULTISIG]
+
+/-- Compile the tail of a tapscript `multi_a` chain. -/
+def compileMultiATail : List PubKey → Script
+  | [] => []
+  | key :: keys => [.pushData key, .op .OP_CHECKSIGADD] ++ compileMultiATail keys
+
+/-- Compile tapscript multisig as a `CHECKSIG`/`CHECKSIGADD` accumulator. -/
+def compileMultiA (k : Nat) : List PubKey → Script
+  | [] => [.pushNum 0, .pushNum k, .op .OP_NUMEQUAL]
+  | key :: keys =>
+      [.pushData key, .op .OP_CHECKSIG] ++ compileMultiATail keys ++
+      [.pushNum k, .op .OP_NUMEQUAL]
+
 /-- Compile a core Miniscript AST fragment to Bitcoin Script.
     Each core constructor has a fixed compilation scheme defined in BIP 379. -/
 def compile : CoreFragment → Script
@@ -73,8 +90,8 @@ def compile : CoreFragment → Script
   | .n x => compile x ++ [.op .OP_0NOTEQUAL]
   -- Threshold
   | .thresh k fragments => compileThresholdCompiled k (fragments.map compile)
-  | .multi _ _ => []   -- TODO
-  | .multi_a _ _ => [] -- TODO
+  | .multi k keys => compileMulti k keys
+  | .multi_a k keys => compileMultiA k keys
 
 /-- Compile surface Miniscript by first lowering syntactic sugar to core. -/
 def compileSurface (fragment : SurfaceFragment) : Script :=

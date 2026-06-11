@@ -54,6 +54,58 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval script (falseElement :: rest) altStack flags ctx result →
       Eval (.op .OP_CHECKSIG :: script) (pubkey :: sig :: rest) altStack flags ctx result
 
+  -- OP_CHECKSIGADD: pubkey on top, accumulated count below, signature below that.
+  | checksigadd_success : (pubkey sig : StackElement) → (count : Nat) →
+      (rest : Stack) → (script : Script) → (altStack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      checkSig sig pubkey ctx.sigHash = true →
+      Eval script (scriptNat (count + 1) :: rest) altStack flags ctx result →
+      Eval (.op .OP_CHECKSIGADD :: script)
+        (pubkey :: scriptNat count :: sig :: rest) altStack flags ctx result
+
+  | checksigadd_failure : (pubkey sig : StackElement) → (count : Nat) →
+      (rest : Stack) → (script : Script) → (altStack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      checkSig sig pubkey ctx.sigHash = false →
+      Eval script (scriptNat count :: rest) altStack flags ctx result →
+      Eval (.op .OP_CHECKSIGADD :: script)
+        (pubkey :: scriptNat count :: sig :: rest) altStack flags ctx result
+
+  -- OP_CHECKMULTISIG: legacy dummy, k signatures, n public keys.
+  | checkmultisig_success : (k n : Nat) → (dummy : StackElement) →
+      (sigs pubkeys rest : Stack) → (script : Script) → (altStack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      sigs.length = k →
+      pubkeys.length = n →
+      nullDummySatisfied flags dummy →
+      checkMultiSig sigs pubkeys ctx.sigHash = true →
+      Eval script (trueElement :: rest) altStack flags ctx result →
+      Eval (.op .OP_CHECKMULTISIG :: script)
+        (scriptNat n :: (pubkeys ++ scriptNat k :: dummy :: sigs ++ rest))
+        altStack flags ctx result
+
+  | checkmultisig_failure : (k n : Nat) → (dummy : StackElement) →
+      (sigs pubkeys rest : Stack) → (script : Script) → (altStack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      sigs.length = k →
+      pubkeys.length = n →
+      nullDummySatisfied flags dummy →
+      checkMultiSig sigs pubkeys ctx.sigHash = false →
+      Eval script (falseElement :: rest) altStack flags ctx result →
+      Eval (.op .OP_CHECKMULTISIG :: script)
+        (scriptNat n :: (pubkeys ++ scriptNat k :: dummy :: sigs ++ rest))
+        altStack flags ctx result
+
+  | checkmultisig_nulldummy_failure : (k n : Nat) → (dummy : StackElement) →
+      (sigs pubkeys rest : Stack) → (script : Script) → (altStack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) →
+      sigs.length = k →
+      pubkeys.length = n →
+      ¬ nullDummySatisfied flags dummy →
+      Eval (.op .OP_CHECKMULTISIG :: script)
+        (scriptNat n :: (pubkeys ++ scriptNat k :: dummy :: sigs ++ rest))
+        altStack flags ctx (.failure "NULLDUMMY failed")
+
   -- OP_EQUAL
   | equal_true : (a b : StackElement) → (rest : Stack) →
       (script : Script) → (altStack : Stack) → (flags : ScriptFlags) →
