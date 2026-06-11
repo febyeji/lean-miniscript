@@ -99,6 +99,38 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op .OP_VERIFY :: script) (top :: rest) altStack flags ctx
         (.failure "VERIFY failed")
 
+  -- OP_CHECKSEQUENCEVERIFY
+  | checksequenceverify_success : (n : Nat) → (rest : Stack) →
+      (script : Script) → (altStack : Stack) → (flags : ScriptFlags) →
+      (ctx : TxContext) → (result : ExecResult) →
+      sequenceSatisfied n ctx →
+      Eval script (scriptNat n :: rest) altStack flags ctx result →
+      Eval (.op .OP_CHECKSEQUENCEVERIFY :: script) (scriptNat n :: rest)
+        altStack flags ctx result
+
+  | checksequenceverify_failure : (n : Nat) → (rest : Stack) →
+      (script : Script) → (altStack : Stack) → (flags : ScriptFlags) →
+      (ctx : TxContext) →
+      ¬ sequenceSatisfied n ctx →
+      Eval (.op .OP_CHECKSEQUENCEVERIFY :: script) (scriptNat n :: rest)
+        altStack flags ctx (.failure "CHECKSEQUENCEVERIFY failed")
+
+  -- OP_CHECKLOCKTIMEVERIFY
+  | checklocktimeverify_success : (n : Nat) → (rest : Stack) →
+      (script : Script) → (altStack : Stack) → (flags : ScriptFlags) →
+      (ctx : TxContext) → (result : ExecResult) →
+      locktimeSatisfied n ctx →
+      Eval script (scriptNat n :: rest) altStack flags ctx result →
+      Eval (.op .OP_CHECKLOCKTIMEVERIFY :: script) (scriptNat n :: rest)
+        altStack flags ctx result
+
+  | checklocktimeverify_failure : (n : Nat) → (rest : Stack) →
+      (script : Script) → (altStack : Stack) → (flags : ScriptFlags) →
+      (ctx : TxContext) →
+      ¬ locktimeSatisfied n ctx →
+      Eval (.op .OP_CHECKLOCKTIMEVERIFY :: script) (scriptNat n :: rest)
+        altStack flags ctx (.failure "CHECKLOCKTIMEVERIFY failed")
+
   -- OP_DUP
   | dup : (x : StackElement) → (rest : Stack) → (script : Script) →
       (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
