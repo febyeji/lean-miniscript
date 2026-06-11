@@ -48,6 +48,16 @@ structure MiniType where
     TODO(theorem): extend `HasType` to every `CoreFragment` constructor before
     stating the full core type-soundness theorem. -/
 inductive HasType : CoreFragment → MiniType → Prop where
+  /-- zero: pushes the canonical false element.
+      It consumes no witness input and is dissatisfiable. -/
+  | zero :
+      HasType .zero ⟨.B, { z := true, d := true }⟩
+
+  /-- one: pushes the canonical true element.
+      It consumes no witness input, is unit on success, and is forced. -/
+  | one :
+      HasType .one ⟨.B, { z := true, n := true, u := true, f := true }⟩
+
   /-- pk_k(key): pushes key, then OP_CHECKSIG consumes sig+key, pushes 0/1.
       Type: Ko — needs one stack arg (the signature), nonzero, dissatisfiable, unit.
       BIP 379: K, o, n, d, u -/
@@ -59,6 +69,32 @@ inductive HasType : CoreFragment → MiniType → Prop where
       BIP 379: K, o, n, d, u -/
   | pk_h : (key : PubKey) →
       HasType (.pk_h key) ⟨.K, { o := true, n := true, d := true, u := true }⟩
+
+  /-- older(n): relative timelock check.
+      It consumes no witness input and is forced in the simplified model. -/
+  | older : (n : Nat) →
+      HasType (.older n) ⟨.B, { z := true, n := true, f := true }⟩
+
+  /-- after(n): absolute timelock check.
+      It consumes no witness input and is forced in the simplified model. -/
+  | after : (n : Nat) →
+      HasType (.after n) ⟨.B, { z := true, n := true, f := true }⟩
+
+  /-- sha256(h): checks a 32-byte preimage against `h`. -/
+  | sha256 : (hash : Hash256) →
+      HasType (.sha256 hash) ⟨.B, { o := true, n := true, u := true }⟩
+
+  /-- hash256(h): checks a 32-byte preimage against `h`. -/
+  | hash256 : (hash : Hash256) →
+      HasType (.hash256 hash) ⟨.B, { o := true, n := true, u := true }⟩
+
+  /-- ripemd160(h): checks a 32-byte preimage against `h`. -/
+  | ripemd160 : (hash : Hash160) →
+      HasType (.ripemd160 hash) ⟨.B, { o := true, n := true, u := true }⟩
+
+  /-- hash160(h): checks a 32-byte preimage against `h`. -/
+  | hash160 : (hash : Hash160) →
+      HasType (.hash160 hash) ⟨.B, { o := true, n := true, u := true }⟩
 
   /-- and_v(X,Y): [X] [Y] where X is V-type.
       X executes (V: succeeds silently or aborts), then Y executes.
@@ -76,6 +112,21 @@ inductive HasType : CoreFragment → MiniType → Prop where
         u := tyY.mods.u
         f := modsX.f && tyY.mods.f
         e := false
+      }⟩
+
+  /-- and_b(X,Y): [X] [Y] OP_BOOLAND.
+      This conservative rule keeps the existing B/W split used by `or_b`. -/
+  | and_b : {X Y : CoreFragment} → {modsX modsY : TypeModifiers} →
+      HasType X ⟨.B, modsX⟩ →
+      HasType Y ⟨.W, modsY⟩ →
+      HasType (.and_b X Y) ⟨.B, {
+        z := false
+        o := (modsX.z && modsY.o) || (modsX.o && modsY.z)
+        n := modsX.n || modsY.n
+        d := modsX.d && modsY.d
+        u := modsX.u && modsY.u
+        f := modsX.f && modsY.f
+        e := modsX.e && modsY.e
       }⟩
 
   /-- or_b(X,Y): [X] [Y] OP_BOOLOR. Both must be dissatisfiable.
@@ -149,6 +200,19 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := modsX.n
         d := modsX.d
         u := modsX.u
+        f := modsX.f
+        e := modsX.e
+      }⟩
+
+  /-- Wrapper `n`: [X] OP_0NOTEQUAL. Normalizes any B result to canonical 0/1. -/
+  | n_wrap : {X : CoreFragment} → {modsX : TypeModifiers} →
+      HasType X ⟨.B, modsX⟩ →
+      HasType (.n X) ⟨.B, {
+        z := modsX.z
+        o := modsX.o
+        n := true
+        d := modsX.d
+        u := true
         f := modsX.f
         e := modsX.e
       }⟩
