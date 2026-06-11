@@ -123,6 +123,29 @@ def WTypeOGuarantee (m : CoreFragment) : Prop :=
       Eval (compile m) (saved :: wit :: stack) altStack flags ctx
         (.success (saved :: result :: stack) altStack)
 
+/-- Semantic guarantee selected by a Miniscript type.
+
+    This is intentionally partial in the modifier dimension: the current
+    reusable predicates cover the one-argument examples already proved in this
+    file. Other modifier combinations reduce to `True` until their precise
+    stack-shape predicates are added. -/
+def MiniTypeGuarantee (m : CoreFragment) (ty : MiniType) : Prop :=
+  match ty.base with
+  | .K => KTypeGuarantee m
+  | .B => if ty.mods.o then BTypeOGuarantee m else True
+  | .V => if ty.mods.o then VTypeOGuarantee m else True
+  | .W => if ty.mods.o then WTypeOGuarantee m else True
+
+/-- The eventual core type-soundness theorem, stated as a proposition so the
+    repository has a shared target without introducing `sorry`. -/
+def TypeSoundnessCore : Prop :=
+  ∀ {m : CoreFragment} {ty : MiniType}, HasType m ty → MiniTypeGuarantee m ty
+
+/-- Surface soundness should be the core theorem after desugaring. -/
+def TypeSoundnessSurface : Prop :=
+  ∀ {m : SurfaceFragment} {ty : MiniType},
+    HasType (desugar m) ty → MiniTypeGuarantee (desugar m) ty
+
 /-- Soundness for a(c(pk_k(key))): wrapper `a` turns the Bo behavior of
     c(pk_k(key)) into the corresponding W-type behavior by moving the protected
     top stack element through the alt stack. -/
@@ -153,6 +176,30 @@ theorem a_c_pk_k_soundness (key : PubKey) :
           h
           (Eval.fromAltStack saved (falseElement :: stack) altStack [] flags ctx _
             (Eval.empty (saved :: falseElement :: stack) altStack flags ctx)))))
+
+/-- The `pk_k` example packaged through the shared semantic selector. -/
+theorem pk_k_mini_type_soundness (key : PubKey) :
+    MiniTypeGuarantee (.pk_k key)
+      ⟨.K, { o := true, n := true, d := true, u := true }⟩ := by
+  exact pk_k_soundness key
+
+/-- The `c(pk_k)` example packaged through the shared semantic selector. -/
+theorem c_pk_k_mini_type_soundness (key : PubKey) :
+    MiniTypeGuarantee (.c (.pk_k key))
+      ⟨.B, { o := true, n := true, d := true, u := true }⟩ := by
+  simpa [MiniTypeGuarantee] using c_pk_k_soundness key
+
+/-- The `v(c(pk_k))` example packaged through the shared semantic selector. -/
+theorem v_c_pk_k_mini_type_soundness (key : PubKey) :
+    MiniTypeGuarantee (.v (.c (.pk_k key)))
+      ⟨.V, { o := true, n := true, f := true }⟩ := by
+  simpa [MiniTypeGuarantee] using v_c_pk_k_soundness key
+
+/-- The `a(c(pk_k))` example packaged through the shared semantic selector. -/
+theorem a_c_pk_k_mini_type_soundness (key : PubKey) :
+    MiniTypeGuarantee (.a (.c (.pk_k key)))
+      ⟨.W, { o := true, n := true, d := true, u := true }⟩ := by
+  simpa [MiniTypeGuarantee] using a_c_pk_k_soundness key
 
 /-!
 TODO(theorem): promote these AST-level leaf and wrapper lemmas into the main
