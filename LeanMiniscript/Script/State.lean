@@ -63,7 +63,7 @@ def castToBool (b : StackElement) : Bool :=
   else
     let lastIdx := b.size - 1
     -- Negative zero: only last byte is 0x80, rest are 0x00
-    b.data.toList.enum.any fun ⟨i, byte⟩ =>
+    b.data.toList.zipIdx.any fun ⟨byte, i⟩ =>
       if i == lastIdx then byte != 0x00 && byte != 0x80
       else byte != 0x00
 
@@ -76,6 +76,68 @@ def falseElement : StackElement := ⟨#[]⟩
 /-- Convert a Bool to a stack element. -/
 def boolToElement (b : Bool) : StackElement :=
   if b then trueElement else falseElement
+
+/-- Encode a nonnegative magnitude as little-endian base-256 bytes.
+    The fuel argument makes the definition structurally recursive; using the
+    magnitude itself as fuel is enough for every nonzero input. -/
+def scriptNumMagnitudeBytesAux : Nat → Nat → List UInt8
+  | 0, _ => []
+  | fuel + 1, n =>
+      if n = 0 then
+        []
+      else
+        UInt8.ofNat (n % 256) :: scriptNumMagnitudeBytesAux fuel (n / 256)
+
+/-- Whether the most significant byte would be confused with a sign bit. -/
+def scriptNumNeedsSignByte : List UInt8 → Bool
+  | [] => false
+  | [byte] => 128 ≤ byte.toNat
+  | _ :: rest => scriptNumNeedsSignByte rest
+
+/-- Set the sign bit on the most significant byte of a nonempty magnitude. -/
+def scriptNumSetSignBit : List UInt8 → List UInt8
+  | [] => []
+  | [byte] => [UInt8.ofNat (byte.toNat + 128)]
+  | byte :: rest => byte :: scriptNumSetSignBit rest
+
+/-- Canonical Bitcoin Script numeric encoding.
+
+    Numbers are little-endian signed magnitudes. Zero is the empty byte array;
+    negative numbers set the high bit of the most significant byte, appending
+    a sign byte when the magnitude already uses that bit. -/
+def scriptNumBytes (n : Int) : List UInt8 :=
+  if n = 0 then
+    []
+  else
+    let magnitude := n.natAbs
+    let bytes := scriptNumMagnitudeBytesAux magnitude magnitude
+    let negative := n < 0
+    if scriptNumNeedsSignByte bytes then
+      bytes ++ [if negative then 0x80 else 0x00]
+    else if negative then
+      scriptNumSetSignBit bytes
+    else
+      bytes
+
+/-- Canonical stack element produced by numeric pushes. -/
+def scriptNum (n : Int) : StackElement :=
+  ⟨(scriptNumBytes n).toArray⟩
+
+/-- Canonical stack element for a natural number. -/
+def scriptNat (n : Nat) : StackElement :=
+  scriptNum n
+
+theorem scriptNum_zero : scriptNum 0 = falseElement := by
+  native_decide
+
+theorem scriptNum_one : scriptNum 1 = trueElement := by
+  native_decide
+
+theorem scriptNum_128 : scriptNum 128 = ⟨#[0x80, 0x00]⟩ := by
+  native_decide
+
+theorem scriptNum_neg_one : scriptNum (-1) = ⟨#[0x81]⟩ := by
+  native_decide
 
 /-- Byte-array equality for stack elements, kept local to script-state
     predicates instead of introducing a global `BEq ByteArray` instance. -/
