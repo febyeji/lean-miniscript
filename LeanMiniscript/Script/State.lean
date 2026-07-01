@@ -63,7 +63,7 @@ def castToBool (b : StackElement) : Bool :=
   else
     let lastIdx := b.size - 1
     -- Negative zero: only last byte is 0x80, rest are 0x00
-    b.data.toList.zipIdx.any fun ⟨byte, i⟩ =>
+    b.data.toList.enum.any fun ⟨i, byte⟩ =>
       if i == lastIdx then byte != 0x00 && byte != 0x80
       else byte != 0x00
 
@@ -128,16 +128,16 @@ def scriptNat (n : Nat) : StackElement :=
   scriptNum n
 
 theorem scriptNum_zero : scriptNum 0 = falseElement := by
-  native_decide
+  rfl
 
 theorem scriptNum_one : scriptNum 1 = trueElement := by
-  native_decide
+  rfl
 
 theorem scriptNum_128 : scriptNum 128 = ⟨#[0x80, 0x00]⟩ := by
-  native_decide
+  rfl
 
 theorem scriptNum_neg_one : scriptNum (-1) = ⟨#[0x81]⟩ := by
-  native_decide
+  rfl
 
 /-- Simplified locktime check used by `OP_CHECKLOCKTIMEVERIFY`.
     The full Bitcoin rule also checks locktime classes and final sequence;

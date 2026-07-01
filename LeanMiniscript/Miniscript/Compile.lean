@@ -6,43 +6,26 @@ namespace LeanMiniscript.Miniscript
 
 open LeanMiniscript.Script
 
-/-- Compile the remaining threshold terms, adding each new result into the
-    accumulator left by the previous terms. -/
-def compileThresholdTailCompiled : List Script → Script
+/-- Push every key in order. -/
+def compileKeyPushes : List PubKey → Script
   | [] => []
-  | script :: scripts => script ++ [.op .OP_ADD] ++ compileThresholdTailCompiled scripts
+  | key :: keys => .pushData key :: compileKeyPushes keys
 
-/-- Compile the threshold accumulator from already compiled subfragments.
-    The empty case is only for totality over raw ASTs; well-formed threshold
-    fragments require at least one subfragment. -/
-def compileThresholdSumCompiled : List Script → Script
+/-- Compile the first key with CHECKSIG and every following key with
+    CHECKSIGADD. -/
+def compileCheckSigAdd : List PubKey → Script
   | [] => [.pushNum 0]
-  | script :: scripts => script ++ compileThresholdTailCompiled scripts
+  | key :: keys => [.pushData key, .op .OP_CHECKSIG] ++ compileCheckSigAddTail keys
 
-/-- Compile `thresh(k, ...)` by summing subfragment boolean results and checking
-    whether the numeric sum equals `k`. -/
-def compileThresholdCompiled (k : Nat) (scripts : List Script) : Script :=
-  compileThresholdSumCompiled scripts ++ [.pushNum k, .op .OP_NUMEQUAL]
+where
+  compileCheckSigAddTail : List PubKey → Script
+    | [] => []
+    | key :: keys => [.pushData key, .op .OP_CHECKSIGADD] ++ compileCheckSigAddTail keys
 
-/-- Compile legacy multisig as `<k> <key_1> ... <key_n> <n> OP_CHECKMULTISIG`. -/
-def compileMulti (k : Nat) (keys : List PubKey) : Script :=
-  [.pushNum k] ++ keys.map ScriptElement.pushData ++
-    [.pushNum keys.length, .op .OP_CHECKMULTISIG]
-
-/-- Compile the tail of a tapscript `multi_a` chain. -/
-def compileMultiATail : List PubKey → Script
-  | [] => []
-  | key :: keys => [.pushData key, .op .OP_CHECKSIGADD] ++ compileMultiATail keys
-
-/-- Compile tapscript multisig as a `CHECKSIG`/`CHECKSIGADD` accumulator. -/
-def compileMultiA (k : Nat) : List PubKey → Script
-  | [] => [.pushNum 0, .pushNum k, .op .OP_NUMEQUAL]
-  | key :: keys =>
-      [.pushData key, .op .OP_CHECKSIG] ++ compileMultiATail keys ++
-      [.pushNum k, .op .OP_NUMEQUAL]
-
-/-- Compile a core Miniscript AST fragment to Bitcoin Script.
-    Each core constructor has a fixed compilation scheme defined in BIP 379. -/
+/- Compile a core Miniscript AST fragment to Bitcoin Script.
+   Each core constructor has a fixed compilation scheme defined in BIP 379. -/
+mutual
+/-- Compile a core Miniscript AST fragment to Bitcoin Script. -/
 def compile : CoreFragment → Script
   -- Leaves
   | .zero => [.pushNum 0]
@@ -88,10 +71,23 @@ def compile : CoreFragment → Script
   | .j x =>
       [.op .OP_SIZE, .op .OP_0NOTEQUAL, .op .OP_IF] ++ compile x ++ [.op .OP_ENDIF]
   | .n x => compile x ++ [.op .OP_0NOTEQUAL]
-  -- Threshold
-  | .thresh k fragments => compileThresholdCompiled k (fragments.map compile)
-  | .multi k keys => compileMulti k keys
-  | .multi_a k keys => compileMultiA k keys
+  -- Threshold and multisig
+  | .thresh k fragments => compileThresh fragments ++ [.pushNum k, .op .OP_EQUAL]
+  | .multi k keys =>
+      [.pushNum k] ++ compileKeyPushes keys ++
+        [.pushNum keys.length, .op .OP_CHECKMULTISIG]
+  | .multi_a k keys => compileCheckSigAdd keys ++ [.pushNum k, .op .OP_NUMEQUAL]
+
+/-- Compile `thresh` children as `[X1] [X2] OP_ADD ... [Xn] OP_ADD`. -/
+def compileThresh : List CoreFragment → Script
+  | [] => []
+  | fragment :: fragments => compile fragment ++ compileThreshTail fragments
+
+/-- Compile every threshold child after the first with a following `OP_ADD`. -/
+def compileThreshTail : List CoreFragment → Script
+  | [] => []
+  | fragment :: fragments => compile fragment ++ [.op .OP_ADD] ++ compileThreshTail fragments
+end
 
 /-- Compile surface Miniscript by first lowering syntactic sugar to core. -/
 def compileSurface (fragment : SurfaceFragment) : Script :=
