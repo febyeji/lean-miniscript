@@ -6,26 +6,10 @@ namespace LeanMiniscript.Miniscript
 
 open LeanMiniscript.Script
 
-/-- Compile the remaining threshold terms, adding each new result into the
-    accumulator left by the previous terms. -/
-def compileThresholdTailCompiled : List Script → Script
-  | [] => []
-  | script :: scripts => script ++ [.op .OP_ADD] ++ compileThresholdTailCompiled scripts
-
-/-- Compile the threshold accumulator from already compiled subfragments.
-    The empty case is only for totality over raw ASTs; well-formed threshold
-    fragments require at least one subfragment. -/
-def compileThresholdSumCompiled : List Script → Script
-  | [] => [.pushNum 0]
-  | script :: scripts => script ++ compileThresholdTailCompiled scripts
-
-/-- Compile `thresh(k, ...)` by summing subfragment boolean results and checking
-    whether the numeric sum equals `k`. -/
-def compileThresholdCompiled (k : Nat) (scripts : List Script) : Script :=
-  compileThresholdSumCompiled scripts ++ [.pushNum k, .op .OP_NUMEQUAL]
-
-/-- Compile a core Miniscript AST fragment to Bitcoin Script.
-    Each core constructor has a fixed compilation scheme defined in BIP 379. -/
+/- Compile a core Miniscript AST fragment to Bitcoin Script.
+   Each core constructor has a fixed compilation scheme defined in BIP 379. -/
+mutual
+/-- Compile a core Miniscript AST fragment to Bitcoin Script. -/
 def compile : CoreFragment → Script
   -- Leaves
   | .zero => [.pushNum 0]
@@ -72,9 +56,20 @@ def compile : CoreFragment → Script
       [.op .OP_SIZE, .op .OP_0NOTEQUAL, .op .OP_IF] ++ compile x ++ [.op .OP_ENDIF]
   | .n x => compile x ++ [.op .OP_0NOTEQUAL]
   -- Threshold
-  | .thresh k fragments => compileThresholdCompiled k (fragments.map compile)
+  | .thresh k fragments => compileThresh fragments ++ [.pushNum k, .op .OP_EQUAL]
   | .multi _ _ => []   -- TODO
   | .multi_a _ _ => [] -- TODO
+
+/-- Compile `thresh` children as `[X1] [X2] OP_ADD ... [Xn] OP_ADD`. -/
+def compileThresh : List CoreFragment → Script
+  | [] => []
+  | fragment :: fragments => compile fragment ++ compileThreshTail fragments
+
+/-- Compile every threshold child after the first with a following `OP_ADD`. -/
+def compileThreshTail : List CoreFragment → Script
+  | [] => []
+  | fragment :: fragments => compile fragment ++ [.op .OP_ADD] ++ compileThreshTail fragments
+end
 
 /-- Compile surface Miniscript by first lowering syntactic sugar to core. -/
 def compileSurface (fragment : SurfaceFragment) : Script :=
