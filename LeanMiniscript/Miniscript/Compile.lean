@@ -6,6 +6,22 @@ namespace LeanMiniscript.Miniscript
 
 open LeanMiniscript.Script
 
+/-- Push every key in order. -/
+def compileKeyPushes : List PubKey → Script
+  | [] => []
+  | key :: keys => .pushData key :: compileKeyPushes keys
+
+/-- Compile the first key with CHECKSIG and every following key with
+    CHECKSIGADD. -/
+def compileCheckSigAdd : List PubKey → Script
+  | [] => [.pushNum 0]
+  | key :: keys => [.pushData key, .op .OP_CHECKSIG] ++ compileCheckSigAddTail keys
+
+where
+  compileCheckSigAddTail : List PubKey → Script
+    | [] => []
+    | key :: keys => [.pushData key, .op .OP_CHECKSIGADD] ++ compileCheckSigAddTail keys
+
 /- Compile a core Miniscript AST fragment to Bitcoin Script.
    Each core constructor has a fixed compilation scheme defined in BIP 379. -/
 mutual
@@ -55,10 +71,12 @@ def compile : CoreFragment → Script
   | .j x =>
       [.op .OP_SIZE, .op .OP_0NOTEQUAL, .op .OP_IF] ++ compile x ++ [.op .OP_ENDIF]
   | .n x => compile x ++ [.op .OP_0NOTEQUAL]
-  -- Threshold
+  -- Threshold and multisig
   | .thresh k fragments => compileThresh fragments ++ [.pushNum k, .op .OP_EQUAL]
-  | .multi _ _ => []   -- TODO
-  | .multi_a _ _ => [] -- TODO
+  | .multi k keys =>
+      [.pushNum k] ++ compileKeyPushes keys ++
+        [.pushNum keys.length, .op .OP_CHECKMULTISIG]
+  | .multi_a k keys => compileCheckSigAdd keys ++ [.pushNum k, .op .OP_NUMEQUAL]
 
 /-- Compile `thresh` children as `[X1] [X2] OP_ADD ... [Xn] OP_ADD`. -/
 def compileThresh : List CoreFragment → Script

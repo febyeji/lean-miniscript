@@ -165,6 +165,10 @@ def minimalIfArg (b : StackElement) : Bool :=
 def minimalIfSatisfied (flags : ScriptFlags) (b : StackElement) : Prop :=
   flags.minimalIf = false ∨ minimalIfArg b = true
 
+/-- Whether the legacy CHECKMULTISIG dummy argument satisfies NULLDUMMY. -/
+def nullDummySatisfied (flags : ScriptFlags) (dummy : StackElement) : Prop :=
+  flags.nullDummy = false ∨ stackElementEq dummy falseElement = true
+
 theorem falseElement_minimalIfArg : minimalIfArg falseElement = true :=
   by native_decide
 
@@ -202,5 +206,11 @@ opaque hash160 (x : StackElement) : StackElement
     In formal proofs we treat this as an opaque predicate.
     Returns true iff the signature is valid for the given key and sighash. -/
 opaque checkSig (sig : StackElement) (pubkey : StackElement) (sigHash : ByteArray) : Bool
+
+/-- Abstract legacy multisignature verification.
+    This models the cryptographic matching of signatures to public keys while
+    keeping the stack discipline of `OP_CHECKMULTISIG` explicit in `Eval`. -/
+opaque checkMultiSig
+  (sigs : List StackElement) (pubkeys : List StackElement) (sigHash : ByteArray) : Bool
 
 end LeanMiniscript.Script
