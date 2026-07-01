@@ -182,6 +182,22 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
         altStack flags ctx result →
       Eval (.op .OP_BOOLAND :: script) (a :: b :: rest) altStack flags ctx result
 
+  -- OP_ADD
+  | add : (a b : Nat) → (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      Eval script (scriptNat (a + b) :: rest) altStack flags ctx result →
+      Eval (.op .OP_ADD :: script) (scriptNat a :: scriptNat b :: rest)
+        altStack flags ctx result
+
+  -- OP_NUMEQUAL
+  | numequal : (a b : Nat) → (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      Eval script (boolToElement (a == b) :: rest) altStack flags ctx result →
+      Eval (.op .OP_NUMEQUAL :: script) (scriptNat a :: scriptNat b :: rest)
+        altStack flags ctx result
+
   -- OP_IF/OP_NOTIF/OP_ELSE/OP_ENDIF
   -- Structural model for compiled Miniscript control-flow blocks.
   | if_true : (top : StackElement) → (rest altStack : Stack) →
