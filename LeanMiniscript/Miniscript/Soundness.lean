@@ -192,7 +192,7 @@ theorem c_pk_k_mini_type_soundness (key : PubKey) :
 /-- The `v(c(pk_k))` example packaged through the shared semantic selector. -/
 theorem v_c_pk_k_mini_type_soundness (key : PubKey) :
     MiniTypeGuarantee (.v (.c (.pk_k key)))
-      ⟨.V, { o := true, n := true, f := true }⟩ := by
+      ⟨.V, { o := true, n := true }⟩ := by
   simpa [MiniTypeGuarantee] using v_c_pk_k_soundness key
 
 /-- The `a(c(pk_k))` example packaged through the shared semantic selector. -/
