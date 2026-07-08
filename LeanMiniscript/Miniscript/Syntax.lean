@@ -98,6 +98,6 @@ inductive Policy where
   deriving Repr
 
 -- AST side conditions live in `Miniscript.Validation`.
--- TODO(ast): define fragment size/resource accounting over CoreFragment.
+-- Structural metrics live in `Miniscript.Metrics`.
 
 end LeanMiniscript.Miniscript
