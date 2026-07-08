@@ -1,6 +1,7 @@
 import LeanMiniscript.Miniscript.Types
 import LeanMiniscript.Miniscript.Compile
 import LeanMiniscript.Miniscript.Metrics
+import LeanMiniscript.Miniscript.Soundness
 import LeanMiniscript.Script.Serialization
 
 namespace LeanMiniscript.Properties
@@ -81,12 +82,29 @@ end
 def maxStackDepth (fragment : CoreFragment) : Nat :=
   fragment.depth
 
+/-- Target theorem for the first conservative runtime bound. Counting the main
+    and alt stacks together avoids treating `TOALTSTACK` as allocation. Each
+    executed compiler element may increase that total by at most one, so the
+    complete compiled script length is a conservative allowance independent of
+    which conditional branch runs. -/
+def ResourceBoundsSound : Prop :=
+  ∀ {ctx : ScriptContext} {fragment : CoreFragment} {ty : MiniType}
+      {initialStack initialAltStack finalStack finalAltStack : Stack}
+      {flags : ScriptFlags} {txCtx : TxContext},
+    ValidTypedFragment ctx fragment ty →
+    Eval (compile fragment) initialStack initialAltStack flags txCtx
+      (.success finalStack finalAltStack) →
+    finalStack.length + finalAltStack.length ≤
+      initialStack.length + initialAltStack.length + scriptElementCount fragment
+
 /-!
 TODO(theorem): resource-bound soundness.
 
 Core proof tasks:
-- Prove the resource-bound theorem for well-typed core fragments compiled with
-  `compile`.
+- Prove `ResourceBoundsSound` by induction over compiler output evaluation.
+- Replace the provisional AST-depth estimate with a proved peak-main-stack
+  analyzer; the combined-stack theorem above is only the first conservative
+  contract.
 - State the surface corollary by applying the core theorem to `desugar s`, so
   surface syntax does not need a duplicate resource proof.
 -/

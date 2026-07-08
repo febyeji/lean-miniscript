@@ -1,22 +1,57 @@
 import LeanMiniscript.Miniscript.Syntax
 import LeanMiniscript.Miniscript.Types
+import LeanMiniscript.Miniscript.Witness
 
 namespace LeanMiniscript.Miniscript
 
-/-- A witness is a list of stack elements (byte arrays). -/
-abbrev Witness := List ByteArray
+open LeanMiniscript.Script
+
+/-- A typed hashlock target for preimage lookup. -/
+inductive HashLock where
+  | sha256 : Hash256 → HashLock
+  | hash256 : Hash256 → HashLock
+  | ripemd160 : Hash160 → HashLock
+  | hash160 : Hash160 → HashLock
+
+namespace HashLock
+
+/-- The cryptographic relation required of a supplied preimage. Hash functions
+    remain opaque at the formal boundary. -/
+def Matches : HashLock → StackElement → Prop
+  | .sha256 expected, preimage =>
+      LeanMiniscript.Script.sha256 preimage = expected.bytes
+  | .hash256 expected, preimage =>
+      LeanMiniscript.Script.hash256 preimage = expected.bytes
+  | .ripemd160 expected, preimage =>
+      LeanMiniscript.Script.ripemd160 preimage = expected.bytes
+  | .hash160 expected, preimage =>
+      LeanMiniscript.Script.hash160 preimage = expected.bytes
+
+end HashLock
 
 /-- An environment provides the "real-world" data needed for satisfaction:
-    signatures, preimages, current block height, etc. -/
+    concrete signatures, preimages, and the transaction context. -/
 structure SatEnv where
-  /-- Can produce a signature for this key? -/
-  canSign : PubKey → Bool
-  /-- Knows preimage for this hash? -/
-  hasPreimage : ByteArray → Option ByteArray
-  /-- Current block height (for OP_CHECKLOCKTIMEVERIFY) -/
-  blockHeight : Nat
-  /-- Current sequence (for OP_CHECKSEQUENCEVERIFY) -/
-  sequence : Nat
+  /-- Return the exact stack element to use as a signature, when available. -/
+  signatureFor : PubKey → Option StackElement
+  /-- Return the exact preimage stack element for a typed hashlock. -/
+  preimageFor : HashLock → Option StackElement
+  /-- Transaction data used by signature and timelock checks. -/
+  txCtx : TxContext
+
+namespace SatEnv
+
+/-- Every piece of material returned by an environment satisfies the abstract
+    cryptographic boundary used by `Eval`. -/
+def Sound (env : SatEnv) : Prop :=
+  (∀ key signature,
+      env.signatureFor key = some signature →
+      checkSig signature key.bytes env.txCtx.sigHash = true) ∧
+  (∀ lock preimage,
+      env.preimageFor lock = some preimage →
+      lock.Matches preimage)
+
+end SatEnv
 
 /-- Satisfaction result. -/
 inductive SatResult where
