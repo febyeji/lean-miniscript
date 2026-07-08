@@ -9,8 +9,7 @@ def MAX_BIP_LOCK_VALUE : Nat := 2147483648
     above it are interpreted as timestamps. -/
 def LOCKTIME_THRESHOLD : Nat := 500000000
 
-/-- BIP 68 sequence type flag. Values at or above this flag are conservatively
-    classified as time-based relative timelocks in this AST-level model. -/
+/-- BIP 68 sequence type flag (bit 22). -/
 def SEQUENCE_LOCKTIME_TYPE_FLAG : Nat := 4194304
 
 /-- SHA256/HASH256 hashes are represented by 32 bytes. -/
@@ -60,12 +59,18 @@ def fromAfter (m : Nat) : TimelockUsage :=
   else
     { absoluteTime := true }
 
+/-- Whether BIP 68 bit 22 classifies a relative lock as time-based.
+    Dividing by `2^22` and taking parity tests that bit without treating it as
+    a numeric threshold; higher sequence bits do not change the classification. -/
+def sequenceLocktimeIsTime (m : Nat) : Bool :=
+  (m / SEQUENCE_LOCKTIME_TYPE_FLAG) % 2 == 1
+
 /-- Relative locktime class for `older(n)`. -/
 def fromOlder (m : Nat) : TimelockUsage :=
-  if m < SEQUENCE_LOCKTIME_TYPE_FLAG then
-    { relativeHeight := true }
-  else
+  if sequenceLocktimeIsTime m then
     { relativeTime := true }
+  else
+    { relativeHeight := true }
 
 /-- BIP 379 forbids mixing height and time locks of the same absolute/relative
     family inside AND-like combinators and `thresh` when `k >= 2`. -/
