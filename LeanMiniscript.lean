@@ -1,5 +1,6 @@
 import LeanMiniscript.Script.Syntax
 import LeanMiniscript.Script.State
+import LeanMiniscript.Script.Serialization
 import LeanMiniscript.Script.BigStep
 import LeanMiniscript.Script.SmallStep
 import LeanMiniscript.Script.Equivalence
@@ -13,5 +14,6 @@ import LeanMiniscript.Miniscript.Compile
 import LeanMiniscript.Miniscript.Satisfaction
 import LeanMiniscript.Miniscript.Soundness
 import LeanMiniscript.Properties.ResourceBounds
+import LeanMiniscript.Script.SerializationExamples
 import LeanMiniscript.Properties.NonMalleability
 import LeanMiniscript.Extraction.RefInterp

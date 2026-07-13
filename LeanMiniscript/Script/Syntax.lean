@@ -4,7 +4,7 @@ instance : Repr ByteArray where
 namespace LeanMiniscript.Script
 
 /-- Bitcoin Script opcodes used by Miniscript (BIP 379).
-    26 opcodes organized by category. -/
+    27 opcodes organized by category. -/
 inductive Opcode where
   -- Flow control
   | OP_IF
@@ -54,7 +54,8 @@ inductive ScriptElement where
 /-- A Bitcoin Script is a list of script elements. -/
 abbrev Script := List ScriptElement
 
--- TODO: Define script serialization / deserialization
+-- Serialization is defined in `Script.Serialization`.
+-- TODO: Define script deserialization.
 -- TODO: Define witness type
 
 end LeanMiniscript.Script
