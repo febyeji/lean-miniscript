@@ -6,13 +6,14 @@ lean-miniscript is a small Lean 4 codebase for modeling the part of Bitcoin
 Script used by Miniscript, then stating the proof obligations needed to connect
 compiled fragments to the stack behavior promised by the Miniscript type system.
 
-## Current scope
+## Current status
 
-- Lean models of Miniscript syntax and the Bitcoin Script fragment it compiles
-  to.
-- Surface-to-core Miniscript desugaring, partial typing, and compilation.
-- Big-step semantics for the target Script fragment, with theorem skeletons for
-  soundness and related properties.
+- Core syntax, typing, and compilation cover every current `CoreFragment`.
+- Surface syntax and policy lowering are partial.
+- Basic metrics and resource accounting are implemented, but not proved.
+- Partial big-step semantics and a few soundness lemmas are implemented.
+- General soundness, satisfaction, non-malleability, small-step semantics, and
+  the interpreter are unfinished.
 
 ## Building
 
