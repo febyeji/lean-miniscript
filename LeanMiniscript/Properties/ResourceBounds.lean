@@ -1,6 +1,7 @@
 import LeanMiniscript.Miniscript.Types
 import LeanMiniscript.Miniscript.Compile
 import LeanMiniscript.Miniscript.Metrics
+import LeanMiniscript.Script.Serialization
 
 namespace LeanMiniscript.Properties
 
@@ -20,12 +21,19 @@ def isNonPushElement : ScriptElement → Bool
   | .pushData _ => false
   | .pushNum _ => false
 
-/-- Number of script elements produced by compilation.
-
-    This is not serialized byte size; exact byte size belongs with the future
-    script serialization model. -/
-def scriptSize (fragment : CoreFragment) : Nat :=
+/-- Number of Script AST elements produced by compilation. -/
+def scriptElementCount (fragment : CoreFragment) : Nat :=
   (compile fragment).length
+
+/-- Exact serialized byte size of a compiled core fragment. -/
+def serializedScriptSize (fragment : CoreFragment) : Except SerializationError Nat :=
+  LeanMiniscript.Script.serializedScriptSize (compile fragment)
+
+example : scriptElementCount .zero = 1 := by
+  rfl
+
+example : serializedScriptSize .zero = .ok 1 := by
+  rfl
 
 /-- Number of non-push opcodes in the compiled script. -/
 def nonPushOpCount (script : Script) : Nat :=
