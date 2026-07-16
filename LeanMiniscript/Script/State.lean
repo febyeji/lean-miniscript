@@ -47,11 +47,22 @@ structure ExecState where
   txCtx : TxContext
   deriving Repr
 
-/-- Execution result. -/
+/-- Script failures represented by the current semantics. Typed errors keep
+    proofs independent of display strings and make case analysis exhaustive. -/
+inductive ScriptError where
+  | nullDummy
+  | equalVerify
+  | verify
+  | checkSequenceVerify
+  | checkLockTimeVerify
+  | minimalIf
+  deriving Repr, DecidableEq, BEq
+
+/-- Final execution result. Small-step execution represents intermediate
+    states with `ExecState` directly rather than as a final result variant. -/
 inductive ExecResult where
   | success : Stack → Stack → ExecResult -- Script succeeded with final main and alt stacks
-  | failure : String → ExecResult        -- Script failed with error message
-  | running : ExecState → ExecResult     -- Still executing (for small-step)
+  | failure : ScriptError → ExecResult   -- Script failed with a modeled error
   deriving Repr
 
 /-- Bitcoin's truthiness check: a byte array is true iff it is not all-zero
