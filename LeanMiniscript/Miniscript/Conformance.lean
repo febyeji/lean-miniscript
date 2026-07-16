@@ -390,8 +390,8 @@ theorem bip379Compilation_iff
 
 /-- The formal compiler is an instance of the general relational conformance result. -/
 theorem compile_conforms (fragment : CoreFragment) :
-    Bip379Compilation hash160 fragment (compile fragment) :=
-  compileWithKeyHash_conforms hash160 fragment
+    Bip379Compilation modelKeyHash fragment (compile fragment) :=
+  compileWithKeyHash_conforms modelKeyHash fragment
 
 /-- Surface compilation conforms after its explicitly defined desugaring step. -/
 theorem compileSurfaceWithKeyHash_conforms
@@ -402,7 +402,7 @@ theorem compileSurfaceWithKeyHash_conforms
 
 /-- The abstract-HASH160 surface compiler conforms after desugaring. -/
 theorem compileSurface_conforms (fragment : SurfaceFragment) :
-    Bip379Compilation hash160 (desugar fragment) (compileSurface fragment) :=
-  compileSurfaceWithKeyHash_conforms hash160 fragment
+    Bip379Compilation modelKeyHash (desugar fragment) (compileSurface fragment) :=
+  compileSurfaceWithKeyHash_conforms modelKeyHash fragment
 
 end LeanMiniscript.Miniscript

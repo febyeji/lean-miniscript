@@ -2,14 +2,54 @@ import LeanMiniscript.Script.Syntax  -- for Repr ByteArray instance
 
 namespace LeanMiniscript.Miniscript
 
-/-- A public key (simplified as ByteArray for now). -/
-abbrev PubKey := ByteArray
+/-- Resolved public-key bytes. Context-specific length checks remain in
+    `Miniscript.Context`, while this wrapper prevents hashes and arbitrary
+    stack elements from being used as keys accidentally. -/
+structure PubKey where
+  bytes : ByteArray
+  deriving Repr
 
-/-- A hash value (32 bytes). -/
-abbrev Hash256 := ByteArray
+/-- A SHA256/HASH256 digest boundary. Length validity remains an explicit
+    `WellFormed` obligation. -/
+structure Hash256 where
+  bytes : ByteArray
+  deriving Repr
 
-/-- A hash value (20 bytes). -/
-abbrev Hash160 := ByteArray
+/-- A HASH160/RIPEMD160 digest boundary. Length validity remains an explicit
+    `WellFormed` obligation. -/
+structure Hash160 where
+  bytes : ByteArray
+  deriving Repr
+
+namespace PubKey
+
+def ofBytes (bytes : ByteArray) : PubKey := ⟨bytes⟩
+def size (key : PubKey) : Nat := key.bytes.size
+def data (key : PubKey) : Array UInt8 := key.bytes.data
+
+instance : Coe PubKey ByteArray := ⟨PubKey.bytes⟩
+
+end PubKey
+
+namespace Hash256
+
+def ofBytes (bytes : ByteArray) : Hash256 := ⟨bytes⟩
+def size (hash : Hash256) : Nat := hash.bytes.size
+def data (hash : Hash256) : Array UInt8 := hash.bytes.data
+
+instance : Coe Hash256 ByteArray := ⟨Hash256.bytes⟩
+
+end Hash256
+
+namespace Hash160
+
+def ofBytes (bytes : ByteArray) : Hash160 := ⟨bytes⟩
+def size (hash : Hash160) : Nat := hash.bytes.size
+def data (hash : Hash160) : Array UInt8 := hash.bytes.data
+
+instance : Coe Hash160 ByteArray := ⟨Hash160.bytes⟩
+
+end Hash160
 
 /-- Core Miniscript fragment AST.
 
@@ -51,10 +91,6 @@ inductive CoreFragment where
   | multi : Nat → List PubKey → CoreFragment           -- OP_CHECKMULTISIG (legacy)
   | multi_a : Nat → List PubKey → CoreFragment         -- OP_CHECKSIGADD based (tapscript)
   deriving Repr
-
-/-- Legacy alias for older code; new definitions should name `CoreFragment`
-    directly so the AST boundary stays explicit. -/
-abbrev Fragment := CoreFragment
 
 /-- BIP 379 surface Miniscript AST.
 

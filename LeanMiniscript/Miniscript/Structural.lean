@@ -193,7 +193,7 @@ theorem compileWithKeyHash_balancedControlFlow
 /-- The model's abstract-HASH160 compiler always emits balanced control flow. -/
 theorem compile_balancedControlFlow (fragment : CoreFragment) :
     BalancedControlFlow (compile fragment) :=
-  compileWithKeyHash_balancedControlFlow hash160 fragment
+  compileWithKeyHash_balancedControlFlow modelKeyHash fragment
 
 /-- Surface compilation emits balanced control flow after desugaring. -/
 theorem compileSurfaceWithKeyHash_balancedControlFlow
@@ -204,22 +204,6 @@ theorem compileSurfaceWithKeyHash_balancedControlFlow
 /-- The model's surface compiler emits balanced control flow. -/
 theorem compileSurface_balancedControlFlow (fragment : SurfaceFragment) :
     BalancedControlFlow (compileSurface fragment) :=
-  compileSurfaceWithKeyHash_balancedControlFlow hash160 fragment
-
-/-- Compiler output uses only the closed opcode universe represented by
-`Opcode`. This is a type-level closure result, independent of fragment shape. -/
-theorem compileWithKeyHash_usesOnlyModeledOpcodes
-    (keyHash : PubKey → Hash160) (fragment : CoreFragment) :
-    UsesOnlyModeledOpcodes (compileWithKeyHash keyHash fragment) :=
-  usesOnlyModeledOpcodes _
-
-theorem compile_usesOnlyModeledOpcodes (fragment : CoreFragment) :
-    UsesOnlyModeledOpcodes (compile fragment) :=
-  usesOnlyModeledOpcodes _
-
-/-- Surface compiler output has the same type-level opcode closure. -/
-theorem compileSurface_usesOnlyModeledOpcodes (fragment : SurfaceFragment) :
-    UsesOnlyModeledOpcodes (compileSurface fragment) :=
-  usesOnlyModeledOpcodes _
+  compileSurfaceWithKeyHash_balancedControlFlow modelKeyHash fragment
 
 end LeanMiniscript.Miniscript

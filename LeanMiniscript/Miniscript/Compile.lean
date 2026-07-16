@@ -111,17 +111,21 @@ def compileThreshTailWithKeyHash
         compileThreshTailWithKeyHash keyHash fragments
 end
 
+/-- Abstract key-HASH160 boundary used by the formal compiler. -/
+def modelKeyHash (key : PubKey) : Hash160 :=
+  Hash160.ofBytes (hash160 key.bytes)
+
 /-- Formal compiler instantiated with the model's abstract HASH160 operation. -/
 def compile : CoreFragment → Script :=
-  compileWithKeyHash hash160
+  compileWithKeyHash modelKeyHash
 
 /-- Compile threshold children with the model's abstract HASH160 operation. -/
 def compileThresh : List CoreFragment → Script :=
-  compileThreshWithKeyHash hash160
+  compileThreshWithKeyHash modelKeyHash
 
 /-- Compile threshold tails with the model's abstract HASH160 operation. -/
 def compileThreshTail : List CoreFragment → Script :=
-  compileThreshTailWithKeyHash hash160
+  compileThreshTailWithKeyHash modelKeyHash
 
 /-- Compile surface Miniscript with an explicit public-key HASH160 resolver. -/
 def compileSurfaceWithKeyHash
@@ -130,16 +134,7 @@ def compileSurfaceWithKeyHash
 
 /-- Compile surface Miniscript by first lowering syntactic sugar to core. -/
 def compileSurface (fragment : SurfaceFragment) : Script :=
-  compileSurfaceWithKeyHash hash160 fragment
-
-/-- Compile a Policy to a core Miniscript AST fragment.
-    Policy lowering is a later phase: it should target `CoreFragment` after the
-    AST, typing, and compilation layers are fixed. -/
-def compilePolicy : Policy → CoreFragment
-  -- TODO(policy): This is significantly more complex than fragment compilation.
-  -- It involves an optimization search over possible Miniscript encodings.
-  -- For now, a naive (non-optimizing) translation:
-  | _ => .pk_k ByteArray.empty  -- Placeholder
+  compileSurfaceWithKeyHash modelKeyHash fragment
 
 -- Raw compiler injectivity is intentionally not a target: compilation erases
 -- AST grouping, so distinct fragments can produce the same Script.
