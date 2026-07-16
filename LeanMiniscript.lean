@@ -1,4 +1,6 @@
 import LeanMiniscript.Script.Syntax
+import LeanMiniscript.Script.Assembly
+import LeanMiniscript.Script.ControlFlow
 import LeanMiniscript.Script.State
 import LeanMiniscript.Script.Serialization
 import LeanMiniscript.Script.BigStep
@@ -11,6 +13,10 @@ import LeanMiniscript.Miniscript.Validation
 import LeanMiniscript.Miniscript.Metrics
 import LeanMiniscript.Miniscript.Types
 import LeanMiniscript.Miniscript.Compile
+import LeanMiniscript.Miniscript.CompileConcrete
+import LeanMiniscript.Miniscript.Conformance
+import LeanMiniscript.Miniscript.Structural
+import LeanMiniscript.Miniscript.CompileExamples
 import LeanMiniscript.Miniscript.Satisfaction
 import LeanMiniscript.Miniscript.Soundness
 import LeanMiniscript.Properties.ResourceBounds

@@ -8,8 +8,16 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
 
 ## Current status
 
-- Core syntax, typing, and compilation cover every current `CoreFragment`.
-- Surface syntax and policy lowering are partial.
+- Core syntax, typing, and compilation cover every current `CoreFragment`;
+  compilation also has constructor-complete assembly/byte fixtures and a
+  general relational conformance theorem.
+- Surface compilation covers every current `SurfaceFragment` constructor via
+  explicit desugaring; policy lowering remains a placeholder.
+- Compiler output is proved to use the model's closed opcode universe and to
+  have balanced conditional control flow.
+- Executable `pk_h`/`pkh` compilation uses the commit-pinned, pure Lean
+  [`lean-hash160`](https://github.com/febyeji/lean-hash160) package while the
+  general formal semantics retain an abstract hash boundary.
 - Basic metrics and resource accounting are implemented, but not proved.
 - Partial big-step semantics and a few soundness lemmas are implemented.
 - General soundness, satisfaction, non-malleability, small-step semantics, and
