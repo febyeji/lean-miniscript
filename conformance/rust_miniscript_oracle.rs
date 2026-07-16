@@ -4,6 +4,7 @@ use miniscript::{Miniscript, Segwitv0, Tap};
 
 const KEY_A: &str = "02d7924d4f7d43ea965a465ae3095ff41131e5946f3c85f79e44adbcf8e27e080e";
 const KEY_B: &str = "03b506a1dbe57b4bf48c95e0c7d417b87dd3b4349d290d2e7e9ba72c912652d80a";
+const KEY_C: &str = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
 const HASH_256: &str = "4ae81572f06e1b88fd5ced7a1a000945432e83e1551e6f721ee9c00b8cc33260";
 const HASH_160: &str = "4ae81572f06e1b88fd5ced7a1a00094543a00069";
 
@@ -49,7 +50,7 @@ fn main() {
         ("or_i", format!("or_i(pk({KEY_A}),pk({KEY_B}))")),
         (
             "andor",
-            format!("andor(pk({KEY_A}),pk({KEY_B}),pk({KEY_A}))"),
+            format!("andor(pk({KEY_A}),pk({KEY_B}),pk({KEY_C}))"),
         ),
         ("a", format!("a:pk({KEY_A})")),
         ("s", format!("s:pk({KEY_A})")),
@@ -59,7 +60,7 @@ fn main() {
         ("j", format!("j:pk({KEY_A})")),
         ("n", format!("n:pk({KEY_A})")),
         ("thresh", format!("thresh(2,pk({KEY_A}),s:pk({KEY_B}))")),
-        ("multi", format!("multi(2,{KEY_A},{KEY_B})")),
+        ("multi", format!("multi(2,{KEY_A},{KEY_B},{KEY_C})")),
         ("surface_core", "1".to_owned()),
         ("surface_pk", format!("pk({KEY_A})")),
         ("surface_pkh", format!("pkh({KEY_A})")),
@@ -75,5 +76,9 @@ fn main() {
 
     let tap_key_a = &KEY_A[2..];
     let tap_key_b = &KEY_B[2..];
-    dump_tap("multi_a", &format!("multi_a(2,{tap_key_a},{tap_key_b})"));
+    let tap_key_c = &KEY_C[2..];
+    dump_tap(
+        "multi_a",
+        &format!("multi_a(2,{tap_key_a},{tap_key_b},{tap_key_c})"),
+    );
 }

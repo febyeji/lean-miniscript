@@ -13,6 +13,30 @@ specialized VERIFY-opcode substitutions are permitted alternative encodings
 but are not produced by this model.
 -/
 
+/-- Independent relational specification for pushing a list of public keys. -/
+inductive Bip379KeyPushCompilation : List PubKey → Script → Prop where
+  | nil : Bip379KeyPushCompilation [] []
+  | cons {key : PubKey} {keys : List PubKey} {tailScript : Script}
+      (tailConforms : Bip379KeyPushCompilation keys tailScript) :
+      Bip379KeyPushCompilation (key :: keys) (.pushData key :: tailScript)
+
+/-- Independent relational specification for the `CHECKSIGADD` tail. -/
+inductive Bip379CheckSigAddTailCompilation : List PubKey → Script → Prop where
+  | nil : Bip379CheckSigAddTailCompilation [] []
+  | cons {key : PubKey} {keys : List PubKey} {tailScript : Script}
+      (tailConforms : Bip379CheckSigAddTailCompilation keys tailScript) :
+      Bip379CheckSigAddTailCompilation (key :: keys)
+        ([.pushData key, .op .OP_CHECKSIGADD] ++ tailScript)
+
+/-- Independent relational specification for the first-key-special
+`CHECKSIG`/`CHECKSIGADD` sequence used by `multi_a`. -/
+inductive Bip379CheckSigAddCompilation : List PubKey → Script → Prop where
+  | nil : Bip379CheckSigAddCompilation [] [.pushNum 0]
+  | cons {key : PubKey} {keys : List PubKey} {tailScript : Script}
+      (tailConforms : Bip379CheckSigAddTailCompilation keys tailScript) :
+      Bip379CheckSigAddCompilation (key :: keys)
+        ([.pushData key, .op .OP_CHECKSIG] ++ tailScript)
+
 mutual
 
 /-- Relational form of the BIP 379 translation schemes selected by this model. -/
@@ -109,13 +133,15 @@ inductive Bip379Compilation
       (conforms : Bip379ThreshCompilation keyHash fragments script) :
       Bip379Compilation keyHash (.thresh k fragments)
         (script ++ [.pushNum k, .op .OP_EQUAL])
-  | multi (k : Nat) (keys : List PubKey) :
+  | multi (k : Nat) {keys : List PubKey} {keyScript : Script}
+      (keysConform : Bip379KeyPushCompilation keys keyScript) :
       Bip379Compilation keyHash (.multi k keys)
-        ([.pushNum k] ++ compileKeyPushes keys ++
+        ([.pushNum k] ++ keyScript ++
           [.pushNum keys.length, .op .OP_CHECKMULTISIG])
-  | multiA (k : Nat) (keys : List PubKey) :
+  | multiA (k : Nat) {keys : List PubKey} {keyScript : Script}
+      (keysConform : Bip379CheckSigAddCompilation keys keyScript) :
       Bip379Compilation keyHash (.multi_a k keys)
-        (compileCheckSigAdd keys ++ [.pushNum k, .op .OP_NUMEQUAL])
+        (keyScript ++ [.pushNum k, .op .OP_NUMEQUAL])
 
 /-- Relational form of the first-child-special threshold translation. -/
 inductive Bip379ThreshCompilation
@@ -139,6 +165,27 @@ inductive Bip379ThreshTailCompilation
         (script ++ [.op .OP_ADD] ++ tailScript)
 
 end
+
+/-- The executable key-push helper implements the independent list relation. -/
+theorem compileKeyPushes_conforms (keys : List PubKey) :
+    Bip379KeyPushCompilation keys (compileKeyPushes keys) := by
+  induction keys with
+  | nil => exact .nil
+  | cons key keys keysConform => exact .cons keysConform
+
+/-- The executable `CHECKSIGADD` tail implements its independent relation. -/
+theorem compileCheckSigAddTail_conforms (keys : List PubKey) :
+    Bip379CheckSigAddTailCompilation keys (compileCheckSigAddTail keys) := by
+  induction keys with
+  | nil => exact .nil
+  | cons key keys keysConform => exact .cons keysConform
+
+/-- The executable first-key-special sequence implements its independent relation. -/
+theorem compileCheckSigAdd_conforms (keys : List PubKey) :
+    Bip379CheckSigAddCompilation keys (compileCheckSigAdd keys) := by
+  cases keys with
+  | nil => exact .nil
+  | cons key keys => exact .cons (compileCheckSigAddTail_conforms keys)
 
 mutual
 
@@ -194,8 +241,8 @@ theorem compileWithKeyHash_conforms
   | n x => exact .n (compileWithKeyHash_conforms keyHash x)
   | thresh k fragments =>
       exact .thresh (compileThreshWithKeyHash_conforms keyHash fragments)
-  | multi k keys => exact .multi k keys
-  | multi_a k keys => exact .multiA k keys
+  | multi k keys => exact .multi k (compileKeyPushes_conforms keys)
+  | multi_a k keys => exact .multiA k (compileCheckSigAdd_conforms keys)
 
 theorem compileThreshWithKeyHash_conforms
     (keyHash : PubKey → Hash160) (fragments : List CoreFragment) :
@@ -221,6 +268,34 @@ theorem compileThreshTailWithKeyHash_conforms
 
 end
 
+/-- The independent key-push relation uniquely determines the executable helper. -/
+theorem Bip379KeyPushCompilation.eq_compileKeyPushes
+    {keys : List PubKey} {script : Script}
+    (conforms : Bip379KeyPushCompilation keys script) :
+    script = compileKeyPushes keys := by
+  induction conforms with
+  | nil => rfl
+  | cons tailConforms tailEq => simp [compileKeyPushes, tailEq]
+
+/-- The independent `CHECKSIGADD` tail relation uniquely determines its helper. -/
+theorem Bip379CheckSigAddTailCompilation.eq_compileCheckSigAddTail
+    {keys : List PubKey} {script : Script}
+    (conforms : Bip379CheckSigAddTailCompilation keys script) :
+    script = compileCheckSigAddTail keys := by
+  induction conforms with
+  | nil => rfl
+  | cons tailConforms tailEq => simp [compileCheckSigAddTail, tailEq]
+
+/-- The independent first-key-special relation uniquely determines its helper. -/
+theorem Bip379CheckSigAddCompilation.eq_compileCheckSigAdd
+    {keys : List PubKey} {script : Script}
+    (conforms : Bip379CheckSigAddCompilation keys script) :
+    script = compileCheckSigAdd keys := by
+  cases conforms with
+  | nil => rfl
+  | cons tailConforms =>
+      simp [compileCheckSigAdd, tailConforms.eq_compileCheckSigAddTail]
+
 mutual
 
 theorem Bip379Compilation.eq_compileWithKeyHash
@@ -238,8 +313,10 @@ theorem Bip379Compilation.eq_compileWithKeyHash
   | hash256 => rfl
   | ripemd160 => rfl
   | hash160 => rfl
-  | multi => rfl
-  | multiA => rfl
+  | multi k keysConform =>
+      simp [compileWithKeyHash, keysConform.eq_compileKeyPushes]
+  | multiA k keysConform =>
+      simp [compileWithKeyHash, keysConform.eq_compileCheckSigAdd]
   | andV xConforms yConforms =>
       simp [compileWithKeyHash, xConforms.eq_compileWithKeyHash,
         yConforms.eq_compileWithKeyHash]

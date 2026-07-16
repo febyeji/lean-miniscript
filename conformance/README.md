@@ -53,5 +53,9 @@ currently emits the equally valid general `CHECKSIG VERIFY` scheme. Choosing a
 fragment with no specialized VERIFY opcode keeps the byte comparison exact and
 does not hide an oracle difference.
 
+The ternary `andor` fixture uses three distinct keys so operand substitution or
+ordering errors remain observable. The `multi` and `multi_a` fixtures use three
+keys to exercise recursive key-list compilation beyond the first tail element.
+
 `multi` is generated under the Segwit v0 context. `multi_a` is generated under
 the Tapscript context with x-only keys.

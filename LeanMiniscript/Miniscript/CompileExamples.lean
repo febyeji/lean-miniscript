@@ -51,6 +51,12 @@ def oracleKeyB : PubKey :=
     0xe0, 0xc7, 0xd4, 0x17, 0xb8, 0x7d, 0xd3, 0xb4, 0x34, 0x9d, 0x29,
     0x0d, 0x2e, 0x7e, 0x9b, 0xa7, 0x2c, 0x91, 0x26, 0x52, 0xd8, 0x0a]
 
+def oracleKeyC : PubKey :=
+  rawBytes #[
+    0x02, 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0,
+    0x62, 0x95, 0xce, 0x87, 0x0b, 0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d,
+    0xce, 0x28, 0xd9, 0x59, 0xf2, 0x81, 0x5b, 0x16, 0xf8, 0x17, 0x98]
+
 def oracleXOnlyKeyA : PubKey :=
   rawBytes #[
     0xd7, 0x92, 0x4d, 0x4f, 0x7d, 0x43, 0xea, 0x96, 0x5a, 0x46, 0x5a,
@@ -62,6 +68,12 @@ def oracleXOnlyKeyB : PubKey :=
     0xb5, 0x06, 0xa1, 0xdb, 0xe5, 0x7b, 0x4b, 0xf4, 0x8c, 0x95, 0xe0,
     0xc7, 0xd4, 0x17, 0xb8, 0x7d, 0xd3, 0xb4, 0x34, 0x9d, 0x29, 0x0d,
     0x2e, 0x7e, 0x9b, 0xa7, 0x2c, 0x91, 0x26, 0x52, 0xd8, 0x0a]
+
+def oracleXOnlyKeyC : PubKey :=
+  rawBytes #[
+    0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0, 0x62,
+    0x95, 0xce, 0x87, 0x0b, 0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce,
+    0x28, 0xd9, 0x59, 0xf2, 0x81, 0x5b, 0x16, 0xf8, 0x17, 0x98]
 
 def oracleHash256 : Hash256 :=
   rawBytes #[
@@ -87,6 +99,7 @@ example : ((LeanHash160.hash160 oracleKeyA).data == oracleKeyAHash160.data) = tr
 
 private def pkA : CoreFragment := .c (.pk_k oracleKeyA)
 private def pkB : CoreFragment := .c (.pk_k oracleKeyB)
+private def pkC : CoreFragment := .c (.pk_k oracleKeyC)
 private def verifiedOlder : CoreFragment := .v (.older 42)
 
 private def pkABytes : ByteArray :=
@@ -94,6 +107,9 @@ private def pkABytes : ByteArray :=
 
 private def pkBBytes : ByteArray :=
   joinBytes [directPush oracleKeyB, rawBytes #[0xac]]
+
+private def pkCBytes : ByteArray :=
+  joinBytes [directPush oracleKeyC, rawBytes #[0xac]]
 
 private def verifiedOlderBytes : ByteArray := rawBytes #[0x01, 0x2a, 0xb2, 0x69]
 
@@ -280,13 +296,13 @@ example : scriptBytesMatch (compile (.or_i pkA pkB))
       rawBytes #[0x68]]) = true := by
   native_decide
 
-example : compile (.andor pkA pkB pkA) =
+example : compile (.andor pkA pkB pkC) =
     [.pushData oracleKeyA, .op .OP_CHECKSIG, .op .OP_NOTIF,
-      .pushData oracleKeyA, .op .OP_CHECKSIG, .op .OP_ELSE,
+      .pushData oracleKeyC, .op .OP_CHECKSIG, .op .OP_ELSE,
       .pushData oracleKeyB, .op .OP_CHECKSIG, .op .OP_ENDIF] := by
   rfl
-example : scriptBytesMatch (compile (.andor pkA pkB pkA))
-    (joinBytes [pkABytes, rawBytes #[0x64], pkABytes, rawBytes #[0x67],
+example : scriptBytesMatch (compile (.andor pkA pkB pkC))
+    (joinBytes [pkABytes, rawBytes #[0x64], pkCBytes, rawBytes #[0x67],
       pkBBytes, rawBytes #[0x68]]) = true := by
   native_decide
 
@@ -354,23 +370,26 @@ example : scriptBytesMatch (compile (.thresh 2 [pkA, .s pkB]))
       rawBytes #[0x93, 0x52, 0x87]]) = true := by
   native_decide
 
-example : compile (.multi 2 [oracleKeyA, oracleKeyB]) =
-    [.pushNum 2, .pushData oracleKeyA, .pushData oracleKeyB,
-      .pushNum 2, .op .OP_CHECKMULTISIG] := by
+example : compile (.multi 2 [oracleKeyA, oracleKeyB, oracleKeyC]) =
+    [.pushNum 2, .pushData oracleKeyA, .pushData oracleKeyB, .pushData oracleKeyC,
+      .pushNum 3, .op .OP_CHECKMULTISIG] := by
   rfl
-example : scriptBytesMatch (compile (.multi 2 [oracleKeyA, oracleKeyB]))
+example : scriptBytesMatch (compile (.multi 2 [oracleKeyA, oracleKeyB, oracleKeyC]))
     (joinBytes [rawBytes #[0x52], directPush oracleKeyA, directPush oracleKeyB,
-      rawBytes #[0x52, 0xae]]) = true := by
+      directPush oracleKeyC, rawBytes #[0x53, 0xae]]) = true := by
   native_decide
 
-example : compile (.multi_a 2 [oracleXOnlyKeyA, oracleXOnlyKeyB]) =
+example : compile (.multi_a 2 [oracleXOnlyKeyA, oracleXOnlyKeyB, oracleXOnlyKeyC]) =
     [.pushData oracleXOnlyKeyA, .op .OP_CHECKSIG,
       .pushData oracleXOnlyKeyB, .op .OP_CHECKSIGADD,
+      .pushData oracleXOnlyKeyC, .op .OP_CHECKSIGADD,
       .pushNum 2, .op .OP_NUMEQUAL] := by
   rfl
-example : scriptBytesMatch (compile (.multi_a 2 [oracleXOnlyKeyA, oracleXOnlyKeyB]))
+example : scriptBytesMatch
+    (compile (.multi_a 2 [oracleXOnlyKeyA, oracleXOnlyKeyB, oracleXOnlyKeyC]))
     (joinBytes [directPush oracleXOnlyKeyA, rawBytes #[0xac],
-      directPush oracleXOnlyKeyB, rawBytes #[0xba, 0x52, 0x9c]]) = true := by
+      directPush oracleXOnlyKeyB, rawBytes #[0xba], directPush oracleXOnlyKeyC,
+      rawBytes #[0xba, 0x52, 0x9c]]) = true := by
   native_decide
 
 /-! ## Surface fixtures -/
@@ -451,11 +470,17 @@ private def keyAHex : String :=
 private def keyBHex : String :=
   "03b506a1dbe57b4bf48c95e0c7d417b87dd3b4349d290d2e7e9ba72c912652d80a"
 
+private def keyCHex : String :=
+  "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+
 private def xOnlyKeyAHex : String :=
   "d7924d4f7d43ea965a465ae3095ff41131e5946f3c85f79e44adbcf8e27e080e"
 
 private def xOnlyKeyBHex : String :=
   "b506a1dbe57b4bf48c95e0c7d417b87dd3b4349d290d2e7e9ba72c912652d80a"
+
+private def xOnlyKeyCHex : String :=
+  "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 
 private def hash256Hex : String :=
   "4ae81572f06e1b88fd5ced7a1a000945432e83e1551e6f721ee9c00b8cc33260"
@@ -469,6 +494,7 @@ private def keyAHash160Hex : String :=
 private def pushed (hex : String) : String := "<" ++ hex ++ ">"
 private def pkAAssembly : String := pushed keyAHex ++ " CHECKSIG"
 private def pkBAssembly : String := pushed keyBHex ++ " CHECKSIG"
+private def pkCAssembly : String := pushed keyCHex ++ " CHECKSIG"
 private def verifiedOlderAssembly : String := "42 CHECKSEQUENCEVERIFY VERIFY"
 
 private def hashLockBytes (opcode : UInt8) (hash : ByteArray) : ByteArray :=
@@ -541,10 +567,10 @@ def coreConformanceFixtures : List CoreConformanceFixture :=
       expectedAssembly := "IF " ++ pkAAssembly ++ " ELSE " ++ pkBAssembly ++ " ENDIF",
       expectedBytes := joinBytes [rawBytes #[0x63], pkABytes, rawBytes #[0x67],
         pkBBytes, rawBytes #[0x68]] },
-    { tag := .andor, fragment := .andor pkA pkB pkA,
-      expectedAssembly := pkAAssembly ++ " NOTIF " ++ pkAAssembly ++ " ELSE " ++
+    { tag := .andor, fragment := .andor pkA pkB pkC,
+      expectedAssembly := pkAAssembly ++ " NOTIF " ++ pkCAssembly ++ " ELSE " ++
         pkBAssembly ++ " ENDIF",
-      expectedBytes := joinBytes [pkABytes, rawBytes #[0x64], pkABytes,
+      expectedBytes := joinBytes [pkABytes, rawBytes #[0x64], pkCBytes,
         rawBytes #[0x67], pkBBytes, rawBytes #[0x68]] },
     { tag := .a, fragment := .a pkA,
       expectedAssembly := "TOALTSTACK " ++ pkAAssembly ++ " FROMALTSTACK",
@@ -571,16 +597,18 @@ def coreConformanceFixtures : List CoreConformanceFixture :=
       expectedAssembly := pkAAssembly ++ " SWAP " ++ pkBAssembly ++ " ADD 2 EQUAL",
       expectedBytes := joinBytes [pkABytes, rawBytes #[0x7c], pkBBytes,
         rawBytes #[0x93, 0x52, 0x87]] },
-    { tag := .multi, fragment := .multi 2 [oracleKeyA, oracleKeyB],
+    { tag := .multi, fragment := .multi 2 [oracleKeyA, oracleKeyB, oracleKeyC],
       expectedAssembly := "2 " ++ pushed keyAHex ++ " " ++ pushed keyBHex ++
-        " 2 CHECKMULTISIG",
+        " " ++ pushed keyCHex ++ " 3 CHECKMULTISIG",
       expectedBytes := joinBytes [rawBytes #[0x52], directPush oracleKeyA,
-        directPush oracleKeyB, rawBytes #[0x52, 0xae]] },
-    { tag := .multiA, fragment := .multi_a 2 [oracleXOnlyKeyA, oracleXOnlyKeyB],
+        directPush oracleKeyB, directPush oracleKeyC, rawBytes #[0x53, 0xae]] },
+    { tag := .multiA,
+      fragment := .multi_a 2 [oracleXOnlyKeyA, oracleXOnlyKeyB, oracleXOnlyKeyC],
       expectedAssembly := pushed xOnlyKeyAHex ++ " CHECKSIG " ++ pushed xOnlyKeyBHex ++
-        " CHECKSIGADD 2 NUMEQUAL",
+        " CHECKSIGADD " ++ pushed xOnlyKeyCHex ++ " CHECKSIGADD 2 NUMEQUAL",
       expectedBytes := joinBytes [directPush oracleXOnlyKeyA, rawBytes #[0xac],
-        directPush oracleXOnlyKeyB, rawBytes #[0xba, 0x52, 0x9c]] }
+        directPush oracleXOnlyKeyB, rawBytes #[0xba], directPush oracleXOnlyKeyC,
+        rawBytes #[0xba, 0x52, 0x9c]] }
   ]
 
 def coveredCoreConstructors : List CoreConstructorTag :=

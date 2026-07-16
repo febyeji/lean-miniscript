@@ -12,26 +12,31 @@ These proofs derive opcode closure and balanced conditional control flow for
 every core fragment, not just the finite conformance fixture matrix.
 -/
 
-private theorem compileKeyPushes_allNonConditional (keys : List PubKey) :
-    AllNonConditional (compileKeyPushes keys) := by
-  induction keys with
+private theorem keyPushCompilation_allNonConditional
+    {keys : List PubKey} {script : Script}
+    (conforms : Bip379KeyPushCompilation keys script) :
+    AllNonConditional script := by
+  induction conforms with
   | nil => trivial
-  | cons key keys keysAll =>
-      exact ⟨by trivial, keysAll⟩
+  | cons tailConforms tailAll => exact ⟨by trivial, tailAll⟩
 
-private theorem compileCheckSigAddTail_allNonConditional (keys : List PubKey) :
-    AllNonConditional (compileCheckSigAddTail keys) := by
-  induction keys with
+private theorem checkSigAddTailCompilation_allNonConditional
+    {keys : List PubKey} {script : Script}
+    (conforms : Bip379CheckSigAddTailCompilation keys script) :
+    AllNonConditional script := by
+  induction conforms with
   | nil => trivial
-  | cons key keys keysAll =>
-      exact ⟨by trivial, by trivial, keysAll⟩
+  | cons tailConforms tailAll => exact ⟨by trivial, by trivial, tailAll⟩
 
-private theorem compileCheckSigAdd_allNonConditional (keys : List PubKey) :
-    AllNonConditional (compileCheckSigAdd keys) := by
-  cases keys with
+private theorem checkSigAddCompilation_allNonConditional
+    {keys : List PubKey} {script : Script}
+    (conforms : Bip379CheckSigAddCompilation keys script) :
+    AllNonConditional script := by
+  cases conforms with
   | nil => exact ⟨by trivial, trivial⟩
-  | cons key keys =>
-      exact ⟨by trivial, by trivial, compileCheckSigAddTail_allNonConditional keys⟩
+  | cons tailConforms =>
+      exact ⟨by trivial, by trivial,
+        checkSigAddTailCompilation_allNonConditional tailConforms⟩
 
 mutual
 
@@ -133,19 +138,19 @@ theorem Bip379Compilation.balancedControlFlow
         simp [AllNonConditional, NonConditional]
       exact BalancedControlFlow.append
         (Bip379ThreshCompilation.balancedControlFlow conforms) suffixBalanced
-  | multi k keys =>
+  | @multi k keys keyScript keysConform =>
       have countBalanced : BalancedControlFlow [.pushNum k] := .atom (by trivial)
-      have keysBalanced : BalancedControlFlow (compileKeyPushes keys) :=
-        .ofAllNonConditional (compileKeyPushes_allNonConditional keys)
+      have keysBalanced : BalancedControlFlow keyScript :=
+        .ofAllNonConditional (keyPushCompilation_allNonConditional keysConform)
       have suffixBalanced : BalancedControlFlow
           [.pushNum keys.length, .op .OP_CHECKMULTISIG] := by
         apply BalancedControlFlow.ofAllNonConditional
         simp [AllNonConditional, NonConditional]
       simpa [List.append_assoc] using BalancedControlFlow.append countBalanced
         (BalancedControlFlow.append keysBalanced suffixBalanced)
-  | multiA k keys =>
-      have keysBalanced : BalancedControlFlow (compileCheckSigAdd keys) :=
-        .ofAllNonConditional (compileCheckSigAdd_allNonConditional keys)
+  | @multiA k keys keyScript keysConform =>
+      have keysBalanced : BalancedControlFlow keyScript :=
+        .ofAllNonConditional (checkSigAddCompilation_allNonConditional keysConform)
       have suffixBalanced : BalancedControlFlow [.pushNum k, .op .OP_NUMEQUAL] := by
         apply BalancedControlFlow.ofAllNonConditional
         simp [AllNonConditional, NonConditional]
