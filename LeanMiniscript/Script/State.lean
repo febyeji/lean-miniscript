@@ -63,7 +63,7 @@ def castToBool (b : StackElement) : Bool :=
   else
     let lastIdx := b.size - 1
     -- Negative zero: only last byte is 0x80, rest are 0x00
-    b.data.toList.enum.any fun ⟨i, byte⟩ =>
+    b.data.toList.zipIdx.any fun ⟨byte, i⟩ =>
       if i == lastIdx then byte != 0x00 && byte != 0x80
       else byte != 0x00
 

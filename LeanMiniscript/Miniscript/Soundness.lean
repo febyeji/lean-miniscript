@@ -26,7 +26,7 @@ theorem pk_k_soundness (key : PubKey) :
     KTypeGuarantee (.pk_k key) := by
   intro stack altStack flags ctx
   exact ⟨key, by
-    simpa [compile] using Eval.pushData key [] stack altStack flags ctx _
+    simpa [compile, compileWithKeyHash] using Eval.pushData key [] stack altStack flags ctx _
       (Eval.empty (key :: stack) altStack flags ctx)⟩
 
 /-- What a B-type fragment with 'o' modifier guarantees:
@@ -49,7 +49,7 @@ theorem c_pk_k_soundness (key : PubKey) :
   intro wit stack altStack flags ctx
   by_cases h : checkSig wit key ctx.sigHash = true
   · exact ⟨trueElement,
-      by simpa [compile] using
+      by simpa [compile, compileWithKeyHash] using
       (Eval.seq [.pushData key] [.op .OP_CHECKSIG] (wit :: stack)
         (key :: wit :: stack) altStack altStack flags ctx _
         (Eval.pushData key [] (wit :: stack) altStack flags ctx _
@@ -58,7 +58,7 @@ theorem c_pk_k_soundness (key : PubKey) :
           h (Eval.empty (trueElement :: stack) altStack flags ctx)))⟩
   · simp at h
     exact ⟨falseElement,
-      by simpa [compile] using
+      by simpa [compile, compileWithKeyHash] using
       (Eval.seq [.pushData key] [.op .OP_CHECKSIG] (wit :: stack)
         (key :: wit :: stack) altStack altStack flags ctx _
         (Eval.pushData key [] (wit :: stack) altStack flags ctx _
@@ -85,7 +85,7 @@ theorem v_c_pk_k_soundness (key : PubKey) :
   intro wit stack altStack flags ctx
   by_cases h : checkSig wit key ctx.sigHash = true
   · left
-    simpa [compile] using
+    simpa [compile, compileWithKeyHash] using
       (Eval.seq [.pushData key, .op .OP_CHECKSIG] [.op .OP_VERIFY]
         (wit :: stack) (trueElement :: stack) altStack altStack flags ctx _
         (Eval.seq [.pushData key] [.op .OP_CHECKSIG]
@@ -99,7 +99,7 @@ theorem v_c_pk_k_soundness (key : PubKey) :
   · right
     simp at h
     exact ⟨"VERIFY failed",
-      by simpa [compile] using
+      by simpa [compile, compileWithKeyHash] using
       (Eval.seq [.pushData key, .op .OP_CHECKSIG] [.op .OP_VERIFY]
         (wit :: stack) (falseElement :: stack) altStack altStack flags ctx _
         (Eval.seq [.pushData key] [.op .OP_CHECKSIG]
@@ -154,7 +154,7 @@ theorem a_c_pk_k_soundness (key : PubKey) :
   intro saved wit stack altStack flags ctx
   by_cases h : checkSig wit key ctx.sigHash = true
   · refine ⟨trueElement, ?_⟩
-    simpa [compile] using
+    simpa [compile, compileWithKeyHash] using
     (Eval.toAltStack saved (wit :: stack) altStack
       [.pushData key, .op .OP_CHECKSIG, .op .OP_FROMALTSTACK] flags ctx _
       (Eval.pushData key [.op .OP_CHECKSIG, .op .OP_FROMALTSTACK]
@@ -166,7 +166,7 @@ theorem a_c_pk_k_soundness (key : PubKey) :
             (Eval.empty (saved :: trueElement :: stack) altStack flags ctx)))))
   · simp at h
     refine ⟨falseElement, ?_⟩
-    simpa [compile] using
+    simpa [compile, compileWithKeyHash] using
     (Eval.toAltStack saved (wit :: stack) altStack
       [.pushData key, .op .OP_CHECKSIG, .op .OP_FROMALTSTACK] flags ctx _
       (Eval.pushData key [.op .OP_CHECKSIG, .op .OP_FROMALTSTACK]
