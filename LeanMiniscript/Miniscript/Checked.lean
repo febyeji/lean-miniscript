@@ -1,5 +1,5 @@
-import LeanMiniscript.Miniscript.Validation
-import LeanMiniscript.Miniscript.Types
+import LeanMiniscript.Miniscript.ValidationDecidable
+import LeanMiniscript.Miniscript.TypeInference
 import LeanMiniscript.Miniscript.Compile
 
 namespace LeanMiniscript.Miniscript

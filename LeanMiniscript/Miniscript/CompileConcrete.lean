@@ -1,5 +1,5 @@
 import LeanHash160
-import LeanMiniscript.Miniscript.Checked
+import LeanMiniscript.Miniscript.Compile
 
 namespace LeanMiniscript.Miniscript
 
@@ -25,15 +25,5 @@ def compileConcrete (fragment : CoreFragment) : Script :=
 /-- Compile a surface fragment with Bitcoin's concrete HASH160 operation. -/
 def compileSurfaceConcrete (fragment : SurfaceFragment) : Script :=
   compileSurfaceWithKeyHash concreteKeyHash fragment
-
-/-- Compile a checked core fragment with Bitcoin's concrete HASH160. -/
-def compileConcreteChecked {ctx : ScriptContext}
-    (checked : CheckedFragment ctx) : Script :=
-  compileCheckedWithKeyHash concreteKeyHash checked
-
-/-- Compile a checked surface fragment with Bitcoin's concrete HASH160. -/
-def compileSurfaceConcreteChecked {ctx : ScriptContext}
-    (checked : CheckedSurfaceFragment ctx) : Script :=
-  compileCheckedSurfaceWithKeyHash concreteKeyHash checked
 
 end LeanMiniscript.Miniscript

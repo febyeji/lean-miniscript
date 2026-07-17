@@ -1,4 +1,4 @@
-import LeanMiniscript.Miniscript.Types
+import LeanMiniscript.Miniscript.TypeInference
 
 namespace LeanMiniscript.Miniscript
 

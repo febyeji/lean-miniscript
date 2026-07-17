@@ -7,12 +7,11 @@ import LeanMiniscript.Miniscript.KeyExpr
 import LeanMiniscript.Miniscript.Syntax
 import LeanMiniscript.Miniscript.Context
 import LeanMiniscript.Miniscript.Validation
+import LeanMiniscript.Miniscript.ValidationDecidable
 import LeanMiniscript.Miniscript.Metrics
 import LeanMiniscript.Miniscript.Types
-import LeanMiniscript.Miniscript.TypeInferenceProofs
+import LeanMiniscript.Miniscript.TypeInference
 import LeanMiniscript.Miniscript.Compile
 import LeanMiniscript.Miniscript.Checked
-import LeanMiniscript.Miniscript.Conformance
-import LeanMiniscript.Miniscript.Structural
 import LeanMiniscript.Miniscript.CompileConcrete
-import LeanMiniscript.Miniscript.CompileConcreteProofs
+import LeanMiniscript.Miniscript.CompileConcreteChecked
