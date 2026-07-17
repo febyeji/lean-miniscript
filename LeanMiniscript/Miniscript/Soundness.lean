@@ -26,8 +26,8 @@ theorem pk_k_soundness (key : PubKey) :
     KTypeGuarantee (.pk_k key) := by
   intro stack altStack flags ctx
   exact ⟨key, by
-    simpa [compile, compileWithKeyHash] using Eval.pushData key [] stack altStack flags ctx _
-      (Eval.empty (key :: stack) altStack flags ctx)⟩
+    simpa [compile, compileWithKeyHash] using
+      (Eval.pushDataNext (data := key) Eval.done)⟩
 
 /-- What a B-type fragment with 'o' modifier guarantees:
     Consumes exactly one witness element from the stack and pushes
@@ -50,21 +50,13 @@ theorem c_pk_k_soundness (key : PubKey) :
   by_cases h : checkSig wit key ctx.sigHash = true
   · exact ⟨trueElement,
       by simpa [compile, compileWithKeyHash] using
-      (Eval.seq [.pushData key] [.op .OP_CHECKSIG] (wit :: stack)
-        (key :: wit :: stack) altStack altStack flags ctx _
-        (Eval.pushData key [] (wit :: stack) altStack flags ctx _
-          (Eval.empty (key :: wit :: stack) altStack flags ctx))
-        (Eval.checksig_success key wit stack [] altStack flags ctx _
-          h (Eval.empty (trueElement :: stack) altStack flags ctx)))⟩
+      (Eval.pushDataNext (data := key)
+        (Eval.checksigTrue (pubkey := key) (sig := wit) h Eval.done))⟩
   · simp at h
     exact ⟨falseElement,
       by simpa [compile, compileWithKeyHash] using
-      (Eval.seq [.pushData key] [.op .OP_CHECKSIG] (wit :: stack)
-        (key :: wit :: stack) altStack altStack flags ctx _
-        (Eval.pushData key [] (wit :: stack) altStack flags ctx _
-          (Eval.empty (key :: wit :: stack) altStack flags ctx))
-        (Eval.checksig_failure key wit stack [] altStack flags ctx _
-          h (Eval.empty (falseElement :: stack) altStack flags ctx)))⟩
+      (Eval.pushDataNext (data := key)
+        (Eval.checksigFalse (pubkey := key) (sig := wit) h Eval.done))⟩
 
 /-- What a V-type fragment with 'o' modifier guarantees:
     Consumes one witness element. On success, the stack below is unchanged
@@ -73,7 +65,7 @@ theorem c_pk_k_soundness (key : PubKey) :
 def VTypeOGuarantee (m : CoreFragment) : Prop :=
   ∀ (wit : StackElement) (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext),
     Eval (compile m) (wit :: stack) altStack flags ctx (.success stack altStack) ∨
-    ∃ (msg : String), Eval (compile m) (wit :: stack) altStack flags ctx (.failure msg)
+    ∃ (err : ScriptError), Eval (compile m) (wit :: stack) altStack flags ctx (.failure err)
 
 /-- Soundness for v(c(pk_k(key))): wrapper composition produces V-type behavior.
 
@@ -86,30 +78,16 @@ theorem v_c_pk_k_soundness (key : PubKey) :
   by_cases h : checkSig wit key ctx.sigHash = true
   · left
     simpa [compile, compileWithKeyHash] using
-      (Eval.seq [.pushData key, .op .OP_CHECKSIG] [.op .OP_VERIFY]
-        (wit :: stack) (trueElement :: stack) altStack altStack flags ctx _
-        (Eval.seq [.pushData key] [.op .OP_CHECKSIG]
-          (wit :: stack) (key :: wit :: stack) altStack altStack flags ctx _
-          (Eval.pushData key [] (wit :: stack) altStack flags ctx _
-            (Eval.empty (key :: wit :: stack) altStack flags ctx))
-          (Eval.checksig_success key wit stack [] altStack flags ctx _
-            h (Eval.empty (trueElement :: stack) altStack flags ctx)))
-        (Eval.verify_success trueElement stack [] altStack flags ctx _
-          (by native_decide) (Eval.empty stack altStack flags ctx)))
+      (Eval.pushDataNext (data := key)
+        (Eval.checksigTrue (pubkey := key) (sig := wit) h
+          (Eval.verifyTrue (top := trueElement) (by native_decide) Eval.done)))
   · right
     simp at h
-    exact ⟨"VERIFY failed",
+    exact ⟨.verify,
       by simpa [compile, compileWithKeyHash] using
-      (Eval.seq [.pushData key, .op .OP_CHECKSIG] [.op .OP_VERIFY]
-        (wit :: stack) (falseElement :: stack) altStack altStack flags ctx _
-        (Eval.seq [.pushData key] [.op .OP_CHECKSIG]
-          (wit :: stack) (key :: wit :: stack) altStack altStack flags ctx _
-          (Eval.pushData key [] (wit :: stack) altStack flags ctx _
-            (Eval.empty (key :: wit :: stack) altStack flags ctx))
-          (Eval.checksig_failure key wit stack [] altStack flags ctx _
-            h (Eval.empty (falseElement :: stack) altStack flags ctx)))
-        (Eval.verify_failure falseElement stack [] altStack flags ctx
-          (by native_decide)))⟩
+      (Eval.pushDataNext (data := key)
+        (Eval.checksigFalse (pubkey := key) (sig := wit) h
+          (Eval.verifyFalse (top := falseElement) (by native_decide))))⟩
 
 /-- What a W-type fragment with 'o' modifier guarantees in the current
     stack-shape model:
@@ -136,15 +114,25 @@ def MiniTypeGuarantee (m : CoreFragment) (ty : MiniType) : Prop :=
   | .V => if ty.mods.o then VTypeOGuarantee m else True
   | .W => if ty.mods.o then WTypeOGuarantee m else True
 
+/-- Type cases for which `MiniTypeGuarantee` currently selects a substantive
+    semantic predicate rather than the temporary `True` fallback. -/
+def SupportedMiniType (ty : MiniType) : Prop :=
+  match ty.base with
+  | .K => True
+  | .B | .V | .W => ty.mods.o = true
+
 /-- The eventual core type-soundness theorem, stated as a proposition so the
-    repository has a shared target without introducing `sorry`. -/
+    repository has a shared target without introducing `sorry`. It is explicit
+    about the modifier cases covered by the current semantic predicates. -/
 def TypeSoundnessCore : Prop :=
-  ∀ {m : CoreFragment} {ty : MiniType}, HasType m ty → MiniTypeGuarantee m ty
+  ∀ {m : CoreFragment} {ty : MiniType},
+    HasType m ty → SupportedMiniType ty → MiniTypeGuarantee m ty
 
 /-- Surface soundness should be the core theorem after desugaring. -/
 def TypeSoundnessSurface : Prop :=
   ∀ {m : SurfaceFragment} {ty : MiniType},
-    HasType (desugar m) ty → MiniTypeGuarantee (desugar m) ty
+    HasType (desugar m) ty → SupportedMiniType ty →
+      MiniTypeGuarantee (desugar m) ty
 
 /-- Soundness for a(c(pk_k(key))): wrapper `a` turns the Bo behavior of
     c(pk_k(key)) into the corresponding W-type behavior by moving the protected
@@ -155,27 +143,17 @@ theorem a_c_pk_k_soundness (key : PubKey) :
   by_cases h : checkSig wit key ctx.sigHash = true
   · refine ⟨trueElement, ?_⟩
     simpa [compile, compileWithKeyHash] using
-    (Eval.toAltStack saved (wit :: stack) altStack
-      [.pushData key, .op .OP_CHECKSIG, .op .OP_FROMALTSTACK] flags ctx _
-      (Eval.pushData key [.op .OP_CHECKSIG, .op .OP_FROMALTSTACK]
-        (wit :: stack) (saved :: altStack) flags ctx _
-        (Eval.checksig_success key wit stack [.op .OP_FROMALTSTACK]
-          (saved :: altStack) flags ctx _
-          h
-          (Eval.fromAltStack saved (trueElement :: stack) altStack [] flags ctx _
-            (Eval.empty (saved :: trueElement :: stack) altStack flags ctx)))))
+      (Eval.toAltStackNext (x := saved)
+        (Eval.pushDataNext (data := key)
+          (Eval.checksigTrue (pubkey := key) (sig := wit) h
+            (Eval.fromAltStackNext (x := saved) Eval.done))))
   · simp at h
     refine ⟨falseElement, ?_⟩
     simpa [compile, compileWithKeyHash] using
-    (Eval.toAltStack saved (wit :: stack) altStack
-      [.pushData key, .op .OP_CHECKSIG, .op .OP_FROMALTSTACK] flags ctx _
-      (Eval.pushData key [.op .OP_CHECKSIG, .op .OP_FROMALTSTACK]
-        (wit :: stack) (saved :: altStack) flags ctx _
-        (Eval.checksig_failure key wit stack [.op .OP_FROMALTSTACK]
-          (saved :: altStack) flags ctx _
-          h
-          (Eval.fromAltStack saved (falseElement :: stack) altStack [] flags ctx _
-            (Eval.empty (saved :: falseElement :: stack) altStack flags ctx)))))
+      (Eval.toAltStackNext (x := saved)
+        (Eval.pushDataNext (data := key)
+          (Eval.checksigFalse (pubkey := key) (sig := wit) h
+            (Eval.fromAltStackNext (x := saved) Eval.done))))
 
 /-- The `pk_k` example packaged through the shared semantic selector. -/
 theorem pk_k_mini_type_soundness (key : PubKey) :

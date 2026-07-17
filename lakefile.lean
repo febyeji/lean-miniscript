@@ -13,3 +13,15 @@ package lean_miniscript where
 @[default_target]
 lean_lib LeanMiniscript where
   roots := #[`LeanMiniscript]
+
+@[default_target]
+lean_lib LeanMiniscriptProofs where
+  roots := #[`LeanMiniscriptProofs]
+
+@[default_target]
+lean_lib LeanMiniscriptExperimental where
+  roots := #[`LeanMiniscriptExperimental]
+
+@[default_target]
+lean_lib LeanMiniscriptTests where
+  roots := #[`LeanMiniscriptTests]

@@ -104,7 +104,7 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       ¬ nullDummySatisfied flags dummy →
       Eval (.op .OP_CHECKMULTISIG :: script)
         (scriptNat n :: (pubkeys ++ scriptNat k :: dummy :: sigs ++ rest))
-        altStack flags ctx (.failure "NULLDUMMY failed")
+        altStack flags ctx (.failure .nullDummy)
 
   -- OP_EQUAL
   | equal_true : (a b : StackElement) → (rest : Stack) →
@@ -134,7 +134,7 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       (ctx : TxContext) →
       a ≠ b →
       Eval (.op .OP_EQUALVERIFY :: script) (a :: b :: rest) altStack flags ctx
-        (.failure "EQUALVERIFY failed")
+        (.failure .equalVerify)
 
   -- OP_VERIFY
   | verify_success : (top : StackElement) → (rest : Stack) →
@@ -149,7 +149,7 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       (ctx : TxContext) →
       castToBool top = false →
       Eval (.op .OP_VERIFY :: script) (top :: rest) altStack flags ctx
-        (.failure "VERIFY failed")
+        (.failure .verify)
 
   -- OP_CHECKSEQUENCEVERIFY
   | checksequenceverify_success : (n : Nat) → (rest : Stack) →
@@ -165,7 +165,7 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       (ctx : TxContext) →
       ¬ sequenceSatisfied n ctx →
       Eval (.op .OP_CHECKSEQUENCEVERIFY :: script) (scriptNat n :: rest)
-        altStack flags ctx (.failure "CHECKSEQUENCEVERIFY failed")
+        altStack flags ctx (.failure .checkSequenceVerify)
 
   -- OP_CHECKLOCKTIMEVERIFY
   | checklocktimeverify_success : (n : Nat) → (rest : Stack) →
@@ -181,7 +181,7 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       (ctx : TxContext) →
       ¬ locktimeSatisfied n ctx →
       Eval (.op .OP_CHECKLOCKTIMEVERIFY :: script) (scriptNat n :: rest)
-        altStack flags ctx (.failure "CHECKLOCKTIMEVERIFY failed")
+        altStack flags ctx (.failure .checkLockTimeVerify)
 
   -- OP_DUP
   | dup : (x : StackElement) → (rest : Stack) → (script : Script) →
@@ -279,7 +279,7 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       minimalIfArg top = false →
       Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ELSE] ++
             elseBranch ++ [.op .OP_ENDIF] ++ after)
-           (top :: rest) altStack flags ctx (.failure "MINIMALIF failed")
+           (top :: rest) altStack flags ctx (.failure .minimalIf)
 
   | if_no_else_true : (top : StackElement) → (rest altStack : Stack) →
       (thenBranch after : Script) →
@@ -305,7 +305,7 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       flags.minimalIf = true →
       minimalIfArg top = false →
       Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ENDIF] ++ after)
-           (top :: rest) altStack flags ctx (.failure "MINIMALIF failed")
+           (top :: rest) altStack flags ctx (.failure .minimalIf)
 
   | notif_true : (top : StackElement) → (rest altStack : Stack) →
       (thenBranch elseBranch after : Script) →
@@ -334,7 +334,7 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       minimalIfArg top = false →
       Eval ([.op .OP_NOTIF] ++ thenBranch ++ [.op .OP_ELSE] ++
             elseBranch ++ [.op .OP_ENDIF] ++ after)
-           (top :: rest) altStack flags ctx (.failure "MINIMALIF failed")
+           (top :: rest) altStack flags ctx (.failure .minimalIf)
 
   | notif_no_else_true : (top : StackElement) → (rest altStack : Stack) →
       (thenBranch after : Script) →
@@ -360,7 +360,7 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       flags.minimalIf = true →
       minimalIfArg top = false →
       Eval ([.op .OP_NOTIF] ++ thenBranch ++ [.op .OP_ENDIF] ++ after)
-           (top :: rest) altStack flags ctx (.failure "MINIMALIF failed")
+           (top :: rest) altStack flags ctx (.failure .minimalIf)
 
   -- OP_SWAP
   | swap : (a b : StackElement) → (rest altStack : Stack) → (script : Script) →
@@ -406,12 +406,132 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval script (scriptNat x.size :: x :: rest) altStack flags ctx result →
       Eval (.op .OP_SIZE :: script) (x :: rest) altStack flags ctx result
 
-  -- Sequential composition
-  | seq : (s1 s2 : Script) → (stack midStack altStack midAltStack : Stack) →
-      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
-      Eval s1 stack altStack flags ctx (.success midStack midAltStack) →
-      Eval s2 midStack midAltStack flags ctx result →
-      Eval (s1 ++ s2) stack altStack flags ctx result
+
+/-- Evaluation composes over script concatenation. Keeping sequencing as a
+    theorem avoids adding a non-opcode case to every induction over `Eval`. -/
+theorem Eval.append
+    {left right : Script} {stack midStack altStack midAltStack : Stack}
+    {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    (leftEval : Eval left stack altStack flags ctx (.success midStack midAltStack))
+    (rightEval : Eval right midStack midAltStack flags ctx result) :
+    Eval (left ++ right) stack altStack flags ctx result := by
+  generalize resultEq : ExecResult.success midStack midAltStack = leftResult at leftEval
+  induction leftEval generalizing right result <;>
+    cases resultEq <;>
+    simp_all [List.append_assoc] <;>
+    try grind [Eval]
+  case if_true.refl =>
+    rename_i top rest altStack thenBranch elseBranch after flags ctx
+      minimal truthy _ ih
+    simpa [List.append_assoc] using
+      (Eval.if_true top rest altStack thenBranch elseBranch (after ++ right)
+        flags ctx result minimal truthy (ih rightEval))
+  case if_false.refl =>
+    rename_i top rest altStack thenBranch elseBranch after flags ctx
+      minimal falsey _ ih
+    simpa [List.append_assoc] using
+      (Eval.if_false top rest altStack thenBranch elseBranch (after ++ right)
+        flags ctx result minimal falsey (ih rightEval))
+  case if_no_else_true.refl =>
+    rename_i top rest altStack thenBranch after flags ctx minimal truthy _ ih
+    simpa [List.append_assoc] using
+      (Eval.if_no_else_true top rest altStack thenBranch (after ++ right)
+        flags ctx result minimal truthy (ih rightEval))
+  case if_no_else_false.refl =>
+    rename_i top rest altStack thenBranch after flags ctx minimal falsey _ ih
+    simpa [List.append_assoc] using
+      (Eval.if_no_else_false top rest altStack thenBranch (after ++ right)
+        flags ctx result minimal falsey (ih rightEval))
+  case notif_true.refl =>
+    rename_i top rest altStack thenBranch elseBranch after flags ctx
+      minimal truthy _ ih
+    simpa [List.append_assoc] using
+      (Eval.notif_true top rest altStack thenBranch elseBranch (after ++ right)
+        flags ctx result minimal truthy (ih rightEval))
+  case notif_false.refl =>
+    rename_i top rest altStack thenBranch elseBranch after flags ctx
+      minimal falsey _ ih
+    simpa [List.append_assoc] using
+      (Eval.notif_false top rest altStack thenBranch elseBranch (after ++ right)
+        flags ctx result minimal falsey (ih rightEval))
+  case notif_no_else_true.refl =>
+    rename_i top rest altStack thenBranch after flags ctx minimal truthy _ ih
+    simpa [List.append_assoc] using
+      (Eval.notif_no_else_true top rest altStack thenBranch (after ++ right)
+        flags ctx result minimal truthy (ih rightEval))
+  case notif_no_else_false.refl =>
+    rename_i top rest altStack thenBranch after flags ctx minimal falsey _ ih
+    simpa [List.append_assoc] using
+      (Eval.notif_no_else_false top rest altStack thenBranch (after ++ right)
+        flags ctx result minimal falsey (ih rightEval))
+
+/-! ## Proof-facing execution API
+
+These lemmas keep unchanged scripts, stacks, flags, contexts, and results
+implicit. Soundness proofs can compose execution steps without repeating the
+full constructor argument list.
+-/
+
+theorem Eval.done {stack altStack : Stack} {flags : ScriptFlags} {ctx : TxContext} :
+    Eval [] stack altStack flags ctx (.success stack altStack) :=
+  .empty stack altStack flags ctx
+
+theorem Eval.pushDataNext
+    {data : StackElement} {rest : Script} {stack altStack : Stack}
+    {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    (next : Eval rest (data :: stack) altStack flags ctx result) :
+    Eval (.pushData data :: rest) stack altStack flags ctx result :=
+  .pushData data rest stack altStack flags ctx result next
+
+theorem Eval.checksigTrue
+    {pubkey sig : StackElement} {rest : Stack} {script : Script}
+    {altStack : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    {result : ExecResult}
+    (checked : checkSig sig pubkey ctx.sigHash = true)
+    (next : Eval script (trueElement :: rest) altStack flags ctx result) :
+    Eval (.op .OP_CHECKSIG :: script) (pubkey :: sig :: rest)
+      altStack flags ctx result :=
+  .checksig_success pubkey sig rest script altStack flags ctx result checked next
+
+theorem Eval.checksigFalse
+    {pubkey sig : StackElement} {rest : Stack} {script : Script}
+    {altStack : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    {result : ExecResult}
+    (checked : checkSig sig pubkey ctx.sigHash = false)
+    (next : Eval script (falseElement :: rest) altStack flags ctx result) :
+    Eval (.op .OP_CHECKSIG :: script) (pubkey :: sig :: rest)
+      altStack flags ctx result :=
+  .checksig_failure pubkey sig rest script altStack flags ctx result checked next
+
+theorem Eval.verifyTrue
+    {top : StackElement} {rest : Stack} {script : Script} {altStack : Stack}
+    {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    (truthy : castToBool top = true)
+    (next : Eval script rest altStack flags ctx result) :
+    Eval (.op .OP_VERIFY :: script) (top :: rest) altStack flags ctx result :=
+  .verify_success top rest script altStack flags ctx result truthy next
+
+theorem Eval.verifyFalse
+    {top : StackElement} {rest : Stack} {script : Script} {altStack : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (falsey : castToBool top = false) :
+    Eval (.op .OP_VERIFY :: script) (top :: rest) altStack flags ctx
+      (.failure .verify) :=
+  .verify_failure top rest script altStack flags ctx falsey
+
+theorem Eval.toAltStackNext
+    {x : StackElement} {rest altStack : Stack} {script : Script}
+    {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    (next : Eval script rest (x :: altStack) flags ctx result) :
+    Eval (.op .OP_TOALTSTACK :: script) (x :: rest) altStack flags ctx result :=
+  .toAltStack x rest altStack script flags ctx result next
+
+theorem Eval.fromAltStackNext
+    {x : StackElement} {stack altRest : Stack} {script : Script}
+    {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    (next : Eval script (x :: stack) altRest flags ctx result) :
+    Eval (.op .OP_FROMALTSTACK :: script) stack (x :: altRest) flags ctx result :=
+  .fromAltStack x stack altRest script flags ctx result next
 
 /-- A concrete non-minimal truthy IF argument fails when MINIMALIF is active. -/
 theorem nonMinimalTruthy_if_else_minimalif_failure
@@ -421,7 +541,7 @@ theorem nonMinimalTruthy_if_else_minimalif_failure
     Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ELSE] ++
           elseBranch ++ [.op .OP_ENDIF] ++ after)
          (nonMinimalTruthyElement :: rest) altStack flags ctx
-         (.failure "MINIMALIF failed") := by
+         (.failure .minimalIf) := by
   exact Eval.if_else_minimalif_failure nonMinimalTruthyElement rest altStack
     thenBranch elseBranch after flags ctx
     hflags nonMinimalTruthyElement_not_minimalIfArg

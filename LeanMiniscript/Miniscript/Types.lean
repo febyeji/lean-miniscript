@@ -30,20 +30,11 @@ structure CorrectnessModifiers where
   s : Bool := false
   deriving Repr, DecidableEq, BEq
 
-/-- Malleability modifier properties. Kept separate from the correctness type
-    modifiers because BIP 379 presents them in a distinct analysis table. -/
-structure MalleabilityModifiers where
-  /-- f (forced): cannot be dissatisfied (always succeeds or aborts) -/
-  f : Bool := false
-  /-- e (expressive): if not f, then must be d -/
-  e : Bool := false
-  deriving Repr, DecidableEq, BEq
-
 /-- A complete Miniscript correctness type: base type + correctness modifiers. -/
 structure MiniType where
   base : BaseType
   mods : CorrectnessModifiers
-  deriving Repr
+  deriving Repr, DecidableEq, BEq
 
 namespace CorrectnessModifiers
 
@@ -436,9 +427,9 @@ theorem typed_multi_a_has_keys {k : Nat} {keys : List PubKey} {ty : MiniType} :
 
 /-- Sanity check: the singleton `multi_a` case is constructible when the key-count
     side condition is satisfied. -/
-example : HasType (.multi_a 1 [ByteArray.empty])
+example : HasType (.multi_a 1 [PubKey.ofBytes ByteArray.empty])
     ⟨.B, { d := true, u := true, s := true }⟩ := by
-  exact HasType.multi_a 1 [ByteArray.empty] (by decide) (by decide)
+  exact HasType.multi_a 1 [PubKey.ofBytes ByteArray.empty] (by decide) (by decide)
 
 /-- Sanity check: singleton `thresh` is constructible and uses the nonempty-list
     typing rule rather than the compiler's raw-list fallback. -/

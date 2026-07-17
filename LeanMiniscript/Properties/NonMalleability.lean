@@ -5,6 +5,14 @@ namespace LeanMiniscript.Properties
 
 open LeanMiniscript.Miniscript
 
+/-- Malleability modifier properties from BIP 379's separate analysis table. -/
+structure MalleabilityModifiers where
+  /-- f (forced): cannot be dissatisfied (always succeeds or aborts) -/
+  f : Bool := false
+  /-- e (expressive): if not f, then must be d -/
+  e : Bool := false
+  deriving Repr, DecidableEq, BEq
+
 -- TODO(theorem): define what "canonical" witness means.
 -- A canonical witness satisfies additional constraints:
 -- - Signatures use low-S form

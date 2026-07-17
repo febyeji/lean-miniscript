@@ -78,14 +78,14 @@ example : serializePushNum 127 = .ok ⟨#[0x01, 0x7f]⟩ := by rfl
 example : serializePushNum 128 = .ok ⟨#[0x02, 0x80, 0x00]⟩ := by rfl
 
 def serializationKeyA : PubKey :=
-  ⟨#[0x02] ++ (List.replicate 32 0x11).toArray⟩
+  PubKey.ofBytes ⟨#[0x02] ++ (List.replicate 32 0x11).toArray⟩
 
 def serializationKeyB : PubKey :=
-  ⟨#[0x03] ++ (List.replicate 32 0x22).toArray⟩
+  PubKey.ofBytes ⟨#[0x03] ++ (List.replicate 32 0x22).toArray⟩
 
-def serializationXOnlyKeyA : PubKey := repeatedByte 32 0x11
-def serializationXOnlyKeyB : PubKey := repeatedByte 32 0x22
-def serializationHash256 : Hash256 := repeatedByte 32 0xaa
+def serializationXOnlyKeyA : PubKey := PubKey.ofBytes (repeatedByte 32 0x11)
+def serializationXOnlyKeyB : PubKey := PubKey.ofBytes (repeatedByte 32 0x22)
+def serializationHash256 : Hash256 := Hash256.ofBytes (repeatedByte 32 0xaa)
 
 example : serializeScript (compile .zero) = .ok ⟨#[0x00]⟩ := by
   rfl
