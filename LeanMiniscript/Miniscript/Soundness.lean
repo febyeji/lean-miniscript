@@ -43,12 +43,17 @@ def ValidDissatisfiableSurfaceMiniscript (ctx : ScriptContext)
   ValidDissatisfiableMiniscript ctx (desugar m)
 
 /-- What a K-type fragment guarantees:
-    Given a witness stack, executing the compiled script pushes exactly one
-    element (the key) onto the stack, preserving the rest. -/
+    Given a witness stack, executing the compiled script either pushes exactly
+    one element (the key) while preserving the rest, or aborts with a modeled
+    Script error. Composite K fragments may contain a V-type prefix, so failure
+    must remain possible even though a successful K fragment leaves a key. -/
 def KTypeGuarantee (m : CoreFragment) : Prop :=
   ∀ (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext),
-    ∃ (keyElem : StackElement),
-      Eval (compile m) stack altStack flags ctx (.success (keyElem :: stack) altStack)
+    (∃ (keyElem : StackElement),
+      Eval (compile m) stack altStack flags ctx
+        (.success (keyElem :: stack) altStack)) ∨
+    ∃ (err : ScriptError),
+      Eval (compile m) stack altStack flags ctx (.failure err)
 
 /-- Soundness for pk_k: a pk_k fragment has K-type behavior.
 
@@ -58,9 +63,23 @@ def KTypeGuarantee (m : CoreFragment) : Prop :=
 theorem pk_k_soundness (key : PubKey) :
     KTypeGuarantee (.pk_k key) := by
   intro stack altStack flags ctx
-  exact ⟨key, by
+  exact Or.inl ⟨key, by
     simpa [compile, compileWithKeyHash] using
       (Eval.pushDataNext (data := key) Eval.done)⟩
+
+/-- Regression for a supported K-type composite whose V-type prefix aborts.
+
+    `and_v(v(0), pk_k(key))` has Ko type, but compiles to a leading false
+    `VERIFY`. Its K guarantee is therefore witnessed by the modeled failure
+    branch rather than an impossible unconditional success. -/
+theorem and_v_v_zero_pk_k_soundness (key : PubKey) :
+    KTypeGuarantee (.and_v (.v .zero) (.pk_k key)) := by
+  intro stack altStack flags ctx
+  right
+  refine ⟨.verify, ?_⟩
+  apply Eval.pushNum
+  apply Eval.verify_failure
+  native_decide
 
 /-- What a B-type fragment with 'o' modifier guarantees:
     Consumes exactly one witness element from the stack and pushes
