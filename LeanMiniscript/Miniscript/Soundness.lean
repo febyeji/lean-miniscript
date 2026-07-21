@@ -1,5 +1,6 @@
-import LeanMiniscript.Script.BigStep
+import LeanMiniscript.Miniscript.Acceptance
 import LeanMiniscript.Miniscript.Types
+import LeanMiniscript.Miniscript.Validation
 import LeanMiniscript.Miniscript.Compile
 import LeanMiniscript.Miniscript.Satisfaction
 
@@ -9,13 +10,50 @@ open LeanMiniscript.Script
 
 /-! ## Theorem 1: Type System Soundness -/
 
+/-- The context, structural, and correctness-typing evidence needed before a
+    semantic claim is made about a core fragment. -/
+structure ValidTypedFragment (ctx : ScriptContext) (m : CoreFragment)
+    (ty : MiniType) : Prop where
+  wellFormed : m.WellFormed ctx
+  hasType : HasType m ty
+
+/-- A top-level Miniscript is a context-valid core fragment with B base type. -/
+def ValidMiniscript (ctx : ScriptContext) (m : CoreFragment) : Prop :=
+  ∃ mods, ValidTypedFragment ctx m ⟨.B, mods⟩
+
+/-- A top-level Miniscript carrying the correctness type system's `d`
+    guarantee. -/
+def ValidDissatisfiableMiniscript (ctx : ScriptContext)
+    (m : CoreFragment) : Prop :=
+  ∃ mods, ValidTypedFragment ctx m ⟨.B, mods⟩ ∧ mods.d = true
+
+/-- Surface validity is stated through the single core desugaring boundary. -/
+def ValidTypedSurfaceFragment (ctx : ScriptContext) (m : SurfaceFragment)
+    (ty : MiniType) : Prop :=
+  ValidTypedFragment ctx (desugar m) ty
+
+/-- A top-level surface Miniscript is valid exactly when its desugared core is. -/
+def ValidSurfaceMiniscript (ctx : ScriptContext)
+    (m : SurfaceFragment) : Prop :=
+  ValidMiniscript ctx (desugar m)
+
+/-- Surface dissatisfaction validity is inherited from desugared core. -/
+def ValidDissatisfiableSurfaceMiniscript (ctx : ScriptContext)
+    (m : SurfaceFragment) : Prop :=
+  ValidDissatisfiableMiniscript ctx (desugar m)
+
 /-- What a K-type fragment guarantees:
-    Given a witness stack, executing the compiled script pushes exactly one
-    element (the key) onto the stack, preserving the rest. -/
+    Given a witness stack, executing the compiled script either pushes exactly
+    one element (the key) while preserving the rest, or aborts with a modeled
+    Script error. Composite K fragments may contain a V-type prefix, so failure
+    must remain possible even though a successful K fragment leaves a key. -/
 def KTypeGuarantee (m : CoreFragment) : Prop :=
   ∀ (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext),
-    ∃ (keyElem : StackElement),
-      Eval (compile m) stack altStack flags ctx (.success (keyElem :: stack) altStack)
+    (∃ (keyElem : StackElement),
+      Eval (compile m) stack altStack flags ctx
+        (.success (keyElem :: stack) altStack)) ∨
+    ∃ (err : ScriptError),
+      Eval (compile m) stack altStack flags ctx (.failure err)
 
 /-- Soundness for pk_k: a pk_k fragment has K-type behavior.
 
@@ -25,9 +63,23 @@ def KTypeGuarantee (m : CoreFragment) : Prop :=
 theorem pk_k_soundness (key : PubKey) :
     KTypeGuarantee (.pk_k key) := by
   intro stack altStack flags ctx
-  exact ⟨key, by
+  exact Or.inl ⟨key, by
     simpa [compile, compileWithKeyHash] using
       (Eval.pushDataNext (data := key) Eval.done)⟩
+
+/-- Regression for a supported K-type composite whose V-type prefix aborts.
+
+    `and_v(v(0), pk_k(key))` has Ko type, but compiles to a leading false
+    `VERIFY`. Its K guarantee is therefore witnessed by the modeled failure
+    branch rather than an impossible unconditional success. -/
+theorem and_v_v_zero_pk_k_soundness (key : PubKey) :
+    KTypeGuarantee (.and_v (.v .zero) (.pk_k key)) := by
+  intro stack altStack flags ctx
+  right
+  refine ⟨.verify, ?_⟩
+  apply Eval.pushNum
+  apply Eval.verify_failure
+  native_decide
 
 /-- What a B-type fragment with 'o' modifier guarantees:
     Consumes exactly one witness element from the stack and pushes
@@ -35,9 +87,11 @@ theorem pk_k_soundness (key : PubKey) :
     Stack below the witness is preserved. -/
 def BTypeOGuarantee (m : CoreFragment) : Prop :=
   ∀ (wit : StackElement) (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext),
-    ∃ (result : StackElement),
+    (∃ (result : StackElement),
       Eval (compile m) (wit :: stack) altStack flags ctx
-        (.success (result :: stack) altStack)
+        (.success (result :: stack) altStack)) ∨
+    ∃ (err : ScriptError),
+      Eval (compile m) (wit :: stack) altStack flags ctx (.failure err)
 
 /-- Soundness for c(pk_k(key)): the wrapped form has Bo-type behavior.
 
@@ -48,12 +102,12 @@ theorem c_pk_k_soundness (key : PubKey) :
     BTypeOGuarantee (.c (.pk_k key)) := by
   intro wit stack altStack flags ctx
   by_cases h : checkSig wit key ctx.sigHash = true
-  · exact ⟨trueElement,
+  · exact Or.inl ⟨trueElement,
       by simpa [compile, compileWithKeyHash] using
       (Eval.pushDataNext (data := key)
         (Eval.checksigTrue (pubkey := key) (sig := wit) h Eval.done))⟩
   · simp at h
-    exact ⟨falseElement,
+    exact Or.inl ⟨falseElement,
       by simpa [compile, compileWithKeyHash] using
       (Eval.pushDataNext (data := key)
         (Eval.checksigFalse (pubkey := key) (sig := wit) h Eval.done))⟩
@@ -101,38 +155,37 @@ def WTypeOGuarantee (m : CoreFragment) : Prop :=
       Eval (compile m) (saved :: wit :: stack) altStack flags ctx
         (.success (saved :: result :: stack) altStack)
 
-/-- Semantic guarantee selected by a Miniscript type.
-
-    This is intentionally partial in the modifier dimension: the current
-    reusable predicates cover the one-argument examples already proved in this
-    file. Other modifier combinations reduce to `True` until their precise
-    stack-shape predicates are added. -/
-def MiniTypeGuarantee (m : CoreFragment) (ty : MiniType) : Prop :=
-  match ty.base with
-  | .K => KTypeGuarantee m
-  | .B => if ty.mods.o then BTypeOGuarantee m else True
-  | .V => if ty.mods.o then VTypeOGuarantee m else True
-  | .W => if ty.mods.o then WTypeOGuarantee m else True
-
-/-- Type cases for which `MiniTypeGuarantee` currently selects a substantive
-    semantic predicate rather than the temporary `True` fallback. -/
+/-- Type cases for which this file has a reusable, non-vacuous semantic
+    predicate. Unsupported combinations are excluded explicitly. In particular,
+    W types are not yet included because their protected-stack contract needs a
+    general statement beyond the local `a(c(pk_k))` example. -/
 def SupportedMiniType (ty : MiniType) : Prop :=
-  match ty.base with
-  | .K => True
-  | .B | .V | .W => ty.mods.o = true
+  (ty.base = .K ∧ ty.mods.o = true) ∨
+  (ty.base = .B ∧ ty.mods.o = true) ∨
+  (ty.base = .V ∧ ty.mods.o = true)
+
+/-- Semantic guarantee selected by a currently supported Miniscript type.
+    Unlike the previous selector, no branch reduces to `True`. -/
+def MiniTypeGuarantee (m : CoreFragment) (ty : MiniType) : Prop :=
+  (ty.base = .K ∧ ty.mods.o = true ∧ KTypeGuarantee m) ∨
+  (ty.base = .B ∧ ty.mods.o = true ∧ BTypeOGuarantee m) ∨
+  (ty.base = .V ∧ ty.mods.o = true ∧ VTypeOGuarantee m)
 
 /-- The eventual core type-soundness theorem, stated as a proposition so the
     repository has a shared target without introducing `sorry`. It is explicit
     about the modifier cases covered by the current semantic predicates. -/
 def TypeSoundnessCore : Prop :=
-  ∀ {m : CoreFragment} {ty : MiniType},
-    HasType m ty → SupportedMiniType ty → MiniTypeGuarantee m ty
+  ∀ {ctx : ScriptContext} {m : CoreFragment} {ty : MiniType},
+    ValidTypedFragment ctx m ty →
+    SupportedMiniType ty →
+    MiniTypeGuarantee m ty
 
 /-- Surface soundness should be the core theorem after desugaring. -/
 def TypeSoundnessSurface : Prop :=
-  ∀ {m : SurfaceFragment} {ty : MiniType},
-    HasType (desugar m) ty → SupportedMiniType ty →
-      MiniTypeGuarantee (desugar m) ty
+  ∀ {ctx : ScriptContext} {m : SurfaceFragment} {ty : MiniType},
+    ValidTypedSurfaceFragment ctx m ty →
+    SupportedMiniType ty →
+    MiniTypeGuarantee (desugar m) ty
 
 /-- Soundness for a(c(pk_k(key))): wrapper `a` turns the Bo behavior of
     c(pk_k(key)) into the corresponding W-type behavior by moving the protected
@@ -158,65 +211,79 @@ theorem a_c_pk_k_soundness (key : PubKey) :
 /-- The `pk_k` example packaged through the shared semantic selector. -/
 theorem pk_k_mini_type_soundness (key : PubKey) :
     MiniTypeGuarantee (.pk_k key)
-      ⟨.K, { o := true, n := true, d := true, u := true }⟩ := by
-  exact pk_k_soundness key
+      ⟨.K, { o := true, n := true, d := true, u := true, s := true }⟩ := by
+  simpa [MiniTypeGuarantee] using pk_k_soundness key
 
 /-- The `c(pk_k)` example packaged through the shared semantic selector. -/
 theorem c_pk_k_mini_type_soundness (key : PubKey) :
     MiniTypeGuarantee (.c (.pk_k key))
-      ⟨.B, { o := true, n := true, d := true, u := true }⟩ := by
+      ⟨.B, { o := true, n := true, d := true, u := true, s := true }⟩ := by
   simpa [MiniTypeGuarantee] using c_pk_k_soundness key
 
 /-- The `v(c(pk_k))` example packaged through the shared semantic selector. -/
 theorem v_c_pk_k_mini_type_soundness (key : PubKey) :
     MiniTypeGuarantee (.v (.c (.pk_k key)))
-      ⟨.V, { o := true, n := true }⟩ := by
+      ⟨.V, { o := true, n := true, s := true }⟩ := by
   simpa [MiniTypeGuarantee] using v_c_pk_k_soundness key
-
-/-- The `a(c(pk_k))` example packaged through the shared semantic selector. -/
-theorem a_c_pk_k_mini_type_soundness (key : PubKey) :
-    MiniTypeGuarantee (.a (.c (.pk_k key)))
-      ⟨.W, { o := true, n := true, d := true, u := true }⟩ := by
-  simpa [MiniTypeGuarantee] using a_c_pk_k_soundness key
 
 /-!
 TODO(theorem): promote these AST-level leaf and wrapper lemmas into the main
 core type-soundness theorem.
 
 Core proof tasks:
-- State `type_soundness_core` over `CoreFragment`, `HasType`, and `compile`.
-- Define the semantic guarantees for each base type/modifier pair as reusable
-  predicates instead of one-off examples.
+- Extend `SupportedMiniType` only when the corresponding non-vacuous semantic
+  predicate is defined.
 - Prove the theorem by induction over the `HasType` derivation, with separate
   lemmas for leaves, connectives, wrappers, threshold, `multi`, and `multi_a`.
-- State `type_soundness_surface` as a corollary for `SurfaceFragment` by
-  desugaring to core before compilation.
+- Prove `TypeSoundnessSurface` as a corollary through `desugar`.
 -/
 
 /-! ## Theorem 2: Satisfaction Correctness -/
 
-/-!
-TODO(theorem): satisfaction correctness.
+/-- Target contract for core satisfaction. Returned serialized-order witnesses
+    must be accepted by the compiled script in the environment's transaction
+    context. -/
+def SatisfactionCorrectnessCore : Prop :=
+  ∀ {ctx : ScriptContext} {m : CoreFragment} {env : SatEnv}
+      {witness : Witness} {flags : ScriptFlags},
+    ValidMiniscript ctx m →
+    env.Sound →
+    ModeledContextFlags ctx flags →
+    satisfy m env = some witness →
+    Accepts ctx (compile m) witness flags env.txCtx
 
-Core proof tasks:
-- Define the witness/environment model needed by `satisfy`.
-- State correctness over `CoreFragment`: if `satisfy m env = some w`, then
-  `compile m` succeeds with witness `w` under the matching transaction context.
-- Add the surface corollary by applying the core theorem to `desugar s`.
--/
+/-- Surface satisfaction is the core contract after desugaring. -/
+def SatisfactionCorrectnessSurface : Prop :=
+  ∀ {ctx : ScriptContext} {m : SurfaceFragment} {env : SatEnv}
+      {witness : Witness} {flags : ScriptFlags},
+    ValidSurfaceMiniscript ctx m →
+    env.Sound →
+    ModeledContextFlags ctx flags →
+    satisfy (desugar m) env = some witness →
+    Accepts ctx (compileSurface m) witness flags env.txCtx
 
 /-! ## Theorem 3: Dissatisfaction Correctness -/
 
-/-!
-TODO(theorem): dissatisfaction correctness.
+/-- Target contract for core dissatisfaction. The returned witness must execute
+    successfully to a clean false result rather than aborting. -/
+def DissatisfactionCorrectnessCore : Prop :=
+  ∀ {ctx : ScriptContext} {m : CoreFragment} {env : SatEnv}
+      {witness : Witness} {flags : ScriptFlags},
+    ValidDissatisfiableMiniscript ctx m →
+    env.Sound →
+    ModeledContextFlags ctx flags →
+    dissatisfy m env = some witness →
+    Dissatisfies ctx (compile m) witness flags env.txCtx
 
-Core proof tasks:
-- Define the exact stack shape for dissatisfied B fragments with the `d`
-  modifier.
-- State correctness over `CoreFragment`: if `dissatisfy m env = some w`, then
-  running `compile m` with `w` reaches the designated false result.
-- Add the surface corollary through `desugar`.
--/
+/-- Surface dissatisfaction is the core contract after desugaring. -/
+def DissatisfactionCorrectnessSurface : Prop :=
+  ∀ {ctx : ScriptContext} {m : SurfaceFragment} {env : SatEnv}
+      {witness : Witness} {flags : ScriptFlags},
+    ValidDissatisfiableSurfaceMiniscript ctx m →
+    env.Sound →
+    ModeledContextFlags ctx flags →
+    dissatisfy (desugar m) env = some witness →
+    Dissatisfies ctx (compileSurface m) witness flags env.txCtx
 
 /-! ## MINIMALIF Bug Reproduction
 
