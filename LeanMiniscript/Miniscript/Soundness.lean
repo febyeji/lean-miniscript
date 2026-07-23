@@ -211,19 +211,19 @@ theorem a_c_pk_k_soundness (key : PubKey) :
 /-- The `pk_k` example packaged through the shared semantic selector. -/
 theorem pk_k_mini_type_soundness (key : PubKey) :
     MiniTypeGuarantee (.pk_k key)
-      ⟨.K, { o := true, n := true, d := true, u := true, s := true }⟩ := by
+      ⟨.K, { o := true, n := true, d := true, u := true }⟩ := by
   simpa [MiniTypeGuarantee] using pk_k_soundness key
 
 /-- The `c(pk_k)` example packaged through the shared semantic selector. -/
 theorem c_pk_k_mini_type_soundness (key : PubKey) :
     MiniTypeGuarantee (.c (.pk_k key))
-      ⟨.B, { o := true, n := true, d := true, u := true, s := true }⟩ := by
+      ⟨.B, { o := true, n := true, d := true, u := true }⟩ := by
   simpa [MiniTypeGuarantee] using c_pk_k_soundness key
 
 /-- The `v(c(pk_k))` example packaged through the shared semantic selector. -/
 theorem v_c_pk_k_mini_type_soundness (key : PubKey) :
     MiniTypeGuarantee (.v (.c (.pk_k key)))
-      ⟨.V, { o := true, n := true, s := true }⟩ := by
+      ⟨.V, { o := true, n := true }⟩ := by
   simpa [MiniTypeGuarantee] using v_c_pk_k_soundness key
 
 /-!

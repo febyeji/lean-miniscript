@@ -11,6 +11,8 @@ import LeanMiniscript.Miniscript.ValidationDecidable
 import LeanMiniscript.Miniscript.Metrics
 import LeanMiniscript.Miniscript.Types
 import LeanMiniscript.Miniscript.TypeInference
+import LeanMiniscript.Miniscript.Malleability
+import LeanMiniscript.Miniscript.MalleabilityInference
 import LeanMiniscript.Miniscript.Compile
 import LeanMiniscript.Miniscript.Checked
 import LeanMiniscript.Miniscript.CompileConcrete
