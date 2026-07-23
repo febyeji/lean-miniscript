@@ -1,5 +1,6 @@
 import LeanMiniscript
 import LeanMiniscript.Miniscript.CompileExamples
+import LeanMiniscript.Miniscript.ContextSafetyExamples
 import LeanMiniscript.Miniscript.MalleabilityExamples
 import LeanMiniscript.Script.SerializationExamples
 

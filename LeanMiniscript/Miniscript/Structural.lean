@@ -1,4 +1,5 @@
 import LeanMiniscript.Miniscript.Conformance
+import LeanMiniscript.Miniscript.Checked
 import LeanMiniscript.Script.ControlFlow
 
 namespace LeanMiniscript.Miniscript
@@ -8,9 +9,238 @@ open LeanMiniscript.Script
 /-!
 # Structural compiler guarantees
 
-These proofs derive opcode closure and balanced conditional control flow for
-every core fragment, not just the finite conformance fixture matrix.
+These proofs derive context-safe opcode emission and balanced conditional
+control flow for every core fragment, not just the finite conformance fixture
+matrix. Context safety is deliberately separate from the closed `Opcode`
+universe: it uses `WellFormed` to exclude the wrong multisig encoding for the
+selected Script context.
 -/
+
+@[simp]
+theorem scriptAllowed_append {ctx : ScriptContext} {left right : Script} :
+    ScriptAllowed ctx (left ++ right) ↔
+      ScriptAllowed ctx left ∧ ScriptAllowed ctx right := by
+  induction left with
+  | nil => simp [ScriptAllowed]
+  | cons element left ih => simp [ScriptAllowed, ih, and_assoc]
+
+private theorem legacyMulti_opcodeAllowed {ctx : ScriptContext}
+    (permits : ctx.permitsLegacyMulti) :
+    OpcodeAllowed ctx .OP_CHECKMULTISIG := by
+  cases ctx <;>
+    simp_all [ScriptContext.permitsLegacyMulti, OpcodeAllowed]
+
+private theorem checkSigAdd_opcodeAllowed {ctx : ScriptContext}
+    (permits : ctx.permitsCheckSigAddMulti) :
+    OpcodeAllowed ctx .OP_CHECKSIGADD := by
+  cases ctx <;>
+    simp_all [ScriptContext.permitsCheckSigAddMulti, OpcodeAllowed]
+
+private theorem Bip379KeyPushCompilation.scriptAllowed
+    {keys : List PubKey} {script : Script}
+    (conforms : Bip379KeyPushCompilation keys script) (ctx : ScriptContext) :
+    ScriptAllowed ctx script := by
+  induction conforms with
+  | nil => trivial
+  | cons tailConforms tailAllowed => exact ⟨by trivial, tailAllowed⟩
+
+private theorem Bip379CheckSigAddTailCompilation.scriptAllowed
+    {keys : List PubKey} {script : Script}
+    (conforms : Bip379CheckSigAddTailCompilation keys script)
+    {ctx : ScriptContext} (permits : ctx.permitsCheckSigAddMulti) :
+    ScriptAllowed ctx script := by
+  induction conforms with
+  | nil => trivial
+  | cons tailConforms tailAllowed =>
+      exact ⟨by trivial, checkSigAdd_opcodeAllowed permits, tailAllowed⟩
+
+private theorem Bip379CheckSigAddCompilation.scriptAllowed
+    {keys : List PubKey} {script : Script}
+    (conforms : Bip379CheckSigAddCompilation keys script)
+    {ctx : ScriptContext} (permits : ctx.permitsCheckSigAddMulti) :
+    ScriptAllowed ctx script := by
+  cases conforms with
+  | nil => exact ⟨by trivial, by trivial⟩
+  | cons tailConforms =>
+      exact ⟨by trivial,
+        by simp [ScriptElementAllowed, OpcodeAllowed],
+        tailConforms.scriptAllowed permits⟩
+
+mutual
+
+/-- A relationally conforming compilation of a well-formed fragment contains
+only opcodes allowed by the selected Script context. -/
+theorem Bip379Compilation.scriptAllowed
+    {keyHash : PubKey → Hash160} {fragment : CoreFragment} {script : Script}
+    (conforms : Bip379Compilation keyHash fragment script)
+    {ctx : ScriptContext} (wellFormed : fragment.WellFormed ctx) :
+    ScriptAllowed ctx script := by
+  cases conforms with
+  | zero | one | pkK | pkH | older | after | sha256 | hash256 | ripemd160 |
+      hash160 =>
+      simp [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed]
+  | andV xConforms yConforms =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        And.intro
+          (Bip379Compilation.scriptAllowed xConforms wellFormed.1)
+          (Bip379Compilation.scriptAllowed yConforms wellFormed.2.1)
+  | andB xConforms yConforms =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        And.intro
+          (Bip379Compilation.scriptAllowed xConforms wellFormed.1)
+          (Bip379Compilation.scriptAllowed yConforms wellFormed.2.1)
+  | orB xConforms yConforms =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        And.intro
+          (Bip379Compilation.scriptAllowed xConforms wellFormed.1)
+          (Bip379Compilation.scriptAllowed yConforms wellFormed.2)
+  | orC xConforms yConforms =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        And.intro
+          (Bip379Compilation.scriptAllowed xConforms wellFormed.1)
+          (Bip379Compilation.scriptAllowed yConforms wellFormed.2)
+  | orD xConforms yConforms =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        And.intro
+          (Bip379Compilation.scriptAllowed xConforms wellFormed.1)
+          (Bip379Compilation.scriptAllowed yConforms wellFormed.2)
+  | orI xConforms yConforms =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        And.intro
+          (Bip379Compilation.scriptAllowed xConforms wellFormed.1)
+          (Bip379Compilation.scriptAllowed yConforms wellFormed.2)
+  | andor xConforms yConforms zConforms =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        And.intro
+          (Bip379Compilation.scriptAllowed xConforms wellFormed.1)
+          (And.intro
+            (Bip379Compilation.scriptAllowed zConforms wellFormed.2.2.1)
+            (Bip379Compilation.scriptAllowed yConforms wellFormed.2.1))
+  | a conforms =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        Bip379Compilation.scriptAllowed conforms wellFormed
+  | s conforms =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        Bip379Compilation.scriptAllowed conforms wellFormed
+  | c conforms =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        Bip379Compilation.scriptAllowed conforms wellFormed
+  | d conforms =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        Bip379Compilation.scriptAllowed conforms wellFormed
+  | v conforms =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        Bip379Compilation.scriptAllowed conforms wellFormed
+  | j conforms =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        Bip379Compilation.scriptAllowed conforms wellFormed
+  | n conforms =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        Bip379Compilation.scriptAllowed conforms wellFormed
+  | thresh conforms =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        Bip379ThreshCompilation.scriptAllowed conforms wellFormed.2.1
+  | multi _ keysConform =>
+      have keysAllowed := keysConform.scriptAllowed ctx
+      have checkAllowed := legacyMulti_opcodeAllowed wellFormed.1
+      simpa [ScriptAllowed, ScriptElementAllowed] using
+        And.intro keysAllowed checkAllowed
+  | multiA _ keysConform =>
+      have keysAllowed := keysConform.scriptAllowed wellFormed.1
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        keysAllowed
+
+/-- Threshold compilation is context-safe when every child is well-formed. -/
+theorem Bip379ThreshCompilation.scriptAllowed
+    {keyHash : PubKey → Hash160} {fragments : List CoreFragment}
+    {script : Script}
+    (conforms : Bip379ThreshCompilation keyHash fragments script)
+    {ctx : ScriptContext} (allWellFormed : CoreFragment.allWellFormed ctx fragments) :
+    ScriptAllowed ctx script := by
+  cases conforms with
+  | nil => trivial
+  | cons headConforms tailConforms =>
+      exact scriptAllowed_append.mpr ⟨
+        Bip379Compilation.scriptAllowed headConforms allWellFormed.1,
+        Bip379ThreshTailCompilation.scriptAllowed tailConforms allWellFormed.2⟩
+
+/-- Threshold-tail compilation is context-safe when every child is
+well-formed. -/
+theorem Bip379ThreshTailCompilation.scriptAllowed
+    {keyHash : PubKey → Hash160} {fragments : List CoreFragment}
+    {script : Script}
+    (conforms : Bip379ThreshTailCompilation keyHash fragments script)
+    {ctx : ScriptContext} (allWellFormed : CoreFragment.allWellFormed ctx fragments) :
+    ScriptAllowed ctx script := by
+  cases conforms with
+  | nil => trivial
+  | cons headConforms tailConforms =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
+        And.intro
+          (Bip379Compilation.scriptAllowed headConforms allWellFormed.1)
+          (Bip379ThreshTailCompilation.scriptAllowed tailConforms allWellFormed.2)
+
+end
+
+/-! ## Context-safe executable compiler corollaries -/
+
+/-- The parameterized compiler emits only opcodes allowed by the fragment's
+validated Script context. -/
+theorem compileWithKeyHash_scriptAllowed
+    (keyHash : PubKey → Hash160) {ctx : ScriptContext}
+    {fragment : CoreFragment} (wellFormed : fragment.WellFormed ctx) :
+    ScriptAllowed ctx (compileWithKeyHash keyHash fragment) :=
+  (compileWithKeyHash_conforms keyHash fragment).scriptAllowed wellFormed
+
+/-- The model compiler emits only opcodes allowed by the fragment's validated
+Script context. -/
+theorem compile_scriptAllowed {ctx : ScriptContext} {fragment : CoreFragment}
+    (wellFormed : fragment.WellFormed ctx) :
+    ScriptAllowed ctx (compile fragment) :=
+  compileWithKeyHash_scriptAllowed modelKeyHash wellFormed
+
+/-- Surface compilation is context-safe through desugaring. -/
+theorem compileSurfaceWithKeyHash_scriptAllowed
+    (keyHash : PubKey → Hash160) {ctx : ScriptContext}
+    {fragment : SurfaceFragment} (wellFormed : fragment.WellFormed ctx) :
+    ScriptAllowed ctx (compileSurfaceWithKeyHash keyHash fragment) :=
+  compileWithKeyHash_scriptAllowed keyHash wellFormed
+
+/-- The model surface compiler is context-safe through desugaring. -/
+theorem compileSurface_scriptAllowed
+    {ctx : ScriptContext} {fragment : SurfaceFragment}
+    (wellFormed : fragment.WellFormed ctx) :
+    ScriptAllowed ctx (compileSurface fragment) :=
+  compileSurfaceWithKeyHash_scriptAllowed modelKeyHash wellFormed
+
+/-- Checked core compilation exposes context safety without another caller
+proof obligation. -/
+theorem compileCheckedWithKeyHash_scriptAllowed
+    (keyHash : PubKey → Hash160) {ctx : ScriptContext}
+    (checked : CheckedFragment ctx) :
+    ScriptAllowed ctx (compileCheckedWithKeyHash keyHash checked) :=
+  compileWithKeyHash_scriptAllowed keyHash checked.wellFormed
+
+/-- Checked core compilation with the model HASH160 boundary is context-safe. -/
+theorem compileChecked_scriptAllowed {ctx : ScriptContext}
+    (checked : CheckedFragment ctx) :
+    ScriptAllowed ctx (compileChecked checked) :=
+  compile_scriptAllowed checked.wellFormed
+
+/-- Checked surface compilation exposes context safety without another caller
+proof obligation. -/
+theorem compileCheckedSurfaceWithKeyHash_scriptAllowed
+    (keyHash : PubKey → Hash160) {ctx : ScriptContext}
+    (checked : CheckedSurfaceFragment ctx) :
+    ScriptAllowed ctx (compileCheckedSurfaceWithKeyHash keyHash checked) :=
+  compileSurfaceWithKeyHash_scriptAllowed keyHash checked.wellFormed
+
+/-- Checked surface compilation with the model HASH160 boundary is
+context-safe. -/
+theorem compileCheckedSurface_scriptAllowed {ctx : ScriptContext}
+    (checked : CheckedSurfaceFragment ctx) :
+    ScriptAllowed ctx (compileCheckedSurface checked) :=
+  compileSurface_scriptAllowed checked.wellFormed
 
 private theorem keyPushCompilation_allNonConditional
     {keys : List PubKey} {script : Script}
