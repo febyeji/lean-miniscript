@@ -31,49 +31,29 @@ mutual
         | _, _ => none
     | .or_b x z =>
         match inferMalleabilityTyped ctx x, inferMalleabilityTyped ctx z with
-        | some ⟨mx, typedX⟩, some ⟨mz, typedZ⟩ =>
-            if ex : mx.e = true then
-              if ez : mz.e = true then
-                if signed : (mx.s || mz.s) = true then
-                  some ⟨_, .or_b typedX typedZ ex ez signed⟩
-                else none
-              else none
-            else none
+        | some ⟨_mx, typedX⟩, some ⟨_mz, typedZ⟩ =>
+            some ⟨_, .or_b typedX typedZ⟩
         | _, _ => none
     | .or_c x z =>
         match inferMalleabilityTyped ctx x, inferMalleabilityTyped ctx z with
-        | some ⟨mx, typedX⟩, some ⟨mz, typedZ⟩ =>
-            if ex : mx.e = true then
-              if signed : (mx.s || mz.s) = true then
-                some ⟨_, .or_c typedX typedZ ex signed⟩
-              else none
-            else none
+        | some ⟨_mx, typedX⟩, some ⟨_mz, typedZ⟩ =>
+            some ⟨_, .or_c typedX typedZ⟩
         | _, _ => none
     | .or_d x z =>
         match inferMalleabilityTyped ctx x, inferMalleabilityTyped ctx z with
-        | some ⟨mx, typedX⟩, some ⟨mz, typedZ⟩ =>
-            if ex : mx.e = true then
-              if signed : (mx.s || mz.s) = true then
-                some ⟨_, .or_d typedX typedZ ex signed⟩
-              else none
-            else none
+        | some ⟨_mx, typedX⟩, some ⟨_mz, typedZ⟩ =>
+            some ⟨_, .or_d typedX typedZ⟩
         | _, _ => none
     | .or_i x z =>
         match inferMalleabilityTyped ctx x, inferMalleabilityTyped ctx z with
-        | some ⟨mx, typedX⟩, some ⟨mz, typedZ⟩ =>
-            if signed : (mx.s || mz.s) = true then
-              some ⟨_, .or_i typedX typedZ signed⟩
-            else none
+        | some ⟨_mx, typedX⟩, some ⟨_mz, typedZ⟩ =>
+            some ⟨_, .or_i typedX typedZ⟩
         | _, _ => none
     | .andor x y z =>
         match inferMalleabilityTyped ctx x, inferMalleabilityTyped ctx y,
             inferMalleabilityTyped ctx z with
-        | some ⟨mx, typedX⟩, some ⟨my, typedY⟩, some ⟨mz, typedZ⟩ =>
-            if ex : mx.e = true then
-              if signed : (mx.s || my.s || mz.s) = true then
-                some ⟨_, .andor typedX typedY typedZ ex signed⟩
-              else none
-            else none
+        | some ⟨_mx, typedX⟩, some ⟨_my, typedY⟩, some ⟨_mz, typedZ⟩ =>
+            some ⟨_, .andor typedX typedY typedZ⟩
         | _, _, _ => none
     | .a x =>
         match inferMalleabilityTyped ctx x with
@@ -103,14 +83,9 @@ mutual
         match inferMalleabilityTyped ctx x with
         | some ⟨_mods, typed⟩ => some ⟨_, .n typed⟩
         | none => none
-    | .thresh k fragments =>
+    | .thresh _k fragments =>
         match inferMalleabilityTypedList ctx fragments with
-        | some ⟨mods, typed⟩ =>
-            if expressive : MalleabilityModifiers.allE mods = true then
-              if bounded : MalleabilityModifiers.atMostNonS k mods = true then
-                some ⟨_, .thresh typed expressive bounded⟩
-              else none
-            else none
+        | some ⟨_mods, typed⟩ => some ⟨_, .thresh typed⟩
         | none => none
     | .multi k keys =>
         match ctx with
@@ -136,7 +111,9 @@ mutual
         | _, _ => none
 end
 
-/-- Executable malleability inference with derivations erased. -/
+/-- Executable malleability inference with derivations erased. A successful
+    analysis may return `nonMalleable := false`; `none` is reserved for a
+    context-restricted constructor unavailable in `ctx`. -/
 def inferMalleability (ctx : ScriptContext) (fragment : CoreFragment) :
     Option MalleabilityModifiers :=
   (inferMalleabilityTyped ctx fragment).map Subtype.val

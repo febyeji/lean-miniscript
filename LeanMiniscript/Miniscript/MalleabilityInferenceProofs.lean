@@ -29,27 +29,27 @@ mutual
         simp [inferMalleabilityTyped,
           inferMalleabilityTyped_complete typedX,
           inferMalleabilityTyped_complete typedY]
-    | or_b typedX typedZ ex ez signed =>
+    | or_b typedX typedZ =>
         simp [inferMalleabilityTyped,
           inferMalleabilityTyped_complete typedX,
-          inferMalleabilityTyped_complete typedZ, ex, ez, signed]
-    | or_c typedX typedZ ex signed =>
+          inferMalleabilityTyped_complete typedZ]
+    | or_c typedX typedZ =>
         simp [inferMalleabilityTyped,
           inferMalleabilityTyped_complete typedX,
-          inferMalleabilityTyped_complete typedZ, ex, signed]
-    | or_d typedX typedZ ex signed =>
+          inferMalleabilityTyped_complete typedZ]
+    | or_d typedX typedZ =>
         simp [inferMalleabilityTyped,
           inferMalleabilityTyped_complete typedX,
-          inferMalleabilityTyped_complete typedZ, ex, signed]
-    | or_i typedX typedZ signed =>
+          inferMalleabilityTyped_complete typedZ]
+    | or_i typedX typedZ =>
         simp [inferMalleabilityTyped,
           inferMalleabilityTyped_complete typedX,
-          inferMalleabilityTyped_complete typedZ, signed]
-    | andor typedX typedY typedZ ex signed =>
+          inferMalleabilityTyped_complete typedZ]
+    | andor typedX typedY typedZ =>
         simp [inferMalleabilityTyped,
           inferMalleabilityTyped_complete typedX,
           inferMalleabilityTyped_complete typedY,
-          inferMalleabilityTyped_complete typedZ, ex, signed]
+          inferMalleabilityTyped_complete typedZ]
     | a typed =>
         simp [inferMalleabilityTyped, inferMalleabilityTyped_complete typed]
     | s typed =>
@@ -64,9 +64,9 @@ mutual
         simp [inferMalleabilityTyped, inferMalleabilityTyped_complete typed]
     | n typed =>
         simp [inferMalleabilityTyped, inferMalleabilityTyped_complete typed]
-    | thresh typed expressive bounded =>
+    | thresh typed =>
         simp [inferMalleabilityTyped,
-          inferMalleabilityTypedList_complete typed, expressive, bounded]
+          inferMalleabilityTypedList_complete typed]
     | multi k keys allowed =>
         cases ctx with
         | p2wsh => rfl

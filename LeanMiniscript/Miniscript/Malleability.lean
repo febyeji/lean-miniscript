@@ -15,7 +15,8 @@ P2WSH and `multi_a` in Tapscript. Structural validity, correctness typing, and
 timelock compatibility remain separate analyses.
 -/
 
-/-- The three BIP 379 properties used by the malleability analysis. -/
+/-- The three BIP 379 properties together with the derived guarantee that the
+    fragment can always be satisfied non-malleably. -/
 structure MalleabilityModifiers where
   /-- s (signed): every satisfaction requires a signature. -/
   s : Bool := false
@@ -24,6 +25,10 @@ structure MalleabilityModifiers where
   /-- e (expressive): there is a unique unconditional dissatisfaction and any
       conditional dissatisfaction requires a signature. -/
   e : Bool := false
+  /-- The BIP 379 `Requires` column holds recursively for this fragment. This is
+      kept separate from `s`, `f`, and `e` so a malleable fragment still has
+      analyzable modifier properties. -/
+  nonMalleable : Bool := false
   deriving Repr, DecidableEq, BEq
 
 namespace MalleabilityModifiers
@@ -37,6 +42,11 @@ def allE : List MalleabilityModifiers → Bool
 def allS : List MalleabilityModifiers → Bool
   | [] => true
   | mods :: rest => mods.s && allS rest
+
+/-- Every child is guaranteed to admit a non-malleable satisfaction. -/
+def allNonMalleable : List MalleabilityModifiers → Bool
+  | [] => true
+  | mods :: rest => mods.nonMalleable && allNonMalleable rest
 
 /-- Number of children whose satisfactions are not guaranteed to be signed. -/
 def countNonS : List MalleabilityModifiers → Nat
@@ -58,31 +68,36 @@ mutual
   inductive HasMalleability (ctx : ScriptContext) :
       CoreFragment → MalleabilityModifiers → Prop where
     | zero :
-        HasMalleability ctx .zero { s := true, e := true }
+        HasMalleability ctx .zero { s := true, e := true, nonMalleable := true }
     | one :
-        HasMalleability ctx .one { f := true }
+        HasMalleability ctx .one { f := true, nonMalleable := true }
     | pk_k (key : PubKey) :
-        HasMalleability ctx (.pk_k key) { s := true, e := true }
+        HasMalleability ctx (.pk_k key) {
+          s := true, e := true, nonMalleable := true
+        }
     | pk_h (key : PubKey) :
-        HasMalleability ctx (.pk_h key) { s := true, e := true }
+        HasMalleability ctx (.pk_h key) {
+          s := true, e := true, nonMalleable := true
+        }
     | older (n : Nat) :
-        HasMalleability ctx (.older n) { f := true }
+        HasMalleability ctx (.older n) { f := true, nonMalleable := true }
     | after (n : Nat) :
-        HasMalleability ctx (.after n) { f := true }
+        HasMalleability ctx (.after n) { f := true, nonMalleable := true }
     | sha256 (hash : Hash256) :
-        HasMalleability ctx (.sha256 hash) {}
+        HasMalleability ctx (.sha256 hash) { nonMalleable := true }
     | hash256 (hash : Hash256) :
-        HasMalleability ctx (.hash256 hash) {}
+        HasMalleability ctx (.hash256 hash) { nonMalleable := true }
     | ripemd160 (hash : Hash160) :
-        HasMalleability ctx (.ripemd160 hash) {}
+        HasMalleability ctx (.ripemd160 hash) { nonMalleable := true }
     | hash160 (hash : Hash160) :
-        HasMalleability ctx (.hash160 hash) {}
+        HasMalleability ctx (.hash160 hash) { nonMalleable := true }
     | and_v {x y : CoreFragment} {mx my : MalleabilityModifiers} :
         HasMalleability ctx x mx →
         HasMalleability ctx y my →
         HasMalleability ctx (.and_v x y) {
           s := mx.s || my.s
           f := mx.s || my.f
+          nonMalleable := mx.nonMalleable && my.nonMalleable
         }
     | and_b {x y : CoreFragment} {mx my : MalleabilityModifiers} :
         HasMalleability ctx x mx →
@@ -91,56 +106,57 @@ mutual
           s := mx.s || my.s
           f := (mx.f && my.f) || (mx.s && mx.f) || (my.s && my.f)
           e := mx.e && my.e && mx.s && my.s
+          nonMalleable := mx.nonMalleable && my.nonMalleable
         }
     | or_b {x z : CoreFragment} {mx mz : MalleabilityModifiers} :
         HasMalleability ctx x mx →
         HasMalleability ctx z mz →
-        mx.e = true →
-        mz.e = true →
-        (mx.s || mz.s) = true →
         HasMalleability ctx (.or_b x z) {
           s := mx.s && mz.s
           e := true
+          nonMalleable :=
+            mx.nonMalleable && mz.nonMalleable && mx.e && mz.e && (mx.s || mz.s)
         }
     | or_c {x z : CoreFragment} {mx mz : MalleabilityModifiers} :
         HasMalleability ctx x mx →
         HasMalleability ctx z mz →
-        mx.e = true →
-        (mx.s || mz.s) = true →
         HasMalleability ctx (.or_c x z) {
           s := mx.s && mz.s
           f := true
+          nonMalleable :=
+            mx.nonMalleable && mz.nonMalleable && mx.e && (mx.s || mz.s)
         }
     | or_d {x z : CoreFragment} {mx mz : MalleabilityModifiers} :
         HasMalleability ctx x mx →
         HasMalleability ctx z mz →
-        mx.e = true →
-        (mx.s || mz.s) = true →
         HasMalleability ctx (.or_d x z) {
           s := mx.s && mz.s
           f := mz.f
           e := mz.e
+          nonMalleable :=
+            mx.nonMalleable && mz.nonMalleable && mx.e && (mx.s || mz.s)
         }
     | or_i {x z : CoreFragment} {mx mz : MalleabilityModifiers} :
         HasMalleability ctx x mx →
         HasMalleability ctx z mz →
-        (mx.s || mz.s) = true →
         HasMalleability ctx (.or_i x z) {
           s := mx.s && mz.s
           f := mx.f && mz.f
           e := (mx.e && mz.f) || (mz.e && mx.f)
+          nonMalleable :=
+            mx.nonMalleable && mz.nonMalleable && (mx.s || mz.s)
         }
     | andor {x y z : CoreFragment}
         {mx my mz : MalleabilityModifiers} :
         HasMalleability ctx x mx →
         HasMalleability ctx y my →
         HasMalleability ctx z mz →
-        mx.e = true →
-        (mx.s || my.s || mz.s) = true →
         HasMalleability ctx (.andor x y z) {
           s := mz.s && (mx.s || my.s)
           f := mz.f && (mx.s || my.f)
           e := mz.e && (mx.s || my.f)
+          nonMalleable := mx.nonMalleable && my.nonMalleable &&
+            mz.nonMalleable && mx.e && (mx.s || my.s || mz.s)
         }
     | a {x : CoreFragment} {mods : MalleabilityModifiers} :
         HasMalleability ctx x mods →
@@ -154,24 +170,28 @@ mutual
           s := true
           f := mods.f
           e := mods.e
+          nonMalleable := mods.nonMalleable
         }
     | d {x : CoreFragment} {mods : MalleabilityModifiers} :
         HasMalleability ctx x mods →
         HasMalleability ctx (.d x) {
           s := mods.s
           e := true
+          nonMalleable := mods.nonMalleable
         }
     | v {x : CoreFragment} {mods : MalleabilityModifiers} :
         HasMalleability ctx x mods →
         HasMalleability ctx (.v x) {
           s := mods.s
           f := true
+          nonMalleable := mods.nonMalleable
         }
     | j {x : CoreFragment} {mods : MalleabilityModifiers} :
         HasMalleability ctx x mods →
         HasMalleability ctx (.j x) {
           s := mods.s
           e := mods.f
+          nonMalleable := mods.nonMalleable
         }
     | n {x : CoreFragment} {mods : MalleabilityModifiers} :
         HasMalleability ctx x mods →
@@ -179,18 +199,23 @@ mutual
     | thresh {k : Nat} {fragments : List CoreFragment}
         {mods : List MalleabilityModifiers} :
         HasMalleabilityList ctx fragments mods →
-        MalleabilityModifiers.allE mods = true →
-        MalleabilityModifiers.atMostNonS k mods = true →
         HasMalleability ctx (.thresh k fragments) {
           s := MalleabilityModifiers.fewerThanNonS k mods
           e := MalleabilityModifiers.allS mods
+          nonMalleable := MalleabilityModifiers.allNonMalleable mods &&
+            MalleabilityModifiers.allE mods &&
+            MalleabilityModifiers.atMostNonS k mods
         }
     | multi (k : Nat) (keys : List PubKey) :
         ctx.permitsLegacyMulti →
-        HasMalleability ctx (.multi k keys) { s := true, e := true }
+        HasMalleability ctx (.multi k keys) {
+          s := true, e := true, nonMalleable := true
+        }
     | multi_a (k : Nat) (keys : List PubKey) :
         ctx.permitsCheckSigAddMulti →
-        HasMalleability ctx (.multi_a k keys) { s := true, e := true }
+        HasMalleability ctx (.multi_a k keys) {
+          s := true, e := true, nonMalleable := true
+        }
 
   /-- Pointwise malleability derivations for threshold children. -/
   inductive HasMalleabilityList (ctx : ScriptContext) :
@@ -204,7 +229,9 @@ mutual
 end
 
 /-- A fragment is malleability-analyzable when the BIP 379 judgment assigns it
-    a unique modifier set in the requested script context. -/
+    a unique modifier set in the requested script context. Failure of the
+    non-malleability requirements is represented by `mods.nonMalleable = false`,
+    not by absence of a derivation. -/
 def malleabilityAnalyzable (ctx : ScriptContext) (fragment : CoreFragment) : Prop :=
   ∃ mods, HasMalleability ctx fragment mods
 
