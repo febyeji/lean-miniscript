@@ -22,12 +22,11 @@ structure CorrectnessModifiers where
   o : Bool := false
   /-- n (nonzero): requires nonzero input -/
   n : Bool := false
-  /-- d (dissatisfiable): can be dissatisfied with empty witness -/
+  /-- d (dissatisfiable): has an unconditional dissatisfaction that needs no
+      signature, preimage, or satisfied timelock -/
   d : Bool := false
   /-- u (unit): on success, pushes exactly 1 (not just any nonzero) -/
   u : Bool := false
-  /-- s (signed): satisfaction requires a signature -/
-  s : Bool := false
   deriving Repr, DecidableEq, BEq
 
 /-- A complete Miniscript correctness type: base type + correctness modifiers. -/
@@ -79,7 +78,7 @@ def thresholdRestTypes : List MiniType → Prop
    `ty`.
 
    BIP 379 type system: each fragment has a base type (B/V/K/W)
-   and correctness modifier properties (k, z, o, n, d, u, s).
+   and correctness modifier properties (k, z, o, n, d, u).
 
    The rules cover every core constructor. They intentionally remain separate
    from `Miniscript.Validation`: context and size side conditions live there,
@@ -100,14 +99,14 @@ inductive HasType : CoreFragment → MiniType → Prop where
       BIP 379: K, o, n, d, u -/
   | pk_k : (key : PubKey) →
       HasType (.pk_k key) ⟨.K, {
-        o := true, n := true, d := true, u := true, s := true
+        o := true, n := true, d := true, u := true
       }⟩
 
   /-- pk_h(key): OP_DUP OP_HASH160 <hash> OP_EQUALVERIFY.
       Type: Kndu. -/
   | pk_h : (key : PubKey) →
       HasType (.pk_h key) ⟨.K, {
-        n := true, d := true, u := true, s := true
+        n := true, d := true, u := true
       }⟩
 
   /-- `older(n)`: Bz, timelock check fragment. -/
@@ -157,7 +156,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := modsX.n || (modsX.z && tyY.mods.n)
         d := false  -- and_v is never dissatisfiable (V-type X aborts on failure)
         u := tyY.mods.u
-        s := modsX.s || tyY.mods.s
       }⟩
 
   /-- and_b(X,Y): [X] [Y] OP_BOOLAND, with X:B and Y:W. -/
@@ -170,7 +168,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := modsX.n || (modsX.z && modsY.n)
         d := modsX.d && modsY.d
         u := true
-        s := modsX.s && modsY.s
       }⟩
 
   /-- or_b(X,Y): [X] [Y] OP_BOOLOR. Both must be dissatisfiable.
@@ -187,7 +184,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := false
         d := true
         u := true
-        s := modsX.s && modsY.s
       }⟩
 
   /-- or_c(X,Y): [X] OP_NOTIF [Y] OP_ENDIF, with X:Bdu and Y:V. -/
@@ -201,7 +197,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := false
         d := false
         u := false
-        s := modsX.s || modsY.s
       }⟩
 
   /-- or_d(X,Y): [X] OP_IFDUP OP_NOTIF [Y] OP_ENDIF, with X:Bdu and Y:B. -/
@@ -215,7 +210,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := false
         d := modsY.d
         u := modsY.u
-        s := modsX.s || modsY.s
       }⟩
 
   /-- or_i(X,Y): OP_IF [X] OP_ELSE [Y] OP_ENDIF. Both branches have the same
@@ -231,7 +225,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := false
         d := tyX.mods.d || tyY.mods.d
         u := tyX.mods.u && tyY.mods.u
-        s := tyX.mods.s || tyY.mods.s
       }⟩
 
   /-- andor(X,Y,Z): [X] OP_NOTIF [Z] OP_ELSE [Y] OP_ENDIF, with X:Bdu and
@@ -251,7 +244,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := false
         d := tyZ.mods.d
         u := tyY.mods.u && tyZ.mods.u
-        s := modsX.s || tyY.mods.s || tyZ.mods.s
       }⟩
 
   /-- Wrapper `c`: [X] OP_CHECKSIG. Converts K to B.
@@ -264,7 +256,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := modsX.n
         d := modsX.d
         u := true
-        s := modsX.s
       }⟩
 
   /-- Wrapper `v`: [X] OP_VERIFY. Converts B to V.
@@ -277,7 +268,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := modsX.n
         d := false
         u := false
-        s := modsX.s
       }⟩
 
   /-- Wrapper `a`: OP_TOALTSTACK [X] OP_FROMALTSTACK. Converts B to W.
@@ -290,7 +280,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := false
         d := modsX.d
         u := modsX.u
-        s := modsX.s
       }⟩
 
   /-- Wrapper `s`: OP_SWAP [X]. Converts Bo to W.
@@ -304,7 +293,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := false
         d := modsX.d
         u := modsX.u
-        s := modsX.s
       }⟩
 
   /-- Wrapper `d`: OP_DUP OP_IF [X] OP_ENDIF. Converts Vz to Bondu, except
@@ -318,7 +306,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := true
         d := true
         u := false
-        s := modsX.s
       }⟩
 
   /-- Wrapper `j`: OP_SIZE OP_0NOTEQUAL OP_IF [X] OP_ENDIF. Keeps B behavior
@@ -332,7 +319,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := true
         d := true
         u := modsX.u
-        s := modsX.s
       }⟩
 
   /-- Wrapper `n`: [X] OP_0NOTEQUAL. Converts B to B with unit success. -/
@@ -344,7 +330,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := modsX.n
         d := modsX.d
         u := true
-        s := modsX.s
       }⟩
 
   /-- `thresh(k, X1, ..., Xn)`: first child is Bdu; remaining children are Wdu. -/
@@ -361,7 +346,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := false
         d := true
         u := true
-        s := modsX.s || (MiniType.modifiers restTypes).any (fun mods => mods.s)
       }⟩
 
   /-- Legacy multisig is Bndu. Key-count and context restrictions are handled by
@@ -374,7 +358,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := true
         d := true
         u := true
-        s := true
       }⟩
 
   /-- Tapscript CHECKSIGADD multisig is Bdu. -/
@@ -386,7 +369,6 @@ inductive HasType : CoreFragment → MiniType → Prop where
         n := false
         d := true
         u := true
-        s := true
       }⟩
 
 /-- Pointwise typing for nested fragment lists, used by `thresh`. -/
@@ -428,7 +410,7 @@ theorem typed_multi_a_has_keys {k : Nat} {keys : List PubKey} {ty : MiniType} :
 /-- Sanity check: the singleton `multi_a` case is constructible when the key-count
     side condition is satisfied. -/
 example : HasType (.multi_a 1 [PubKey.ofBytes ByteArray.empty])
-    ⟨.B, { d := true, u := true, s := true }⟩ := by
+    ⟨.B, { d := true, u := true }⟩ := by
   exact HasType.multi_a 1 [PubKey.ofBytes ByteArray.empty] (by decide) (by decide)
 
 /-- Sanity check: singleton `thresh` is constructible and uses the nonempty-list

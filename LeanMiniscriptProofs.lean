@@ -1,5 +1,6 @@
 import LeanMiniscript
 import LeanMiniscript.Miniscript.TypeInferenceProofs
+import LeanMiniscript.Miniscript.MalleabilityInferenceProofs
 import LeanMiniscript.Miniscript.Conformance
 import LeanMiniscript.Miniscript.Structural
 import LeanMiniscript.Miniscript.CompileConcreteProofs
