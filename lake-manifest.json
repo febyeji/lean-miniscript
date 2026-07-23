@@ -1,0 +1,16 @@
+{"version": "1.2.0",
+ "packagesDir": ".lake/packages",
+ "packages":
+ [{"url": "https://github.com/febyeji/lean-hash160.git",
+   "type": "git",
+   "subDir": null,
+   "scope": "",
+   "rev": "d55f38607f76104609004cdaca27ef0e21f372b6",
+   "name": "lean_hash160",
+   "manifestFile": "lake-manifest.json",
+   "inputRev": "d55f38607f76104609004cdaca27ef0e21f372b6",
+   "inherited": false,
+   "configFile": "lakefile.lean"}],
+ "name": "lean_miniscript",
+ "lakeDir": ".lake",
+ "fixedToolchain": false}
