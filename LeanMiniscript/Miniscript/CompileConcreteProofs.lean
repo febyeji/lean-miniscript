@@ -1,4 +1,5 @@
 import LeanMiniscript.Miniscript.CompileConcrete
+import LeanMiniscript.Miniscript.CompileConcreteChecked
 import LeanMiniscript.Miniscript.Structural
 
 namespace LeanMiniscript.Miniscript
@@ -32,5 +33,35 @@ theorem compileConcrete_balancedControlFlow (fragment : CoreFragment) :
 theorem compileSurfaceConcrete_balancedControlFlow (fragment : SurfaceFragment) :
     BalancedControlFlow (compileSurfaceConcrete fragment) :=
   compileSurfaceWithKeyHash_balancedControlFlow concreteKeyHash fragment
+
+/-- Concrete core compilation emits only opcodes allowed by the validated
+Script context. -/
+theorem compileConcrete_scriptAllowed
+    {ctx : ScriptContext} {fragment : CoreFragment}
+    (wellFormed : fragment.WellFormed ctx) :
+    ScriptAllowed ctx (compileConcrete fragment) :=
+  compileWithKeyHash_scriptAllowed concreteKeyHash wellFormed
+
+/-- Concrete surface compilation emits only opcodes allowed by the validated
+Script context. -/
+theorem compileSurfaceConcrete_scriptAllowed
+    {ctx : ScriptContext} {fragment : SurfaceFragment}
+    (wellFormed : fragment.WellFormed ctx) :
+    ScriptAllowed ctx (compileSurfaceConcrete fragment) :=
+  compileSurfaceWithKeyHash_scriptAllowed concreteKeyHash wellFormed
+
+/-- Concrete checked-core compilation carries context safety from the checked
+boundary. -/
+theorem compileConcreteChecked_scriptAllowed {ctx : ScriptContext}
+    (checked : CheckedFragment ctx) :
+    ScriptAllowed ctx (compileConcreteChecked checked) :=
+  compileCheckedWithKeyHash_scriptAllowed concreteKeyHash checked
+
+/-- Concrete checked-surface compilation carries context safety from the
+checked boundary. -/
+theorem compileSurfaceConcreteChecked_scriptAllowed {ctx : ScriptContext}
+    (checked : CheckedSurfaceFragment ctx) :
+    ScriptAllowed ctx (compileSurfaceConcreteChecked checked) :=
+  compileCheckedSurfaceWithKeyHash_scriptAllowed concreteKeyHash checked
 
 end LeanMiniscript.Miniscript

@@ -3,6 +3,8 @@ import LeanMiniscript.Miniscript.Syntax
 
 namespace LeanMiniscript.Miniscript
 
+open LeanMiniscript.Script
+
 /-- Script contexts covered by BIP 379. -/
 inductive ScriptContext where
   | p2wsh
@@ -44,5 +46,53 @@ def ScriptContext.permitsLegacyMulti : ScriptContext → Prop
 def ScriptContext.permitsCheckSigAddMulti : ScriptContext → Prop
   | .p2wsh => False
   | .tapscript => True
+
+/-- Whether an opcode belongs to the generated Script subset for a context.
+
+    The compiler's modeled opcode universe is shared between P2WSH and
+    Tapscript except for the two multisig encodings: legacy
+    `OP_CHECKMULTISIG` is P2WSH-only, while `OP_CHECKSIGADD` is
+    Tapscript-only. -/
+def OpcodeAllowed : ScriptContext → Opcode → Prop
+  | .tapscript, .OP_CHECKMULTISIG => False
+  | .p2wsh, .OP_CHECKSIGADD => False
+  | _, _ => True
+
+instance instDecidableOpcodeAllowed
+    (ctx : ScriptContext) (opcode : Opcode) :
+    Decidable (OpcodeAllowed ctx opcode) := by
+  cases ctx <;> cases opcode <;> simp only [OpcodeAllowed] <;> infer_instance
+
+/-- Context safety for one generated Script element. Data and numeric pushes
+    are valid in both modeled contexts; opcode restrictions are delegated to
+    `OpcodeAllowed`. -/
+def ScriptElementAllowed (ctx : ScriptContext) : ScriptElement → Prop
+  | .op opcode => OpcodeAllowed ctx opcode
+  | .pushData _ => True
+  | .pushNum _ => True
+
+instance instDecidableScriptElementAllowed
+    (ctx : ScriptContext) (element : ScriptElement) :
+    Decidable (ScriptElementAllowed ctx element) := by
+  cases element <;> simp only [ScriptElementAllowed] <;> infer_instance
+
+/-- Every element in a generated Script is allowed by the selected context. -/
+def ScriptAllowed (ctx : ScriptContext) : Script → Prop
+  | [] => True
+  | element :: script =>
+      ScriptElementAllowed ctx element ∧ ScriptAllowed ctx script
+
+instance instDecidableScriptAllowed (ctx : ScriptContext) :
+    (script : Script) → Decidable (ScriptAllowed ctx script)
+  | [] => isTrue trivial
+  | element :: script =>
+      match instDecidableScriptElementAllowed ctx element,
+          instDecidableScriptAllowed ctx script with
+      | isTrue headAllowed, isTrue tailAllowed =>
+          isTrue ⟨headAllowed, tailAllowed⟩
+      | isFalse headForbidden, _ =>
+          isFalse (fun allowed => headForbidden allowed.1)
+      | _, isFalse tailForbidden =>
+          isFalse (fun allowed => tailForbidden allowed.2)
 
 end LeanMiniscript.Miniscript
