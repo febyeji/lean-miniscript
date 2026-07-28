@@ -23,6 +23,9 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
 - General soundness, satisfaction, non-malleability, small-step semantics, and
   the interpreter are unfinished.
 
+See [`MINISCRIPT_COVERAGE.md`](MINISCRIPT_COVERAGE.md) for the constructor-level
+coverage matrix, proof-status legend, semantic conventions, and subsystem pins.
+
 ## Building
 
 Requires [Lean 4](https://lean-lang.org/) (see `lean-toolchain` for version).
