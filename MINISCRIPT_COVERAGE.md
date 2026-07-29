@@ -127,18 +127,22 @@ against an attacker model.
 
 | Constructor | Validation via core | Typing via core | Desugaring/compilation | Parser/pretty-printer | Evaluation | Satisfy/dissatisfy | Surface theorem |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `core` | Done | Done | Done | Missing | Partial | Missing | Missing |
-| `pk` | Done | Done | Done | Missing | Partial | Missing | Missing |
-| `pkh` | Done | Done | Done | Missing | Partial | Missing | Missing |
-| `and_n` | Done | Done | Done | Missing | Partial | Missing | Missing |
-| `t` | Done | Done | Done | Missing | Partial | Missing | Missing |
-| `l` | Done | Done | Done | Missing | Partial | Missing | Missing |
-| `u` | Done | Done | Done | Missing | Partial | Missing | Missing |
+| `core` | Done | Done | Done | Partial | Partial | Missing | Missing |
+| `pk` | Done | Done | Done | Partial | Partial | Missing | Missing |
+| `pkh` | Done | Done | Done | Partial | Partial | Missing | Missing |
+| `and_n` | Done | Done | Done | Partial | Partial | Missing | Missing |
+| `t` | Done | Done | Done | Partial | Partial | Missing | Missing |
+| `l` | Done | Done | Done | Partial | Partial | Missing | Missing |
+| `u` | Done | Done | Done | Partial | Partial | Missing | Missing |
 
 `SurfaceFragment` is currently a thin recursive sugar layer around embedded
-core fragments, not a source-preserving concrete-syntax tree. Future
-parser/pretty-printer work should keep that boundary and target a canonical
-normalized round-trip instead of duplicating the full core AST.
+core fragments, not a source-preserving concrete-syntax tree. The executable
+codec normalizes equivalent core shapes to their canonical surface sugar,
+accepts an explicit key resolver, checks resolved keys against the selected
+context, and reports structured token, arity, number, hash, key, context,
+validation, and trailing-input failures.
+Constructor-exhaustive golden fixtures and general round-trip/desugaring
+preservation proofs remain before this column becomes `Done`.
 
 ## Checked Contract Targets
 
