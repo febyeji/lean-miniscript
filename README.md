@@ -13,6 +13,8 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   general relational conformance theorem.
 - Surface compilation covers every current `SurfaceFragment` constructor via
   explicit desugaring; policy lowering remains a placeholder.
+- Canonical surface parsing and pretty-printing are executable with structured
+  errors and an explicit key resolver; exhaustive round-trip proofs remain.
 - Compiler output is proved to use the model's closed opcode universe and to
   have balanced conditional control flow.
 - Executable `pk_h`/`pkh` compilation uses the commit-pinned, pure Lean

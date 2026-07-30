@@ -13,14 +13,13 @@ inductive ScriptContext where
 
 /-- Resolved public keys allowed by the target script context.
 
-    P2WSH keys must resolve to compressed public keys. Tapscript keys resolve to
-    x-only public keys; compressed keys may be converted by the descriptor layer,
-    so both 32-byte x-only and 33-byte compressed representations are accepted
-    at this boundary. -/
+    P2WSH keys resolve to compressed public keys. Tapscript keys must already be
+    normalized to x-only public keys before entering the core AST; descriptor
+    layers may accept compressed key expressions, but must convert them first. -/
 def validResolvedPubKey (ctx : ScriptContext) (key : PubKey) : Prop :=
   match ctx with
   | .p2wsh => key.size = 33
-  | .tapscript => key.size = 32 ∨ key.size = 33
+  | .tapscript => key.size = 32
 
 /-- Context compatibility for unresolved descriptor key expressions. -/
 def KeyMaterial.CompatibleWith : KeyMaterial → ScriptContext → Prop

@@ -8,6 +8,9 @@ import LeanMiniscript.Miniscript.Syntax
 import LeanMiniscript.Miniscript.Context
 import LeanMiniscript.Miniscript.Validation
 import LeanMiniscript.Miniscript.ValidationDecidable
+import LeanMiniscript.Miniscript.SurfaceNormalize
+import LeanMiniscript.Miniscript.SurfacePretty
+import LeanMiniscript.Miniscript.SurfaceParser
 import LeanMiniscript.Miniscript.Metrics
 import LeanMiniscript.Miniscript.Types
 import LeanMiniscript.Miniscript.TypeInference
