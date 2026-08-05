@@ -14,8 +14,6 @@ inductive BaseType where
 /-- Correctness modifier properties.
     These refine the base type with stack-shape guarantees. -/
 structure CorrectnessModifiers where
-  /-- k (no mixed height/time timelocks) -/
-  k : Bool := false
   /-- z (zero-arg): consumes no stack elements beyond input -/
   z : Bool := false
   /-- o (one-arg): consumes exactly one stack element -/
@@ -78,7 +76,8 @@ def thresholdRestTypes : List MiniType → Prop
    `ty`.
 
    BIP 379 type system: each fragment has a base type (B/V/K/W)
-   and correctness modifier properties (k, z, o, n, d, u).
+   and correctness modifier properties (z, o, n, d, u). Timelock-mixing
+   compatibility is a separate structural condition in `Miniscript.Validation`.
 
    The rules cover every core constructor. They intentionally remain separate
    from `Miniscript.Validation`: context and size side conditions live there,
@@ -111,11 +110,11 @@ inductive HasType : CoreFragment → MiniType → Prop where
 
   /-- `older(n)`: Bz, timelock check fragment. -/
   | older : (n : Nat) →
-      HasType (.older n) ⟨.B, { k := true, z := true }⟩
+      HasType (.older n) ⟨.B, { z := true }⟩
 
   /-- `after(n)`: Bz, timelock check fragment. -/
   | after : (n : Nat) →
-      HasType (.after n) ⟨.B, { k := true, z := true }⟩
+      HasType (.after n) ⟨.B, { z := true }⟩
 
   /-- Hash preimage fragments are Bondu. -/
   | sha256 : (hash : Hash256) →
