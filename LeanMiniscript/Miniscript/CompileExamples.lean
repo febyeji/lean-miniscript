@@ -15,8 +15,7 @@ Build-checked assembly and serialized-byte fixtures for every constructor in
 The expected bytes were generated from the BIP 379 translation table pinned at
 `bitcoin/bips@c021a5f51ae9d3e71a41eac3dda6dc060fead35d` and cross-checked with
 `rust-miniscript` 13.1.0 at commit
-`c9ed0006144ad92436191047edd4132f79e5916a`. The checked oracle output and its
-generator live under `conformance/`.
+`c9ed0006144ad92436191047edd4132f79e5916a`.
 
 `Script.hash160` remains deliberately opaque for formal semantics. The `pk_h`
 and `pkh` byte fixtures use `compileConcrete`, backed by the pinned pure Lean
