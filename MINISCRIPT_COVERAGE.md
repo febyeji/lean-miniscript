@@ -127,13 +127,13 @@ against an attacker model.
 
 | Constructor | Validation via core | Typing via core | Desugaring/compilation | Parser/pretty-printer | Evaluation | Satisfy/dissatisfy | Surface theorem |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `core` | Done | Done | Done | Partial | Partial | Missing | Missing |
-| `pk` | Done | Done | Done | Partial | Partial | Missing | Missing |
-| `pkh` | Done | Done | Done | Partial | Partial | Missing | Missing |
-| `and_n` | Done | Done | Done | Partial | Partial | Missing | Missing |
-| `t` | Done | Done | Done | Partial | Partial | Missing | Missing |
-| `l` | Done | Done | Done | Partial | Partial | Missing | Missing |
-| `u` | Done | Done | Done | Partial | Partial | Missing | Missing |
+| `core` | Done | Done | Done | Partial | Partial | Missing | Partial |
+| `pk` | Done | Done | Done | Partial | Partial | Missing | Partial |
+| `pkh` | Done | Done | Done | Partial | Partial | Missing | Partial |
+| `and_n` | Done | Done | Done | Partial | Partial | Missing | Partial |
+| `t` | Done | Done | Done | Partial | Partial | Missing | Partial |
+| `l` | Done | Done | Done | Partial | Partial | Missing | Partial |
+| `u` | Done | Done | Done | Partial | Partial | Missing | Partial |
 
 `SurfaceFragment` is currently a thin recursive sugar layer around embedded
 core fragments, not a source-preserving concrete-syntax tree. The executable
@@ -141,8 +141,11 @@ codec normalizes equivalent core shapes to their canonical surface sugar,
 accepts an explicit key resolver, checks resolved keys against the selected
 context, and reports structured token, arity, number, hash, key, context,
 validation, and trailing-input failures.
-Constructor-exhaustive golden fixtures and general round-trip/desugaring
-preservation proofs remain before this column becomes `Done`.
+Constructor-exhaustive canonical golden fixtures and every structured error tag
+are build-checked. General theorems prove that normalization preserves
+desugaring, is idempotent, and is stable under canonical pretty-printing. A
+general parser/pretty-printer round-trip theorem remains before the parser and
+surface-theorem columns become `Done`.
 
 ## Checked Contract Targets
 
