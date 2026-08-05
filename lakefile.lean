@@ -16,12 +16,12 @@ lean_lib LeanMiniscript where
 
 @[default_target]
 lean_lib LeanMiniscriptProofs where
-  roots := #[`LeanMiniscriptProofs]
+  roots := #[`LeanMiniscript.Proofs]
 
 @[default_target]
 lean_lib LeanMiniscriptExperimental where
-  roots := #[`LeanMiniscriptExperimental]
+  roots := #[`LeanMiniscript.Experimental]
 
 @[default_target]
 lean_lib LeanMiniscriptTests where
-  roots := #[`LeanMiniscriptTests]
+  roots := #[`LeanMiniscript.Tests]
