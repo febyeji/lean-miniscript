@@ -1,4 +1,5 @@
 import LeanMiniscript.Miniscript.SurfacePretty
+import LeanMiniscript.Miniscript.SurfaceParser
 
 namespace LeanMiniscript.Miniscript
 
@@ -51,6 +52,17 @@ theorem desugar_normalizeSurface (fragment : SurfaceFragment) :
       rw [show (normalizeSurface x).desugar = x.desugar by
         simpa [desugar] using hx]
 
+/-- Surface normalization preserves context-aware well-formedness in both
+    directions. This is the validation bridge needed by the parser/printer
+    round-trip theorem: canonical spelling changes syntax, not the checked
+    core fragment. -/
+theorem wellFormed_normalizeSurface_iff (context : ScriptContext)
+    (fragment : SurfaceFragment) :
+    (normalizeSurface fragment).WellFormed context ↔ fragment.WellFormed context := by
+  unfold SurfaceFragment.WellFormed
+  rw [show (normalizeSurface fragment).desugar = fragment.desugar by
+    simpa [desugar] using desugar_normalizeSurface fragment]
+
 /-- Core-shape recognition already produces a normalized surface fragment. -/
 theorem normalizeSurface_normalizeCoreAsSurface (fragment : CoreFragment) :
     normalizeSurface (normalizeCoreAsSurface fragment) =
@@ -84,5 +96,14 @@ theorem normalizeSurface_idempotent (fragment : SurfaceFragment) :
 theorem prettySurface_normalizeSurface (fragment : SurfaceFragment) :
     prettySurface (normalizeSurface fragment) = prettySurface fragment := by
   simp [prettySurface, prettySurfaceWith, normalizeSurface_idempotent]
+
+/-- The precise remaining end-to-end codec obligation. Raw surface ASTs are
+    intentionally permitted to be invalid, so parsing their printed form can
+    only be required after context-aware validation. -/
+def SurfaceTextRoundTrip : Prop :=
+  ∀ (context : ScriptContext) (fragment : SurfaceFragment),
+    fragment.WellFormed context →
+      parseSurfaceHex context (prettySurface fragment) =
+        .ok (normalizeSurface fragment)
 
 end LeanMiniscript.Miniscript
