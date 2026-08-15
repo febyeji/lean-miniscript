@@ -37,4 +37,33 @@ def normalizeSurface : SurfaceFragment → SurfaceFragment
   | .l x => .l (normalizeSurface x)
   | .u x => .u (normalizeSurface x)
 
+/-- Core-shape recognition already produces a normalized surface fragment. -/
+theorem normalizeSurface_normalizeCoreAsSurface (fragment : CoreFragment) :
+    normalizeSurface (normalizeCoreAsSurface fragment) =
+      normalizeCoreAsSurface fragment := by
+  cases fragment with
+  | c x => cases x <;> rfl
+  | andor x y z =>
+      have hx := normalizeSurface_normalizeCoreAsSurface x
+      have hy := normalizeSurface_normalizeCoreAsSurface y
+      cases z <;>
+        simp_all [normalizeCoreAsSurface, normalizeSurface]
+  | and_v x y =>
+      have hx := normalizeSurface_normalizeCoreAsSurface x
+      cases y <;>
+        simp_all [normalizeCoreAsSurface, normalizeSurface]
+  | or_i x y =>
+      have hx := normalizeSurface_normalizeCoreAsSurface x
+      have hy := normalizeSurface_normalizeCoreAsSurface y
+      cases x <;> cases y <;>
+        simp_all [normalizeCoreAsSurface, normalizeSurface]
+  | _ => rfl
+termination_by structural fragment
+
+/-- Surface normalization is idempotent. -/
+theorem normalizeSurface_idempotent (fragment : SurfaceFragment) :
+    normalizeSurface (normalizeSurface fragment) = normalizeSurface fragment := by
+  induction fragment <;>
+    simp_all [normalizeSurface, normalizeSurface_normalizeCoreAsSurface]
+
 end LeanMiniscript.Miniscript
