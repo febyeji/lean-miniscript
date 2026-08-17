@@ -451,10 +451,9 @@ private def elaborateRawFuel (context : ScriptContext)
       else
         .error (.unknownFragment position name)
 
-/-- Parse one supported Miniscript expression, resolve its keys, normalize its
-    surface spelling, and reject fragments invalid in the selected context. -/
-def parseSurface (context : ScriptContext) (resolver : KeyResolver)
-    (input : String) : Except SurfaceParseError SurfaceFragment := do
+private def parseSurfaceUnchecked (context : ScriptContext)
+    (resolver : KeyResolver) (input : String) :
+    Except SurfaceParseError SurfaceFragment := do
   let tokens := tokenizeSurface input
   if tokens.isEmpty then
     .error .emptyInput
@@ -464,9 +463,36 @@ def parseSurface (context : ScriptContext) (resolver : KeyResolver)
     | token :: _ =>
         .error (.trailingInput token.position (tokenText token))
     | [] =>
-        let fragment ←
-          elaborateRawFuel context resolver (tokens.length + 1) raw
-        validateSurface context (normalizeSurface fragment)
+        elaborateRawFuel context resolver (tokens.length + 1) raw
+
+/-- Parse one supported Miniscript expression, resolve its keys, normalize its
+    surface spelling, and reject fragments invalid in the selected context. -/
+def parseSurface (context : ScriptContext) (resolver : KeyResolver)
+    (input : String) : Except SurfaceParseError SurfaceFragment := do
+  let fragment ← parseSurfaceUnchecked context resolver input
+  validateSurface context (normalizeSurface fragment)
+
+/-- Every successfully parsed surface fragment is already in canonical form. -/
+theorem normalizeSurface_of_parseSurface_eq_ok
+    (context : ScriptContext) (resolver : KeyResolver) (input : String)
+    (fragment : SurfaceFragment)
+    (h : parseSurface context resolver input = .ok fragment) :
+    normalizeSurface fragment = fragment := by
+  unfold parseSurface at h
+  cases hUnchecked : parseSurfaceUnchecked context resolver input with
+  | error error =>
+      rw [hUnchecked] at h
+      contradiction
+  | ok unchecked =>
+      rw [hUnchecked] at h
+      change validateSurface context (normalizeSurface unchecked) = .ok fragment at h
+      by_cases hValid : (normalizeSurface unchecked).WellFormed context
+      · simp [validateSurface, hValid] at h
+        change Except.ok (normalizeSurface unchecked) = Except.ok fragment at h
+        injection h with hFragment
+        rw [← hFragment]
+        exact normalizeSurface_idempotent unchecked
+      · simp [validateSurface, hValid] at h
 
 /-- Parse canonical surface text whose key tokens are raw hexadecimal public
     keys. -/
