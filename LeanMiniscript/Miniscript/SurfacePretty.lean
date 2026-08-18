@@ -105,6 +105,19 @@ def Expr.AtomsSafe : Expr → Prop
 def prependWrappers (wrappers : String) (body : Expr) : Expr :=
   if wrappers.isEmpty then body else .wrapper wrappers body
 
+/-- Build arguments for a variadic fragment while preserving the printer's
+    historical trailing comma for malformed nodes with an empty item list. -/
+def variadicArguments (head : Expr) (tail : List Expr) : List Expr :=
+  match tail with
+  | [] => [head, .atom ""]
+  | _ :: _ => head :: tail
+
+/-- Well-formed variadic fragments have a nonempty item list and therefore use
+    the ordinary argument sequence. -/
+theorem variadicArguments_of_ne_nil (head : Expr) (tail : List Expr)
+    (hTail : tail ≠ []) : variadicArguments head tail = head :: tail := by
+  cases tail <;> simp_all [variadicArguments]
+
 /-- Build the canonical proof-facing text expression for a core fragment while
     accumulating consecutive BIP 379 wrapper letters. -/
 def coreExprWithWrappers (renderKey : PubKey → String) :
@@ -192,16 +205,18 @@ def coreExprWithWrappers (renderKey : PubKey → String) :
   | wrappers, .thresh k fragments =>
       prependWrappers wrappers
         (.call "thresh"
-          (.atom (toString k) ::
-            fragments.map (coreExprWithWrappers renderKey "")))
+          (variadicArguments (.atom (toString k))
+            (fragments.map (coreExprWithWrappers renderKey ""))))
   | wrappers, .multi k keys =>
       prependWrappers wrappers
         (.call "multi"
-          (.atom (toString k) :: keys.map (fun key => .atom (renderKey key))))
+          (variadicArguments (.atom (toString k))
+            (keys.map (fun key => .atom (renderKey key)))))
   | wrappers, .multi_a k keys =>
       prependWrappers wrappers
         (.call "multi_a"
-          (.atom (toString k) :: keys.map (fun key => .atom (renderKey key))))
+          (variadicArguments (.atom (toString k))
+            (keys.map (fun key => .atom (renderKey key)))))
 
 /-- Render a core fragment while accumulating consecutive BIP 379 wrapper
     letters. The specification uses one colon after the complete wrapper chain:

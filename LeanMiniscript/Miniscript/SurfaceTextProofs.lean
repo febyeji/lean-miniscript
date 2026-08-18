@@ -27,14 +27,16 @@ theorem prettySurface_normalizeSurface (fragment : SurfaceFragment) :
     prettySurface (normalizeSurface fragment) = prettySurface fragment := by
   simp [prettySurface, prettySurfaceWith, normalizeSurface_idempotent]
 
-/-- Canonical hexadecimal surface printing and context-aware parsing form a
-    round trip on well-formed fragments, modulo documented surface
-    normalization. -/
-theorem SurfaceTextRoundTrip :
-    ∀ (context : ScriptContext) (fragment : SurfaceFragment),
-      fragment.WellFormed context →
-        parseSurfaceHex context (prettySurface fragment) =
-          .ok (normalizeSurface fragment) := by
+/-- The end-to-end canonical hexadecimal surface codec contract. -/
+def SurfaceTextRoundTrip : Prop :=
+  ∀ (context : ScriptContext) (fragment : SurfaceFragment),
+    fragment.WellFormed context →
+      parseSurfaceHex context (prettySurface fragment) =
+        .ok (normalizeSurface fragment)
+
+/-- Canonical hexadecimal surface printing and context-aware parsing satisfy
+    `SurfaceTextRoundTrip`. -/
+theorem surfaceTextRoundTrip : SurfaceTextRoundTrip := by
   intro context fragment hWellFormed
   exact parseSurfaceHex_prettySurface context fragment hWellFormed
 

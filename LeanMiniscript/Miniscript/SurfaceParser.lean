@@ -2300,6 +2300,24 @@ mutual
                   canonicalExprCorrect_prependWrappers context wrappers _ _ hWrappers hBody
     | thresh threshold fragments =>
         have hFragments := coreExprListCanonicalCorrect context fragments hWellFormed.2.1
+        have hFragmentsNonempty : fragments ≠ [] := by
+          intro hEmpty
+          subst fragments
+          simp [CoreFragment.WellFormed, validThreshold] at hWellFormed
+          omega
+        have hRenderedFragmentsNonempty :
+            fragments.map
+                (SurfaceText.coreExprWithWrappers prettyPubKey "") ≠ [] := by
+          simpa using hFragmentsNonempty
+        have hVariadicArguments :
+            SurfaceText.variadicArguments (.atom (toString threshold))
+                (fragments.map
+                  (SurfaceText.coreExprWithWrappers prettyPubKey "")) =
+              .atom (toString threshold) ::
+                fragments.map
+                  (SurfaceText.coreExprWithWrappers prettyPubKey "") :=
+          SurfaceText.variadicArguments_of_ne_nil _ _
+            hRenderedFragmentsNonempty
         have hBody : CanonicalExprCorrect context
             (.call "thresh"
               (.atom (toString threshold) ::
@@ -2320,11 +2338,6 @@ mutual
               rawExprMap_eq_cons raws (.atom (toString threshold))
                 (fragments.map
                   (SurfaceText.coreExprWithWrappers prettyPubKey "")) hMap
-            have hFragmentsNonempty : fragments ≠ [] := by
-              intro hEmpty
-              subst fragments
-              simp [CoreFragment.WellFormed, validThreshold] at hWellFormed
-              omega
             have hRestNonempty : rest.isEmpty = false := by
               cases rest with
               | nil =>
@@ -2368,10 +2381,26 @@ mutual
                     rw [hDesugarMap]
             | wrapper => simp [RawSurfaceExpr.toExpr] at hThresholdRaw
             | call => simp [RawSurfaceExpr.toExpr] at hThresholdRaw
-        simpa [SurfaceText.coreExprWithWrappers, normalizeCoreAsSurface] using
-          canonicalExprCorrect_prependWrappers context wrappers _ _ hWrappers hBody
+        simp only [SurfaceText.coreExprWithWrappers, normalizeCoreAsSurface]
+        rw [hVariadicArguments]
+        exact canonicalExprCorrect_prependWrappers context wrappers _ _
+          hWrappers hBody
     | multi threshold keys =>
         have hKeys := canonicalKeyListCorrect context keys hWellFormed.2.2.2
+        have hKeysNonempty : keys ≠ [] := by
+          intro hEmpty
+          subst keys
+          simp [CoreFragment.WellFormed, validThreshold] at hWellFormed
+          omega
+        have hRenderedKeysNonempty :
+            keys.map (fun key => SurfaceText.Expr.atom (prettyPubKey key)) ≠ [] := by
+          simpa using hKeysNonempty
+        have hVariadicArguments :
+            SurfaceText.variadicArguments (.atom (toString threshold))
+                (keys.map (fun key => .atom (prettyPubKey key))) =
+              .atom (toString threshold) ::
+                keys.map (fun key => .atom (prettyPubKey key)) :=
+          SurfaceText.variadicArguments_of_ne_nil _ _ hRenderedKeysNonempty
         have hBody : CanonicalExprCorrect context
             (.call "multi" (.atom (toString threshold) ::
               keys.map (fun key => .atom (prettyPubKey key))))
@@ -2389,11 +2418,6 @@ mutual
             obtain ⟨thresholdRaw, rest, rfl, hThresholdRaw, hRest⟩ :=
               rawExprMap_eq_cons raws (.atom (toString threshold))
                 (keys.map (fun key => .atom (prettyPubKey key))) hMap
-            have hKeysNonempty : keys ≠ [] := by
-              intro hEmpty
-              subst keys
-              simp [CoreFragment.WellFormed, validThreshold] at hWellFormed
-              omega
             have hRestNonempty : rest.isEmpty = false := by
               cases rest with
               | nil =>
@@ -2423,10 +2447,26 @@ mutual
                         rfl
             | wrapper => simp [RawSurfaceExpr.toExpr] at hThresholdRaw
             | call => simp [RawSurfaceExpr.toExpr] at hThresholdRaw
-        simpa [SurfaceText.coreExprWithWrappers, normalizeCoreAsSurface] using
-          canonicalExprCorrect_prependWrappers context wrappers _ _ hWrappers hBody
+        simp only [SurfaceText.coreExprWithWrappers, normalizeCoreAsSurface]
+        rw [hVariadicArguments]
+        exact canonicalExprCorrect_prependWrappers context wrappers _ _
+          hWrappers hBody
     | multi_a threshold keys =>
         have hKeys := canonicalKeyListCorrect context keys hWellFormed.2.2
+        have hKeysNonempty : keys ≠ [] := by
+          intro hEmpty
+          subst keys
+          simp [CoreFragment.WellFormed, validThreshold] at hWellFormed
+          omega
+        have hRenderedKeysNonempty :
+            keys.map (fun key => SurfaceText.Expr.atom (prettyPubKey key)) ≠ [] := by
+          simpa using hKeysNonempty
+        have hVariadicArguments :
+            SurfaceText.variadicArguments (.atom (toString threshold))
+                (keys.map (fun key => .atom (prettyPubKey key))) =
+              .atom (toString threshold) ::
+                keys.map (fun key => .atom (prettyPubKey key)) :=
+          SurfaceText.variadicArguments_of_ne_nil _ _ hRenderedKeysNonempty
         have hBody : CanonicalExprCorrect context
             (.call "multi_a" (.atom (toString threshold) ::
               keys.map (fun key => .atom (prettyPubKey key))))
@@ -2444,11 +2484,6 @@ mutual
             obtain ⟨thresholdRaw, rest, rfl, hThresholdRaw, hRest⟩ :=
               rawExprMap_eq_cons raws (.atom (toString threshold))
                 (keys.map (fun key => .atom (prettyPubKey key))) hMap
-            have hKeysNonempty : keys ≠ [] := by
-              intro hEmpty
-              subst keys
-              simp [CoreFragment.WellFormed, validThreshold] at hWellFormed
-              omega
             have hRestNonempty : rest.isEmpty = false := by
               cases rest with
               | nil =>
@@ -2478,8 +2513,10 @@ mutual
                         rfl
             | wrapper => simp [RawSurfaceExpr.toExpr] at hThresholdRaw
             | call => simp [RawSurfaceExpr.toExpr] at hThresholdRaw
-        simpa [SurfaceText.coreExprWithWrappers, normalizeCoreAsSurface] using
-          canonicalExprCorrect_prependWrappers context wrappers _ _ hWrappers hBody
+        simp only [SurfaceText.coreExprWithWrappers, normalizeCoreAsSurface]
+        rw [hVariadicArguments]
+        exact canonicalExprCorrect_prependWrappers context wrappers _ _
+          hWrappers hBody
 
   private theorem coreExprListCanonicalCorrect
       (context : ScriptContext) (fragments : List CoreFragment)

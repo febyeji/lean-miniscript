@@ -144,8 +144,9 @@ validation, and trailing-input failures.
 Constructor-exhaustive canonical golden fixtures and every structured error tag
 are build-checked. General theorems prove that normalization preserves
 desugaring, is idempotent, and is stable under canonical pretty-printing. The
-`SurfaceTextRoundTrip` theorem proves that parsing canonical hexadecimal output
-returns the normalized surface fragment for every context-valid input.
+`surfaceTextRoundTrip` proves the `SurfaceTextRoundTrip` contract: parsing
+canonical hexadecimal output returns the normalized surface fragment for every
+context-valid input.
 
 ## Checked Contract Targets
 
