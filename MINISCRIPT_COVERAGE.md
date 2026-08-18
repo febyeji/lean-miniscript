@@ -127,13 +127,13 @@ against an attacker model.
 
 | Constructor | Validation via core | Typing via core | Desugaring/compilation | Parser/pretty-printer | Evaluation | Satisfy/dissatisfy | Surface theorem |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `core` | Done | Done | Done | Partial | Partial | Missing | Partial |
-| `pk` | Done | Done | Done | Partial | Partial | Missing | Partial |
-| `pkh` | Done | Done | Done | Partial | Partial | Missing | Partial |
-| `and_n` | Done | Done | Done | Partial | Partial | Missing | Partial |
-| `t` | Done | Done | Done | Partial | Partial | Missing | Partial |
-| `l` | Done | Done | Done | Partial | Partial | Missing | Partial |
-| `u` | Done | Done | Done | Partial | Partial | Missing | Partial |
+| `core` | Done | Done | Done | Done | Partial | Missing | Done |
+| `pk` | Done | Done | Done | Done | Partial | Missing | Done |
+| `pkh` | Done | Done | Done | Done | Partial | Missing | Done |
+| `and_n` | Done | Done | Done | Done | Partial | Missing | Done |
+| `t` | Done | Done | Done | Done | Partial | Missing | Done |
+| `l` | Done | Done | Done | Done | Partial | Missing | Done |
+| `u` | Done | Done | Done | Done | Partial | Missing | Done |
 
 `SurfaceFragment` is currently a thin recursive sugar layer around embedded
 core fragments, not a source-preserving concrete-syntax tree. The executable
@@ -143,9 +143,10 @@ context, and reports structured token, arity, number, hash, key, context,
 validation, and trailing-input failures.
 Constructor-exhaustive canonical golden fixtures and every structured error tag
 are build-checked. General theorems prove that normalization preserves
-desugaring, is idempotent, and is stable under canonical pretty-printing. A
-general parser/pretty-printer round-trip theorem remains before the parser and
-surface-theorem columns become `Done`.
+desugaring, is idempotent, and is stable under canonical pretty-printing. The
+`surfaceTextRoundTrip` proves the `SurfaceTextRoundTrip` contract: parsing
+canonical hexadecimal output returns the normalized surface fragment for every
+context-valid input.
 
 ## Checked Contract Targets
 

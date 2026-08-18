@@ -66,4 +66,45 @@ theorem normalizeSurface_idempotent (fragment : SurfaceFragment) :
   induction fragment <;>
     simp_all [normalizeSurface, normalizeSurface_normalizeCoreAsSurface]
 
+/-- Recognizing surface sugar does not change the desugared core fragment. -/
+theorem desugar_normalizeCoreAsSurface (fragment : CoreFragment) :
+    desugar (normalizeCoreAsSurface fragment) = fragment := by
+  cases fragment with
+  | c x => cases x <;> rfl
+  | andor x y z =>
+      have hx := desugar_normalizeCoreAsSurface x
+      have hy := desugar_normalizeCoreAsSurface y
+      cases z <;>
+        simp_all [normalizeCoreAsSurface, desugar, SurfaceFragment.desugar]
+  | and_v x y =>
+      have hx := desugar_normalizeCoreAsSurface x
+      cases y <;>
+        simp_all [normalizeCoreAsSurface, desugar, SurfaceFragment.desugar]
+  | or_i x y =>
+      have hx := desugar_normalizeCoreAsSurface x
+      have hy := desugar_normalizeCoreAsSurface y
+      cases x <;> cases y <;>
+        simp_all [normalizeCoreAsSurface, desugar, SurfaceFragment.desugar]
+  | _ => rfl
+termination_by structural fragment
+
+/-- Recursive surface normalization preserves desugaring. -/
+theorem desugar_normalizeSurface (fragment : SurfaceFragment) :
+    desugar (normalizeSurface fragment) = desugar fragment := by
+  induction fragment with
+  | core core => exact desugar_normalizeCoreAsSurface core
+  | pk _ | pkh _ => rfl
+  | and_n x y hx hy =>
+      change CoreFragment.andor
+        (normalizeSurface x).desugar (normalizeSurface y).desugar .zero =
+          .andor x.desugar y.desugar .zero
+      rw [show (normalizeSurface x).desugar = x.desugar by
+        simpa [desugar] using hx]
+      rw [show (normalizeSurface y).desugar = y.desugar by
+        simpa [desugar] using hy]
+  | t x hx | l x hx | u x hx =>
+      simp only [normalizeSurface, desugar, SurfaceFragment.desugar]
+      rw [show (normalizeSurface x).desugar = x.desugar by
+        simpa [desugar] using hx]
+
 end LeanMiniscript.Miniscript
