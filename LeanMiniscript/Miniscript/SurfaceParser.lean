@@ -857,29 +857,8 @@ private theorem hexNibble_hexDigit (n : Nat) (h : n < 16) :
   have hAll : ∀ value : Fin 16,
       hexNibble? (LeanMiniscript.Script.hexDigit value.val) =
         some value.val := by
-    native_decide
+    decide
   exact hAll ⟨n, h⟩
-
-private theorem decodeHexChars_byteHex (byte : UInt8) :
-    decodeHexChars? (LeanMiniscript.Script.byteHex byte).toList =
-      some [byte] := by
-  have hAll : ∀ value : Fin 256,
-      decodeHexChars?
-          (LeanMiniscript.Script.byteHex (UInt8.ofNat value.val)).toList =
-        some [UInt8.ofNat value.val] := by
-    native_decide
-  simpa using hAll ⟨byte.toNat, byte.toNat_lt⟩
-
-private theorem byteHexValue (byte : UInt8) :
-    UInt8.ofNat
-        ((byte.toNat / 16) * 16 + byte.toNat % 16) = byte := by
-  have hAll : ∀ value : Fin 256,
-      UInt8.ofNat
-          (((UInt8.ofNat value.val).toNat / 16) * 16 +
-            (UInt8.ofNat value.val).toNat % 16) =
-        UInt8.ofNat value.val := by
-    native_decide
-  simpa using hAll ⟨byte.toNat, byte.toNat_lt⟩
 
 private theorem byteHexValueUInt8 (byte : UInt8) :
     UInt8.ofNat (byte.toNat / 16) * 16 +
@@ -888,7 +867,8 @@ private theorem byteHexValueUInt8 (byte : UInt8) :
       UInt8.ofNat ((UInt8.ofNat value.val).toNat / 16) * 16 +
           UInt8.ofNat ((UInt8.ofNat value.val).toNat % 16) =
         UInt8.ofNat value.val := by
-    native_decide
+    set_option maxRecDepth 100000 in
+      decide
   simpa using hAll ⟨byte.toNat, byte.toNat_lt⟩
 
 private theorem decodeHexChars_byteHexChars_append
@@ -964,7 +944,8 @@ private theorem byteHexChars_atomCharsSafe (byte : UInt8) :
       ∀ char ∈ LeanMiniscript.Script.byteHexChars (UInt8.ofNat value.val),
         SurfaceText.isSpace char = false ∧
           SurfaceText.isPunctuation char = false := by
-    native_decide
+    set_option maxRecDepth 100000 in
+      decide
   simpa using hAll ⟨byte.toNat, byte.toNat_lt⟩
 
 private theorem atomSafe_byteArrayHex (bytes : ByteArray)
@@ -2731,9 +2712,9 @@ private theorem parseSurfaceUnchecked_prettySurface
   rw [hParse]
   exact hElaborate
 
-/-- Canonical hexadecimal surface text is a left inverse of parsing for every
-    context-valid surface fragment. Parsing returns the documented normalized
-    surface spelling. -/
+/-- `parseSurfaceHex` is a left inverse of `prettySurface` for every
+    context-valid surface fragment, modulo the documented surface
+    normalization. -/
 theorem parseSurfaceHex_prettySurface
     (context : ScriptContext) (fragment : SurfaceFragment)
     (hWellFormed : fragment.WellFormed context) :
