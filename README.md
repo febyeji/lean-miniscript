@@ -15,8 +15,8 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   explicit desugaring; policy lowering remains a placeholder.
 - Canonical surface parsing and pretty-printing are executable with structured
   errors and an explicit key resolver. Constructor-exhaustive golden fixtures
-  and normalization/desugaring proofs are present; the general parser
-  round-trip theorem remains.
+  and normalization/desugaring proofs are present, together with a general
+  parser/pretty-printer round-trip theorem for context-valid fragments.
 - Compiler output is proved to use the model's closed opcode universe and to
   have balanced conditional control flow.
 - Executable `pk_h`/`pkh` compilation uses the commit-pinned, pure Lean

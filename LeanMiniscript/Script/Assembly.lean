@@ -11,16 +11,20 @@ decimal, and byte-vector pushes are lowercase hexadecimal wrapped in angle
 brackets.
 -/
 
-private def hexDigit (n : Nat) : Char :=
+def hexDigit (n : Nat) : Char :=
   if n < 10 then Char.ofNat (0x30 + n) else Char.ofNat (0x57 + n)
+
+/-- Render one byte as exactly two lowercase hexadecimal characters. -/
+def byteHexChars (byte : UInt8) : List Char :=
+  [hexDigit (byte.toNat / 16), hexDigit (byte.toNat % 16)]
 
 /-- Render one byte as exactly two lowercase hexadecimal digits. -/
 def byteHex (byte : UInt8) : String :=
-  String.ofList [hexDigit (byte.toNat / 16), hexDigit (byte.toNat % 16)]
+  String.ofList (byteHexChars byte)
 
 /-- Render a byte vector as lowercase hexadecimal without a prefix. -/
 def byteArrayHex (bytes : ByteArray) : String :=
-  String.join (bytes.data.toList.map byteHex)
+  String.ofList (bytes.data.toList.flatMap byteHexChars)
 
 /-- BIP-style mnemonic for a modeled opcode. -/
 def opcodeAssembly : Opcode → String
