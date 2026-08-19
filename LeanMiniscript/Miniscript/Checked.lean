@@ -13,7 +13,7 @@ structure CheckedFragment (ctx : ScriptContext) where
   fragment : CoreFragment
   ty : MiniType
   wellFormed : fragment.WellFormed ctx
-  hasType : HasType fragment ty
+  hasType : HasType ctx fragment ty
 
 namespace CheckedFragment
 
@@ -21,7 +21,7 @@ namespace CheckedFragment
 def ofRaw? (ctx : ScriptContext) (fragment : CoreFragment) :
     Option (CheckedFragment ctx) :=
   if wellFormed : fragment.WellFormed ctx then
-    match inferTyped fragment with
+    match inferTyped ctx fragment with
     | some typed =>
         some {
           fragment
@@ -48,7 +48,7 @@ structure CheckedSurfaceFragment (ctx : ScriptContext) where
   fragment : SurfaceFragment
   ty : MiniType
   wellFormed : fragment.WellFormed ctx
-  hasType : HasType (desugar fragment) ty
+  hasType : HasType ctx (desugar fragment) ty
 
 namespace CheckedSurfaceFragment
 
@@ -56,7 +56,7 @@ namespace CheckedSurfaceFragment
 def ofRaw? (ctx : ScriptContext) (fragment : SurfaceFragment) :
     Option (CheckedSurfaceFragment ctx) :=
   if wellFormed : fragment.WellFormed ctx then
-    match inferTyped (desugar fragment) with
+    match inferTyped ctx (desugar fragment) with
     | some typed =>
         some {
           fragment

@@ -4,7 +4,8 @@ namespace LeanMiniscript.Miniscript
 
 /-! ## Executable type inference
 
-`inferTyped` constructs a typing derivation together with its inferred type.
+`inferTyped` constructs a context-indexed typing derivation together with its
+inferred type.
 Keeping the executable layer separate leaves `Types` focused on the relational
 typing judgment.
 -/
@@ -37,8 +38,8 @@ instance (types : List MiniType) : Decidable (thresholdRestTypes types) :=
 
 mutual
   /-- Infer a Miniscript type and construct the corresponding typing derivation. -/
-  def inferTyped (fragment : CoreFragment) :
-      Option {ty : MiniType // HasType fragment ty} :=
+  def inferTyped (ctx : ScriptContext) (fragment : CoreFragment) :
+      Option {ty : MiniType // HasType ctx fragment ty} :=
     match fragment with
     | .zero => some ⟨_, .zero⟩
     | .one => some ⟨_, .one⟩
@@ -51,19 +52,19 @@ mutual
     | .ripemd160 hash => some ⟨_, .ripemd160 hash⟩
     | .hash160 hash => some ⟨_, .hash160 hash⟩
     | .and_v x y =>
-        match inferTyped x, inferTyped y with
+        match inferTyped ctx x, inferTyped ctx y with
         | some ⟨⟨.V, _modsX⟩, typedX⟩, some ⟨tyY, typedY⟩ =>
             if branch : branchBase tyY.base then
               some ⟨_, .and_v typedX typedY branch⟩
             else none
         | _, _ => none
     | .and_b x y =>
-        match inferTyped x, inferTyped y with
+        match inferTyped ctx x, inferTyped ctx y with
         | some ⟨⟨.B, _modsX⟩, typedX⟩, some ⟨⟨.W, _modsY⟩, typedY⟩ =>
             some ⟨_, .and_b typedX typedY⟩
         | _, _ => none
     | .or_b x y =>
-        match inferTyped x, inferTyped y with
+        match inferTyped ctx x, inferTyped ctx y with
         | some ⟨⟨.B, modsX⟩, typedX⟩, some ⟨⟨.W, modsY⟩, typedY⟩ =>
             if dx : modsX.d = true then
               if dy : modsY.d = true then some ⟨_, .or_b typedX dx typedY dy⟩
@@ -71,7 +72,7 @@ mutual
             else none
         | _, _ => none
     | .or_c x y =>
-        match inferTyped x, inferTyped y with
+        match inferTyped ctx x, inferTyped ctx y with
         | some ⟨⟨.B, modsX⟩, typedX⟩, some ⟨⟨.V, _modsY⟩, typedY⟩ =>
             if dx : modsX.d = true then
               if ux : modsX.u = true then some ⟨_, .or_c typedX dx ux typedY⟩
@@ -79,7 +80,7 @@ mutual
             else none
         | _, _ => none
     | .or_d x y =>
-        match inferTyped x, inferTyped y with
+        match inferTyped ctx x, inferTyped ctx y with
         | some ⟨⟨.B, modsX⟩, typedX⟩, some ⟨⟨.B, _modsY⟩, typedY⟩ =>
             if dx : modsX.d = true then
               if ux : modsX.u = true then some ⟨_, .or_d typedX dx ux typedY⟩
@@ -87,7 +88,7 @@ mutual
             else none
         | _, _ => none
     | .or_i x y =>
-        match inferTyped x, inferTyped y with
+        match inferTyped ctx x, inferTyped ctx y with
         | some ⟨tyX, typedX⟩, some ⟨tyY, typedY⟩ =>
             if branch : branchBase tyX.base then
               if bases : tyX.base = tyY.base then
@@ -96,7 +97,7 @@ mutual
             else none
         | _, _ => none
     | .andor x y z =>
-        match inferTyped x, inferTyped y, inferTyped z with
+        match inferTyped ctx x, inferTyped ctx y, inferTyped ctx z with
         | some ⟨⟨.B, modsX⟩, typedX⟩, some ⟨tyY, typedY⟩,
             some ⟨tyZ, typedZ⟩ =>
             if dx : modsX.d = true then
@@ -110,44 +111,44 @@ mutual
             else none
         | _, _, _ => none
     | .c x =>
-        match inferTyped x with
+        match inferTyped ctx x with
         | some ⟨⟨.K, _modsX⟩, typedX⟩ => some ⟨_, .c_wrap typedX⟩
         | _ => none
     | .v x =>
-        match inferTyped x with
+        match inferTyped ctx x with
         | some ⟨⟨.B, _modsX⟩, typedX⟩ => some ⟨_, .v_wrap typedX⟩
         | _ => none
     | .a x =>
-        match inferTyped x with
+        match inferTyped ctx x with
         | some ⟨⟨.B, _modsX⟩, typedX⟩ => some ⟨_, .a_wrap typedX⟩
         | _ => none
     | .s x =>
-        match inferTyped x with
+        match inferTyped ctx x with
         | some ⟨⟨.B, modsX⟩, typedX⟩ =>
             if oneArg : modsX.o = true then some ⟨_, .s_wrap typedX oneArg⟩
             else none
         | _ => none
     | .d x =>
-        match inferTyped x with
+        match inferTyped ctx x with
         | some ⟨⟨.V, modsX⟩, typedX⟩ =>
             if zeroArg : modsX.z = true then some ⟨_, .d_wrap typedX zeroArg⟩
             else none
         | _ => none
     | .j x =>
-        match inferTyped x with
+        match inferTyped ctx x with
         | some ⟨⟨.B, modsX⟩, typedX⟩ =>
             if nonzero : modsX.n = true then some ⟨_, .j_wrap typedX nonzero⟩
             else none
         | _ => none
     | .n x =>
-        match inferTyped x with
+        match inferTyped ctx x with
         | some ⟨⟨.B, _modsX⟩, typedX⟩ => some ⟨_, .n_wrap typedX⟩
         | _ => none
     | .thresh k fragments =>
         match fragments with
         | [] => none
         | x :: xs =>
-            match inferTyped x, inferTypedList xs with
+            match inferTyped ctx x, inferTypedList ctx xs with
             | some ⟨⟨.B, modsX⟩, typedX⟩, some ⟨restTypes, typedRest⟩ =>
                 if dx : modsX.d = true then
                   if ux : modsX.u = true then
@@ -169,26 +170,27 @@ mutual
         else none
 
   /-- Infer types for every fragment in a list, preserving order. -/
-  def inferTypedList (fragments : List CoreFragment) :
-      Option {types : List MiniType // HasTypeList fragments types} :=
+  def inferTypedList (ctx : ScriptContext) (fragments : List CoreFragment) :
+      Option {types : List MiniType // HasTypeList ctx fragments types} :=
     match fragments with
     | [] => some ⟨[], .nil⟩
     | fragment :: rest =>
-        match inferTyped fragment, inferTypedList rest with
+        match inferTyped ctx fragment, inferTypedList ctx rest with
         | some ⟨ty, typed⟩, some ⟨types, restTyped⟩ =>
             some ⟨ty :: types, .cons typed restTyped⟩
         | _, _ => none
 end
 
 /-- Executable type inference with proof terms erased from the result. -/
-def inferType (fragment : CoreFragment) : Option MiniType :=
-  (inferTyped fragment).map Subtype.val
+def inferType (ctx : ScriptContext) (fragment : CoreFragment) : Option MiniType :=
+  (inferTyped ctx fragment).map Subtype.val
 
 /-- Any type returned by `inferType` has a corresponding `HasType` derivation. -/
-theorem inferType_sound {fragment : CoreFragment} {ty : MiniType}
-    (inferred : inferType fragment = some ty) : HasType fragment ty := by
+theorem inferType_sound {ctx : ScriptContext} {fragment : CoreFragment}
+    {ty : MiniType} (inferred : inferType ctx fragment = some ty) :
+    HasType ctx fragment ty := by
   unfold inferType at inferred
-  cases typedEq : inferTyped fragment with
+  cases typedEq : inferTyped ctx fragment with
   | none => simp [typedEq] at inferred
   | some typed =>
       have valueEq : typed.val = ty := by

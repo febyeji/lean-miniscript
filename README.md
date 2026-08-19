@@ -8,9 +8,10 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
 
 ## Current status
 
-- Core syntax, typing, and compilation cover every current `CoreFragment`;
-  compilation also has constructor-complete assembly/byte fixtures and a
-  general relational conformance theorem.
+- Core syntax, context-indexed correctness typing, and compilation cover every
+  current `CoreFragment`; typing has constructor-complete BIP 379 fixtures, and
+  compilation has constructor-complete assembly/byte fixtures plus a general
+  relational conformance theorem.
 - Surface compilation covers every current `SurfaceFragment` constructor via
   explicit desugaring; policy lowering remains a placeholder.
 - Canonical surface parsing and pretty-printing are executable with structured

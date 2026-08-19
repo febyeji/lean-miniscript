@@ -11,6 +11,13 @@ inductive ScriptContext where
   | tapscript
   deriving Repr, DecidableEq, BEq
 
+/-- The `u` modifier contributed by `d:X` in the BIP 379 correctness table.
+    P2WSH policy applies MINIMALIF too, but the table grants this type property
+    only to Tapscript, where MINIMALIF is consensus-enforced. -/
+def ScriptContext.dWrapperUnit : ScriptContext → Bool
+  | .p2wsh => false
+  | .tapscript => true
+
 /-- Resolved public keys allowed by the target script context.
 
     P2WSH keys resolve to compressed public keys. Tapscript keys must already be
