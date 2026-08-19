@@ -50,6 +50,8 @@ structure ExecState where
 /-- Script failures represented by the current semantics. Typed errors keep
     proofs independent of display strings and make case analysis exhaustive. -/
 inductive ScriptError where
+  | stackUnderflow
+  | altStackUnderflow
   | nullDummy
   | equalVerify
   | verify
@@ -57,6 +59,29 @@ inductive ScriptError where
   | checkLockTimeVerify
   | minimalIf
   deriving Repr, DecidableEq, BEq
+
+/-- Fixed main-stack inputs consumed or inspected by a modeled opcode.
+
+    `OP_CHECKMULTISIG` is the only variable-arity opcode in the current model,
+    so it has no fixed requirement. Conditional delimiters and
+    `OP_FROMALTSTACK` have fixed main-stack arity zero; their structural and
+    alternate-stack requirements are modeled separately. -/
+def Opcode.fixedMainStackInputs? : Opcode → Option Nat
+  | .OP_IF | .OP_NOTIF => some 1
+  | .OP_ELSE | .OP_ENDIF => some 0
+  | .OP_IFDUP | .OP_DUP => some 1
+  | .OP_SWAP => some 2
+  | .OP_TOALTSTACK => some 1
+  | .OP_FROMALTSTACK => some 0
+  | .OP_ADD | .OP_BOOLAND | .OP_BOOLOR => some 2
+  | .OP_0NOTEQUAL => some 1
+  | .OP_EQUAL | .OP_EQUALVERIFY | .OP_NUMEQUAL => some 2
+  | .OP_SHA256 | .OP_HASH256 | .OP_RIPEMD160 | .OP_HASH160 => some 1
+  | .OP_CHECKSIG => some 2
+  | .OP_CHECKSIGADD => some 3
+  | .OP_CHECKMULTISIG => none
+  | .OP_CHECKSEQUENCEVERIFY | .OP_CHECKLOCKTIMEVERIFY => some 1
+  | .OP_VERIFY | .OP_SIZE => some 1
 
 /-- Final execution result. Small-step execution represents intermediate
     states with `ExecState` directly rather than as a final result variant. -/

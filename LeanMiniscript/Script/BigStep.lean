@@ -39,6 +39,23 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval rest (scriptNum n :: stack) altStack flags ctx result →
       Eval (.pushNum n :: rest) stack altStack flags ctx result
 
+  -- Fixed-arity opcode failure. Variable-arity CHECKMULTISIG and malformed
+  -- operand encodings have their own semantic boundaries.
+  | stack_underflow : (opcode : Opcode) → (required : Nat) →
+      (script : Script) → (stack altStack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) →
+      opcode.fixedMainStackInputs? = some required →
+      stack.length < required →
+      Eval (.op opcode :: script) stack altStack flags ctx
+        (.failure .stackUnderflow)
+
+  -- OP_FROMALTSTACK consumes no main-stack input, but fails when the alternate
+  -- stack is empty.
+  | fromaltstack_underflow : (script : Script) → (stack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) →
+      Eval (.op .OP_FROMALTSTACK :: script) stack [] flags ctx
+        (.failure .altStackUnderflow)
+
   -- OP_CHECKSIG: pubkey on top, sig below (Bitcoin Core convention)
   | checksig_success : (pubkey sig : StackElement) → (rest : Stack) →
       (script : Script) → (altStack : Stack) → (flags : ScriptFlags) →
@@ -471,6 +488,46 @@ These lemmas keep unchanged scripts, stacks, flags, contexts, and results
 implicit. Soundness proofs can compose execution steps without repeating the
 full constructor argument list.
 -/
+
+/-- A fixed-arity opcode fails immediately when its main stack is too short. -/
+theorem Eval.fixedArityStackUnderflow
+    {opcode : Opcode} {required : Nat} {script : Script}
+    {stack altStack : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    (arity : opcode.fixedMainStackInputs? = some required)
+    (underflow : stack.length < required) :
+    Eval (.op opcode :: script) stack altStack flags ctx
+      (.failure .stackUnderflow) :=
+  .stack_underflow opcode required script stack altStack flags ctx arity underflow
+
+/-- `OP_FROMALTSTACK` fails immediately when its alternate stack is empty. -/
+theorem Eval.fromAltStackUnderflow
+    {script : Script} {stack : Stack} {flags : ScriptFlags} {ctx : TxContext} :
+    Eval (.op .OP_FROMALTSTACK :: script) stack [] flags ctx
+      (.failure .altStackUnderflow) :=
+  .fromaltstack_underflow script stack flags ctx
+
+/-- Main-stack underflow cannot overlap a normal fixed-arity opcode rule. -/
+theorem Eval.fixedArityStackUnderflow_result
+    {opcode : Opcode} {required : Nat} {script : Script}
+    {stack altStack : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    {result : ExecResult}
+    (arity : opcode.fixedMainStackInputs? = some required)
+    (underflow : stack.length < required)
+    (evaluated : Eval (.op opcode :: script) stack altStack flags ctx result) :
+    result = .failure .stackUnderflow := by
+  cases evaluated <;>
+    simp_all [Opcode.fixedMainStackInputs?] <;>
+    omega
+
+/-- Empty-alt-stack failure cannot overlap normal `OP_FROMALTSTACK` execution. -/
+theorem Eval.fromAltStack_empty_result
+    {script : Script} {stack : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    {result : ExecResult}
+    (evaluated : Eval (.op .OP_FROMALTSTACK :: script) stack [] flags ctx result) :
+    result = .failure .altStackUnderflow := by
+  cases evaluated <;>
+    simp_all [Opcode.fixedMainStackInputs?] <;>
+    omega
 
 theorem Eval.done {stack altStack : Stack} {flags : ScriptFlags} {ctx : TxContext} :
     Eval [] stack altStack flags ctx (.success stack altStack) :=
