@@ -1,4 +1,4 @@
-import LeanMiniscript.Miniscript.Syntax
+import LeanMiniscript.Miniscript.Context
 
 namespace LeanMiniscript.Miniscript
 
@@ -72,71 +72,74 @@ def thresholdRestTypes : List MiniType → Prop
       ty.base = .W ∧ ty.mods.d = true ∧ ty.mods.u = true ∧
         thresholdRestTypes rest
 
-/- Typing judgment: `HasType fragment ty` means a core AST fragment has type
-   `ty`.
+/- Typing judgment: `HasType ctx fragment ty` means a core AST fragment has
+   type `ty` in the requested Script context.
 
    BIP 379 type system: each fragment has a base type (B/V/K/W)
    and correctness modifier properties (z, o, n, d, u). Timelock-mixing
    compatibility is a separate structural condition in `Miniscript.Validation`.
 
    The rules cover every core constructor. They intentionally remain separate
-   from `Miniscript.Validation`: context and size side conditions live there,
-   while this judgment records the local stack-shape typing discipline. -/
+   from `Miniscript.Validation`: key, opcode-availability, and size side
+   conditions live there, while this judgment records the local stack-shape
+   typing discipline. The context index captures the BIP 379 `d:` modifier
+   difference that affects recursive composition. -/
 mutual
 /-- Typing judgment for one core fragment. -/
-inductive HasType : CoreFragment → MiniType → Prop where
+inductive HasType (ctx : ScriptContext) : CoreFragment → MiniType → Prop where
   /-- `0`: Bzdu. -/
   | zero :
-      HasType .zero ⟨.B, { z := true, d := true, u := true }⟩
+      HasType ctx .zero ⟨.B, { z := true, d := true, u := true }⟩
 
   /-- `1`: Bzu. -/
   | one :
-      HasType .one ⟨.B, { z := true, u := true }⟩
+      HasType ctx .one ⟨.B, { z := true, u := true }⟩
 
   /-- pk_k(key): pushes key, then OP_CHECKSIG consumes sig+key, pushes 0/1.
-      Type: Ko — needs one stack arg (the signature), nonzero, dissatisfiable, unit.
+      Type: Kondu — needs one stack arg (the signature), is nonzero,
+      dissatisfiable, and unit.
       BIP 379: K, o, n, d, u -/
   | pk_k : (key : PubKey) →
-      HasType (.pk_k key) ⟨.K, {
+      HasType ctx (.pk_k key) ⟨.K, {
         o := true, n := true, d := true, u := true
       }⟩
 
   /-- pk_h(key): OP_DUP OP_HASH160 <hash> OP_EQUALVERIFY.
       Type: Kndu. -/
   | pk_h : (key : PubKey) →
-      HasType (.pk_h key) ⟨.K, {
+      HasType ctx (.pk_h key) ⟨.K, {
         n := true, d := true, u := true
       }⟩
 
   /-- `older(n)`: Bz, timelock check fragment. -/
   | older : (n : Nat) →
-      HasType (.older n) ⟨.B, { z := true }⟩
+      HasType ctx (.older n) ⟨.B, { z := true }⟩
 
   /-- `after(n)`: Bz, timelock check fragment. -/
   | after : (n : Nat) →
-      HasType (.after n) ⟨.B, { z := true }⟩
+      HasType ctx (.after n) ⟨.B, { z := true }⟩
 
   /-- Hash preimage fragments are Bondu. -/
   | sha256 : (hash : Hash256) →
-      HasType (.sha256 hash) ⟨.B, {
+      HasType ctx (.sha256 hash) ⟨.B, {
         o := true, n := true, d := true, u := true
       }⟩
 
   /-- Hash preimage fragments are Bondu. -/
   | hash256 : (hash : Hash256) →
-      HasType (.hash256 hash) ⟨.B, {
+      HasType ctx (.hash256 hash) ⟨.B, {
         o := true, n := true, d := true, u := true
       }⟩
 
   /-- Hash preimage fragments are Bondu. -/
   | ripemd160 : (hash : Hash160) →
-      HasType (.ripemd160 hash) ⟨.B, {
+      HasType ctx (.ripemd160 hash) ⟨.B, {
         o := true, n := true, d := true, u := true
       }⟩
 
   /-- Hash preimage fragments are Bondu. -/
   | hash160 : (hash : Hash160) →
-      HasType (.hash160 hash) ⟨.B, {
+      HasType ctx (.hash160 hash) ⟨.B, {
         o := true, n := true, d := true, u := true
       }⟩
 
@@ -146,10 +149,10 @@ inductive HasType : CoreFragment → MiniType → Prop where
       BIP 379: and_v type = Y.base, z=X.z∧Y.z, o=X.z∧Y.o ∨ X.o∧Y.z,
                n=X.n∨(X.z∧Y.n), u=Y.u -/
   | and_v : {X Y : CoreFragment} → {modsX : CorrectnessModifiers} → {tyY : MiniType} →
-      HasType X ⟨.V, modsX⟩ →
-      HasType Y tyY →
+      HasType ctx X ⟨.V, modsX⟩ →
+      HasType ctx Y tyY →
       branchBase tyY.base →
-      HasType (.and_v X Y) ⟨tyY.base, {
+      HasType ctx (.and_v X Y) ⟨tyY.base, {
         z := modsX.z && tyY.mods.z
         o := (modsX.z && tyY.mods.o) || (modsX.o && tyY.mods.z)
         n := modsX.n || (modsX.z && tyY.mods.n)
@@ -159,9 +162,9 @@ inductive HasType : CoreFragment → MiniType → Prop where
 
   /-- and_b(X,Y): [X] [Y] OP_BOOLAND, with X:B and Y:W. -/
   | and_b : {X Y : CoreFragment} → {modsX modsY : CorrectnessModifiers} →
-      HasType X ⟨.B, modsX⟩ →
-      HasType Y ⟨.W, modsY⟩ →
-      HasType (.and_b X Y) ⟨.B, {
+      HasType ctx X ⟨.B, modsX⟩ →
+      HasType ctx Y ⟨.W, modsY⟩ →
+      HasType ctx (.and_b X Y) ⟨.B, {
         z := modsX.z && modsY.z
         o := (modsX.z && modsY.o) || (modsX.o && modsY.z)
         n := modsX.n || (modsX.z && modsY.n)
@@ -173,11 +176,11 @@ inductive HasType : CoreFragment → MiniType → Prop where
       BIP 379: B, X:Bd, Y:Wd → result z=X.z∧Y.z,
                o=X.z∧Y.o ∨ X.o∧Y.z, d/u set. -/
   | or_b : {X Y : CoreFragment} → {modsX modsY : CorrectnessModifiers} →
-      HasType X ⟨.B, modsX⟩ →
+      HasType ctx X ⟨.B, modsX⟩ →
       modsX.d = true →
-      HasType Y ⟨.W, modsY⟩ →
+      HasType ctx Y ⟨.W, modsY⟩ →
       modsY.d = true →
-      HasType (.or_b X Y) ⟨.B, {
+      HasType ctx (.or_b X Y) ⟨.B, {
         z := modsX.z && modsY.z
         o := (modsX.z && modsY.o) || (modsX.o && modsY.z)
         n := false
@@ -187,10 +190,10 @@ inductive HasType : CoreFragment → MiniType → Prop where
 
   /-- or_c(X,Y): [X] OP_NOTIF [Y] OP_ENDIF, with X:Bdu and Y:V. -/
   | or_c : {X Y : CoreFragment} → {modsX modsY : CorrectnessModifiers} →
-      HasType X ⟨.B, modsX⟩ →
+      HasType ctx X ⟨.B, modsX⟩ →
       modsX.d = true → modsX.u = true →
-      HasType Y ⟨.V, modsY⟩ →
-      HasType (.or_c X Y) ⟨.V, {
+      HasType ctx Y ⟨.V, modsY⟩ →
+      HasType ctx (.or_c X Y) ⟨.V, {
         z := modsX.z && modsY.z
         o := modsX.o && modsY.z
         n := false
@@ -200,10 +203,10 @@ inductive HasType : CoreFragment → MiniType → Prop where
 
   /-- or_d(X,Y): [X] OP_IFDUP OP_NOTIF [Y] OP_ENDIF, with X:Bdu and Y:B. -/
   | or_d : {X Y : CoreFragment} → {modsX modsY : CorrectnessModifiers} →
-      HasType X ⟨.B, modsX⟩ →
+      HasType ctx X ⟨.B, modsX⟩ →
       modsX.d = true → modsX.u = true →
-      HasType Y ⟨.B, modsY⟩ →
-      HasType (.or_d X Y) ⟨.B, {
+      HasType ctx Y ⟨.B, modsY⟩ →
+      HasType ctx (.or_d X Y) ⟨.B, {
         z := modsX.z && modsY.z
         o := modsX.o && modsY.z
         n := false
@@ -214,11 +217,11 @@ inductive HasType : CoreFragment → MiniType → Prop where
   /-- or_i(X,Y): OP_IF [X] OP_ELSE [Y] OP_ENDIF. Both branches have the same
       B/K/V base type. -/
   | or_i : {X Y : CoreFragment} → {tyX tyY : MiniType} →
-      HasType X tyX →
-      HasType Y tyY →
+      HasType ctx X tyX →
+      HasType ctx Y tyY →
       branchBase tyX.base →
       tyX.base = tyY.base →
-      HasType (.or_i X Y) ⟨tyX.base, {
+      HasType ctx (.or_i X Y) ⟨tyX.base, {
         z := false
         o := tyX.mods.z && tyY.mods.z
         n := false
@@ -230,13 +233,13 @@ inductive HasType : CoreFragment → MiniType → Prop where
       Y/Z sharing a B/K/V base type. -/
   | andor : {X Y Z : CoreFragment} →
       {modsX : CorrectnessModifiers} → {tyY tyZ : MiniType} →
-      HasType X ⟨.B, modsX⟩ →
+      HasType ctx X ⟨.B, modsX⟩ →
       modsX.d = true → modsX.u = true →
-      HasType Y tyY →
-      HasType Z tyZ →
+      HasType ctx Y tyY →
+      HasType ctx Z tyZ →
       branchBase tyY.base →
       tyY.base = tyZ.base →
-      HasType (.andor X Y Z) ⟨tyY.base, {
+      HasType ctx (.andor X Y Z) ⟨tyY.base, {
         z := modsX.z && tyY.mods.z && tyZ.mods.z
         o := (modsX.z && tyY.mods.o && tyZ.mods.o) ||
           (modsX.o && tyY.mods.z && tyZ.mods.z)
@@ -248,8 +251,8 @@ inductive HasType : CoreFragment → MiniType → Prop where
   /-- Wrapper `c`: [X] OP_CHECKSIG. Converts K to B.
       BIP 379: c(X:K) → B, modifiers: o=X.o, n=X.n, d=X.d, u=true -/
   | c_wrap : {X : CoreFragment} → {modsX : CorrectnessModifiers} →
-      HasType X ⟨.K, modsX⟩ →
-      HasType (.c X) ⟨.B, {
+      HasType ctx X ⟨.K, modsX⟩ →
+      HasType ctx (.c X) ⟨.B, {
         z := false
         o := modsX.o
         n := modsX.n
@@ -258,10 +261,10 @@ inductive HasType : CoreFragment → MiniType → Prop where
       }⟩
 
   /-- Wrapper `v`: [X] OP_VERIFY. Converts B to V.
-      BIP 379: v(X:B) → V, modifiers: z=X.z, o=X.o, n=X.n, f=true -/
+      BIP 379: v(X:B) → V, modifiers: z=X.z, o=X.o, n=X.n. -/
   | v_wrap : {X : CoreFragment} → {modsX : CorrectnessModifiers} →
-      HasType X ⟨.B, modsX⟩ →
-      HasType (.v X) ⟨.V, {
+      HasType ctx X ⟨.B, modsX⟩ →
+      HasType ctx (.v X) ⟨.V, {
         z := modsX.z
         o := modsX.o
         n := modsX.n
@@ -272,8 +275,8 @@ inductive HasType : CoreFragment → MiniType → Prop where
   /-- Wrapper `a`: OP_TOALTSTACK [X] OP_FROMALTSTACK. Converts B to W.
       BIP 379: a(X:B) → W -/
   | a_wrap : {X : CoreFragment} → {modsX : CorrectnessModifiers} →
-      HasType X ⟨.B, modsX⟩ →
-      HasType (.a X) ⟨.W, {
+      HasType ctx X ⟨.B, modsX⟩ →
+      HasType ctx (.a X) ⟨.W, {
         z := false
         o := false
         n := false
@@ -284,9 +287,9 @@ inductive HasType : CoreFragment → MiniType → Prop where
   /-- Wrapper `s`: OP_SWAP [X]. Converts Bo to W.
       BIP 379: s(X:Bo) → W -/
   | s_wrap : {X : CoreFragment} → {modsX : CorrectnessModifiers} →
-      HasType X ⟨.B, modsX⟩ →
+      HasType ctx X ⟨.B, modsX⟩ →
       modsX.o = true →
-      HasType (.s X) ⟨.W, {
+      HasType ctx (.s X) ⟨.W, {
         z := false
         o := false
         n := false
@@ -294,25 +297,25 @@ inductive HasType : CoreFragment → MiniType → Prop where
         u := modsX.u
       }⟩
 
-  /-- Wrapper `d`: OP_DUP OP_IF [X] OP_ENDIF. Converts Vz to Bondu, except
-      the context-free model does not assert the Tapscript-only `u` modifier. -/
+  /-- Wrapper `d`: OP_DUP OP_IF [X] OP_ENDIF. Converts Vz to Bond in P2WSH
+      and Bondu in Tapscript, where MINIMALIF is consensus-enforced. -/
   | d_wrap : {X : CoreFragment} → {modsX : CorrectnessModifiers} →
-      HasType X ⟨.V, modsX⟩ →
+      HasType ctx X ⟨.V, modsX⟩ →
       modsX.z = true →
-      HasType (.d X) ⟨.B, {
+      HasType ctx (.d X) ⟨.B, {
         z := false
         o := true
         n := true
         d := true
-        u := false
+        u := ctx.dWrapperUnit
       }⟩
 
   /-- Wrapper `j`: OP_SIZE OP_0NOTEQUAL OP_IF [X] OP_ENDIF. Keeps B behavior
       behind an explicit non-empty witness check. -/
   | j_wrap : {X : CoreFragment} → {modsX : CorrectnessModifiers} →
-      HasType X ⟨.B, modsX⟩ →
+      HasType ctx X ⟨.B, modsX⟩ →
       modsX.n = true →
-      HasType (.j X) ⟨.B, {
+      HasType ctx (.j X) ⟨.B, {
         z := false
         o := modsX.o
         n := true
@@ -322,8 +325,8 @@ inductive HasType : CoreFragment → MiniType → Prop where
 
   /-- Wrapper `n`: [X] OP_0NOTEQUAL. Converts B to B with unit success. -/
   | n_wrap : {X : CoreFragment} → {modsX : CorrectnessModifiers} →
-      HasType X ⟨.B, modsX⟩ →
-      HasType (.n X) ⟨.B, {
+      HasType ctx X ⟨.B, modsX⟩ →
+      HasType ctx (.n X) ⟨.B, {
         z := modsX.z
         o := modsX.o
         n := modsX.n
@@ -334,12 +337,12 @@ inductive HasType : CoreFragment → MiniType → Prop where
   /-- `thresh(k, X1, ..., Xn)`: first child is Bdu; remaining children are Wdu. -/
   | thresh : {k : Nat} → {X : CoreFragment} → {Xs : List CoreFragment} →
       {modsX : CorrectnessModifiers} → {restTypes : List MiniType} →
-      HasType X ⟨.B, modsX⟩ →
+      HasType ctx X ⟨.B, modsX⟩ →
       modsX.d = true → modsX.u = true →
-      HasTypeList Xs restTypes →
+      HasTypeList ctx Xs restTypes →
       thresholdRestTypes restTypes →
       1 ≤ k → k ≤ (X :: Xs).length →
-      HasType (.thresh k (X :: Xs)) ⟨.B, {
+      HasType ctx (.thresh k (X :: Xs)) ⟨.B, {
         z := CorrectnessModifiers.allZ (modsX :: MiniType.modifiers restTypes)
         o := CorrectnessModifiers.oneOWithRestZ (modsX :: MiniType.modifiers restTypes)
         n := false
@@ -351,7 +354,7 @@ inductive HasType : CoreFragment → MiniType → Prop where
       validation; typing records the stack behavior. -/
   | multi : (k : Nat) → (keys : List PubKey) →
       1 ≤ k → k ≤ keys.length →
-      HasType (.multi k keys) ⟨.B, {
+      HasType ctx (.multi k keys) ⟨.B, {
         z := false
         o := false
         n := true
@@ -362,7 +365,7 @@ inductive HasType : CoreFragment → MiniType → Prop where
   /-- Tapscript CHECKSIGADD multisig is Bdu. -/
   | multi_a : (k : Nat) → (keys : List PubKey) →
       1 ≤ k → k ≤ keys.length →
-      HasType (.multi_a k keys) ⟨.B, {
+      HasType ctx (.multi_a k keys) ⟨.B, {
         z := false
         o := false
         n := false
@@ -371,24 +374,25 @@ inductive HasType : CoreFragment → MiniType → Prop where
       }⟩
 
 /-- Pointwise typing for nested fragment lists, used by `thresh`. -/
-inductive HasTypeList : List CoreFragment → List MiniType → Prop where
-  | nil : HasTypeList [] []
+inductive HasTypeList (ctx : ScriptContext) : List CoreFragment → List MiniType → Prop where
+  | nil : HasTypeList ctx [] []
   | cons : {fragment : CoreFragment} → {ty : MiniType} →
       {fragments : List CoreFragment} → {types : List MiniType} →
-      HasType fragment ty →
-      HasTypeList fragments types →
-      HasTypeList (fragment :: fragments) (ty :: types)
+      HasType ctx fragment ty →
+      HasTypeList ctx fragments types →
+      HasTypeList ctx (fragment :: fragments) (ty :: types)
 end
 
 /-- A core AST fragment is well-typed if there exists some type for it. -/
-def wellTyped (f : CoreFragment) : Prop := ∃ ty, HasType f ty
+def wellTyped (ctx : ScriptContext) (f : CoreFragment) : Prop :=
+  ∃ ty, HasType ctx f ty
 
 /-- A typed `thresh` fragment always carries a nonempty child list. The raw AST
     and compiler are total over lists, but the typing rule is the side condition
     that excludes `thresh(k, [])` from well-typed Miniscript. -/
-theorem typed_thresh_has_children {k : Nat} {fragments : List CoreFragment}
-    {ty : MiniType} :
-    HasType (.thresh k fragments) ty → ∃ X Xs, fragments = X :: Xs := by
+theorem typed_thresh_has_children {ctx : ScriptContext} {k : Nat}
+    {fragments : List CoreFragment} {ty : MiniType} :
+    HasType ctx (.thresh k fragments) ty → ∃ X Xs, fragments = X :: Xs := by
   intro h
   cases h with
   | thresh => exact ⟨_, _, rfl⟩
@@ -396,8 +400,9 @@ theorem typed_thresh_has_children {k : Nat} {fragments : List CoreFragment}
 /-- A typed `multi_a` fragment always carries a nonempty key list because the
     typing rule requires `1 ≤ k ≤ keys.length`. This is the theorem-level side
     condition that justifies `compileCheckSigAdd`'s total empty-list fallback. -/
-theorem typed_multi_a_has_keys {k : Nat} {keys : List PubKey} {ty : MiniType} :
-    HasType (.multi_a k keys) ty → keys ≠ [] := by
+theorem typed_multi_a_has_keys {ctx : ScriptContext} {k : Nat}
+    {keys : List PubKey} {ty : MiniType} :
+    HasType ctx (.multi_a k keys) ty → keys ≠ [] := by
   intro h
   cases h with
   | multi_a k keys hk hle =>
@@ -408,13 +413,13 @@ theorem typed_multi_a_has_keys {k : Nat} {keys : List PubKey} {ty : MiniType} :
 
 /-- Sanity check: the singleton `multi_a` case is constructible when the key-count
     side condition is satisfied. -/
-example : HasType (.multi_a 1 [PubKey.ofBytes ByteArray.empty])
+example : HasType .tapscript (.multi_a 1 [PubKey.ofBytes ByteArray.empty])
     ⟨.B, { d := true, u := true }⟩ := by
   exact HasType.multi_a 1 [PubKey.ofBytes ByteArray.empty] (by decide) (by decide)
 
 /-- Sanity check: singleton `thresh` is constructible and uses the nonempty-list
     typing rule rather than the compiler's raw-list fallback. -/
-example : HasType (.thresh 1 [.zero])
+example : HasType .p2wsh (.thresh 1 [.zero])
     ⟨.B, { z := true, d := true, u := true }⟩ := by
   exact HasType.thresh HasType.zero rfl rfl HasTypeList.nil trivial
     (by decide) (by decide)

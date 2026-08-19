@@ -15,7 +15,7 @@ open LeanMiniscript.Script
 structure ValidTypedFragment (ctx : ScriptContext) (m : CoreFragment)
     (ty : MiniType) : Prop where
   wellFormed : m.WellFormed ctx
-  hasType : HasType m ty
+  hasType : HasType ctx m ty
 
 /-- A top-level Miniscript is a context-valid core fragment with B base type. -/
 def ValidMiniscript (ctx : ScriptContext) (m : CoreFragment) : Prop :=

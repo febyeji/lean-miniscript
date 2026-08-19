@@ -112,10 +112,15 @@ plus provisional structural estimates; `ResourceBoundsSound` remains unproved.
 | `multi` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `multi_a` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 
-`HasType` covers all rows, and `inferType` has soundness, completeness,
-uniqueness, and success/reflection theorems. That does not yet prove the BIP 379
-correctness table itself: the judgment is still the handwritten specification
-whose constructor rules must be audited against the pinned BIP.
+`HasType ctx` covers all rows, and `inferType ctx` has soundness, completeness,
+uniqueness, and success/reflection theorems. A constructor-exhaustive fixture
+set checks one context-valid exact type per core row, while branch-sensitive
+fixtures exercise the nontrivial modifier-propagation alternatives in the
+pinned BIP 379 correctness table. The context index gives `d:` its
+Tapscript-only `u` property; positive Tapscript and negative P2WSH fixtures cover
+every parent rule that consumes this Bdu result. Key shape, multisig opcode
+availability, and other structural restrictions remain separate `WellFormed`
+obligations at the checked boundary.
 
 `HasMalleability` likewise covers all rows. `inferMalleability` has soundness,
 completeness, uniqueness, and success/reflection theorems, with build-checked

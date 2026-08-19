@@ -11,9 +11,9 @@ only execute `inferType` do not import this proof module.
 
 mutual
   /-- Every relational typing derivation is reproduced by executable inference. -/
-  theorem inferTyped_complete {fragment : CoreFragment} {ty : MiniType}
-      (typed : HasType fragment ty) :
-      inferTyped fragment = some ⟨ty, typed⟩ := by
+  theorem inferTyped_complete {ctx : ScriptContext} {fragment : CoreFragment}
+      {ty : MiniType} (typed : HasType ctx fragment ty) :
+      inferTyped ctx fragment = some ⟨ty, typed⟩ := by
     cases typed with
     | zero => rfl
     | one => rfl
@@ -73,9 +73,10 @@ mutual
         simp [inferTyped, lower, upper]
 
   /-- List typing derivations are reproduced pointwise by executable inference. -/
-  theorem inferTypedList_complete {fragments : List CoreFragment}
-      {types : List MiniType} (typed : HasTypeList fragments types) :
-      inferTypedList fragments = some ⟨types, typed⟩ := by
+  theorem inferTypedList_complete {ctx : ScriptContext}
+      {fragments : List CoreFragment} {types : List MiniType}
+      (typed : HasTypeList ctx fragments types) :
+      inferTypedList ctx fragments = some ⟨types, typed⟩ := by
     cases typed with
     | nil => rfl
     | cons typedHead typedRest =>
@@ -84,13 +85,15 @@ mutual
 end
 
 /-- Relational typing and executable inference agree. -/
-theorem inferType_complete {fragment : CoreFragment} {ty : MiniType}
-    (typed : HasType fragment ty) : inferType fragment = some ty := by
+theorem inferType_complete {ctx : ScriptContext} {fragment : CoreFragment}
+    {ty : MiniType} (typed : HasType ctx fragment ty) :
+    inferType ctx fragment = some ty := by
   simp [inferType, inferTyped_complete typed]
 
 /-- Miniscript typing is deterministic. -/
-theorem HasType.unique {fragment : CoreFragment} {left right : MiniType}
-    (leftTyped : HasType fragment left) (rightTyped : HasType fragment right) :
+theorem HasType.unique {ctx : ScriptContext} {fragment : CoreFragment}
+    {left right : MiniType} (leftTyped : HasType ctx fragment left)
+    (rightTyped : HasType ctx fragment right) :
     left = right := by
   have leftInferred := inferType_complete leftTyped
   have rightInferred := inferType_complete rightTyped
@@ -98,13 +101,14 @@ theorem HasType.unique {fragment : CoreFragment} {left right : MiniType}
   exact Option.some.inj rightInferred
 
 /-- A fragment is well-typed exactly when executable inference succeeds. -/
-theorem wellTyped_iff_inferType_isSome (fragment : CoreFragment) :
-    wellTyped fragment ↔ (inferType fragment).isSome = true := by
+theorem wellTyped_iff_inferType_isSome (ctx : ScriptContext)
+    (fragment : CoreFragment) :
+    wellTyped ctx fragment ↔ (inferType ctx fragment).isSome = true := by
   constructor
   · rintro ⟨ty, typed⟩
     simp [inferType_complete typed]
   · intro inferred
-    cases typeEq : inferType fragment with
+    cases typeEq : inferType ctx fragment with
     | none => simp [typeEq] at inferred
     | some ty => exact ⟨ty, inferType_sound typeEq⟩
 

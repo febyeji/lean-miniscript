@@ -68,7 +68,7 @@ structure MalleabilityFixture where
 private def MalleabilityFixture.passes (fixture : MalleabilityFixture) : Bool :=
   fixture.fragment.malleabilityConstructorTag == fixture.tag &&
   decide (fixture.fragment.WellFormed fixture.ctx) &&
-  (inferType fixture.fragment).isSome &&
+  (inferType fixture.ctx fixture.fragment).isSome &&
   match inferMalleability fixture.ctx fixture.fragment with
   | some actual => actual == fixture.expected
   | none => false
@@ -153,7 +153,7 @@ example : inferMalleability .p2wsh (.multi_a 1 [compressedKey]) = none := by
 private def nonExpressiveOr : CoreFragment :=
   .or_b .zero (.s (.sha256 hash256Fixture))
 
-example : (inferType nonExpressiveOr).isSome = true := by
+example : (inferType .p2wsh nonExpressiveOr).isSome = true := by
   native_decide
 
 example : inferMalleability .p2wsh nonExpressiveOr =
@@ -191,7 +191,7 @@ private def thresholdAtRequirementBoundary : CoreFragment :=
 private def thresholdBeyondRequirement : CoreFragment :=
   .thresh 1 [unsignedExpressiveB, unsignedExpressiveW]
 
-example : (inferType thresholdAtRequirementBoundary).isSome = true := by
+example : (inferType .p2wsh thresholdAtRequirementBoundary).isSome = true := by
   native_decide
 
 example : inferMalleability .p2wsh thresholdAtRequirementBoundary =

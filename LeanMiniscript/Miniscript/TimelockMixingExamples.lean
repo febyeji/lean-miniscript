@@ -26,7 +26,7 @@ private def sameClassAbsolute : CoreFragment :=
   .and_v (.v (.after 1)) (.after 2)
 
 /-- Timelock compatibility is not a correctness type modifier. -/
-example : inferType sameClassAbsolute = some ⟨.B, { z := true }⟩ := by
+example : inferType .p2wsh sameClassAbsolute = some ⟨.B, { z := true }⟩ := by
   native_decide
 
 example : sameClassAbsolute.WellFormed .p2wsh := by
