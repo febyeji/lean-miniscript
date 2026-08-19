@@ -28,6 +28,14 @@ private def hash160Fixture : Hash160 :=
 private def signedB : CoreFragment := .c (.pk_k compressedKey)
 private def signedW : CoreFragment := .s signedB
 private def verifyTrue : CoreFragment := .v .one
+private def legacyMulti : CoreFragment := .multi 1 [compressedKey]
+private def verifySignedB : CoreFragment := .v signedB
+private def verifyLegacyMulti : CoreFragment := .v legacyMulti
+private def nonUnitNonzeroB : CoreFragment :=
+  .and_v verifyLegacyMulti (.older 1)
+private def nonUnitOneArgB : CoreFragment :=
+  .or_i (.older 1) (.older 2)
+private def dVerifyTrue : CoreFragment := .d verifyTrue
 
 inductive CorrectnessConstructorTag where
   | zero | one | pkK | pkH | older | after | sha256 | hash256 | ripemd160 | hash160
@@ -147,6 +155,136 @@ theorem correctnessFixtures_cover (tag : CorrectnessConstructorTag) :
     tag ∈ correctnessFixtures.map (·.tag) := by
   cases tag <;> native_decide
 
+/-! ## Correctness-modifier propagation boundaries -/
+
+/-- Branch-sensitive fixtures complement constructor coverage by exercising
+    both disjuncts and true/false propagation boundaries in the BIP 379
+    correctness formulas. -/
+def correctnessPropagationFixtures : List CorrectnessFixture := [
+  -- `and_v`: both `o` disjuncts and both `n` disjuncts.
+  { tag := .andV, ctx := .p2wsh,
+    fragment := .and_v verifyTrue signedB,
+    expected := ⟨.B, { o := true, n := true, u := true }⟩ },
+  { tag := .andV, ctx := .p2wsh,
+    fragment := .and_v verifySignedB .one,
+    expected := ⟨.B, { o := true, n := true, u := true }⟩ },
+  { tag := .andV, ctx := .p2wsh,
+    fragment := nonUnitNonzeroB,
+    expected := ⟨.B, { n := true }⟩ },
+  { tag := .andV, ctx := .p2wsh,
+    fragment := .and_v verifyTrue legacyMulti,
+    expected := ⟨.B, { n := true, u := true }⟩ },
+
+  -- `and_b`: each `d` operand can independently clear the result; `n`
+  -- propagates from the B child.
+  { tag := .andB, ctx := .p2wsh,
+    fragment := .and_b .one (.a .zero),
+    expected := ⟨.B, { u := true }⟩ },
+  { tag := .andB, ctx := .p2wsh,
+    fragment := .and_b .zero (.a .one),
+    expected := ⟨.B, { u := true }⟩ },
+  { tag := .andB, ctx := .p2wsh,
+    fragment := .and_b signedB (.a .zero),
+    expected := ⟨.B, { n := true, d := true, u := true }⟩ },
+
+  -- `or_c`/`or_d`: z/o and result d/u propagation.
+  { tag := .orC, ctx := .p2wsh,
+    fragment := .or_c signedB verifyTrue,
+    expected := ⟨.V, { o := true }⟩ },
+  { tag := .orC, ctx := .p2wsh,
+    fragment := .or_c .zero verifySignedB,
+    expected := ⟨.V, {}⟩ },
+  { tag := .orD, ctx := .p2wsh,
+    fragment := .or_d signedB .one,
+    expected := ⟨.B, { o := true, u := true }⟩ },
+  { tag := .orD, ctx := .p2wsh,
+    fragment := .or_d .zero .zero,
+    expected := ⟨.B, { z := true, d := true, u := true }⟩ },
+  { tag := .orD, ctx := .p2wsh,
+    fragment := .or_d .zero (.older 1),
+    expected := ⟨.B, { z := true }⟩ },
+  { tag := .orD, ctx := .p2wsh,
+    fragment := .or_d .zero dVerifyTrue,
+    expected := ⟨.B, { d := true }⟩ },
+
+  -- `or_i`: false d/u results in addition to the all-true constructor case.
+  { tag := .orI, ctx := .p2wsh,
+    fragment := .or_i .one .one,
+    expected := ⟨.B, { o := true, u := true }⟩ },
+  { tag := .orI, ctx := .p2wsh,
+    fragment := .or_i .one (.older 1),
+    expected := ⟨.B, { o := true }⟩ },
+  { tag := .orI, ctx := .p2wsh,
+    fragment := .or_i .zero (.older 1),
+    expected := ⟨.B, { o := true, d := true }⟩ },
+
+  -- `andor`: both `o` disjuncts plus false d/u propagation.
+  { tag := .andor, ctx := .p2wsh,
+    fragment := .andor .zero signedB signedB,
+    expected := ⟨.B, { o := true, d := true, u := true }⟩ },
+  { tag := .andor, ctx := .p2wsh,
+    fragment := .andor signedB .one .zero,
+    expected := ⟨.B, { o := true, d := true, u := true }⟩ },
+  { tag := .andor, ctx := .p2wsh,
+    fragment := .andor .zero (.older 1) .one,
+    expected := ⟨.B, { z := true }⟩ },
+  { tag := .andor, ctx := .p2wsh,
+    fragment := .andor .zero .one dVerifyTrue,
+    expected := ⟨.B, { d := true }⟩ },
+
+  -- Wrapper propagation for d/u and z/o/n.
+  { tag := .a, ctx := .p2wsh, fragment := .a .one,
+    expected := ⟨.W, { u := true }⟩ },
+  { tag := .a, ctx := .p2wsh, fragment := .a (.older 1),
+    expected := ⟨.W, {}⟩ },
+  { tag := .a, ctx := .p2wsh, fragment := .a dVerifyTrue,
+    expected := ⟨.W, { d := true }⟩ },
+  { tag := .s, ctx := .p2wsh, fragment := .s (.or_i .one .one),
+    expected := ⟨.W, { u := true }⟩ },
+  { tag := .s, ctx := .p2wsh, fragment := .s nonUnitOneArgB,
+    expected := ⟨.W, {}⟩ },
+  { tag := .s, ctx := .p2wsh, fragment := .s dVerifyTrue,
+    expected := ⟨.W, { d := true }⟩ },
+  { tag := .c, ctx := .p2wsh,
+    fragment := .c (.and_v verifyTrue (.pk_k compressedKey)),
+    expected := ⟨.B, { o := true, n := true, u := true }⟩ },
+  { tag := .c, ctx := .p2wsh, fragment := .c (.pk_h compressedKey),
+    expected := ⟨.B, { n := true, d := true, u := true }⟩ },
+  { tag := .v, ctx := .p2wsh, fragment := verifySignedB,
+    expected := ⟨.V, { o := true, n := true }⟩ },
+  { tag := .v, ctx := .p2wsh, fragment := verifyLegacyMulti,
+    expected := ⟨.V, { n := true }⟩ },
+  { tag := .j, ctx := .p2wsh, fragment := .j nonUnitNonzeroB,
+    expected := ⟨.B, { n := true, d := true }⟩ },
+  { tag := .n, ctx := .p2wsh, fragment := .n .one,
+    expected := ⟨.B, { z := true, u := true }⟩ },
+  { tag := .n, ctx := .p2wsh, fragment := .n signedB,
+    expected := ⟨.B, { o := true, n := true, d := true, u := true }⟩ },
+
+  -- `thresh`: all-z and exactly-one-o outcomes.
+  { tag := .thresh, ctx := .p2wsh, fragment := .thresh 1 [.zero],
+    expected := ⟨.B, { z := true, d := true, u := true }⟩ },
+  { tag := .thresh, ctx := .p2wsh, fragment := .thresh 1 [signedB],
+    expected := ⟨.B, { o := true, d := true, u := true }⟩ },
+
+  -- Every parent rule that consumes the Tapscript-only `d:u` result.
+  { tag := .orC, ctx := .tapscript,
+    fragment := .or_c dVerifyTrue verifyTrue,
+    expected := ⟨.V, { o := true }⟩ },
+  { tag := .orD, ctx := .tapscript,
+    fragment := .or_d dVerifyTrue .one,
+    expected := ⟨.B, { o := true, u := true }⟩ },
+  { tag := .andor, ctx := .tapscript,
+    fragment := .andor dVerifyTrue .one .zero,
+    expected := ⟨.B, { o := true, d := true, u := true }⟩ },
+  { tag := .thresh, ctx := .tapscript,
+    fragment := .thresh 1 [dVerifyTrue],
+    expected := ⟨.B, { o := true, d := true, u := true }⟩ }
+]
+
+example : correctnessPropagationFixtures.all CorrectnessFixture.passes = true := by
+  native_decide
+
 /-! ## Ill-typed constructor boundaries -/
 
 private def typingRejected (ctx : ScriptContext) (fragment : CoreFragment) : Bool :=
@@ -178,8 +316,6 @@ example : rejectedTypingFixtures.all (fun fixture =>
 
 /-! ## Context-sensitive `d:` regressions -/
 
-private def dVerifyTrue : CoreFragment := .d verifyTrue
-
 example : inferType .p2wsh dVerifyTrue =
     some ⟨.B, { o := true, n := true, d := true }⟩ := by
   native_decide
@@ -188,13 +324,18 @@ example : inferType .tapscript dVerifyTrue =
     some ⟨.B, { o := true, n := true, d := true, u := true }⟩ := by
   native_decide
 
-/-- The Tapscript-only `u` property is available to parent typing rules. -/
-example : inferType .tapscript (.or_d dVerifyTrue .one) =
-    some ⟨.B, { o := true, u := true }⟩ := by
-  native_decide
+/-- P2WSH does not overstate `d:` as unit: every parent rule that requires a
+    Bdu child rejects the context-weaker result. The matching Tapscript cases
+    are checked with exact result types in `correctnessPropagationFixtures`. -/
+private def p2wshDUnitParentRejections : List CoreFragment := [
+  .or_c dVerifyTrue verifyTrue,
+  .or_d dVerifyTrue .one,
+  .andor dVerifyTrue .one .zero,
+  .thresh 1 [dVerifyTrue]
+]
 
-/-- P2WSH does not overstate `d:` as unit, so the same parent is ill-typed. -/
-example : inferType .p2wsh (.or_d dVerifyTrue .one) = none := by
+example : p2wshDUnitParentRejections.all
+    (fun fragment => (inferType .p2wsh fragment).isNone) = true := by
   native_decide
 
 /-! ## Context validation remains a distinct checked boundary -/
