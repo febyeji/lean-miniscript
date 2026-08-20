@@ -128,6 +128,14 @@ constructor fixtures; `nonMalleable` records the separate recursive guarantee.
 This is static analysis coverage, not a semantic non-malleability theorem
 against an attacker model.
 
+Evaluation coverage remains partial. `Eval` has explicit terminal main-stack
+underflow results for all 23 positive fixed-arity opcodes and alternate-stack
+underflow for `OP_FROMALTSTACK`, with an exhaustive opcode-arity fixture and
+local result-uniqueness lemmas showing that these failures do not overlap their
+normal execution rules. Variable-arity `OP_CHECKMULTISIG`, malformed numeric
+operands and control flow, context-invalid opcodes, full failure completeness,
+and global evaluation determinism remain unfinished.
+
 ## Surface Constructor Matrix
 
 | Constructor | Validation via core | Typing via core | Desugaring/compilation | Parser/pretty-printer | Evaluation | Satisfy/dissatisfy | Surface theorem |
