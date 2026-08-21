@@ -20,7 +20,8 @@ flags that the current `Eval` semantics enforces.
 
 /-- Required settings among the flags currently enforced by `Eval`.
 
-    P2WSH uses the modeled Miniscript-facing MINIMALIF and NULLDUMMY settings.
+    Both contexts require minimal Script-number operands. P2WSH additionally
+    uses the modeled Miniscript-facing MINIMALIF and NULLDUMMY settings;
     Tapscript requires MINIMALIF. Signature encoding is intentionally excluded:
     the current opaque `checkSig` does not receive flags or a signature version.
     Tapscript signature and disabled-opcode rules need separate modeling. -/
@@ -28,9 +29,11 @@ def ModeledContextFlags (ctx : ScriptContext) (flags : ScriptFlags) : Prop :=
   match ctx with
   | .p2wsh =>
       flags.minimalIf = true ∧
+      flags.minimalData = true ∧
       flags.nullDummy = true
   | .tapscript =>
-      flags.minimalIf = true
+      flags.minimalIf = true ∧
+      flags.minimalData = true
 
 /-- Execute a serialized-order witness against a script. The operational
     semantics receives a top-first main stack and an initially empty alt stack. -/
@@ -114,6 +117,12 @@ example : Dissatisfies .p2wsh [.pushNum 0] []
     requirement before execution is considered. -/
 example : ¬ ModeledContextFlags .p2wsh
     ({ minimalIf := false } : ScriptFlags) := by
+  simp [ModeledContextFlags]
+
+/-- Both modeled contexts reject non-minimal numeric operands at their checked
+    acceptance boundary. -/
+example : ¬ ModeledContextFlags .tapscript
+    ({ minimalData := false } : ScriptFlags) := by
   simp [ModeledContextFlags]
 
 /-- Strict signature encoding remains outside the modeled flag contract until

@@ -13,6 +13,8 @@ abbrev Stack := List StackElement
 structure ScriptFlags where
   /-- BIP 141: Require minimal encoding for IF/NOTIF arguments -/
   minimalIf : Bool := true
+  /-- `SCRIPT_VERIFY_MINIMALDATA`: require minimal Script-number operands. -/
+  minimalData : Bool := true
   /-- BIP 147: Require dummy element for CHECKMULTISIG to be null -/
   nullDummy : Bool := true
   /-- BIP 66: Strict DER signature encoding -/
@@ -52,6 +54,9 @@ structure ExecState where
 inductive ScriptError where
   | stackUnderflow
   | altStackUnderflow
+  | scriptNumOverflow
+  | scriptNumNonMinimal
+  | negativeLocktime
   | nullDummy
   | equalVerify
   | verify
@@ -82,6 +87,18 @@ def Opcode.fixedMainStackInputs? : Opcode → Option Nat
   | .OP_CHECKMULTISIG => none
   | .OP_CHECKSEQUENCEVERIFY | .OP_CHECKLOCKTIMEVERIFY => some 1
   | .OP_VERIFY | .OP_SIZE => some 1
+
+/-- Opcodes in the generated subset that decode both operands as Script
+    numbers with the ordinary four-byte limit. -/
+def Opcode.usesBinaryScriptNums : Opcode → Bool
+  | .OP_ADD | .OP_BOOLAND | .OP_BOOLOR | .OP_NUMEQUAL => true
+  | _ => false
+
+/-- Timelock opcodes decode one Script number with the extended five-byte
+    limit. -/
+def Opcode.usesTimelockScriptNum : Opcode → Bool
+  | .OP_CHECKSEQUENCEVERIFY | .OP_CHECKLOCKTIMEVERIFY => true
+  | _ => false
 
 /-- Final execution result. Small-step execution represents intermediate
     states with `ExecState` directly rather than as a final result variant. -/
@@ -162,6 +179,76 @@ def scriptNum (n : Int) : StackElement :=
 /-- Canonical stack element for a natural number. -/
 def scriptNat (n : Nat) : StackElement :=
   scriptNum n
+
+/-- Ordinary arithmetic opcodes accept at most four encoded bytes. -/
+def maxArithmeticScriptNumBytes : Nat := 4
+
+/-- CLTV and CSV accept five-byte operands so unsigned 32-bit transaction
+    fields remain representable. -/
+def maxTimelockScriptNumBytes : Nat := 5
+
+/-- Clear the sign bit on the most-significant byte of a little-endian signed
+    magnitude. -/
+def clearScriptNumSignBit : List UInt8 → List UInt8
+  | [] => []
+  | [last] => [UInt8.ofNat (last.toNat % 128)]
+  | byte :: rest => byte :: clearScriptNumSignBit rest
+
+/-- Decode an unsigned little-endian byte list. -/
+def decodeUnsignedLEAux : List UInt8 → Nat → Nat
+  | [], _ => 0
+  | byte :: rest, place =>
+      byte.toNat * place + decodeUnsignedLEAux rest (place * 256)
+
+/-- Whether a nonempty signed-magnitude encoding has its sign bit set. -/
+def scriptNumIsNegative (bytes : List UInt8) : Bool :=
+  match bytes.reverse with
+  | [] => false
+  | last :: _ => 128 ≤ last.toNat
+
+/-- Bitcoin Core's minimal signed-magnitude predicate. Empty bytes are the
+    unique minimal zero. A zero-valued final byte is allowed only when the
+    preceding byte needs protection from being interpreted as a sign bit. -/
+def scriptNumIsMinimal (bytes : StackElement) : Bool :=
+  match bytes.data.toList.reverse with
+  | [] => true
+  | last :: preceding =>
+      if last.toNat % 128 != 0 then
+        true
+      else
+        match preceding with
+        | [] => false
+        | previous :: _ => 128 ≤ previous.toNat
+
+/-- Decode Bitcoin Script's little-endian signed-magnitude number format.
+
+    Operand-size failure takes precedence over minimal-encoding failure, as in
+    `CScriptNum`. When `requireMinimal` is false, redundant sign and zero bytes
+    are accepted while the byte limit remains enforced. -/
+def decodeScriptNum (bytes : StackElement) (requireMinimal : Bool)
+    (maxBytes : Nat) : Except ScriptError Int :=
+  if bytes.size > maxBytes then
+    .error .scriptNumOverflow
+  else if requireMinimal && !scriptNumIsMinimal bytes then
+    .error .scriptNumNonMinimal
+  else
+    let encoded := bytes.data.toList
+    let magnitude := decodeUnsignedLEAux (clearScriptNumSignBit encoded) 1
+    if scriptNumIsNegative encoded then
+      .ok (-Int.ofNat magnitude)
+    else
+      .ok (Int.ofNat magnitude)
+
+/-- Decode two ordinary numeric operands. `belowTop` is decoded first to match
+    Bitcoin Core's `stacktop(-2)` then `stacktop(-1)` evaluation order. The
+    returned pair remains in this repository's top-first stack order. -/
+def decodeBinaryScriptNums (flags : ScriptFlags) (top belowTop : StackElement) :
+    Except ScriptError (Int × Int) := do
+  let belowValue ← decodeScriptNum belowTop flags.minimalData
+    maxArithmeticScriptNumBytes
+  let topValue ← decodeScriptNum top flags.minimalData
+    maxArithmeticScriptNumBytes
+  pure (topValue, belowValue)
 
 theorem scriptNum_zero : scriptNum 0 = falseElement := by
   rfl
