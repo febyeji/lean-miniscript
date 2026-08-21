@@ -44,6 +44,9 @@ oracles, not logical premises of Lean proofs.
   alt stack is internal execution state and is not constrained by clean-stack.
 - `Dissatisfies` is successful execution to the same one-item main-stack shape
   with a false top. It is distinct from a Script error.
+- `ScriptFlags.minimalData` controls minimal Script-number operands. Both
+  modeled acceptance contexts require it, while raw `Eval` can express the
+  relaxed Bitcoin Core flag behavior.
 - P2WSH and Tapscript validation remain separate through `ScriptContext`.
   `ModeledContextFlags` is not yet the full Bitcoin Core flag matrix.
 
@@ -131,10 +134,15 @@ against an attacker model.
 Evaluation coverage remains partial. `Eval` has explicit terminal main-stack
 underflow results for all 23 positive fixed-arity opcodes and alternate-stack
 underflow for `OP_FROMALTSTACK`, with an exhaustive opcode-arity fixture and
-local result-uniqueness lemmas showing that these failures do not overlap their
-normal execution rules. Variable-arity `OP_CHECKMULTISIG`, malformed numeric
-operands and control flow, context-invalid opcodes, full failure completeness,
-and global evaluation determinism remain unfinished.
+local result-uniqueness lemmas. A canonical signed-magnitude decoder now
+enforces minimal encoding plus the ordinary four-byte and timelock five-byte
+limits. `ADD`, `BOOLAND`, `BOOLOR`, `0NOTEQUAL`, `NUMEQUAL`, `CHECKSIGADD`,
+CLTV, and CSV decode arbitrary stack bytes and report typed overflow,
+non-minimal, and negative-timelock failures; every numeric decoder-error group
+has a local result-uniqueness lemma. Variable-arity `CHECKMULTISIG`,
+including its decoded count operands, malformed control flow, context-invalid
+opcodes, full failure completeness, and global evaluation determinism remain
+unfinished.
 
 ## Surface Constructor Matrix
 

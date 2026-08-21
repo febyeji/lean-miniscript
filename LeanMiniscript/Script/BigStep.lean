@@ -56,6 +56,56 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op .OP_FROMALTSTACK :: script) stack [] flags ctx
         (.failure .altStackUnderflow)
 
+  -- Numeric operand failures are terminal. Grouped rules use executable
+  -- decoders so simultaneous malformed operands still select one error in
+  -- Bitcoin Core's operand-evaluation order.
+  | binary_scriptnum_failure : (opcode : Opcode) →
+      (top belowTop : StackElement) → (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (error : ScriptError) →
+      opcode.usesBinaryScriptNums = true →
+      decodeBinaryScriptNums flags top belowTop = .error error →
+      Eval (.op opcode :: script) (top :: belowTop :: rest) altStack flags ctx
+        (.failure error)
+
+  | unary_scriptnum_failure : (operand : StackElement) →
+      (rest : Stack) → (script : Script) → (altStack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (error : ScriptError) →
+      decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+        .error error →
+      Eval (.op .OP_0NOTEQUAL :: script) (operand :: rest) altStack flags ctx
+        (.failure error)
+
+  | checksigadd_scriptnum_failure : (pubkey countBytes sig : StackElement) →
+      (rest : Stack) → (script : Script) → (altStack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (error : ScriptError) →
+      decodeScriptNum countBytes flags.minimalData maxArithmeticScriptNumBytes =
+        .error error →
+      Eval (.op .OP_CHECKSIGADD :: script)
+        (pubkey :: countBytes :: sig :: rest) altStack flags ctx
+        (.failure error)
+
+  | timelock_scriptnum_failure : (opcode : Opcode) →
+      (operand : StackElement) → (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (error : ScriptError) →
+      opcode.usesTimelockScriptNum = true →
+      decodeScriptNum operand flags.minimalData maxTimelockScriptNumBytes =
+        .error error →
+      Eval (.op opcode :: script) (operand :: rest) altStack flags ctx
+        (.failure error)
+
+  | timelock_negative_failure : (opcode : Opcode) →
+      (operand : StackElement) → (value : Int) → (rest : Stack) →
+      (script : Script) → (altStack : Stack) → (flags : ScriptFlags) →
+      (ctx : TxContext) →
+      opcode.usesTimelockScriptNum = true →
+      decodeScriptNum operand flags.minimalData maxTimelockScriptNumBytes =
+        .ok value →
+      value < 0 →
+      Eval (.op opcode :: script) (operand :: rest) altStack flags ctx
+        (.failure .negativeLocktime)
+
   -- OP_CHECKSIG: pubkey on top, sig below (Bitcoin Core convention)
   | checksig_success : (pubkey sig : StackElement) → (rest : Stack) →
       (script : Script) → (altStack : Stack) → (flags : ScriptFlags) →
@@ -72,21 +122,25 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op .OP_CHECKSIG :: script) (pubkey :: sig :: rest) altStack flags ctx result
 
   -- OP_CHECKSIGADD: pubkey on top, accumulated count below, signature below that.
-  | checksigadd_success : (pubkey sig : StackElement) → (count : Nat) →
+  | checksigadd_success : (pubkey countBytes sig : StackElement) → (count : Int) →
       (rest : Stack) → (script : Script) → (altStack : Stack) →
       (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      decodeScriptNum countBytes flags.minimalData maxArithmeticScriptNumBytes =
+        .ok count →
       checkSig sig pubkey ctx.sigHash = true →
-      Eval script (scriptNat (count + 1) :: rest) altStack flags ctx result →
+      Eval script (scriptNum (count + 1) :: rest) altStack flags ctx result →
       Eval (.op .OP_CHECKSIGADD :: script)
-        (pubkey :: scriptNat count :: sig :: rest) altStack flags ctx result
+        (pubkey :: countBytes :: sig :: rest) altStack flags ctx result
 
-  | checksigadd_failure : (pubkey sig : StackElement) → (count : Nat) →
+  | checksigadd_failure : (pubkey countBytes sig : StackElement) → (count : Int) →
       (rest : Stack) → (script : Script) → (altStack : Stack) →
       (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      decodeScriptNum countBytes flags.minimalData maxArithmeticScriptNumBytes =
+        .ok count →
       checkSig sig pubkey ctx.sigHash = false →
-      Eval script (scriptNat count :: rest) altStack flags ctx result →
+      Eval script (scriptNum count :: rest) altStack flags ctx result →
       Eval (.op .OP_CHECKSIGADD :: script)
-        (pubkey :: scriptNat count :: sig :: rest) altStack flags ctx result
+        (pubkey :: countBytes :: sig :: rest) altStack flags ctx result
 
   -- OP_CHECKMULTISIG: legacy dummy, k signatures, n public keys.
   | checkmultisig_success : (k n : Nat) → (dummy : StackElement) →
@@ -169,35 +223,47 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
         (.failure .verify)
 
   -- OP_CHECKSEQUENCEVERIFY
-  | checksequenceverify_success : (n : Nat) → (rest : Stack) →
+  | checksequenceverify_success : (operand : StackElement) → (n : Int) →
+      (rest : Stack) →
       (script : Script) → (altStack : Stack) → (flags : ScriptFlags) →
       (ctx : TxContext) → (result : ExecResult) →
-      sequenceSatisfied n ctx →
-      Eval script (scriptNat n :: rest) altStack flags ctx result →
-      Eval (.op .OP_CHECKSEQUENCEVERIFY :: script) (scriptNat n :: rest)
+      decodeScriptNum operand flags.minimalData maxTimelockScriptNumBytes = .ok n →
+      0 ≤ n →
+      sequenceSatisfied n.toNat ctx →
+      Eval script (operand :: rest) altStack flags ctx result →
+      Eval (.op .OP_CHECKSEQUENCEVERIFY :: script) (operand :: rest)
         altStack flags ctx result
 
-  | checksequenceverify_failure : (n : Nat) → (rest : Stack) →
+  | checksequenceverify_failure : (operand : StackElement) → (n : Int) →
+      (rest : Stack) →
       (script : Script) → (altStack : Stack) → (flags : ScriptFlags) →
       (ctx : TxContext) →
-      ¬ sequenceSatisfied n ctx →
-      Eval (.op .OP_CHECKSEQUENCEVERIFY :: script) (scriptNat n :: rest)
+      decodeScriptNum operand flags.minimalData maxTimelockScriptNumBytes = .ok n →
+      0 ≤ n →
+      ¬ sequenceSatisfied n.toNat ctx →
+      Eval (.op .OP_CHECKSEQUENCEVERIFY :: script) (operand :: rest)
         altStack flags ctx (.failure .checkSequenceVerify)
 
   -- OP_CHECKLOCKTIMEVERIFY
-  | checklocktimeverify_success : (n : Nat) → (rest : Stack) →
+  | checklocktimeverify_success : (operand : StackElement) → (n : Int) →
+      (rest : Stack) →
       (script : Script) → (altStack : Stack) → (flags : ScriptFlags) →
       (ctx : TxContext) → (result : ExecResult) →
-      locktimeSatisfied n ctx →
-      Eval script (scriptNat n :: rest) altStack flags ctx result →
-      Eval (.op .OP_CHECKLOCKTIMEVERIFY :: script) (scriptNat n :: rest)
+      decodeScriptNum operand flags.minimalData maxTimelockScriptNumBytes = .ok n →
+      0 ≤ n →
+      locktimeSatisfied n.toNat ctx →
+      Eval script (operand :: rest) altStack flags ctx result →
+      Eval (.op .OP_CHECKLOCKTIMEVERIFY :: script) (operand :: rest)
         altStack flags ctx result
 
-  | checklocktimeverify_failure : (n : Nat) → (rest : Stack) →
+  | checklocktimeverify_failure : (operand : StackElement) → (n : Int) →
+      (rest : Stack) →
       (script : Script) → (altStack : Stack) → (flags : ScriptFlags) →
       (ctx : TxContext) →
-      ¬ locktimeSatisfied n ctx →
-      Eval (.op .OP_CHECKLOCKTIMEVERIFY :: script) (scriptNat n :: rest)
+      decodeScriptNum operand flags.minimalData maxTimelockScriptNumBytes = .ok n →
+      0 ≤ n →
+      ¬ locktimeSatisfied n.toNat ctx →
+      Eval (.op .OP_CHECKLOCKTIMEVERIFY :: script) (operand :: rest)
         altStack flags ctx (.failure .checkLockTimeVerify)
 
   -- OP_DUP
@@ -236,35 +302,45 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op .OP_HASH160 :: script) (x :: rest) altStack flags ctx result
 
   -- OP_BOOLOR
-  | boolor : (a b : StackElement) → (rest : Stack) → (script : Script) →
+  | boolor : (aBytes bBytes : StackElement) → (a b : Int) →
+      (rest : Stack) → (script : Script) →
       (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
       (result : ExecResult) →
-      Eval script (boolToElement (castToBool a || castToBool b) :: rest)
+      decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b) →
+      Eval script (boolToElement ((a != 0) || (b != 0)) :: rest)
         altStack flags ctx result →
-      Eval (.op .OP_BOOLOR :: script) (a :: b :: rest) altStack flags ctx result
+      Eval (.op .OP_BOOLOR :: script) (aBytes :: bBytes :: rest)
+        altStack flags ctx result
 
   -- OP_BOOLAND
-  | booland : (a b : StackElement) → (rest : Stack) → (script : Script) →
+  | booland : (aBytes bBytes : StackElement) → (a b : Int) →
+      (rest : Stack) → (script : Script) →
       (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
       (result : ExecResult) →
-      Eval script (boolToElement (castToBool a && castToBool b) :: rest)
+      decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b) →
+      Eval script (boolToElement ((a != 0) && (b != 0)) :: rest)
         altStack flags ctx result →
-      Eval (.op .OP_BOOLAND :: script) (a :: b :: rest) altStack flags ctx result
+      Eval (.op .OP_BOOLAND :: script) (aBytes :: bBytes :: rest)
+        altStack flags ctx result
 
   -- OP_ADD
-  | add : (a b : Nat) → (rest : Stack) → (script : Script) →
+  | add : (aBytes bBytes : StackElement) → (a b : Int) →
+      (rest : Stack) → (script : Script) →
       (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
       (result : ExecResult) →
-      Eval script (scriptNat (a + b) :: rest) altStack flags ctx result →
-      Eval (.op .OP_ADD :: script) (scriptNat a :: scriptNat b :: rest)
+      decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b) →
+      Eval script (scriptNum (a + b) :: rest) altStack flags ctx result →
+      Eval (.op .OP_ADD :: script) (aBytes :: bBytes :: rest)
         altStack flags ctx result
 
   -- OP_NUMEQUAL
-  | numequal : (a b : Nat) → (rest : Stack) → (script : Script) →
+  | numequal : (aBytes bBytes : StackElement) → (a b : Int) →
+      (rest : Stack) → (script : Script) →
       (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
       (result : ExecResult) →
+      decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b) →
       Eval script (boolToElement (a == b) :: rest) altStack flags ctx result →
-      Eval (.op .OP_NUMEQUAL :: script) (scriptNat a :: scriptNat b :: rest)
+      Eval (.op .OP_NUMEQUAL :: script) (aBytes :: bBytes :: rest)
         altStack flags ctx result
 
   -- OP_IF/OP_NOTIF/OP_ELSE/OP_ENDIF
@@ -398,10 +474,14 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op .OP_FROMALTSTACK :: script) stack (x :: altRest) flags ctx result
 
   -- OP_0NOTEQUAL
-  | zeroNotEqual : (x : StackElement) → (rest altStack : Stack) → (script : Script) →
+  | zeroNotEqual : (operand : StackElement) → (value : Int) →
+      (rest altStack : Stack) → (script : Script) →
       (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
-      Eval script (boolToElement (castToBool x) :: rest) altStack flags ctx result →
-      Eval (.op .OP_0NOTEQUAL :: script) (x :: rest) altStack flags ctx result
+      decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+        .ok value →
+      Eval script (boolToElement (value != 0) :: rest) altStack flags ctx result →
+      Eval (.op .OP_0NOTEQUAL :: script) (operand :: rest)
+        altStack flags ctx result
 
   -- OP_IFDUP
   | ifdup_true : (x : StackElement) → (rest altStack : Stack) → (script : Script) →
@@ -506,6 +586,33 @@ theorem Eval.fromAltStackUnderflow
       (.failure .altStackUnderflow) :=
   .fromaltstack_underflow script stack flags ctx
 
+/-- A malformed operand terminates any ordinary binary numeric opcode before
+    the remaining script executes. -/
+theorem Eval.binaryScriptNumFailure
+    {opcode : Opcode} {top belowTop : StackElement} {rest : Stack}
+    {script : Script} {altStack : Stack} {flags : ScriptFlags}
+    {ctx : TxContext} {error : ScriptError}
+    (usesNumbers : opcode.usesBinaryScriptNums = true)
+    (decoded : decodeBinaryScriptNums flags top belowTop = .error error) :
+    Eval (.op opcode :: script) (top :: belowTop :: rest) altStack flags ctx
+      (.failure error) :=
+  .binary_scriptnum_failure opcode top belowTop rest script altStack flags ctx
+    error usesNumbers decoded
+
+/-- A malformed CLTV/CSV operand terminates evaluation before the timelock
+    predicate is consulted. -/
+theorem Eval.timelockScriptNumFailure
+    {opcode : Opcode} {operand : StackElement} {rest : Stack}
+    {script : Script} {altStack : Stack} {flags : ScriptFlags}
+    {ctx : TxContext} {error : ScriptError}
+    (usesNumber : opcode.usesTimelockScriptNum = true)
+    (decoded : decodeScriptNum operand flags.minimalData
+      maxTimelockScriptNumBytes = .error error) :
+    Eval (.op opcode :: script) (operand :: rest) altStack flags ctx
+      (.failure error) :=
+  .timelock_scriptnum_failure opcode operand rest script altStack flags ctx
+    error usesNumber decoded
+
 /-- Main-stack underflow cannot overlap a normal fixed-arity opcode rule. -/
 theorem Eval.fixedArityStackUnderflow_result
     {opcode : Opcode} {required : Nat} {script : Script}
@@ -515,8 +622,9 @@ theorem Eval.fixedArityStackUnderflow_result
     (underflow : stack.length < required)
     (evaluated : Eval (.op opcode :: script) stack altStack flags ctx result) :
     result = .failure .stackUnderflow := by
-  cases evaluated <;>
-    simp_all [Opcode.fixedMainStackInputs?] <;>
+  cases opcode <;> cases evaluated <;>
+    simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+      Opcode.usesTimelockScriptNum] <;>
     omega
 
 /-- Empty-alt-stack failure cannot overlap normal `OP_FROMALTSTACK` execution. -/
@@ -526,8 +634,75 @@ theorem Eval.fromAltStack_empty_result
     (evaluated : Eval (.op .OP_FROMALTSTACK :: script) stack [] flags ctx result) :
     result = .failure .altStackUnderflow := by
   cases evaluated <;>
-    simp_all [Opcode.fixedMainStackInputs?] <;>
+    simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+      Opcode.usesTimelockScriptNum] <;>
     omega
+
+/-- A decoder error cannot overlap a normal binary numeric execution rule. -/
+theorem Eval.binaryScriptNumFailure_result
+    {opcode : Opcode} {top belowTop : StackElement} {rest : Stack}
+    {script : Script} {altStack : Stack} {flags : ScriptFlags}
+    {ctx : TxContext} {error : ScriptError} {result : ExecResult}
+    (usesNumbers : opcode.usesBinaryScriptNums = true)
+    (decoded : decodeBinaryScriptNums flags top belowTop = .error error)
+    (evaluated : Eval (.op opcode :: script) (top :: belowTop :: rest)
+      altStack flags ctx result) :
+    result = .failure error := by
+  cases opcode <;> simp_all [Opcode.usesBinaryScriptNums]
+  all_goals
+    cases evaluated <;>
+      simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+        Opcode.usesTimelockScriptNum] <;>
+      omega
+
+/-- A decoder error cannot overlap normal `OP_0NOTEQUAL` execution. -/
+theorem Eval.unaryScriptNumFailure_result
+    {operand : StackElement} {rest : Stack} {script : Script}
+    {altStack : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    {error : ScriptError} {result : ExecResult}
+    (decoded : decodeScriptNum operand flags.minimalData
+      maxArithmeticScriptNumBytes = .error error)
+    (evaluated : Eval (.op .OP_0NOTEQUAL :: script) (operand :: rest)
+      altStack flags ctx result) :
+    result = .failure error := by
+  cases evaluated <;>
+    simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+      Opcode.usesTimelockScriptNum] <;>
+    omega
+
+/-- A malformed CHECKSIGADD count fails before signature evaluation. -/
+theorem Eval.checksigaddScriptNumFailure_result
+    {pubkey countBytes sig : StackElement} {rest : Stack} {script : Script}
+    {altStack : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    {error : ScriptError} {result : ExecResult}
+    (decoded : decodeScriptNum countBytes flags.minimalData
+      maxArithmeticScriptNumBytes = .error error)
+    (evaluated : Eval (.op .OP_CHECKSIGADD :: script)
+      (pubkey :: countBytes :: sig :: rest) altStack flags ctx result) :
+    result = .failure error := by
+  cases evaluated <;>
+    simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+      Opcode.usesTimelockScriptNum] <;>
+    omega
+
+/-- A decoder error cannot overlap normal CLTV/CSV execution or the separate
+    negative-locktime failure. -/
+theorem Eval.timelockScriptNumFailure_result
+    {opcode : Opcode} {operand : StackElement} {rest : Stack}
+    {script : Script} {altStack : Stack} {flags : ScriptFlags}
+    {ctx : TxContext} {error : ScriptError} {result : ExecResult}
+    (usesNumber : opcode.usesTimelockScriptNum = true)
+    (decoded : decodeScriptNum operand flags.minimalData
+      maxTimelockScriptNumBytes = .error error)
+    (evaluated : Eval (.op opcode :: script) (operand :: rest)
+      altStack flags ctx result) :
+    result = .failure error := by
+  cases opcode <;> simp_all [Opcode.usesTimelockScriptNum]
+  all_goals
+    cases evaluated <;>
+      simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+        Opcode.usesTimelockScriptNum] <;>
+      omega
 
 theorem Eval.done {stack altStack : Stack} {flags : ScriptFlags} {ctx : TxContext} :
     Eval [] stack altStack flags ctx (.success stack altStack) :=
