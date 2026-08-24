@@ -24,8 +24,9 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   [`lean-hash160`](https://github.com/febyeji/lean-hash160) package while the
   general formal semantics retain an abstract hash boundary.
 - Basic metrics and resource accounting are implemented, but not proved.
-- Partial big-step semantics include explicit stack-underflow and Script-number
-  failures, together with a few soundness lemmas. Execution behavior targets
+- Partial big-step semantics include explicit stack-underflow, Script-number,
+  and variable-frame `CHECKMULTISIG` failures, together with a few soundness
+  lemmas. Execution behavior targets
   [Bitcoin Core v31.1](https://github.com/bitcoin/bitcoin/tree/9be056a8a72b624dae9623b2f7bded92c2a21c91)
   at the pinned commit recorded in the coverage baseline; `Eval` remains a
   documented subset rather than a complete Bitcoin Core interpreter.

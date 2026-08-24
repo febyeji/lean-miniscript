@@ -56,6 +56,8 @@ inductive ScriptError where
   | altStackUnderflow
   | scriptNumOverflow
   | scriptNumNonMinimal
+  | pubkeyCount
+  | signatureCount
   | negativeLocktime
   | nullDummy
   | equalVerify
@@ -187,6 +189,9 @@ def maxArithmeticScriptNumBytes : Nat := 4
     fields remain representable. -/
 def maxTimelockScriptNumBytes : Nat := 5
 
+/-- Consensus limit for public keys consumed by legacy `OP_CHECKMULTISIG`. -/
+def maxPubKeysPerMultiSig : Nat := 20
+
 /-- Clear the sign bit on the most-significant byte of a little-endian signed
     magnitude. -/
 def clearScriptNumSignBit : List UInt8 → List UInt8
@@ -249,6 +254,62 @@ def decodeBinaryScriptNums (flags : ScriptFlags) (top belowTop : StackElement) :
   let topValue ← decodeScriptNum top flags.minimalData
     maxArithmeticScriptNumBytes
   pure (topValue, belowValue)
+
+/-- Dynamically decoded legacy multisignature operands in top-first stack order.
+
+    The count elements and dummy are consumed by `OP_CHECKMULTISIG`; `rest`
+    remains below them. Public keys and signatures retain the order in which
+    the Bitcoin Core interpreter visits them from the top of the stack. -/
+structure CheckMultiSigOperands where
+  pubkeys : Stack
+  signatures : Stack
+  dummy : StackElement
+  rest : Stack
+  deriving Repr
+
+/-- Decode the variable-size `OP_CHECKMULTISIG` stack frame.
+
+    This follows Bitcoin Core's observable validation order: decode and bound
+    the public-key count, require the public-key frame and signature-count
+    element, decode and bound the signature count, then require the signatures
+    and historical dummy element. The ordinary four-byte Script-number limit
+    applies to both counts. -/
+def decodeCheckMultiSigOperands (flags : ScriptFlags) (stack : Stack) :
+    Except ScriptError CheckMultiSigOperands := do
+  let (pubkeyCountBytes, afterPubkeyCount) ←
+    match stack with
+    | [] => .error .stackUnderflow
+    | countBytes :: rest => .ok (countBytes, rest)
+  let pubkeyCount ← decodeScriptNum pubkeyCountBytes flags.minimalData
+    maxArithmeticScriptNumBytes
+  if pubkeyCount < 0 then
+    .error .pubkeyCount
+  else if (maxPubKeysPerMultiSig : Int) < pubkeyCount then
+    .error .pubkeyCount
+  else
+    let n := pubkeyCount.toNat
+    if afterPubkeyCount.length < n + 1 then
+      .error .stackUnderflow
+    else
+      let pubkeys := afterPubkeyCount.take n
+      match afterPubkeyCount.drop n with
+      | [] => .error .stackUnderflow
+      | signatureCountBytes :: afterSignatureCount => do
+          let signatureCount ← decodeScriptNum signatureCountBytes
+            flags.minimalData maxArithmeticScriptNumBytes
+          if signatureCount < 0 then
+            .error .signatureCount
+          else if pubkeyCount < signatureCount then
+            .error .signatureCount
+          else
+            let k := signatureCount.toNat
+            if afterSignatureCount.length < k + 1 then
+              .error .stackUnderflow
+            else
+              let signatures := afterSignatureCount.take k
+              match afterSignatureCount.drop k with
+              | [] => .error .stackUnderflow
+              | dummy :: rest => .ok { pubkeys, signatures, dummy, rest }
 
 theorem scriptNum_zero : scriptNum 0 = falseElement := by
   rfl
