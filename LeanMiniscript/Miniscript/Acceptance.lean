@@ -68,6 +68,7 @@ def Dissatisfies (ctx : ScriptContext) (script : Script) (witness : Witness)
 private def contractExampleFlags : ScriptFlags := {}
 
 private def contractExampleTxCtx : TxContext where
+  version := 2
   locktime := 0
   sequence := 0
   sigHash := ⟨#[]⟩

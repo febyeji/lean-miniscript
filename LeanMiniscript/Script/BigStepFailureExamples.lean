@@ -59,6 +59,7 @@ theorem opcodeArityFixtures_cover (opcode : Opcode) :
 private def fixtureFlags : ScriptFlags := {}
 
 private def fixtureTxContext : TxContext where
+  version := 2
   locktime := 0
   sequence := 0
   sigHash := ⟨#[]⟩

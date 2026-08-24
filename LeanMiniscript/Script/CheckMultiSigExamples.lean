@@ -20,6 +20,7 @@ private def relaxedCheckMultiSigFlags : ScriptFlags where
   minimalData := false
 
 private def checkMultiSigTx : TxContext where
+  version := 2
   locktime := 0
   sequence := 0
   sigHash := ⟨#[]⟩

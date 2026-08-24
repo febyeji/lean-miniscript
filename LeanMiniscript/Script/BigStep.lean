@@ -747,6 +747,62 @@ theorem Eval.timelockScriptNumFailure_result
         Opcode.usesTimelockScriptNum] <;>
       omega
 
+/-- A decoded negative timelock operand fails before either opcode consults
+    its transaction-context predicate. -/
+theorem Eval.timelockNegativeFailure_result
+    {opcode : Opcode} {operand : StackElement} {rest : Stack}
+    {script : Script} {altStack : Stack} {flags : ScriptFlags}
+    {ctx : TxContext} {value : Int} {result : ExecResult}
+    (usesNumber : opcode.usesTimelockScriptNum = true)
+    (decoded : decodeScriptNum operand flags.minimalData
+      maxTimelockScriptNumBytes = .ok value)
+    (negative : value < 0)
+    (evaluated : Eval (.op opcode :: script) (operand :: rest)
+      altStack flags ctx result) :
+    result = .failure .negativeLocktime := by
+  cases opcode <;> simp_all [Opcode.usesTimelockScriptNum]
+  all_goals
+    cases evaluated <;>
+      simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+        Opcode.usesTimelockScriptNum] <;>
+      omega
+
+/-- A nonnegative CSV operand that fails the BIP 68/112 context conditions
+    cannot overlap CSV success or an earlier numeric failure. -/
+theorem Eval.checkSequenceVerifyFailure_result
+    {operand : StackElement} {rest : Stack} {script : Script}
+    {altStack : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    {value : Int} {result : ExecResult}
+    (decoded : decodeScriptNum operand flags.minimalData
+      maxTimelockScriptNumBytes = .ok value)
+    (nonnegative : 0 ≤ value)
+    (unsatisfied : ¬ sequenceSatisfied value.toNat ctx)
+    (evaluated : Eval (.op .OP_CHECKSEQUENCEVERIFY :: script)
+      (operand :: rest) altStack flags ctx result) :
+    result = .failure .checkSequenceVerify := by
+  cases evaluated <;>
+    simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+      Opcode.usesTimelockScriptNum] <;>
+    omega
+
+/-- A nonnegative CLTV operand that fails the BIP 65 context conditions cannot
+    overlap CLTV success or an earlier numeric failure. -/
+theorem Eval.checkLockTimeVerifyFailure_result
+    {operand : StackElement} {rest : Stack} {script : Script}
+    {altStack : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    {value : Int} {result : ExecResult}
+    (decoded : decodeScriptNum operand flags.minimalData
+      maxTimelockScriptNumBytes = .ok value)
+    (nonnegative : 0 ≤ value)
+    (unsatisfied : ¬ locktimeSatisfied value.toNat ctx)
+    (evaluated : Eval (.op .OP_CHECKLOCKTIMEVERIFY :: script)
+      (operand :: rest) altStack flags ctx result) :
+    result = .failure .checkLockTimeVerify := by
+  cases evaluated <;>
+    simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+      Opcode.usesTimelockScriptNum] <;>
+    omega
+
 theorem Eval.done {stack altStack : Stack} {flags : ScriptFlags} {ctx : TxContext} :
     Eval [] stack altStack flags ctx (.success stack altStack) :=
   .empty stack altStack flags ctx

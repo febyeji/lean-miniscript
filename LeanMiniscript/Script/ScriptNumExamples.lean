@@ -16,8 +16,9 @@ private def relaxedNumberFlags : ScriptFlags where
   minimalData := false
 
 private def numberFixtureTx : TxContext where
+  version := 2
   locktime := 4294967295
-  sequence := 4294967295
+  sequence := 4294967294
   sigHash := ⟨#[]⟩
 
 /-- Redundant high zero: numerically one, but not minimally encoded. -/
@@ -153,7 +154,7 @@ example : Eval [.op .OP_CHECKLOCKTIMEVERIFY] [uint32MaxScriptNum] []
   apply Eval.checklocktimeverify_success (n := 4294967295)
   · rfl
   · omega
-  · simp [locktimeSatisfied, numberFixtureTx]
+  · native_decide
   · exact Eval.done
 
 example : Eval [.op .OP_CHECKSEQUENCEVERIFY] [uint32MaxScriptNum] []
@@ -162,7 +163,7 @@ example : Eval [.op .OP_CHECKSEQUENCEVERIFY] [uint32MaxScriptNum] []
   apply Eval.checksequenceverify_success (n := 4294967295)
   · rfl
   · omega
-  · simp [sequenceSatisfied, numberFixtureTx]
+  · native_decide
   · exact Eval.done
 
 example : Eval [.op .OP_CHECKLOCKTIMEVERIFY] [scriptNum (-1)] []
