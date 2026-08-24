@@ -139,10 +139,14 @@ enforces minimal encoding plus the ordinary four-byte and timelock five-byte
 limits. `ADD`, `BOOLAND`, `BOOLOR`, `0NOTEQUAL`, `NUMEQUAL`, `CHECKSIGADD`,
 CLTV, and CSV decode arbitrary stack bytes and report typed overflow,
 non-minimal, and negative-timelock failures; every numeric decoder-error group
-has a local result-uniqueness lemma. Variable-arity `CHECKMULTISIG`,
-including its decoded count operands, malformed control flow, context-invalid
-opcodes, full failure completeness, and global evaluation determinism remain
-unfinished.
+has a local result-uniqueness lemma. Legacy `CHECKMULTISIG` now decodes arbitrary
+public-key and signature count elements in Bitcoin Core's validation order,
+enforces `0 ≤ k ≤ n ≤ 20`, checks each variable stack-frame boundary, places
+the historical dummy below the signatures, and reports typed count,
+Script-number, underflow, and NULLDUMMY failures. Bitcoin Core op-counting,
+signature-encoding and NULLFAIL errors, malformed control flow,
+context-invalid opcodes, full failure completeness, and global evaluation
+determinism remain unfinished.
 
 ## Surface Constructor Matrix
 

@@ -142,40 +142,43 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op .OP_CHECKSIGADD :: script)
         (pubkey :: countBytes :: sig :: rest) altStack flags ctx result
 
-  -- OP_CHECKMULTISIG: legacy dummy, k signatures, n public keys.
-  | checkmultisig_success : (k n : Nat) → (dummy : StackElement) →
-      (sigs pubkeys rest : Stack) → (script : Script) → (altStack : Stack) →
-      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
-      sigs.length = k →
-      pubkeys.length = n →
-      nullDummySatisfied flags dummy →
-      checkMultiSig sigs pubkeys ctx.sigHash = true →
-      Eval script (trueElement :: rest) altStack flags ctx result →
-      Eval (.op .OP_CHECKMULTISIG :: script)
-        (scriptNat n :: (pubkeys ++ scriptNat k :: dummy :: sigs ++ rest))
-        altStack flags ctx result
+  -- OP_CHECKMULTISIG: dynamically decoded counts, public keys, signatures, and
+  -- the historical dummy argument. Decoder failures are terminal before the
+  -- signature oracle is consulted.
+  | checkmultisig_operand_failure : (stack : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (error : ScriptError) →
+      decodeCheckMultiSigOperands flags stack = .error error →
+      Eval (.op .OP_CHECKMULTISIG :: script) stack altStack flags ctx
+        (.failure error)
 
-  | checkmultisig_failure : (k n : Nat) → (dummy : StackElement) →
-      (sigs pubkeys rest : Stack) → (script : Script) → (altStack : Stack) →
-      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
-      sigs.length = k →
-      pubkeys.length = n →
-      nullDummySatisfied flags dummy →
-      checkMultiSig sigs pubkeys ctx.sigHash = false →
-      Eval script (falseElement :: rest) altStack flags ctx result →
-      Eval (.op .OP_CHECKMULTISIG :: script)
-        (scriptNat n :: (pubkeys ++ scriptNat k :: dummy :: sigs ++ rest))
-        altStack flags ctx result
+  | checkmultisig_success : (stack : Stack) →
+      (operands : CheckMultiSigOperands) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      decodeCheckMultiSigOperands flags stack = .ok operands →
+      nullDummySatisfied flags operands.dummy →
+      checkMultiSig operands.signatures operands.pubkeys ctx.sigHash = true →
+      Eval script (trueElement :: operands.rest) altStack flags ctx result →
+      Eval (.op .OP_CHECKMULTISIG :: script) stack altStack flags ctx result
 
-  | checkmultisig_nulldummy_failure : (k n : Nat) → (dummy : StackElement) →
-      (sigs pubkeys rest : Stack) → (script : Script) → (altStack : Stack) →
-      (flags : ScriptFlags) → (ctx : TxContext) →
-      sigs.length = k →
-      pubkeys.length = n →
-      ¬ nullDummySatisfied flags dummy →
-      Eval (.op .OP_CHECKMULTISIG :: script)
-        (scriptNat n :: (pubkeys ++ scriptNat k :: dummy :: sigs ++ rest))
-        altStack flags ctx (.failure .nullDummy)
+  | checkmultisig_failure : (stack : Stack) →
+      (operands : CheckMultiSigOperands) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      decodeCheckMultiSigOperands flags stack = .ok operands →
+      nullDummySatisfied flags operands.dummy →
+      checkMultiSig operands.signatures operands.pubkeys ctx.sigHash = false →
+      Eval script (falseElement :: operands.rest) altStack flags ctx result →
+      Eval (.op .OP_CHECKMULTISIG :: script) stack altStack flags ctx result
+
+  | checkmultisig_nulldummy_failure : (stack : Stack) →
+      (operands : CheckMultiSigOperands) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      decodeCheckMultiSigOperands flags stack = .ok operands →
+      ¬ nullDummySatisfied flags operands.dummy →
+      Eval (.op .OP_CHECKMULTISIG :: script) stack altStack flags ctx
+        (.failure .nullDummy)
 
   -- OP_EQUAL
   | equal_true : (a b : StackElement) → (rest : Stack) →
@@ -613,6 +616,16 @@ theorem Eval.timelockScriptNumFailure
   .timelock_scriptnum_failure opcode operand rest script altStack flags ctx
     error usesNumber decoded
 
+/-- A malformed or incomplete legacy multisignature frame terminates before
+    signature matching or NULLDUMMY validation. -/
+theorem Eval.checkMultiSigOperandFailure
+    {stack : Stack} {script : Script} {altStack : Stack}
+    {flags : ScriptFlags} {ctx : TxContext} {error : ScriptError}
+    (decoded : decodeCheckMultiSigOperands flags stack = .error error) :
+    Eval (.op .OP_CHECKMULTISIG :: script) stack altStack flags ctx
+      (.failure error) :=
+  .checkmultisig_operand_failure stack script altStack flags ctx error decoded
+
 /-- Main-stack underflow cannot overlap a normal fixed-arity opcode rule. -/
 theorem Eval.fixedArityStackUnderflow_result
     {opcode : Opcode} {required : Nat} {script : Script}
@@ -680,6 +693,36 @@ theorem Eval.checksigaddScriptNumFailure_result
     (evaluated : Eval (.op .OP_CHECKSIGADD :: script)
       (pubkey :: countBytes :: sig :: rest) altStack flags ctx result) :
     result = .failure error := by
+  cases evaluated <;>
+    simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+      Opcode.usesTimelockScriptNum] <;>
+    omega
+
+/-- A legacy multisignature operand-decoder error cannot overlap a normal
+    CHECKMULTISIG execution or NULLDUMMY failure. -/
+theorem Eval.checkMultiSigOperandFailure_result
+    {stack : Stack} {script : Script} {altStack : Stack}
+    {flags : ScriptFlags} {ctx : TxContext} {error : ScriptError}
+    {result : ExecResult}
+    (decoded : decodeCheckMultiSigOperands flags stack = .error error)
+    (evaluated : Eval (.op .OP_CHECKMULTISIG :: script) stack altStack flags ctx
+      result) :
+    result = .failure error := by
+  cases evaluated <;>
+    simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+      Opcode.usesTimelockScriptNum] <;>
+    omega
+
+/-- A decoded non-null dummy cannot overlap a normal CHECKMULTISIG execution. -/
+theorem Eval.checkMultiSigNullDummyFailure_result
+    {stack : Stack} {operands : CheckMultiSigOperands} {script : Script}
+    {altStack : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    {result : ExecResult}
+    (decoded : decodeCheckMultiSigOperands flags stack = .ok operands)
+    (invalidDummy : ¬ nullDummySatisfied flags operands.dummy)
+    (evaluated : Eval (.op .OP_CHECKMULTISIG :: script) stack altStack flags ctx
+      result) :
+    result = .failure .nullDummy := by
   cases evaluated <;>
     simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
       Opcode.usesTimelockScriptNum] <;>
