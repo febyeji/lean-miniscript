@@ -47,6 +47,10 @@ oracles, not logical premises of Lean proofs.
 - `ScriptFlags.minimalData` controls minimal Script-number operands. Both
   modeled acceptance contexts require it, while raw `Eval` can express the
   relaxed Bitcoin Core flag behavior.
+- `TxContext` carries the signed transaction version, transaction locktime,
+  and current-input sequence needed for the modeled BIP 65 and BIP 68/112
+  checks. Its `Nat` locktime and sequence fields represent the corresponding
+  unsigned transaction fields without imposing a machine-word representation.
 - P2WSH and Tapscript validation remain separate through `ScriptContext`.
   `ModeledContextFlags` is not yet the full Bitcoin Core flag matrix.
 
@@ -139,7 +143,12 @@ enforces minimal encoding plus the ordinary four-byte and timelock five-byte
 limits. `ADD`, `BOOLAND`, `BOOLOR`, `0NOTEQUAL`, `NUMEQUAL`, `CHECKSIGADD`,
 CLTV, and CSV decode arbitrary stack bytes and report typed overflow,
 non-minimal, and negative-timelock failures; every numeric decoder-error group
-has a local result-uniqueness lemma. Legacy `CHECKMULTISIG` now decodes arbitrary
+has a local result-uniqueness lemma. CLTV additionally enforces height/time
+class compatibility, transaction-locktime comparison, and a non-final current
+input. CSV implements the operand disable-bit NOP and otherwise enforces
+transaction version, input disable bit, height/time type compatibility, and
+the masked low-16-bit comparison. Context failures and negative operands also
+have local result-uniqueness lemmas. Legacy `CHECKMULTISIG` now decodes arbitrary
 public-key and signature count elements in Bitcoin Core's validation order,
 enforces `0 ≤ k ≤ n ≤ 20`, checks each variable stack-frame boundary, places
 the historical dummy below the signatures, and reports typed count,

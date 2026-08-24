@@ -10,5 +10,6 @@ import LeanMiniscript.Script.BigStepFailureExamples
 import LeanMiniscript.Script.CheckMultiSigExamples
 import LeanMiniscript.Script.ScriptNumExamples
 import LeanMiniscript.Script.SerializationExamples
+import LeanMiniscript.Script.TimelockExamples
 
 /-! Build-checked fixtures and regression examples for lean-miniscript. -/

@@ -23,6 +23,8 @@ structure ScriptFlags where
 
 /-- Transaction context needed for signature verification and timelocks. -/
 structure TxContext where
+  /-- Signed transaction version used to activate BIP 68 relative locktimes. -/
+  version : Int
   /-- Transaction locktime for OP_CHECKLOCKTIMEVERIFY -/
   locktime : Nat
   /-- Input sequence number for OP_CHECKSEQUENCEVERIFY -/
@@ -323,17 +325,68 @@ theorem scriptNum_128 : scriptNum 128 = ⟨#[0x80, 0x00]⟩ := by
 theorem scriptNum_neg_one : scriptNum (-1) = ⟨#[0x81]⟩ := by
   rfl
 
-/-- Simplified locktime check used by `OP_CHECKLOCKTIMEVERIFY`.
-    The full Bitcoin rule also checks locktime classes and final sequence;
-    Miniscript AST validation tracks the class-level side conditions. -/
-def locktimeSatisfied (required : Nat) (ctx : TxContext) : Prop :=
-  required ≤ ctx.locktime
+/-- Values below this threshold are block heights; values at or above it are
+    Unix timestamps. This is Bitcoin Core's `LOCKTIME_THRESHOLD`. -/
+def locktimeThreshold : Nat := 500000000
 
-/-- Simplified sequence check used by `OP_CHECKSEQUENCEVERIFY`.
-    The full Bitcoin rule also interprets BIP 68 disable/type bits; Miniscript
-    AST validation tracks the class-level side conditions. -/
+/-- The final input sequence disables transaction locktime. -/
+def sequenceFinal : Nat := 4294967295
+
+/-- BIP 68 flag that disables relative-locktime interpretation. -/
+def sequenceLocktimeDisableFlag : Nat := 2147483648
+
+/-- BIP 68 flag selecting 512-second units instead of block heights. -/
+def sequenceLocktimeTypeFlag : Nat := 4194304
+
+/-- BIP 68 mask retaining the low 16-bit relative-locktime value. -/
+def sequenceLocktimeMask : Nat := 65535
+
+/-- Whether a locktime is timestamp-based rather than height-based. -/
+def locktimeIsTimestamp (locktime : Nat) : Bool :=
+  locktimeThreshold ≤ locktime
+
+/-- Whether the BIP 68 disable bit is set. The quotient formulation is the
+    single-bit test used by Bitcoin Core, stated without fixing a machine-word
+    representation for Script-number operands. -/
+def sequenceDisableFlagSet (sequence : Nat) : Bool :=
+  sequence / sequenceLocktimeDisableFlag % 2 == 1
+
+/-- Whether the BIP 68 type bit selects 512-second intervals. -/
+def sequenceTypeFlagSet (sequence : Nat) : Bool :=
+  sequence / sequenceLocktimeTypeFlag % 2 == 1
+
+/-- The consensus-enforced low 16-bit relative-locktime value. -/
+def sequenceLocktimeValue (sequence : Nat) : Nat :=
+  sequence % (sequenceLocktimeMask + 1)
+
+/-- Bitcoin Core's BIP 65 `CheckLockTime` conditions for
+    `OP_CHECKLOCKTIMEVERIFY`: matching height/time classes, an adequate
+    transaction locktime, and a non-final sequence for the current input. -/
+def locktimeSatisfied (required : Nat) (ctx : TxContext) : Prop :=
+  locktimeIsTimestamp required = locktimeIsTimestamp ctx.locktime ∧
+  required ≤ ctx.locktime ∧
+  ctx.sequence ≠ sequenceFinal
+
+instance (required : Nat) (ctx : TxContext) :
+    Decidable (locktimeSatisfied required ctx) := by
+  unfold locktimeSatisfied
+  infer_instance
+
+/-- Bitcoin Core's BIP 112 `OP_CHECKSEQUENCEVERIFY` conditions. An operand
+    with the disable bit set is a forward-compatible NOP. Otherwise BIP 68
+    requires transaction version 2 or later, an active input sequence, equal
+    height/time types, and an adequate masked 16-bit relative-locktime value. -/
 def sequenceSatisfied (required : Nat) (ctx : TxContext) : Prop :=
-  required ≤ ctx.sequence
+  sequenceDisableFlagSet required = true ∨
+  ((2 : Int) ≤ ctx.version ∧
+    sequenceDisableFlagSet ctx.sequence = false ∧
+    sequenceTypeFlagSet required = sequenceTypeFlagSet ctx.sequence ∧
+    sequenceLocktimeValue required ≤ sequenceLocktimeValue ctx.sequence)
+
+instance (required : Nat) (ctx : TxContext) :
+    Decidable (sequenceSatisfied required ctx) := by
+  unfold sequenceSatisfied
+  infer_instance
 
 /-- Byte-array equality for stack elements, kept local to script-state
     predicates instead of introducing a global `BEq ByteArray` instance. -/
