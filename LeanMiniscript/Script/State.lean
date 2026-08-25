@@ -67,6 +67,7 @@ inductive ScriptError where
   | checkSequenceVerify
   | checkLockTimeVerify
   | minimalIf
+  | unbalancedConditional
   deriving Repr, DecidableEq, BEq
 
 /-- Fixed main-stack inputs consumed or inspected by a modeled opcode.

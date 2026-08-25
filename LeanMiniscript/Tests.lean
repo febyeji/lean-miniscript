@@ -8,6 +8,7 @@ import LeanMiniscript.Miniscript.TimelockMixingExamples
 import LeanMiniscript.Miniscript.TypeInferenceExamples
 import LeanMiniscript.Script.BigStepFailureExamples
 import LeanMiniscript.Script.CheckMultiSigExamples
+import LeanMiniscript.Script.ConditionalExamples
 import LeanMiniscript.Script.ScriptNumExamples
 import LeanMiniscript.Script.SerializationExamples
 import LeanMiniscript.Script.TimelockExamples
