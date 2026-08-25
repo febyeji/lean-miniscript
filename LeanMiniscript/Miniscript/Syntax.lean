@@ -2,9 +2,9 @@ import LeanMiniscript.Script.Syntax  -- for Repr ByteArray instance
 
 namespace LeanMiniscript.Miniscript
 
-/-- Resolved public-key bytes. Context-specific length checks remain in
-    `Miniscript.Context`, while this wrapper prevents hashes and arbitrary
-    stack elements from being used as keys accidentally. -/
+/-- Resolved public-key bytes. Context-specific length and serialization-shape
+    checks remain in `Miniscript.Context`, while this wrapper prevents hashes
+    and arbitrary stack elements from being used as keys accidentally. -/
 structure PubKey where
   bytes : ByteArray
   deriving Repr

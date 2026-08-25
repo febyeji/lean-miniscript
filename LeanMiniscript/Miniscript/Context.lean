@@ -18,6 +18,17 @@ def ScriptContext.dWrapperUnit : ScriptContext → Bool
   | .p2wsh => false
   | .tapscript => true
 
+/-- Whether bytes have the serialized shape of a compressed secp256k1 public
+    key. Curve-point validation remains the responsibility of the key resolver. -/
+def validCompressedPubKeyBytes (bytes : ByteArray) : Prop :=
+  bytes.size = 33 ∧
+    (bytes.get! 0 = 0x02 ∨ bytes.get! 0 = 0x03)
+
+instance instDecidableValidCompressedPubKeyBytes (bytes : ByteArray) :
+    Decidable (validCompressedPubKeyBytes bytes) := by
+  unfold validCompressedPubKeyBytes
+  infer_instance
+
 /-- Resolved public keys allowed by the target script context.
 
     P2WSH keys resolve to compressed public keys. Tapscript keys must already be
@@ -25,13 +36,13 @@ def ScriptContext.dWrapperUnit : ScriptContext → Bool
     layers may accept compressed key expressions, but must convert them first. -/
 def validResolvedPubKey (ctx : ScriptContext) (key : PubKey) : Prop :=
   match ctx with
-  | .p2wsh => key.size = 33
+  | .p2wsh => validCompressedPubKeyBytes key.bytes
   | .tapscript => key.size = 32
 
 /-- Context compatibility for unresolved descriptor key expressions. -/
 def KeyMaterial.CompatibleWith : KeyMaterial → ScriptContext → Prop
-  | .publicKey bytes, .p2wsh => bytes.size = 33
-  | .publicKey bytes, .tapscript => bytes.size = 33
+  | .publicKey bytes, .p2wsh => validCompressedPubKeyBytes bytes
+  | .publicKey bytes, .tapscript => validCompressedPubKeyBytes bytes
   | .xOnlyPublicKey _, .p2wsh => False
   | .xOnlyPublicKey bytes, .tapscript => bytes.size = 32
   | .privateKey bytes, .p2wsh => 0 < bytes.size

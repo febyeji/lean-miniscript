@@ -56,6 +56,7 @@ abbrev Script := List ScriptElement
 
 -- Serialization is defined in `Script.Serialization`.
 -- TODO: Define script deserialization.
--- TODO: Define witness type
+-- Witness ordering and the execution-stack boundary are defined in
+-- `Miniscript.Witness`.
 
 end LeanMiniscript.Script

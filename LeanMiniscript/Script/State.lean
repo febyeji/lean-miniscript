@@ -112,8 +112,8 @@ inductive ExecResult where
   deriving Repr
 
 /-- Bitcoin's truthiness check: a byte array is true iff it is not all-zero
-    (with the exception that negative zero 0x80 is also false).
-    Simplified: empty or all-zero → false, otherwise → true. -/
+    after ignoring the sign bit of its final byte. This makes the empty vector,
+    every all-zero vector, and negative zero (`00...80`) false. -/
 def castToBool (b : StackElement) : Bool :=
   -- Check if any byte is nonzero (ignoring sign bit of last byte)
   if b.size == 0 then false

@@ -973,7 +973,8 @@ private theorem atomSafe_byteArrayHex (bytes : ByteArray)
     exact byteHexChars_atomCharsSafe byte char hChar
 
 /-- Default key resolver for canonical lowercase or uppercase hexadecimal key
-    tokens. Context-specific length checks remain in `parseSurface`. -/
+    tokens. Context-specific serialized-shape checks remain in `parseSurface`;
+    this byte codec does not validate secp256k1 curve membership. -/
 def resolveHexKey (token : String) : Except String PubKey :=
   match decodeHex? token with
   | some bytes => pure (PubKey.ofBytes bytes)
@@ -997,16 +998,12 @@ private def normalizeKeyForContext
     (context : ScriptContext) (key : PubKey) : Option PubKey :=
   match context with
   | .p2wsh =>
-      if key.size = 33 then some key else none
+      if validCompressedPubKeyBytes key.bytes then some key else none
   | .tapscript =>
       if key.size = 32 then
         some key
-      else if key.size = 33 then
-        let keyPrefix := key.bytes.get! 0
-        if keyPrefix = 0x02 || keyPrefix = 0x03 then
-          some (PubKey.ofBytes (key.bytes.extract 1 33))
-        else
-          none
+      else if validCompressedPubKeyBytes key.bytes then
+        some (PubKey.ofBytes (key.bytes.extract 1 33))
       else
         none
 
@@ -1031,7 +1028,8 @@ private theorem normalizeKeyForContext_of_valid
     (hValid : validResolvedPubKey context key) :
     normalizeKeyForContext context key = some key := by
   cases context <;>
-    simp_all [normalizeKeyForContext, validResolvedPubKey]
+    simp_all [normalizeKeyForContext, validResolvedPubKey,
+      validCompressedPubKeyBytes]
 
 private theorem resolveKeyRaw_prettyPubKey
     (context : ScriptContext) (position : Nat) (key : PubKey)
@@ -1515,9 +1513,8 @@ private theorem canonicalExprCorrect_keyCall
   apply canonicalExprCorrect_unaryAtomCall
   · exact hNameSafe
   · apply atomSafe_byteArrayHex
-    unfold validResolvedPubKey at hValid
-    unfold PubKey.size at hValid
-    cases context <;> omega
+    cases context <;>
+      simp_all [validResolvedPubKey, validCompressedPubKeyBytes, PubKey.size]
   · exact hElaborate
 
 private theorem canonicalExprCorrect_pk
@@ -1855,8 +1852,8 @@ private theorem canonicalKeyListCorrect
   | cons key keys ih =>
       simp only [CoreFragment.allKeysValid] at hValid
       have hKeyPositive : 0 < key.bytes.size := by
-        unfold validResolvedPubKey PubKey.size at hValid
-        cases context <;> omega
+        cases context <;>
+          simp_all [validResolvedPubKey, validCompressedPubKeyBytes, PubKey.size]
       have hTail := ih hValid.2
       constructor
       · intro expr hMem
