@@ -154,9 +154,15 @@ public-key and signature count elements in Bitcoin Core's validation order,
 enforces `0 ≤ k ≤ n ≤ 20`, checks each variable stack-frame boundary, places
 the historical dummy below the signatures, and reports typed count,
 Script-number, underflow, and NULLDUMMY failures. Bitcoin Core op-counting,
-signature-encoding and NULLFAIL errors, malformed control flow,
+signature-encoding and NULLFAIL errors, exact raw-script error precedence,
 context-invalid opcodes, full failure completeness, and global evaluation
-determinism remain unfinished.
+determinism remain unfinished. Conditional execution now uses an executable
+depth-aware splitter: nested delimiters stay within their branch, repeated
+same-depth `ELSE` opcodes toggle selected segments as in Bitcoin Core, and a
+missing matching `ENDIF` or top-level `ELSE`/`ENDIF` produces a typed
+unbalanced-conditional failure with local result-uniqueness lemmas. The
+splitter structurally rejects an unclosed frame before branch execution, so
+error precedence against an earlier active-branch failure is not yet claimed.
 
 ## Surface Constructor Matrix
 
