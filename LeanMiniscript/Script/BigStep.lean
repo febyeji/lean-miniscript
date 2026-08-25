@@ -880,6 +880,24 @@ theorem Eval.checkLockTimeVerifyFailure_result
       Opcode.usesTimelockScriptNum] <;>
     omega
 
+/-- Big-step evaluation has at most one result for fixed script, stacks, flags,
+    and transaction context. -/
+theorem Eval.result_unique
+    {script : Script} {stack altStack : Stack} {flags : ScriptFlags}
+    {ctx : TxContext} {firstResult secondResult : ExecResult}
+    (first : Eval script stack altStack flags ctx firstResult)
+    (second : Eval script stack altStack flags ctx secondResult) :
+    firstResult = secondResult := by
+  -- Exhaustive constructor comparison is intentional: adding an execution
+  -- rule must reopen the corresponding determinism obligations.
+  induction first generalizing secondResult <;> cases second
+  all_goals
+    try simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+      Opcode.usesTimelockScriptNum, minimalIfSatisfied]
+    try omega
+    try solve_by_elim
+    try grind
+
 theorem Eval.done {stack altStack : Stack} {flags : ScriptFlags} {ctx : TxContext} :
     Eval [] stack altStack flags ctx (.success stack altStack) :=
   .empty stack altStack flags ctx

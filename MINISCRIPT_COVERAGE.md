@@ -83,10 +83,13 @@ oracles, not logical premises of Lean proofs.
 
 Compilation entries below include constructor-complete assembly/byte fixtures
 and the relational BIP 379 conformance theorem. Evaluation is marked partial
-for every row because opcode success rules exist but failure coverage,
-determinism, final acceptance results, and interpreter refinement are not yet
-complete. Resource coverage means exact serialized size and sigop accounting
-plus provisional structural estimates; `ResourceBoundsSound` remains unproved.
+for every row because opcode success rules exist but failure coverage, a total
+executable interpreter, final acceptance results, and interpreter refinement
+are not yet complete. `Eval.result_unique` proves that the current relational
+semantics has at most one result for fixed inputs; it does not claim that every
+input has a result. Resource coverage means exact serialized size and sigop
+accounting plus provisional structural estimates; `ResourceBoundsSound`
+remains unproved.
 
 ## Core Constructor Matrix
 
@@ -155,12 +158,12 @@ enforces `0 ≤ k ≤ n ≤ 20`, checks each variable stack-frame boundary, plac
 the historical dummy below the signatures, and reports typed count,
 Script-number, underflow, and NULLDUMMY failures. Bitcoin Core op-counting,
 signature-encoding and NULLFAIL errors, exact raw-script error precedence,
-context-invalid opcodes, full failure completeness, and global evaluation
-determinism remain unfinished. Conditional execution now uses an executable
-depth-aware splitter: nested delimiters stay within their branch, repeated
-same-depth `ELSE` opcodes toggle selected segments as in Bitcoin Core, and a
-missing matching `ENDIF` or top-level `ELSE`/`ENDIF` produces a typed
-unbalanced-conditional failure with local result-uniqueness lemmas. The
+context-invalid opcodes, and full failure completeness remain unfinished.
+`Eval.result_unique` proves global result determinism for the modeled relation.
+Conditional execution uses an executable depth-aware splitter: nested
+delimiters stay within their branch, repeated same-depth `ELSE` opcodes toggle
+selected segments as in Bitcoin Core, and a missing matching `ENDIF` or
+top-level `ELSE`/`ENDIF` produces a typed unbalanced-conditional failure. The
 splitter structurally rejects an unclosed frame before branch execution, so
 error precedence against an earlier active-branch failure is not yet claimed.
 
