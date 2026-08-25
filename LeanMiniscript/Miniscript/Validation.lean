@@ -2,7 +2,8 @@ import LeanMiniscript.Miniscript.Context
 
 namespace LeanMiniscript.Miniscript
 
-/-- BIP 65/68 locktime and sequence arguments must fit below bit 31. -/
+/-- BIP 379 restricts `after` and `older` arguments to positive values below
+    bit 31, independently of the wider raw Script-number operand boundary. -/
 def MAX_BIP_LOCK_VALUE : Nat := 2147483648
 
 /-- Values below this threshold are interpreted as block heights; values at or

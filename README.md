@@ -13,7 +13,7 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   compilation has constructor-complete assembly/byte fixtures plus a general
   relational conformance theorem.
 - Surface compilation covers every current `SurfaceFragment` constructor via
-  explicit desugaring; policy lowering remains a placeholder.
+  explicit desugaring; policy lowering is not implemented.
 - Canonical surface parsing and pretty-printing are executable with structured
   errors and an explicit key resolver. Constructor-exhaustive golden fixtures
   and normalization/desugaring proofs are present, together with a general
@@ -53,4 +53,4 @@ lake build
 
 ## License
 
-MIT — same as Bitcoin Core and rust-miniscript.
+MIT.

@@ -13,6 +13,10 @@ private def p2wshKey : PubKey :=
 private def tapscriptKey : PubKey :=
   PubKey.ofBytes (repeatedBytes 32 0x22)
 
+private def invalidCompressedKeyText : String :=
+  LeanMiniscript.Script.byteArrayHex
+    ⟨#[0x04] ++ (Array.replicate 32 0x11)⟩
+
 private def hash256Text : String :=
   LeanMiniscript.Script.byteArrayHex (repeatedBytes 32 0xaa)
 
@@ -168,6 +172,7 @@ private def hexadecimalErrorCases : List SurfaceErrorCase :=
     ⟨.p2wsh, "sha256(not-hex)", .invalidHex⟩,
     ⟨.p2wsh, "sha256(aa)", .invalidHashLength⟩,
     ⟨.p2wsh, "pk(" ++ key32 ++ ")", .keyContext⟩,
+    ⟨.p2wsh, "pk(" ++ invalidCompressedKeyText ++ ")", .keyContext⟩,
     ⟨.p2wsh, "multi_a(1," ++ key32 ++ ")", .contextMismatch⟩,
     ⟨.p2wsh, "thresh(2,1)", .validationFailed⟩
   ]

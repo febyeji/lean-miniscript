@@ -3,16 +3,15 @@
   ============================
   Small-step operational semantics for Bitcoin Script.
 
-  Each opcode is modeled as a single state transition:
+  The intended model gives each opcode a single state transition:
     (stack, altstack, script, flags) →₁ (stack', altstack', script', flags')
 
-  This matches Bitcoin Core's EvalScript loop structure:
+  The planned granularity follows Bitcoin Core's EvalScript loop structure:
     while (pc < script.end()) { opcode = *pc++; switch(opcode) { ... } }
 
   References:
   - Bitcoin Core: src/script/interpreter.cpp, EvalScript()
   - KEVM (CSF 2018) uses a similar small-step approach for EVM
-  - See also: docs/decisions/02-semantics-style.md
 -/
 
 import LeanMiniscript.Script.Syntax
@@ -21,9 +20,13 @@ import LeanMiniscript.Script.State
 namespace LeanMiniscript.Script
 
 /-- Small-step transition relation.
-    `step s s'` means state `s` transitions to state `s'` in one step. -/
-inductive Step : ExecState → ExecState → Prop where
-  -- TODO: Define transition rules for each opcode
+    `Step s s'` means state `s` transitions to state `s'` in one step.
+
+    The relation is intentionally empty until real opcode rules are defined;
+    an unfinished model must not manufacture semantic self-transitions. -/
+inductive Step : ExecState → ExecState → Prop
+
+/- TODO: Define transition rules for each opcode
   --
   -- Example structure (to be filled in):
   --
@@ -47,7 +50,12 @@ inductive Step : ExecState → ExecState → Prop where
   -- 6. Signature: CHECKSIG, CHECKSIGADD, CHECKMULTISIG
   -- 7. Timelock: CHECKSEQUENCEVERIFY, CHECKLOCKTIMEVERIFY
   -- 8. Other: SIZE
-  | placeholder : (state : ExecState) → Step state state  -- Remove once real rules are defined
+-/
+
+/-- No one-step execution claim is available from the unfinished relation. -/
+theorem noStep (state next : ExecState) : ¬ Step state next := by
+  intro transition
+  cases transition
 
 /-- Reflexive transitive closure of Step (multi-step execution). -/
 inductive Steps : ExecState → ExecState → Prop where

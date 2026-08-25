@@ -57,12 +57,13 @@ oracles, not logical premises of Lean proofs.
 ## Representation Boundaries
 
 - `PubKey`, `Hash256`, and `Hash160` remain byte-backed raw AST wrappers.
-  Length and context validity are explicit `WellFormed` obligations; future
-  text parsers and key resolvers must reject invalid bytes before constructing
-  checked compiler inputs.
+  Length, serialized key shape, and context validity are explicit `WellFormed`
+  obligations; curve-point validity remains the responsibility of key
+  resolvers before constructing checked compiler inputs.
 - `SurfaceFragment` remains a normalized proof AST with embedded core
   fragments and explicit sugar, not a source-spelling-preserving parse tree.
-  Its future text codec should target a documented canonical round-trip.
+  Its text codec targets a documented canonical round-trip rather than
+  preserving the original spelling.
 - Base58/WIF/xpub decoding and key derivation remain outside the Miniscript
   surface codec. Key tokens must pass through an explicit resolver to a
   concrete `PubKey`, followed by context validation.
