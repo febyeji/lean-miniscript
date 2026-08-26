@@ -2,7 +2,7 @@ import LeanMiniscript.Script.BigStep
 
 namespace LeanMiniscript.Script
 
-/-! # Big-step result-determinism fixtures -/
+/-! # Big-step result existence and determinism fixtures -/
 
 private def fixtureFlags : ScriptFlags := {}
 
@@ -51,5 +51,22 @@ example {result : ExecResult}
       fixtureFlags fixtureTxContext result) :
     result = .failure .verify :=
   Eval.result_unique evaluated verifyFailure
+
+/-- A conditional with repeated same-depth branch toggles is covered by the
+    global result-existence theorem without constructing its result manually. -/
+example : ∃ result,
+    Eval [.op .OP_IF, .pushNum 1, .op .OP_ELSE, .pushNum 2,
+      .op .OP_ELSE, .pushNum 3, .op .OP_ENDIF]
+      [trueElement] [] fixtureFlags fixtureTxContext result :=
+  Eval.exists_result _ _ _ _ _
+
+/-- Existence and result determinism combine into one public API theorem. -/
+example : ∃ result,
+    Eval [.op .OP_VERIFY] [falseElement] [] fixtureFlags fixtureTxContext result ∧
+      ∀ other,
+        Eval [.op .OP_VERIFY] [falseElement] [] fixtureFlags fixtureTxContext
+          other →
+        other = result :=
+  Eval.existsUnique_result _ _ _ _ _
 
 end LeanMiniscript.Script

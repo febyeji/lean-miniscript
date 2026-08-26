@@ -83,13 +83,13 @@ oracles, not logical premises of Lean proofs.
 
 Compilation entries below include constructor-complete assembly/byte fixtures
 and the relational BIP 379 conformance theorem. Evaluation is marked partial
-for every row because opcode success rules exist but failure coverage, a total
-executable interpreter, final acceptance results, and interpreter refinement
-are not yet complete. `Eval.result_unique` proves that the current relational
-semantics has at most one result for fixed inputs; it does not claim that every
-input has a result. Resource coverage means exact serialized size and sigop
-accounting plus provisional structural estimates; `ResourceBoundsSound`
-remains unproved.
+for every row because exact Bitcoin Core failure coverage, a total executable
+interpreter, final acceptance results, and interpreter refinement are not yet
+complete. Within the modeled opcode subset, `Eval.exists_result` and
+`Eval.result_unique` prove that the relational semantics has exactly one result
+for every fixed initial state. Resource coverage means exact serialized size
+and sigop accounting plus provisional structural estimates;
+`ResourceBoundsSound` remains unproved.
 
 ## Core Constructor Matrix
 
@@ -159,7 +159,10 @@ the historical dummy below the signatures, and reports typed count,
 Script-number, underflow, and NULLDUMMY failures. Bitcoin Core op-counting,
 signature-encoding and NULLFAIL errors, exact raw-script error precedence,
 context-invalid opcodes, and full failure completeness remain unfinished.
-`Eval.result_unique` proves global result determinism for the modeled relation.
+`Eval.exists_result` proves relational result existence for every modeled
+script and initial state, using strict conditional-branch length decrease;
+combined with `Eval.result_unique`, `Eval.existsUnique_result` proves global
+existence and result determinism for the modeled relation.
 Conditional execution uses an executable depth-aware splitter: nested
 delimiters stay within their branch, repeated same-depth `ELSE` opcodes toggle
 selected segments as in Bitcoin Core, and a missing matching `ENDIF` or

@@ -40,6 +40,30 @@ def ConditionalFrame.select (frame : ConditionalFrame)
     (executeFirst : Bool) : Script :=
   selectConditionalBranches executeFirst frame.branches ++ frame.after
 
+/-- Selecting alternating branches never contains more elements than all
+    branch segments together. -/
+private theorem selectConditionalBranches_length_le_sum
+    (executeFirst : Bool) (branches : List Script) :
+    (selectConditionalBranches executeFirst branches).length ≤
+      (branches.map List.length).sum := by
+  induction branches generalizing executeFirst with
+  | nil => simp [selectConditionalBranches]
+  | cons branch branches ih =>
+      cases executeFirst with
+      | false =>
+          simp [selectConditionalBranches]
+          have bound := ih true
+          omega
+      | true =>
+          simp [selectConditionalBranches]
+          have bound := ih false
+          omega
+
+/-- Number of source elements represented by a conditional scan state. -/
+private def conditionalScanSize (currentRev : Script)
+    (completedRev : List Script) (script : Script) : Nat :=
+  currentRev.length + (completedRev.map List.length).sum + script.length
+
 /-- Scan the tail of one conditional, tracking nested `IF`/`NOTIF` depth.
     Reversed accumulators preserve source order without repeated tail appends. -/
 private def splitConditionalAux (depth : Nat) (currentRev : Script)
@@ -70,6 +94,63 @@ private def splitConditionalAux (depth : Nat) (currentRev : Script)
     matching `OP_ENDIF`. Returns `none` when that delimiter is missing. -/
 def splitConditional (script : Script) : Option ConditionalFrame :=
   splitConditionalAux 0 [] [] script
+
+/-- A successful split selects a script strictly smaller than the scan state
+    that still contains its matching `OP_ENDIF`. -/
+private theorem splitConditionalAux_select_length_lt
+    (depth : Nat) (currentRev : Script) (completedRev : List Script)
+    (script : Script) (frame : ConditionalFrame) (executeFirst : Bool)
+    (hSplit : splitConditionalAux depth currentRev completedRev script =
+      some frame) :
+    (frame.select executeFirst).length <
+      conditionalScanSize currentRev completedRev script := by
+  induction script generalizing depth currentRev completedRev frame executeFirst with
+  | nil => simp [splitConditionalAux] at hSplit
+  | cons element rest ih =>
+      cases element with
+      | pushData data =>
+          simp only [splitConditionalAux] at hSplit
+          have smaller := ih depth (.pushData data :: currentRev) completedRev
+            frame executeFirst hSplit
+          simpa [conditionalScanSize, Nat.add_assoc, Nat.add_left_comm,
+            Nat.add_comm] using smaller
+      | pushNum value =>
+          simp only [splitConditionalAux] at hSplit
+          have smaller := ih depth (.pushNum value :: currentRev) completedRev
+            frame executeFirst hSplit
+          simpa [conditionalScanSize, Nat.add_assoc, Nat.add_left_comm,
+            Nat.add_comm] using smaller
+      | op opcode =>
+          cases depth <;> cases opcode <;>
+            simp only [splitConditionalAux] at hSplit
+          all_goals
+            try simp only [Nat.zero_add] at hSplit
+            try
+              exact Nat.lt_of_lt_of_le (ih _ _ _ _ _ hSplit) (by
+                simp [conditionalScanSize, Nat.add_assoc, Nat.add_left_comm,
+                  Nat.add_comm])
+          cases hSplit
+          simp only [ConditionalFrame.select, List.length_append,
+            conditionalScanSize, List.length_cons]
+          have selected := selectConditionalBranches_length_le_sum
+            executeFirst ((currentRev.reverse :: completedRev).reverse)
+          have allBranches :
+              ((((currentRev.reverse :: completedRev).reverse).map
+                List.length).sum) =
+                currentRev.length + (completedRev.map List.length).sum := by
+            simp [Nat.add_comm]
+          rw [allBranches] at selected
+          omega
+
+/-- A selected branch execution is shorter than the original conditional tail,
+    which still contains the matching `OP_ENDIF`. -/
+theorem ConditionalFrame.select_length_lt
+    {script : Script} {frame : ConditionalFrame}
+    (hSplit : splitConditional script = some frame) (executeFirst : Bool) :
+    (frame.select executeFirst).length < script.length := by
+  have smaller := splitConditionalAux_select_length_lt
+    0 [] [] script frame executeFirst hSplit
+  simpa [conditionalScanSize] using smaller
 
 /-- The executable splitter cannot assign two different frames to one tail. -/
 theorem splitConditional_unique {script : Script} {first second : ConditionalFrame}
@@ -897,6 +978,555 @@ theorem Eval.result_unique
     try omega
     try solve_by_elim
     try grind
+
+/-- Every script in the modeled opcode subset has an evaluation result.
+
+    Strong induction is needed because a conditional continues with the
+    selected branch segments and suffix rather than the literal list tail. -/
+theorem Eval.exists_result
+    (script : Script) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    ∃ result, Eval script stack altStack flags ctx result := by
+  induction hLength : script.length using Nat.strongRecOn
+      generalizing script stack altStack with
+  | ind length ih =>
+      cases script with
+      | nil =>
+          exact ⟨.success stack altStack, .empty stack altStack flags ctx⟩
+      | cons element rest =>
+          have restShort : rest.length < length := by
+            calc
+              rest.length < rest.length + 1 := Nat.lt_succ_self _
+              _ = length := hLength
+          have next (nextStack nextAltStack : Stack) :
+              ∃ result, Eval rest nextStack nextAltStack flags ctx result :=
+            ih rest.length restShort rest nextStack nextAltStack rfl
+          cases element with
+          | pushData data =>
+              rcases next (data :: stack) altStack with ⟨result, evaluated⟩
+              exact ⟨result, .pushData data rest stack altStack flags ctx result
+                evaluated⟩
+          | pushNum value =>
+              rcases next (scriptNum value :: stack) altStack with
+                ⟨result, evaluated⟩
+              exact ⟨result, .pushNum value rest stack altStack flags ctx result
+                evaluated⟩
+          | op opcode =>
+              cases opcode with
+              | OP_IF =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_IF 1 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackRest =>
+                      by_cases minimal : minimalIfSatisfied flags top
+                      · cases hSplit : splitConditional rest with
+                        | none =>
+                            exact ⟨.failure .unbalancedConditional,
+                              .if_unbalanced top stackRest altStack rest flags ctx
+                                hSplit minimal⟩
+                        | some frame =>
+                            have selectedShort :
+                                (frame.select (castToBool top)).length < length := by
+                              have smaller := frame.select_length_lt hSplit
+                                (castToBool top)
+                              omega
+                            rcases ih _ selectedShort _ stackRest altStack rfl with
+                              ⟨result, evaluated⟩
+                            exact ⟨result, .if_execute top stackRest altStack rest
+                              frame flags ctx result hSplit minimal evaluated⟩
+                      · have flagEnabled : flags.minimalIf = true := by
+                          simp_all [minimalIfSatisfied]
+                        have nonMinimal : minimalIfArg top = false := by
+                          simp_all [minimalIfSatisfied]
+                        exact ⟨.failure .minimalIf,
+                          .if_minimalif_failure top stackRest altStack rest flags ctx
+                            flagEnabled nonMinimal⟩
+              | OP_NOTIF =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_NOTIF 1 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackRest =>
+                      by_cases minimal : minimalIfSatisfied flags top
+                      · cases hSplit : splitConditional rest with
+                        | none =>
+                            exact ⟨.failure .unbalancedConditional,
+                              .notif_unbalanced top stackRest altStack rest flags ctx
+                                hSplit minimal⟩
+                        | some frame =>
+                            have selectedShort :
+                                (frame.select (!castToBool top)).length < length := by
+                              have smaller := frame.select_length_lt hSplit
+                                (!castToBool top)
+                              omega
+                            rcases ih _ selectedShort _ stackRest altStack rfl with
+                              ⟨result, evaluated⟩
+                            exact ⟨result, .notif_execute top stackRest altStack rest
+                              frame flags ctx result hSplit minimal evaluated⟩
+                      · have flagEnabled : flags.minimalIf = true := by
+                          simp_all [minimalIfSatisfied]
+                        have nonMinimal : minimalIfArg top = false := by
+                          simp_all [minimalIfSatisfied]
+                        exact ⟨.failure .minimalIf,
+                          .notif_minimalif_failure top stackRest altStack rest flags ctx
+                            flagEnabled nonMinimal⟩
+              | OP_ELSE =>
+                  exact ⟨.failure .unbalancedConditional,
+                    .else_unbalanced rest stack altStack flags ctx⟩
+              | OP_ENDIF =>
+                  exact ⟨.failure .unbalancedConditional,
+                    .endif_unbalanced rest stack altStack flags ctx⟩
+              | OP_IFDUP =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_IFDUP 1 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackRest =>
+                      cases hTruthy : castToBool top with
+                      | false =>
+                          rcases next (top :: stackRest) altStack with
+                            ⟨result, evaluated⟩
+                          exact ⟨result, .ifdup_false top stackRest altStack rest
+                            flags ctx result hTruthy evaluated⟩
+                      | true =>
+                          rcases next (top :: top :: stackRest) altStack with
+                            ⟨result, evaluated⟩
+                          exact ⟨result, .ifdup_true top stackRest altStack rest
+                            flags ctx result hTruthy evaluated⟩
+              | OP_DUP =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_DUP 1 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackRest =>
+                      rcases next (top :: top :: stackRest) altStack with
+                        ⟨result, evaluated⟩
+                      exact ⟨result, .dup top stackRest rest altStack flags ctx result
+                        evaluated⟩
+              | OP_SWAP =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_SWAP 2 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_SWAP 2 rest [top] altStack flags ctx
+                              rfl (by simp)⟩
+                      | cons belowTop stackRest =>
+                          rcases next (belowTop :: top :: stackRest) altStack with
+                            ⟨result, evaluated⟩
+                          exact ⟨result, .swap top belowTop stackRest altStack rest
+                            flags ctx result evaluated⟩
+              | OP_TOALTSTACK =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_TOALTSTACK 1 rest [] altStack flags ctx
+                          rfl (by simp)⟩
+                  | cons top stackRest =>
+                      rcases next stackRest (top :: altStack) with
+                        ⟨result, evaluated⟩
+                      exact ⟨result, .toAltStack top stackRest altStack rest flags ctx
+                        result evaluated⟩
+              | OP_FROMALTSTACK =>
+                  cases altStack with
+                  | nil =>
+                      exact ⟨.failure .altStackUnderflow,
+                        .fromaltstack_underflow rest stack flags ctx⟩
+                  | cons top altRest =>
+                      rcases next (top :: stack) altRest with ⟨result, evaluated⟩
+                      exact ⟨result, .fromAltStack top stack altRest rest flags ctx
+                        result evaluated⟩
+              | OP_ADD =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_ADD 2 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_ADD 2 rest [top] altStack flags ctx
+                              rfl (by simp)⟩
+                      | cons belowTop stackRest =>
+                          cases hDecoded : decodeBinaryScriptNums flags top belowTop with
+                          | error error =>
+                              exact ⟨.failure error,
+                                .binary_scriptnum_failure .OP_ADD top belowTop stackRest
+                                  rest altStack flags ctx error rfl hDecoded⟩
+                          | ok pair =>
+                              rcases pair with ⟨a, b⟩
+                              rcases next (scriptNum (a + b) :: stackRest) altStack with
+                                ⟨result, evaluated⟩
+                              exact ⟨result, .add top belowTop a b stackRest rest altStack
+                                flags ctx result hDecoded evaluated⟩
+              | OP_BOOLAND =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_BOOLAND 2 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_BOOLAND 2 rest [top] altStack flags ctx
+                              rfl (by simp)⟩
+                      | cons belowTop stackRest =>
+                          cases hDecoded : decodeBinaryScriptNums flags top belowTop with
+                          | error error =>
+                              exact ⟨.failure error,
+                                .binary_scriptnum_failure .OP_BOOLAND top belowTop
+                                  stackRest rest altStack flags ctx error rfl hDecoded⟩
+                          | ok pair =>
+                              rcases pair with ⟨a, b⟩
+                              rcases next
+                                  (boolToElement ((a != 0) && (b != 0)) :: stackRest)
+                                  altStack with ⟨result, evaluated⟩
+                              exact ⟨result, .booland top belowTop a b stackRest rest
+                                altStack flags ctx result hDecoded evaluated⟩
+              | OP_BOOLOR =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_BOOLOR 2 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_BOOLOR 2 rest [top] altStack flags ctx
+                              rfl (by simp)⟩
+                      | cons belowTop stackRest =>
+                          cases hDecoded : decodeBinaryScriptNums flags top belowTop with
+                          | error error =>
+                              exact ⟨.failure error,
+                                .binary_scriptnum_failure .OP_BOOLOR top belowTop
+                                  stackRest rest altStack flags ctx error rfl hDecoded⟩
+                          | ok pair =>
+                              rcases pair with ⟨a, b⟩
+                              rcases next
+                                  (boolToElement ((a != 0) || (b != 0)) :: stackRest)
+                                  altStack with ⟨result, evaluated⟩
+                              exact ⟨result, .boolor top belowTop a b stackRest rest
+                                altStack flags ctx result hDecoded evaluated⟩
+              | OP_0NOTEQUAL =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_0NOTEQUAL 1 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons operand stackRest =>
+                      cases hDecoded : decodeScriptNum operand flags.minimalData
+                          maxArithmeticScriptNumBytes with
+                      | error error =>
+                          exact ⟨.failure error, .unary_scriptnum_failure operand
+                            stackRest rest altStack flags ctx error hDecoded⟩
+                      | ok value =>
+                          rcases next (boolToElement (value != 0) :: stackRest) altStack
+                            with ⟨result, evaluated⟩
+                          exact ⟨result, .zeroNotEqual operand value stackRest altStack
+                            rest flags ctx result hDecoded evaluated⟩
+              | OP_EQUAL =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_EQUAL 2 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_EQUAL 2 rest [top] altStack flags ctx
+                              rfl (by simp)⟩
+                      | cons belowTop stackRest =>
+                          by_cases equal : top = belowTop
+                          · rcases next (trueElement :: stackRest) altStack with
+                              ⟨result, evaluated⟩
+                            exact ⟨result, .equal_true top belowTop stackRest rest altStack
+                              flags ctx result equal evaluated⟩
+                          · rcases next (falseElement :: stackRest) altStack with
+                              ⟨result, evaluated⟩
+                            exact ⟨result, .equal_false top belowTop stackRest rest
+                              altStack flags ctx result equal evaluated⟩
+              | OP_EQUALVERIFY =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_EQUALVERIFY 2 rest [] altStack flags ctx
+                          rfl (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_EQUALVERIFY 2 rest [top] altStack flags
+                              ctx rfl (by simp)⟩
+                      | cons belowTop stackRest =>
+                          by_cases equal : top = belowTop
+                          · rcases next stackRest altStack with ⟨result, evaluated⟩
+                            exact ⟨result, .equalverify_success top belowTop stackRest
+                              rest altStack flags ctx result equal evaluated⟩
+                          · exact ⟨.failure .equalVerify,
+                              .equalverify_failure top belowTop stackRest rest altStack
+                                flags ctx equal⟩
+              | OP_NUMEQUAL =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_NUMEQUAL 2 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_NUMEQUAL 2 rest [top] altStack flags ctx
+                              rfl (by simp)⟩
+                      | cons belowTop stackRest =>
+                          cases hDecoded : decodeBinaryScriptNums flags top belowTop with
+                          | error error =>
+                              exact ⟨.failure error,
+                                .binary_scriptnum_failure .OP_NUMEQUAL top belowTop
+                                  stackRest rest altStack flags ctx error rfl hDecoded⟩
+                          | ok pair =>
+                              rcases pair with ⟨a, b⟩
+                              rcases next (boolToElement (a == b) :: stackRest) altStack
+                                with ⟨result, evaluated⟩
+                              exact ⟨result, .numequal top belowTop a b stackRest rest
+                                altStack flags ctx result hDecoded evaluated⟩
+              | OP_SHA256 =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_SHA256 1 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackRest =>
+                      rcases next (sha256 top :: stackRest) altStack with
+                        ⟨result, evaluated⟩
+                      exact ⟨result, .op_sha256 top stackRest rest altStack flags ctx
+                        result evaluated⟩
+              | OP_HASH256 =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_HASH256 1 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackRest =>
+                      rcases next (hash256 top :: stackRest) altStack with
+                        ⟨result, evaluated⟩
+                      exact ⟨result, .op_hash256 top stackRest rest altStack flags ctx
+                        result evaluated⟩
+              | OP_RIPEMD160 =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_RIPEMD160 1 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackRest =>
+                      rcases next (ripemd160 top :: stackRest) altStack with
+                        ⟨result, evaluated⟩
+                      exact ⟨result, .op_ripemd160 top stackRest rest altStack flags ctx
+                        result evaluated⟩
+              | OP_HASH160 =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_HASH160 1 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackRest =>
+                      rcases next (hash160 top :: stackRest) altStack with
+                        ⟨result, evaluated⟩
+                      exact ⟨result, .op_hash160 top stackRest rest altStack flags ctx
+                        result evaluated⟩
+              | OP_CHECKSIG =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_CHECKSIG 2 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons pubkey stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_CHECKSIG 2 rest [pubkey] altStack flags
+                              ctx rfl (by simp)⟩
+                      | cons sig stackRest =>
+                          cases hChecked : checkSig sig pubkey ctx.sigHash with
+                          | false =>
+                              rcases next (falseElement :: stackRest) altStack with
+                                ⟨result, evaluated⟩
+                              exact ⟨result, .checksig_failure pubkey sig stackRest rest
+                                altStack flags ctx result hChecked evaluated⟩
+                          | true =>
+                              rcases next (trueElement :: stackRest) altStack with
+                                ⟨result, evaluated⟩
+                              exact ⟨result, .checksig_success pubkey sig stackRest rest
+                                altStack flags ctx result hChecked evaluated⟩
+              | OP_CHECKSIGADD =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_CHECKSIGADD 3 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons pubkey stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_CHECKSIGADD 3 rest [pubkey] altStack
+                              flags ctx rfl (by simp)⟩
+                      | cons countBytes stackTail' =>
+                          cases stackTail' with
+                          | nil =>
+                              exact ⟨.failure .stackUnderflow,
+                                .stack_underflow .OP_CHECKSIGADD 3 rest
+                                  [pubkey, countBytes] altStack flags ctx rfl (by simp)⟩
+                          | cons sig stackRest =>
+                              cases hDecoded : decodeScriptNum countBytes
+                                  flags.minimalData maxArithmeticScriptNumBytes with
+                              | error error =>
+                                  exact ⟨.failure error,
+                                    .checksigadd_scriptnum_failure pubkey countBytes sig
+                                      stackRest rest altStack flags ctx error hDecoded⟩
+                              | ok count =>
+                                  cases hChecked : checkSig sig pubkey ctx.sigHash with
+                                  | false =>
+                                      rcases next (scriptNum count :: stackRest) altStack
+                                        with ⟨result, evaluated⟩
+                                      exact ⟨result, .checksigadd_failure pubkey countBytes
+                                        sig count stackRest rest altStack flags ctx result
+                                        hDecoded hChecked evaluated⟩
+                                  | true =>
+                                      rcases next (scriptNum (count + 1) :: stackRest)
+                                        altStack with ⟨result, evaluated⟩
+                                      exact ⟨result, .checksigadd_success pubkey countBytes
+                                        sig count stackRest rest altStack flags ctx result
+                                        hDecoded hChecked evaluated⟩
+              | OP_CHECKMULTISIG =>
+                  cases hDecoded : decodeCheckMultiSigOperands flags stack with
+                  | error error =>
+                      exact ⟨.failure error, .checkmultisig_operand_failure stack rest
+                        altStack flags ctx error hDecoded⟩
+                  | ok operands =>
+                      by_cases dummy : nullDummySatisfied flags operands.dummy
+                      · cases hChecked : checkMultiSig operands.signatures
+                            operands.pubkeys ctx.sigHash with
+                        | false =>
+                            rcases next (falseElement :: operands.rest) altStack with
+                              ⟨result, evaluated⟩
+                            exact ⟨result, .checkmultisig_failure stack operands rest
+                              altStack flags ctx result hDecoded dummy hChecked evaluated⟩
+                        | true =>
+                            rcases next (trueElement :: operands.rest) altStack with
+                              ⟨result, evaluated⟩
+                            exact ⟨result, .checkmultisig_success stack operands rest
+                              altStack flags ctx result hDecoded dummy hChecked evaluated⟩
+                      · exact ⟨.failure .nullDummy,
+                          .checkmultisig_nulldummy_failure stack operands rest altStack
+                            flags ctx hDecoded dummy⟩
+              | OP_CHECKSEQUENCEVERIFY =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_CHECKSEQUENCEVERIFY 1 rest [] altStack flags
+                          ctx rfl (by simp)⟩
+                  | cons operand stackRest =>
+                      cases hDecoded : decodeScriptNum operand flags.minimalData
+                          maxTimelockScriptNumBytes with
+                      | error error =>
+                          exact ⟨.failure error, .timelock_scriptnum_failure
+                            .OP_CHECKSEQUENCEVERIFY operand stackRest rest altStack flags
+                            ctx error rfl hDecoded⟩
+                      | ok value =>
+                          by_cases negative : value < 0
+                          · exact ⟨.failure .negativeLocktime,
+                              .timelock_negative_failure .OP_CHECKSEQUENCEVERIFY operand
+                                value stackRest rest altStack flags ctx rfl hDecoded
+                                negative⟩
+                          · have nonnegative : 0 ≤ value := by omega
+                            by_cases satisfied : sequenceSatisfied value.toNat ctx
+                            · rcases next (operand :: stackRest) altStack with
+                                ⟨result, evaluated⟩
+                              exact ⟨result, .checksequenceverify_success operand value
+                                stackRest rest altStack flags ctx result hDecoded
+                                nonnegative satisfied evaluated⟩
+                            · exact ⟨.failure .checkSequenceVerify,
+                                .checksequenceverify_failure operand value stackRest rest
+                                  altStack flags ctx hDecoded nonnegative satisfied⟩
+              | OP_CHECKLOCKTIMEVERIFY =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_CHECKLOCKTIMEVERIFY 1 rest [] altStack flags
+                          ctx rfl (by simp)⟩
+                  | cons operand stackRest =>
+                      cases hDecoded : decodeScriptNum operand flags.minimalData
+                          maxTimelockScriptNumBytes with
+                      | error error =>
+                          exact ⟨.failure error, .timelock_scriptnum_failure
+                            .OP_CHECKLOCKTIMEVERIFY operand stackRest rest altStack flags
+                            ctx error rfl hDecoded⟩
+                      | ok value =>
+                          by_cases negative : value < 0
+                          · exact ⟨.failure .negativeLocktime,
+                              .timelock_negative_failure .OP_CHECKLOCKTIMEVERIFY operand
+                                value stackRest rest altStack flags ctx rfl hDecoded
+                                negative⟩
+                          · have nonnegative : 0 ≤ value := by omega
+                            by_cases satisfied : locktimeSatisfied value.toNat ctx
+                            · rcases next (operand :: stackRest) altStack with
+                                ⟨result, evaluated⟩
+                              exact ⟨result, .checklocktimeverify_success operand value
+                                stackRest rest altStack flags ctx result hDecoded
+                                nonnegative satisfied evaluated⟩
+                            · exact ⟨.failure .checkLockTimeVerify,
+                                .checklocktimeverify_failure operand value stackRest rest
+                                  altStack flags ctx hDecoded nonnegative satisfied⟩
+              | OP_VERIFY =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_VERIFY 1 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackRest =>
+                      cases hTruthy : castToBool top with
+                      | false =>
+                          exact ⟨.failure .verify,
+                            .verify_failure top stackRest rest altStack flags ctx hTruthy⟩
+                      | true =>
+                          rcases next stackRest altStack with ⟨result, evaluated⟩
+                          exact ⟨result, .verify_success top stackRest rest altStack flags
+                            ctx result hTruthy evaluated⟩
+              | OP_SIZE =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_SIZE 1 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackRest =>
+                      rcases next (scriptNat top.size :: top :: stackRest) altStack with
+                        ⟨result, evaluated⟩
+                      exact ⟨result, .size top stackRest altStack rest flags ctx result
+                        evaluated⟩
+
+/-- Big-step evaluation has exactly one result for every modeled initial
+    state. -/
+theorem Eval.existsUnique_result
+    (script : Script) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    ∃ result, Eval script stack altStack flags ctx result ∧
+      ∀ other, Eval script stack altStack flags ctx other → other = result := by
+  rcases Eval.exists_result script stack altStack flags ctx with
+    ⟨result, evaluated⟩
+  exact ⟨result, evaluated, fun other otherEval =>
+    Eval.result_unique otherEval evaluated⟩
 
 theorem Eval.done {stack altStack : Stack} {flags : ScriptFlags} {ctx : TxContext} :
     Eval [] stack altStack flags ctx (.success stack altStack) :=
