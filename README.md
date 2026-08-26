@@ -24,11 +24,11 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   [`lean-hash160`](https://github.com/febyeji/lean-hash160) package while the
   general formal semantics retain an abstract hash boundary.
 - Basic metrics and resource accounting are implemented, but not proved.
-- Partial big-step semantics include depth-aware conditional selection plus
+- The modeled big-step relation includes depth-aware conditional selection plus
   explicit stack-underflow, Script-number, unbalanced-conditional, and
   variable-frame `CHECKMULTISIG` failures; Core-aligned BIP 65 and
   BIP 68/112 transaction-context checks cover CLTV and CSV, together with
-  a global theorem that fixed execution inputs have at most one result.
+  global theorems that every modeled initial state has exactly one result.
   Execution behavior targets
   [Bitcoin Core v31.1](https://github.com/bitcoin/bitcoin/tree/9be056a8a72b624dae9623b2f7bded92c2a21c91)
   at the pinned commit recorded in the coverage baseline; `Eval` remains a
