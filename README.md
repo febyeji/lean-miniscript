@@ -29,12 +29,17 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   variable-frame `CHECKMULTISIG` failures; Core-aligned BIP 65 and
   BIP 68/112 transaction-context checks cover CLTV and CSV, together with
   global theorems that every modeled initial state has exactly one result.
+  An oracle-parameterized `evaluate` function executes that same modeled
+  subset; its model-oracle result is proved equivalent to `Eval`, while the
+  executable oracle uses the pinned pure-Lean hashes and accepts injected
+  signature checks.
   Execution behavior targets
   [Bitcoin Core v31.1](https://github.com/bitcoin/bitcoin/tree/9be056a8a72b624dae9623b2f7bded92c2a21c91)
   at the pinned commit recorded in the coverage baseline; `Eval` remains a
   documented subset rather than a complete Bitcoin Core interpreter.
-- General soundness, satisfaction, non-malleability, small-step semantics, and
-  the interpreter are unfinished.
+- General soundness, satisfaction, non-malleability, small-step semantics,
+  production secp256k1 bindings, and Bitcoin Core differential testing are
+  unfinished.
 
 See [`MINISCRIPT_COVERAGE.md`](MINISCRIPT_COVERAGE.md) for the constructor-level
 coverage matrix, proof-status legend, semantic conventions, and subsystem pins.

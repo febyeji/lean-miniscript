@@ -1,20 +1,18 @@
-import LeanMiniscript.Script.Syntax
-import LeanMiniscript.Script.State
+import LeanMiniscript.Script.Evaluator
 
 namespace LeanMiniscript.Extraction
 
 open LeanMiniscript.Script
 
-/-- Execute a single opcode. Returns the new state or an error. -/
-def execOpcode (_state : ExecState) (op : Opcode) : Except String ExecState :=
-  -- TODO: Implement each opcode
-  .error s!"unimplemented opcode: {repr op}"
+/-- Execute a complete script from an empty alternate stack.
 
-/-- Execute a complete script. -/
-def execScript (_script : Script) (_initialStack : Stack)
-    (_flags : ScriptFlags) (_ctx : TxContext) : Except String Stack :=
-  -- TODO: Main interpreter loop
-  .error "unimplemented"
+    Signature verification is supplied through `CryptoOracle`; the
+    `CryptoOracle.pureLeanHashes` constructor provides executable SHA-256,
+    HASH256, RIPEMD-160, and HASH160. -/
+def execScript (oracle : CryptoOracle) (script : Script)
+    (initialStack : Stack) (flags : ScriptFlags) (ctx : TxContext) :
+    ExecResult :=
+  evaluate oracle script initialStack [] flags ctx
 
 -- TODO: JSON parser for Bitcoin Core's script_tests.json format
 -- TODO: Differential testing harness

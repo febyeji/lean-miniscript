@@ -70,6 +70,11 @@ oracles, not logical premises of Lean proofs.
 - Compilation coverage is one-way from Miniscript to Script. Script
   deserialization and Script-to-Miniscript recognition are separate future
   work, not requirements for the current compiler claim.
+- `CryptoOracle.model` retains the proof semantics' abstract hashes and
+  signature checks. `CryptoOracle.pureLeanHashes` provides executable SHA-256,
+  HASH256, RIPEMD-160, and HASH160 from the pinned `lean-hash160` package while
+  leaving signature verification injectable; no production secp256k1 binding
+  is currently part of the trusted runtime boundary.
 
 ## Legend
 
@@ -83,12 +88,14 @@ oracles, not logical premises of Lean proofs.
 
 Compilation entries below include constructor-complete assembly/byte fixtures
 and the relational BIP 379 conformance theorem. Evaluation is marked partial
-for every row because exact Bitcoin Core failure coverage, a total executable
-interpreter, final acceptance results, and interpreter refinement are not yet
-complete. Within the modeled opcode subset, `Eval.exists_result` and
-`Eval.result_unique` prove that the relational semantics has exactly one result
-for every fixed initial state. Resource coverage means exact serialized size
-and sigop accounting plus provisional structural estimates;
+for every row because exact Bitcoin Core failure coverage, production
+signature verification, final acceptance results, and differential validation
+are not yet complete. Within the modeled opcode subset, `Eval.exists_result`
+and `Eval.result_unique` prove that the relational semantics has exactly one
+result for every fixed initial state. The total `evaluate` function covers the
+same cases, and `evaluate_model_iff` proves equivalence for the model oracle.
+Resource coverage means exact serialized size and sigop accounting plus
+provisional structural estimates;
 `ResourceBoundsSound` remains unproved.
 
 ## Core Constructor Matrix
@@ -163,6 +170,14 @@ context-invalid opcodes, and full failure completeness remain unfinished.
 script and initial state, using strict conditional-branch length decrease;
 combined with `Eval.result_unique`, `Eval.existsUnique_result` proves global
 existence and result determinism for the modeled relation.
+`evaluate` implements every modeled opcode as a terminating function returning
+`ExecResult`. `evaluate_eq_of_eval` and `evaluate_sound` prove refinement for
+any `CryptoOracle` that agrees pointwise with the abstract model, and
+`evaluate_model_iff` packages the model-oracle equivalence. Executable fixtures
+cover arithmetic, conditional toggles, typed failures, the pinned pure-Lean
+SHA-256 implementation, and injected signature results. A native secp256k1
+oracle and Bitcoin Core `script_tests.json` differential harness remain future
+work.
 Conditional execution uses an executable depth-aware splitter: nested
 delimiters stay within their branch, repeated same-depth `ELSE` opcodes toggle
 selected segments as in Bitcoin Core, and a missing matching `ENDIF` or

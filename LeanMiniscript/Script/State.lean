@@ -403,9 +403,19 @@ def minimalIfArg (b : StackElement) : Bool :=
 def minimalIfSatisfied (flags : ScriptFlags) (b : StackElement) : Prop :=
   flags.minimalIf = false ∨ minimalIfArg b = true
 
+instance (flags : ScriptFlags) (b : StackElement) :
+    Decidable (minimalIfSatisfied flags b) := by
+  unfold minimalIfSatisfied
+  infer_instance
+
 /-- Whether the legacy CHECKMULTISIG dummy argument satisfies NULLDUMMY. -/
 def nullDummySatisfied (flags : ScriptFlags) (dummy : StackElement) : Prop :=
   flags.nullDummy = false ∨ stackElementEq dummy falseElement = true
+
+instance (flags : ScriptFlags) (dummy : StackElement) :
+    Decidable (nullDummySatisfied flags dummy) := by
+  unfold nullDummySatisfied
+  infer_instance
 
 theorem falseElement_minimalIfArg : minimalIfArg falseElement = true :=
   by native_decide
