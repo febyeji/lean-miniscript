@@ -10,6 +10,7 @@ import LeanMiniscript.Script.BigStepFailureExamples
 import LeanMiniscript.Script.CheckMultiSigExamples
 import LeanMiniscript.Script.ConditionalExamples
 import LeanMiniscript.Script.DeterminismExamples
+import LeanMiniscript.Script.EvaluatorExamples
 import LeanMiniscript.Script.ScriptNumExamples
 import LeanMiniscript.Script.SerializationExamples
 import LeanMiniscript.Script.TimelockExamples
