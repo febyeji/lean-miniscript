@@ -32,14 +32,18 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   An oracle-parameterized `evaluate` function executes that same modeled
   subset; its model-oracle result is proved equivalent to `Eval`, while the
   executable oracle uses the pinned pure-Lean hashes and accepts injected
-  signature checks.
+  signature checks. A conservative importer parses Bitcoin Core's positional
+  `script_tests.json` format and fixture Script syntax; 16 pinned positive
+  non-signature rows exercise pushes, control flow, stack operations, and all
+  four executable hash operations without silently accepting unsupported
+  flags or execution modes.
   Execution behavior targets
   [Bitcoin Core v31.1](https://github.com/bitcoin/bitcoin/tree/9be056a8a72b624dae9623b2f7bded92c2a21c91)
   at the pinned commit recorded in the coverage baseline; `Eval` remains a
   documented subset rather than a complete Bitcoin Core interpreter.
 - General soundness, satisfaction, non-malleability, small-step semantics,
-  production secp256k1 bindings, and Bitcoin Core differential testing are
-  unfinished.
+  production secp256k1 bindings, exact Core failure mapping, and the full
+  Bitcoin Core differential suite are unfinished.
 
 See [`MINISCRIPT_COVERAGE.md`](MINISCRIPT_COVERAGE.md) for the constructor-level
 coverage matrix, proof-status legend, semantic conventions, and subsystem pins.

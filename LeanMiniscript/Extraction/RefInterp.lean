@@ -14,8 +14,8 @@ def execScript (oracle : CryptoOracle) (script : Script)
     ExecResult :=
   evaluate oracle script initialStack [] flags ctx
 
--- TODO: JSON parser for Bitcoin Core's script_tests.json format
--- TODO: Differential testing harness
+-- TODO: Map modeled failures to exact Bitcoin Core Script error tags
+-- TODO: Extend differential execution to witness, P2SH, and signature rows
 -- TODO: CLI interface for standalone execution
 
 end LeanMiniscript.Extraction

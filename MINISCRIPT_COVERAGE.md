@@ -75,6 +75,11 @@ oracles, not logical premises of Lean proofs.
   HASH256, RIPEMD-160, and HASH160 from the pinned `lean-hash160` package while
   leaving signature verification injectable; no production secp256k1 binding
   is currently part of the trusted runtime boundary.
+- The Bitcoin Core fixture importer preserves positional JSON rows and compiles
+  Core's number, quoted-data, raw-hex, and opcode tokens through their serialized
+  Script-byte boundary. It rejects unsupported opcodes, P2SH evaluation,
+  signature rows, witness rows, unmodeled flags, expected failure tags, and
+  non-minimal raw pushes under `MINIMALDATA` with structured reasons.
 
 ## Legend
 
@@ -176,8 +181,14 @@ any `CryptoOracle` that agrees pointwise with the abstract model, and
 `evaluate_model_iff` packages the model-oracle equivalence. Executable fixtures
 cover arithmetic, conditional toggles, typed failures, the pinned pure-Lean
 SHA-256 implementation, and injected signature results. A native secp256k1
-oracle and Bitcoin Core `script_tests.json` differential harness remain future
-work.
+oracle and the complete Bitcoin Core differential suite remain future work.
+The initial importer targets the pinned v31.1 positional JSON and textual
+fixture syntax, including raw `0x...` byte concatenation. Sixteen verbatim
+positive rows run offline through the evaluator and cover direct and PUSHDATA
+pushes, conditional branches with repeated `ELSE`, stack/arithmetic behavior,
+SHA256, HASH256, RIPEMD160, and HASH160. Unsupported execution modes and
+negative expected-error rows remain visible as explicit classifications rather
+than being dropped from the comparison boundary.
 Conditional execution uses an executable depth-aware splitter: nested
 delimiters stay within their branch, repeated same-depth `ELSE` opcodes toggle
 selected segments as in Bitcoin Core, and a missing matching `ENDIF` or
