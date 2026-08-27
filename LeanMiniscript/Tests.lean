@@ -1,4 +1,5 @@
 import LeanMiniscript
+import LeanMiniscript.Extraction.BitcoinCoreFixturesExamples
 import LeanMiniscript.Miniscript.CompileExamples
 import LeanMiniscript.Miniscript.ContextSafetyExamples
 import LeanMiniscript.Miniscript.MalleabilityExamples

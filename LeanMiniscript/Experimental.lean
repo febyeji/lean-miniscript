@@ -10,6 +10,7 @@ import LeanMiniscript.Miniscript.Soundness
 import LeanMiniscript.Properties.ResourceBounds
 import LeanMiniscript.Properties.NonMalleability
 import LeanMiniscript.Extraction.RefInterp
+import LeanMiniscript.Extraction.BitcoinCoreFixtures
 
 /-!
 # Experimental lean-miniscript modules
