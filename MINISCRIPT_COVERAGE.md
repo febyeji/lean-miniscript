@@ -78,8 +78,8 @@ oracles, not logical premises of Lean proofs.
 - The Bitcoin Core fixture importer preserves positional JSON rows and compiles
   Core's number, quoted-data, raw-hex, and opcode tokens through their serialized
   Script-byte boundary. It rejects unsupported opcodes, P2SH evaluation,
-  signature rows, witness rows, unmodeled flags, expected failure tags, and
-  non-minimal raw pushes under `MINIMALDATA` with structured reasons.
+  signature-result rows, witness rows, unmodeled flags, unmodeled failure tags,
+  and non-minimal raw pushes under `MINIMALDATA` with structured reasons.
 
 ## Legend
 
@@ -169,7 +169,7 @@ public-key and signature count elements in Bitcoin Core's validation order,
 enforces `0 ≤ k ≤ n ≤ 20`, checks each variable stack-frame boundary, places
 the historical dummy below the signatures, and reports typed count,
 Script-number, underflow, and NULLDUMMY failures. Bitcoin Core op-counting,
-signature-encoding and NULLFAIL errors, exact raw-script error precedence,
+signature-encoding and NULLFAIL errors, unmodeled raw-script error precedence,
 context-invalid opcodes, and full failure completeness remain unfinished.
 `Eval.exists_result` proves relational result existence for every modeled
 script and initial state, using strict conditional-branch length decrease;
@@ -187,14 +187,22 @@ fixture syntax, including raw `0x...` byte concatenation. Sixteen verbatim
 positive rows run offline through the evaluator and cover direct and PUSHDATA
 pushes, conditional branches with repeated `ELSE`, stack/arithmetic behavior,
 SHA256, HASH256, RIPEMD160, and HASH160. Unsupported execution modes and
-negative expected-error rows remain visible as explicit classifications rather
-than being dropped from the comparison boundary.
+unmodeled expected-error rows remain visible as explicit classifications rather
+than being dropped from the comparison boundary. `coreScriptErrorTag` maps all
+modeled evaluator failures to Core tags; thirteen verbatim rejection rows cover
+final-false results, stack and alt-stack underflow, VERIFY/EQUALVERIFY,
+Script-number overflow and non-minimal operands, malformed conditionals,
+negative and unsatisfied CSV, and CHECKMULTISIG count failures. Signature
+callbacks remain excluded unless the expected error is guaranteed to occur
+before cryptographic verification.
 Conditional execution uses an executable depth-aware splitter: nested
 delimiters stay within their branch, repeated same-depth `ELSE` opcodes toggle
 selected segments as in Bitcoin Core, and a missing matching `ENDIF` or
 top-level `ELSE`/`ENDIF` produces a typed unbalanced-conditional failure. The
-splitter structurally rejects an unclosed frame before branch execution, so
-error precedence against an earlier active-branch failure is not yet claimed.
+unclosed-frame projection executes only the alternating active segments first:
+an active runtime failure takes precedence, while successful execution through
+EOF becomes `UNBALANCED_CONDITIONAL`. Relational, executable, and fixture-level
+regressions cover active, inactive, and repeated-`ELSE` cases.
 
 ## Surface Constructor Matrix
 

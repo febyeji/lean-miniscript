@@ -358,8 +358,8 @@ inductive CoreFixtureUnsupported where
   | expectedError (error : String)
   deriving Repr, DecidableEq
 
-/-- A positive Core fixture whose execution falls entirely within the current
-    evaluator and flag model. -/
+/-- A Core fixture whose execution and expected result fall entirely within
+    the current evaluator and error-tag model. -/
 structure SupportedCoreFixture where
   source : CoreScriptTest
   scriptSig : Script
@@ -400,14 +400,49 @@ private def sourceUsesMinimalPushes (source : String) (script : Script) : Bool :
   | .ok sourceBytes, .ok canonicalBytes => sourceBytes == canonicalBytes
   | _, _ => false
 
-/-- Conservatively prepare an upstream positive test. Flags are ignored only
-    when their affected semantics are absent: `P2SH` requires a non-P2SH
-    scriptPubKey, and signature flags require a script without signature
-    opcodes. Every other unmodeled condition is reported. -/
+/-- Bitcoin Core `ScriptErrorString` tag corresponding to each modeled
+    evaluator failure. Several Lean errors intentionally share one Core tag. -/
+def coreScriptErrorTag : ScriptError → String
+  | .stackUnderflow => "INVALID_STACK_OPERATION"
+  | .altStackUnderflow => "INVALID_ALTSTACK_OPERATION"
+  | .scriptNumOverflow => "SCRIPTNUM"
+  | .scriptNumNonMinimal => "SCRIPTNUM"
+  | .pubkeyCount => "PUBKEY_COUNT"
+  | .signatureCount => "SIG_COUNT"
+  | .negativeLocktime => "NEGATIVE_LOCKTIME"
+  | .nullDummy => "SIG_NULLDUMMY"
+  | .equalVerify => "EQUALVERIFY"
+  | .verify => "VERIFY"
+  | .checkSequenceVerify => "UNSATISFIED_LOCKTIME"
+  | .checkLockTimeVerify => "UNSATISFIED_LOCKTIME"
+  | .minimalIf => "MINIMALIF"
+  | .unbalancedConditional => "UNBALANCED_CONDITIONAL"
+
+private def supportedExpectedError : String → Bool
+  | "OK" | "EVAL_FALSE" | "INVALID_STACK_OPERATION" |
+      "INVALID_ALTSTACK_OPERATION" | "SCRIPTNUM" | "MINIMALDATA" |
+      "PUBKEY_COUNT" | "SIG_COUNT" | "NEGATIVE_LOCKTIME" |
+      "SIG_NULLDUMMY" | "EQUALVERIFY" | "VERIFY" |
+      "UNSATISFIED_LOCKTIME" | "MINIMALIF" |
+      "UNBALANCED_CONDITIONAL" => true
+  | _ => false
+
+/-- Errors that are decided before any signature-verification callback can be
+    reached, even though the parsed script contains a signature opcode. -/
+private def expectedBeforeSignatureCheck : String → Bool
+  | "INVALID_STACK_OPERATION" | "SCRIPTNUM" | "MINIMALDATA" |
+      "PUBKEY_COUNT" | "SIG_COUNT" | "SIG_NULLDUMMY" => true
+  | _ => false
+
+/-- Conservatively prepare an upstream test. Flags are ignored only when their
+    affected semantics are absent: `P2SH` requires a non-P2SH scriptPubKey,
+    while a signature opcode is admitted only for an error that must occur
+    before its crypto callback. Every other unmodeled condition is reported. -/
 def prepareCoreFixture (test : CoreScriptTest) :
     Except CoreFixtureUnsupported SupportedCoreFixture := do
   if test.witness.isSome then throw .witnessCase
-  if test.expectedError != "OK" then throw (.expectedError test.expectedError)
+  if !supportedExpectedError test.expectedError then
+    throw (.expectedError test.expectedError)
   let scriptSig ← (parseCoreScriptSource test.scriptSigSource).mapError .scriptSig
   let scriptPubKey ←
     (parseCoreScriptSource test.scriptPubKeySource).mapError .scriptPubKey
@@ -416,7 +451,8 @@ def prepareCoreFixture (test : CoreScriptTest) :
     throw (.unsupportedFlag flag)
   if flagNames.contains "P2SH" && isP2SHScript scriptPubKey then
     throw .p2shEvaluation
-  if scriptContainsSignature scriptSig || scriptContainsSignature scriptPubKey then
+  if (scriptContainsSignature scriptSig || scriptContainsSignature scriptPubKey) &&
+      !expectedBeforeSignatureCheck test.expectedError then
     throw .signatureOpcode
   if flagNames.contains "MINIMALDATA" &&
       (!sourceUsesMinimalPushes test.scriptSigSource scriptSig ||
@@ -437,12 +473,18 @@ def prepareCoreFixture (test : CoreScriptTest) :
     flags := flagsForCoreFixture flagNames
   }
 
-/-- Observable result at Bitcoin Core's `VerifyScript` boundary for the
-    currently supported positive fixtures. -/
+/-- Observable result at Bitcoin Core's `VerifyScript` boundary. `none` is a
+    successful execution whose final stack is empty or false. -/
 inductive CoreFixtureOutcome where
   | accepted
   | rejected (error : Option ScriptError)
   deriving Repr, DecidableEq, BEq
+
+/-- Render an evaluator outcome using Bitcoin Core's fixture result tags. -/
+def CoreFixtureOutcome.coreTag : CoreFixtureOutcome → String
+  | .accepted => "OK"
+  | .rejected none => "EVAL_FALSE"
+  | .rejected (some error) => coreScriptErrorTag error
 
 /-- Transaction fields described by the header of Core's `script_tests.json`.
     Signature cases are excluded before this simplified context is used. -/
@@ -467,10 +509,10 @@ def runCoreFixture (oracle : CryptoOracle)
       | .success (top :: _) _ =>
           if castToBool top then .accepted else .rejected none
 
-/-- Import, conservatively classify, and execute one positive Core fixture. -/
+/-- Import, conservatively classify, execute, and compare one Core fixture. -/
 def checkCoreFixture (oracle : CryptoOracle) (test : CoreScriptTest) :
     Except CoreFixtureUnsupported Bool := do
   let fixture ← prepareCoreFixture test
-  pure (runCoreFixture oracle fixture == .accepted)
+  pure ((runCoreFixture oracle fixture).coreTag == test.expectedError)
 
 end LeanMiniscript.Extraction

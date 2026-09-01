@@ -9,9 +9,9 @@ open LeanMiniscript.Script
 
 The JSON rows below are copied verbatim from
 `src/test/data/script_tests.json` at `bitcoinCoreScriptTestsCommit`. They form a
-small offline-positive suite for the currently modeled, non-signature opcode
-subset. The importer retains every row and reports unsupported semantics
-rather than silently dropping them.
+small offline suite for the currently modeled opcode and failure subset. The
+importer retains every row and reports unsupported semantics rather than
+silently dropping them.
 -/
 
 private def rejectingOracle : CryptoOracle :=
@@ -51,6 +51,34 @@ private def coreOpcodeMappingsAgree : Bool :=
 
 /-- Text names and raw opcode bytes select the same modeled constructor. -/
 example : coreOpcodeMappingsAgree = true := by
+  native_decide
+
+private def coreErrorTagFixtures : List (ScriptError × String) :=
+  [(.stackUnderflow, "INVALID_STACK_OPERATION"),
+   (.altStackUnderflow, "INVALID_ALTSTACK_OPERATION"),
+   (.scriptNumOverflow, "SCRIPTNUM"),
+   (.scriptNumNonMinimal, "SCRIPTNUM"),
+   (.pubkeyCount, "PUBKEY_COUNT"),
+   (.signatureCount, "SIG_COUNT"),
+   (.negativeLocktime, "NEGATIVE_LOCKTIME"),
+   (.nullDummy, "SIG_NULLDUMMY"),
+   (.equalVerify, "EQUALVERIFY"),
+   (.verify, "VERIFY"),
+   (.checkSequenceVerify, "UNSATISFIED_LOCKTIME"),
+   (.checkLockTimeVerify, "UNSATISFIED_LOCKTIME"),
+   (.minimalIf, "MINIMALIF"),
+   (.unbalancedConditional, "UNBALANCED_CONDITIONAL")]
+
+/-- Every modeled evaluator failure has an explicit Bitcoin Core tag. -/
+example : ∀ error, ∃ tag, (error, tag) ∈ coreErrorTagFixtures := by
+  intro error
+  cases error <;> simp [coreErrorTagFixtures]
+
+private def coreErrorTagMappingsAgree : Bool :=
+  coreErrorTagFixtures.all fun (error, expected) =>
+    coreScriptErrorTag error == expected
+
+example : coreErrorTagMappingsAgree = true := by
   native_decide
 
 private def pinnedCoreFixtureJson : String := r#"
@@ -101,6 +129,47 @@ private def pinnedFixtureCheck : Bool :=
 
 /-- All checked-in positive rows import and match the executable evaluator. -/
 example : pinnedFixtureCheck = true := by
+  native_decide
+
+private def pinnedCoreFailureFixtureJson : String := r#"
+[
+  ["", "", "P2SH,STRICTENC", "EVAL_FALSE"],
+  ["0", "VERIFY 1", "P2SH,STRICTENC", "VERIFY"],
+  ["1", "SWAP", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["1", "FROMALTSTACK", "P2SH,STRICTENC", "INVALID_ALTSTACK_OPERATION"],
+  ["0 1", "SWAP 1 EQUALVERIFY", "P2SH,STRICTENC", "EQUALVERIFY"],
+  ["2147483648 1", "BOOLOR 1", "P2SH,STRICTENC", "SCRIPTNUM",
+    "We cannot do BOOLOR on 5-byte integers (but we can still do IF etc)"],
+  ["0x0100", "CHECKSEQUENCEVERIFY", "CHECKSEQUENCEVERIFY,MINIMALDATA",
+    "SCRIPTNUM", "CSV fails if stack top is not minimally encoded"],
+  ["1", "ENDIF", "P2SH,STRICTENC", "UNBALANCED_CONDITIONAL",
+    "Malformed IF/ELSE/ENDIF sequence"],
+  ["1", "IF 1", "P2SH,STRICTENC", "UNBALANCED_CONDITIONAL",
+    "IF without ENDIF"],
+  ["-1", "CHECKSEQUENCEVERIFY", "CHECKSEQUENCEVERIFY", "NEGATIVE_LOCKTIME",
+    "CSV automatically fails if stack top is negative"],
+  ["0", "CHECKSEQUENCEVERIFY", "CHECKSEQUENCEVERIFY", "UNSATISFIED_LOCKTIME",
+    "CSV fails if stack top bit 1 << 31 is set and the tx version < 2"],
+  ["0 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21",
+    "21 CHECKMULTISIG 1", "P2SH,STRICTENC", "PUBKEY_COUNT",
+    "nPubKeys > 20"],
+  ["0 'sig' 1 0", "CHECKMULTISIG 1", "P2SH,STRICTENC", "SIG_COUNT",
+    "nSigs > nPubKeys"]
+]
+"#
+
+private def pinnedFailureFixtureCheck : Bool :=
+  match parseCoreScriptTests pinnedCoreFailureFixtureJson with
+  | .error _ => false
+  | .ok entries =>
+      let tests := fixtureTests entries
+      tests.length == 13 && tests.all fun test =>
+        match checkCoreFixture rejectingOracle test with
+        | .ok matched => matched
+        | .error _ => false
+
+/-- Verbatim Core rejection rows match error class and final-false behavior. -/
+example : pinnedFailureFixtureCheck = true := by
   native_decide
 
 private def retainsDocumentationRow : Bool :=
@@ -244,13 +313,57 @@ private def negativeFixture : CoreScriptTest where
   expectedError := "INVALID_STACK_OPERATION"
   comments := []
 
-private def retainsExpectedError : Bool :=
-  match prepareCoreFixture negativeFixture with
-  | .error (.expectedError "INVALID_STACK_OPERATION") => true
-  | _ => false
+private def matchesExpectedError : Bool :=
+  match checkCoreFixture rejectingOracle negativeFixture with
+  | .ok matched => matched
+  | .error _ => false
 
-/-- Failure rows remain visible until exact Core error mapping is implemented. -/
-example : retainsExpectedError = true := by
+/-- Failure rows compare their expected Core tag with the modeled error. -/
+example : matchesExpectedError = true := by
+  native_decide
+
+private def activeUnclosedBranchFixture : CoreScriptTest where
+  witness := none
+  scriptSigSource := "0 1"
+  scriptPubKeySource := "IF VERIFY"
+  flagSource := "P2SH,STRICTENC"
+  expectedError := "VERIFY"
+  comments := ["active runtime error precedes missing ENDIF"]
+
+private def inactiveUnclosedBranchFixture : CoreScriptTest where
+  witness := none
+  scriptSigSource := "0 0"
+  scriptPubKeySource := "IF VERIFY"
+  flagSource := "P2SH,STRICTENC"
+  expectedError := "UNBALANCED_CONDITIONAL"
+  comments := ["inactive VERIFY is skipped before missing ENDIF"]
+
+private def matchesUnclosedBranchErrorPrecedence : Bool :=
+  [activeUnclosedBranchFixture, inactiveUnclosedBranchFixture].all fun test =>
+    match checkCoreFixture rejectingOracle test with
+    | .ok matched => matched
+    | .error _ => false
+
+/-- The fixture pipeline preserves Bitcoin Core's EOF error precedence for
+    active and inactive code inside an unclosed conditional. -/
+example : matchesUnclosedBranchErrorPrecedence = true := by
+  native_decide
+
+private def nullDummyFixture : CoreScriptTest where
+  witness := none
+  scriptSigSource := "1 0 0"
+  scriptPubKeySource := "CHECKMULTISIG"
+  flagSource := "NULLDUMMY"
+  expectedError := "SIG_NULLDUMMY"
+  comments := []
+
+private def matchesNullDummyError : Bool :=
+  match checkCoreFixture rejectingOracle nullDummyFixture with
+  | .ok matched => matched
+  | .error _ => false
+
+/-- NULLDUMMY fails before the signature oracle is consulted. -/
+example : matchesNullDummyError = true := by
   native_decide
 
 private def classifiesWitnessRow : Bool :=

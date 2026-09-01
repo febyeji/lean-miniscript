@@ -95,6 +95,89 @@ private def splitConditionalAux (depth : Nat) (currentRev : Script)
 def splitConditional (script : Script) : Option ConditionalFrame :=
   splitConditionalAux 0 [] [] script
 
+/-- Collect same-depth branch segments when a leading conditional has no
+    matching `OP_ENDIF`. Nested delimiters remain inside their branch so that
+    an active nested conditional is evaluated normally. -/
+private def splitUnclosedConditionalAux (depth : Nat) (currentRev : Script)
+    (completedRev : List Script) : Script → List Script
+  | [] => (currentRev.reverse :: completedRev).reverse
+  | element :: rest =>
+      match element with
+      | .op .OP_IF | .op .OP_NOTIF =>
+          splitUnclosedConditionalAux (depth + 1) (element :: currentRev)
+            completedRev rest
+      | .op .OP_ELSE =>
+          match depth with
+          | 0 =>
+              splitUnclosedConditionalAux 0 []
+                (currentRev.reverse :: completedRev) rest
+          | _ + 1 =>
+              splitUnclosedConditionalAux depth (element :: currentRev)
+                completedRev rest
+      | .op .OP_ENDIF =>
+          match depth with
+          | 0 => (currentRev.reverse :: completedRev).reverse
+          | nestedDepth + 1 =>
+              splitUnclosedConditionalAux nestedDepth (element :: currentRev)
+                completedRev rest
+      | _ =>
+          splitUnclosedConditionalAux depth (element :: currentRev)
+            completedRev rest
+
+/-- Active branch code that Bitcoin Core executes before reporting a missing
+    outer `OP_ENDIF`. Repeated same-depth ELSE segments alternate as usual. -/
+def selectUnclosedConditional (script : Script) (executeFirst : Bool) : Script :=
+  selectConditionalBranches executeFirst
+    (splitUnclosedConditionalAux 0 [] [] script)
+
+/-- A runtime failure inside an active unclosed branch takes precedence over
+    the structural error reported after successful execution reaches EOF. -/
+def finishUnclosedConditional : ExecResult → ExecResult
+  | .failure error => .failure error
+  | .success _ _ => .failure .unbalancedConditional
+
+/-- The unclosed-branch projection only removes source elements. -/
+private theorem splitUnclosedConditionalAux_length_le
+    (depth : Nat) (currentRev : Script) (completedRev : List Script)
+    (script : Script) :
+    ((splitUnclosedConditionalAux depth currentRev completedRev script).map
+      List.length).sum ≤ conditionalScanSize currentRev completedRev script := by
+  induction script generalizing depth currentRev completedRev with
+  | nil =>
+      simp [splitUnclosedConditionalAux, conditionalScanSize, Nat.add_comm]
+  | cons element rest ih =>
+      cases element with
+      | pushData data =>
+          have bound := ih depth (.pushData data :: currentRev) completedRev
+          simpa [splitUnclosedConditionalAux, conditionalScanSize,
+            Nat.add_assoc, Nat.add_left_comm, Nat.add_comm] using bound
+      | pushNum value =>
+          have bound := ih depth (.pushNum value :: currentRev) completedRev
+          simpa [splitUnclosedConditionalAux, conditionalScanSize,
+            Nat.add_assoc, Nat.add_left_comm, Nat.add_comm] using bound
+      | op opcode =>
+          cases depth <;> cases opcode <;>
+            simp only [splitUnclosedConditionalAux]
+          all_goals
+            try
+              apply Nat.le_trans (ih _ _ _)
+              simp [conditionalScanSize, Nat.add_assoc, Nat.add_left_comm,
+                Nat.add_comm]
+          all_goals
+            simp [conditionalScanSize, Nat.add_assoc, Nat.add_left_comm,
+              Nat.add_comm]
+            omega
+
+/-- Selecting active segments from an unclosed conditional is no longer than
+    its original tail. -/
+theorem selectUnclosedConditional_length_le (script : Script)
+    (executeFirst : Bool) :
+    (selectUnclosedConditional script executeFirst).length ≤ script.length := by
+  have selected := selectConditionalBranches_length_le_sum executeFirst
+    (splitUnclosedConditionalAux 0 [] [] script)
+  have scanned := splitUnclosedConditionalAux_length_le 0 [] [] script
+  exact Nat.le_trans selected (by simpa [conditionalScanSize] using scanned)
+
 /-- A successful split selects a script strictly smaller than the scan state
     that still contains its matching `OP_ENDIF`. -/
 private theorem splitConditionalAux_select_length_lt
@@ -524,17 +607,23 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
 
   | if_unbalanced : (top : StackElement) → (rest altStack : Stack) →
       (script : Script) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (selectedResult : ExecResult) →
       splitConditional script = none →
       minimalIfSatisfied flags top →
+      Eval (selectUnclosedConditional script (castToBool top)) rest altStack
+        flags ctx selectedResult →
       Eval (.op .OP_IF :: script) (top :: rest) altStack flags ctx
-        (.failure .unbalancedConditional)
+        (finishUnclosedConditional selectedResult)
 
   | notif_unbalanced : (top : StackElement) → (rest altStack : Stack) →
       (script : Script) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (selectedResult : ExecResult) →
       splitConditional script = none →
       minimalIfSatisfied flags top →
+      Eval (selectUnclosedConditional script (!castToBool top)) rest altStack
+        flags ctx selectedResult →
       Eval (.op .OP_NOTIF :: script) (top :: rest) altStack flags ctx
-        (.failure .unbalancedConditional)
+        (finishUnclosedConditional selectedResult)
 
   | else_unbalanced : (script : Script) → (stack altStack : Stack) →
       (flags : ScriptFlags) → (ctx : TxContext) →
@@ -648,8 +737,14 @@ theorem Eval.append
     (rightEval : Eval right midStack midAltStack flags ctx result) :
     Eval (left ++ right) stack altStack flags ctx result := by
   generalize resultEq : ExecResult.success midStack midAltStack = leftResult at leftEval
-  induction leftEval generalizing right result <;>
-    cases resultEq <;>
+  induction leftEval generalizing right result
+  case if_unbalanced =>
+    rename_i top rest alt script flags ctx selectedResult split minimal selected ih
+    cases selectedResult <;> simp_all [finishUnclosedConditional]
+  case notif_unbalanced =>
+    rename_i top rest alt script flags ctx selectedResult split minimal selected ih
+    cases selectedResult <;> simp_all [finishUnclosedConditional]
+  all_goals cases resultEq <;>
     simp_all <;>
     try grind [Eval]
   case if_execute.refl =>
@@ -757,9 +852,8 @@ theorem Eval.fromAltStack_empty_result
       Opcode.usesTimelockScriptNum] <;>
     omega
 
-/-- A structurally unclosed IF with a valid operand has only the modeled
-    unbalanced-conditional result. This is a local result-uniqueness boundary;
-    full Bitcoin Core error-precedence refinement remains separate. -/
+/-- A structurally unclosed IF evaluates its active segments before converting
+    a successful EOF into `unbalancedConditional`. -/
 theorem Eval.ifUnbalanced_result
     {top : StackElement} {rest altStack : Stack} {script : Script}
     {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
@@ -767,13 +861,17 @@ theorem Eval.ifUnbalanced_result
     (minimal : minimalIfSatisfied flags top)
     (evaluated : Eval (.op .OP_IF :: script) (top :: rest) altStack flags ctx
       result) :
-    result = .failure .unbalancedConditional := by
+    ∃ selectedResult,
+      Eval (selectUnclosedConditional script (castToBool top)) rest altStack
+        flags ctx selectedResult ∧
+      result = finishUnclosedConditional selectedResult := by
   cases evaluated <;>
     simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
       Opcode.usesTimelockScriptNum, minimalIfSatisfied] <;>
-    omega
+    try omega
+  case if_unbalanced => exact ⟨_, by assumption, rfl⟩
 
-/-- The corresponding NOTIF structural failure is likewise result-unique. -/
+/-- The corresponding NOTIF rule evaluates the opposite active segments. -/
 theorem Eval.notifUnbalanced_result
     {top : StackElement} {rest altStack : Stack} {script : Script}
     {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
@@ -781,11 +879,15 @@ theorem Eval.notifUnbalanced_result
     (minimal : minimalIfSatisfied flags top)
     (evaluated : Eval (.op .OP_NOTIF :: script) (top :: rest) altStack flags ctx
       result) :
-    result = .failure .unbalancedConditional := by
+    ∃ selectedResult,
+      Eval (selectUnclosedConditional script (!castToBool top)) rest altStack
+        flags ctx selectedResult ∧
+      result = finishUnclosedConditional selectedResult := by
   cases evaluated <;>
     simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
       Opcode.usesTimelockScriptNum, minimalIfSatisfied] <;>
-    omega
+    try omega
+  case notif_unbalanced => exact ⟨_, by assumption, rfl⟩
 
 /-- ELSE at top level cannot overlap a normal execution rule. -/
 theorem Eval.elseUnbalanced_result
@@ -1023,9 +1125,17 @@ theorem Eval.exists_result
                       by_cases minimal : minimalIfSatisfied flags top
                       · cases hSplit : splitConditional rest with
                         | none =>
-                            exact ⟨.failure .unbalancedConditional,
+                            have selectedShort :
+                                (selectUnclosedConditional rest
+                                  (castToBool top)).length < length := by
+                              have smaller := selectUnclosedConditional_length_le
+                                rest (castToBool top)
+                              omega
+                            rcases ih _ selectedShort _ stackRest altStack rfl with
+                              ⟨selectedResult, evaluated⟩
+                            exact ⟨finishUnclosedConditional selectedResult,
                               .if_unbalanced top stackRest altStack rest flags ctx
-                                hSplit minimal⟩
+                                selectedResult hSplit minimal evaluated⟩
                         | some frame =>
                             have selectedShort :
                                 (frame.select (castToBool top)).length < length := by
@@ -1053,9 +1163,17 @@ theorem Eval.exists_result
                       by_cases minimal : minimalIfSatisfied flags top
                       · cases hSplit : splitConditional rest with
                         | none =>
-                            exact ⟨.failure .unbalancedConditional,
+                            have selectedShort :
+                                (selectUnclosedConditional rest
+                                  (!castToBool top)).length < length := by
+                              have smaller := selectUnclosedConditional_length_le
+                                rest (!castToBool top)
+                              omega
+                            rcases ih _ selectedShort _ stackRest altStack rfl with
+                              ⟨selectedResult, evaluated⟩
+                            exact ⟨finishUnclosedConditional selectedResult,
                               .notif_unbalanced top stackRest altStack rest flags ctx
-                                hSplit minimal⟩
+                                selectedResult hSplit minimal evaluated⟩
                         | some frame =>
                             have selectedShort :
                                 (frame.select (!castToBool top)).length < length := by

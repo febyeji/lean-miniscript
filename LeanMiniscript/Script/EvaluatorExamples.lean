@@ -51,6 +51,24 @@ example : isFailure .stackUnderflow
       fixtureFlags fixtureTxContext) = true := by
   native_decide
 
+/-- Runtime errors in active unclosed branches precede the structural error
+    Bitcoin Core reports only after successful execution reaches EOF. -/
+example : isFailure .verify
+    (evaluate rejectingOracle [.op .OP_IF, .op .OP_VERIFY]
+      [trueElement, falseElement] [] fixtureFlags fixtureTxContext) = true := by
+  native_decide
+
+example : isFailure .unbalancedConditional
+    (evaluate rejectingOracle [.op .OP_IF, .op .OP_VERIFY]
+      [falseElement, falseElement] [] fixtureFlags fixtureTxContext) = true := by
+  native_decide
+
+example : isFailure .verify
+    (evaluate rejectingOracle
+      [.op .OP_IF, .op .OP_ELSE, .pushNum 1, .op .OP_ELSE, .op .OP_VERIFY]
+      [trueElement, falseElement] [] fixtureFlags fixtureTxContext) = true := by
+  native_decide
+
 private def sha256Abc : StackElement :=
   ⟨#[0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea,
       0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23,

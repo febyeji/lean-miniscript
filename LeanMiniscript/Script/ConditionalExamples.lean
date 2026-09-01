@@ -75,22 +75,65 @@ example : Eval (.op .OP_IF :: outerTail) [trueElement] []
 /-- A leading conditional with no matching ENDIF fails explicitly. -/
 example : Eval [.op .OP_IF, .pushNum 1] [trueElement] []
     fixtureFlags fixtureTxContext (.failure .unbalancedConditional) := by
-  apply Eval.if_unbalanced
+  apply Eval.if_unbalanced (selectedResult := .success [scriptNum 1] [])
   · rfl
   · exact Or.inr trueElement_minimalIfArg
+  · apply Eval.pushNum
+    exact Eval.empty [scriptNum 1] [] fixtureFlags fixtureTxContext
 
 example : ∀ result,
     Eval [.op .OP_IF, .pushNum 1] [trueElement] []
       fixtureFlags fixtureTxContext result →
     result = .failure .unbalancedConditional := by
   intro result evaluated
-  exact Eval.ifUnbalanced_result rfl (Or.inr trueElement_minimalIfArg) evaluated
+  apply Eval.result_unique evaluated
+  apply Eval.if_unbalanced (selectedResult := .success [scriptNum 1] [])
+  · rfl
+  · exact Or.inr trueElement_minimalIfArg
+  · apply Eval.pushNum
+    exact Eval.empty [scriptNum 1] [] fixtureFlags fixtureTxContext
 
 example : Eval [.op .OP_NOTIF, .pushNum 1] [falseElement] []
     fixtureFlags fixtureTxContext (.failure .unbalancedConditional) := by
-  apply Eval.notif_unbalanced
+  apply Eval.notif_unbalanced (selectedResult := .success [scriptNum 1] [])
   · rfl
   · exact Or.inr falseElement_minimalIfArg
+  · apply Eval.pushNum
+    exact Eval.empty [scriptNum 1] [] fixtureFlags fixtureTxContext
+
+/-- Bitcoin Core reports an active-branch runtime error before the missing
+    outer ENDIF discovered at EOF. -/
+example : Eval [.op .OP_IF, .op .OP_VERIFY]
+    [trueElement, falseElement] [] fixtureFlags fixtureTxContext
+    (.failure .verify) := by
+  apply Eval.if_unbalanced (selectedResult := .failure .verify)
+  · rfl
+  · exact Or.inr trueElement_minimalIfArg
+  · exact Eval.verify_failure falseElement [] [] [] fixtureFlags
+      fixtureTxContext rfl
+
+/-- Inactive code remains skipped; reaching EOF successfully then reports the
+    unbalanced conditional. -/
+example : Eval [.op .OP_IF, .op .OP_VERIFY]
+    [falseElement, falseElement] [] fixtureFlags fixtureTxContext
+    (.failure .unbalancedConditional) := by
+  apply Eval.if_unbalanced
+      (selectedResult := .success [falseElement] [])
+  · rfl
+  · exact Or.inr falseElement_minimalIfArg
+  · exact Eval.empty [falseElement] [] fixtureFlags fixtureTxContext
+
+/-- Repeated same-depth ELSE segments still alternate before EOF, so an error
+    in a later active segment also takes precedence. -/
+example : Eval
+    [.op .OP_IF, .op .OP_ELSE, .pushNum 1, .op .OP_ELSE, .op .OP_VERIFY]
+    [trueElement, falseElement] [] fixtureFlags fixtureTxContext
+    (.failure .verify) := by
+  apply Eval.if_unbalanced (selectedResult := .failure .verify)
+  · rfl
+  · exact Or.inr trueElement_minimalIfArg
+  · exact Eval.verify_failure falseElement [] [] [] fixtureFlags
+      fixtureTxContext rfl
 
 /-- ELSE and ENDIF outside any conditional frame are unbalanced. -/
 example : Eval [.op .OP_ELSE] [] [] fixtureFlags fixtureTxContext

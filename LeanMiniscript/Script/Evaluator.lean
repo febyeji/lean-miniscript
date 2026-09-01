@@ -83,7 +83,11 @@ def evaluate (oracle : CryptoOracle) (script : Script)
       | top :: stackRest =>
           if _minimal : minimalIfSatisfied flags top then
             match _split : splitConditional rest with
-            | none => .failure .unbalancedConditional
+            | none =>
+                finishUnclosedConditional
+                  (evaluate oracle
+                    (selectUnclosedConditional rest (castToBool top)) stackRest
+                    altStack flags ctx)
             | some frame =>
                 evaluate oracle (frame.select (castToBool top)) stackRest
                   altStack flags ctx
@@ -95,7 +99,11 @@ def evaluate (oracle : CryptoOracle) (script : Script)
       | top :: stackRest =>
           if _minimal : minimalIfSatisfied flags top then
             match _split : splitConditional rest with
-            | none => .failure .unbalancedConditional
+            | none =>
+                finishUnclosedConditional
+                  (evaluate oracle
+                    (selectUnclosedConditional rest (!castToBool top)) stackRest
+                    altStack flags ctx)
             | some frame =>
                 evaluate oracle (frame.select (!castToBool top)) stackRest
                   altStack flags ctx
@@ -294,6 +302,10 @@ decreasing_by
       omega
     | have smaller := ConditionalFrame.select_length_lt _split (!castToBool top)
       omega
+    | have smaller := selectUnclosedConditional_length_le rest (castToBool top)
+      omega
+    | have smaller := selectUnclosedConditional_length_le rest (!castToBool top)
+      omega
 
 /-- An oracle agreeing with the abstract model computes the result of every
     relational `Eval` derivation. -/
@@ -350,10 +362,10 @@ theorem evaluate_eq_of_eval
     rename_i top stackRest alt rest frame flags ctx result split minimal next ih
     split <;> simp_all
   case if_unbalanced =>
-    rename_i top stackRest alt rest flags ctx split minimal
+    rename_i top stackRest alt rest flags ctx selectedResult split minimal next ih
     split <;> simp_all
   case notif_unbalanced =>
-    rename_i top stackRest alt rest flags ctx split minimal
+    rename_i top stackRest alt rest flags ctx selectedResult split minimal next ih
     split <;> simp_all
 
 /-- The evaluator is sound for every oracle that agrees with the cryptographic
