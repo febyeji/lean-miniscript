@@ -25,3 +25,7 @@ lean_lib LeanMiniscriptExperimental where
 @[default_target]
 lean_lib LeanMiniscriptTests where
   roots := #[`LeanMiniscript.Tests]
+
+@[default_target]
+lean_exe core_fixture_audit where
+  root := `LeanMiniscript.Extraction.BitcoinCoreAuditMain

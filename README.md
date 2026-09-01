@@ -39,13 +39,15 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   flags or execution modes. Thirteen pinned rejection rows additionally compare
   final-false behavior and exact Core tags for the modeled failure classes;
   unclosed conditionals preserve Core's active-branch runtime-error precedence.
+  A checked-in audit command runs a complete fixture file, compares every
+  supported row, and reports each unsupported row by structured reason.
   Execution behavior targets
   [Bitcoin Core v31.1](https://github.com/bitcoin/bitcoin/tree/9be056a8a72b624dae9623b2f7bded92c2a21c91)
   at the pinned commit recorded in the coverage baseline; `Eval` remains a
   documented subset rather than a complete Bitcoin Core interpreter.
 - General soundness, satisfaction, non-malleability, small-step semantics,
   production secp256k1 bindings, unsupported Core failure classes, and the
-  full Bitcoin Core differential suite are unfinished.
+  full semantic coverage of the Bitcoin Core differential suite are unfinished.
 
 See [`MINISCRIPT_COVERAGE.md`](MINISCRIPT_COVERAGE.md) for the constructor-level
 coverage matrix, proof-status legend, semantic conventions, and subsystem pins.
@@ -57,6 +59,22 @@ Requires [Lean 4](https://lean-lang.org/) (see `lean-toolchain` for version).
 ```bash
 lake build
 ```
+
+## Auditing Bitcoin Core fixtures
+
+Run the pinned Bitcoin Core v31.1
+[`script_tests.json`](https://github.com/bitcoin/bitcoin/blob/9be056a8a72b624dae9623b2f7bded92c2a21c91/src/test/data/script_tests.json)
+through the supported comparison boundary:
+
+```bash
+lake exe core_fixture_audit -- path/to/script_tests.json
+```
+
+The pinned file currently reports 1,222 tests: 268 compared and matched, zero
+mismatches, and 954 explicitly unsupported. Pass `--show-unsupported` before
+the path to print every excluded row and its structured reason. Parse failures
+return exit code 2 and supported-row mismatches return exit code 1; unsupported
+rows alone do not make the command fail.
 
 ## Related Work
 

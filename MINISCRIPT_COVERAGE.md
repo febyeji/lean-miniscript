@@ -20,10 +20,11 @@ theorem target is not a proved theorem.
   [`cb8262253af383a1a5b17363f6a013848f20534b`](https://github.com/rust-bitcoin/rust-miniscript/tree/cb8262253af383a1a5b17363f6a013848f20534b).
   These subsystem-specific pins do not silently replace the older compiler
   fixture pins.
-- Script execution and future Bitcoin Core `script_tests.json` imports target
+- Script execution and Bitcoin Core `script_tests.json` audits target
   Bitcoin Core v31.1 commit
   [`9be056a8a72b624dae9623b2f7bded92c2a21c91`](https://github.com/bitcoin/bitcoin/tree/9be056a8a72b624dae9623b2f7bded92c2a21c91).
-  The Lean semantics remain a documented subset until differential tests exist.
+  The Lean semantics remain a documented subset; the audit keeps unsupported
+  rows visible rather than treating them as successful comparisons.
 - Concrete key HASH160 uses `lean-hash160` commit
   [`d55f38607f76104609004cdaca27ef0e21f372b6`](https://github.com/febyeji/lean-hash160/tree/d55f38607f76104609004cdaca27ef0e21f372b6).
 - The checked toolchain is `leanprover/lean4:v4.32.0`.
@@ -79,7 +80,9 @@ oracles, not logical premises of Lean proofs.
   Core's number, quoted-data, raw-hex, and opcode tokens through their serialized
   Script-byte boundary. It rejects unsupported opcodes, P2SH evaluation,
   signature-result rows, witness rows, unmodeled flags, unmodeled failure tags,
-  and non-minimal raw pushes under `MINIMALDATA` with structured reasons.
+  and non-minimal raw pushes under `MINIMALDATA` with structured reasons. The
+  audit API retains source indices and exact mismatch details, and its CLI can
+  display every unsupported row.
 
 ## Legend
 
@@ -181,7 +184,8 @@ any `CryptoOracle` that agrees pointwise with the abstract model, and
 `evaluate_model_iff` packages the model-oracle equivalence. Executable fixtures
 cover arithmetic, conditional toggles, typed failures, the pinned pure-Lean
 SHA-256 implementation, and injected signature results. A native secp256k1
-oracle and the complete Bitcoin Core differential suite remain future work.
+oracle and full semantic support for the Bitcoin Core differential suite remain
+future work.
 The initial importer targets the pinned v31.1 positional JSON and textual
 fixture syntax, including raw `0x...` byte concatenation. Sixteen verbatim
 positive rows run offline through the evaluator and cover direct and PUSHDATA
@@ -194,7 +198,9 @@ final-false results, stack and alt-stack underflow, VERIFY/EQUALVERIFY,
 Script-number overflow and non-minimal operands, malformed conditionals,
 negative and unsatisfied CSV, and CHECKMULTISIG count failures. Signature
 callbacks remain excluded unless the expected error is guaranteed to occur
-before cryptographic verification.
+before cryptographic verification. Running `core_fixture_audit` on the complete
+pinned file currently classifies 1,222 tests: 268 supported rows all match,
+with zero mismatches and 954 rows retained under explicit unsupported reasons.
 Conditional execution uses an executable depth-aware splitter: nested
 delimiters stay within their branch, repeated same-depth `ELSE` opcodes toggle
 selected segments as in Bitcoin Core, and a missing matching `ENDIF` or

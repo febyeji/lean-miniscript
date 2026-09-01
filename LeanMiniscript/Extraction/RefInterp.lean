@@ -16,6 +16,6 @@ def execScript (oracle : CryptoOracle) (script : Script)
 
 -- TODO: Extend differential execution to push-encoding, witness, and P2SH rows
 -- TODO: Add a secp256k1 oracle for signature-result rows
--- TODO: CLI interface for standalone execution
+-- TODO: CLI interface for standalone Script-source execution
 
 end LeanMiniscript.Extraction
