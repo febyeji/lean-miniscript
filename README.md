@@ -71,10 +71,12 @@ lake exe core_fixture_audit -- path/to/script_tests.json
 ```
 
 The pinned file currently reports 1,222 tests: 268 compared and matched, zero
-mismatches, and 954 explicitly unsupported. Pass `--show-unsupported` before
-the path to print every excluded row and its structured reason. Parse failures
-return exit code 2 and supported-row mismatches return exit code 1; unsupported
-rows alone do not make the command fail.
+mismatches, and 954 explicitly unsupported. Pass `--show-details` before the
+path to split source failures by scriptSig/scriptPubKey and their first
+unsupported textual opcode or raw opcode byte. Pass `--show-unsupported` to
+print every excluded row and its structured reason; the two options can be
+combined. Parse failures return exit code 2 and supported-row mismatches return
+exit code 1; unsupported rows alone do not make the command fail.
 
 ## Related Work
 

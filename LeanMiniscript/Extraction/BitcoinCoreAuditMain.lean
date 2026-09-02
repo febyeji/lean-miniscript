@@ -4,16 +4,22 @@ namespace LeanMiniscript.Extraction.BitcoinCoreAuditMain
 
 private structure Config where
   path : System.FilePath
+  showDetails : Bool := false
   showUnsupported : Bool := false
 
 private def usage : String :=
-  "usage: lake exe core_fixture_audit -- [--show-unsupported] SCRIPT_TESTS_JSON"
+  "usage: lake exe core_fixture_audit -- [--show-details] [--show-unsupported] SCRIPT_TESTS_JSON"
 
 private def parseArgs : List String → Except String Config
   | "--" :: rest => parseArgs rest
   | [path] => .ok { path := path }
+  | ["--show-details", path] =>
+      .ok { path := path, showDetails := true }
   | ["--show-unsupported", path] =>
       .ok { path := path, showUnsupported := true }
+  | ["--show-details", "--show-unsupported", path]
+  | ["--show-unsupported", "--show-details", path] =>
+      .ok { path := path, showDetails := true, showUnsupported := true }
   | _ => .error usage
 
 private def printMismatch (mismatch : CoreFixtureMismatch) : IO Unit := do
@@ -42,6 +48,9 @@ private def run (config : Config) : IO UInt32 := do
       IO.println summary
       for (category, count) in audit.unsupportedReasonCounts do
         IO.println s!"unsupported.{category}={count}"
+      if config.showDetails then
+        for (category, count) in audit.unsupportedDetailCounts do
+          IO.println s!"unsupported-detail.{category}={count}"
       for mismatch in audit.mismatches do
         printMismatch mismatch
       if config.showUnsupported then

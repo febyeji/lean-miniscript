@@ -1,4 +1,5 @@
 import LeanMiniscript.Extraction.BitcoinCoreFixtures
+import LeanMiniscript.Script.Assembly
 
 namespace LeanMiniscript.Extraction
 
@@ -38,7 +39,7 @@ structure CoreFixtureAudit where
   unsupported : List CoreFixtureUnsupportedRow := []
   deriving Repr, DecidableEq
 
-/-- Stable category used to summarize an unsupported fixture reason. -/
+/-- Stable broad category used to summarize an unsupported fixture reason. -/
 def CoreFixtureUnsupported.category : CoreFixtureUnsupported → String
   | .witnessCase => "witness"
   | .scriptSig _ => "script-sig-source"
@@ -49,6 +50,36 @@ def CoreFixtureUnsupported.category : CoreFixtureUnsupported → String
   | .nonMinimalPushEncoding => "non-minimal-push"
   | .inactiveTimelockOpcode _ => "inactive-timelock"
   | .expectedError _ => "expected-error"
+
+/-- Stable detail below a script-source error, retaining the first unsupported
+    textual opcode name or raw opcode byte where available. -/
+def CoreScriptSourceError.detailCategory : CoreScriptSourceError → String
+  | .unterminatedQuote => "unterminated-quote"
+  | .quoteInsideToken => "quote-inside-token"
+  | .invalidHex _ => "invalid-hex"
+  | .oddHexLength _ => "odd-hex-length"
+  | .unsupportedToken token => "unsupported-token." ++ token
+  | .serialization (.pushDataTooLarge _) =>
+      "serialization.push-data-too-large"
+  | .truncatedPushLength _ _ _ => "truncated-push-length"
+  | .truncatedPushData _ _ _ => "truncated-push-data"
+  | .unsupportedOpcode _ byte =>
+      "unsupported-opcode-byte.0x" ++ byteHex byte
+  | .decoderFuelExhausted _ => "decoder-fuel-exhausted"
+
+/-- Fine-grained category for prioritizing the next model extension. -/
+def CoreFixtureUnsupported.detailCategory : CoreFixtureUnsupported → String
+  | .witnessCase => "witness"
+  | .scriptSig error =>
+      "script-sig-source." ++ error.detailCategory
+  | .scriptPubKey error =>
+      "script-pubkey-source." ++ error.detailCategory
+  | .unsupportedFlag flag => "flag." ++ flag
+  | .p2shEvaluation => "p2sh"
+  | .signatureOpcode => "signature-result"
+  | .nonMinimalPushEncoding => "non-minimal-push"
+  | .inactiveTimelockOpcode flag => "inactive-timelock." ++ flag
+  | .expectedError error => "expected-error." ++ error
 
 namespace CoreFixtureAudit
 
@@ -71,10 +102,19 @@ private def incrementCategory (wanted : String) :
       if category == wanted then (category, count + 1) :: rest
       else (category, count) :: incrementCategory wanted rest
 
-/-- Counts of unsupported rows grouped by stable model-boundary category. -/
-def unsupportedReasonCounts (audit : CoreFixtureAudit) : List (String × Nat) :=
+private def countUnsupportedBy (audit : CoreFixtureAudit)
+    (classify : CoreFixtureUnsupported → String) : List (String × Nat) :=
   audit.unsupported.foldl (fun counts row =>
-    incrementCategory row.reason.category counts) []
+    incrementCategory (classify row.reason) counts) []
+
+/-- Counts of unsupported rows grouped by broad model-boundary category. -/
+def unsupportedReasonCounts (audit : CoreFixtureAudit) : List (String × Nat) :=
+  countUnsupportedBy audit CoreFixtureUnsupported.category
+
+/-- Counts split by source side, first unsupported token or raw opcode byte,
+    flag name, and expected-error tag where those details exist. -/
+def unsupportedDetailCounts (audit : CoreFixtureAudit) : List (String × Nat) :=
+  countUnsupportedBy audit CoreFixtureUnsupported.detailCategory
 
 end CoreFixtureAudit
 
