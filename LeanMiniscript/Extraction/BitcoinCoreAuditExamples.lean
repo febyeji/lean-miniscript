@@ -55,4 +55,27 @@ example : auditFixture.map CoreFixtureAudit.unsupportedReasonCounts =
     some [("script-pubkey-source", 1)] := by
   native_decide
 
+example : auditFixture.map CoreFixtureAudit.unsupportedDetailCounts =
+    some [("script-pubkey-source.unsupported-token.DROP", 1)] := by
+  native_decide
+
+private def sourceErrorDetailFixtures :
+    List (CoreScriptSourceError × String) :=
+  [(.unterminatedQuote, "unterminated-quote"),
+   (.quoteInsideToken, "quote-inside-token"),
+   (.invalidHex "0xz", "invalid-hex"),
+   (.oddHexLength "0x0", "odd-hex-length"),
+   (.unsupportedToken "DROP", "unsupported-token.DROP"),
+   (.serialization (.pushDataTooLarge 4294967296),
+      "serialization.push-data-too-large"),
+   (.truncatedPushLength 0 2 1, "truncated-push-length"),
+   (.truncatedPushData 0 2 1, "truncated-push-data"),
+   (.unsupportedOpcode 3 0x61, "unsupported-opcode-byte.0x61"),
+   (.decoderFuelExhausted 4, "decoder-fuel-exhausted")]
+
+/-- A representative of every source-error constructor has a stable detail. -/
+example : sourceErrorDetailFixtures.all fun (error, expected) =>
+    error.detailCategory == expected := by
+  native_decide
+
 end LeanMiniscript.Extraction

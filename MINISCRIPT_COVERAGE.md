@@ -82,7 +82,9 @@ oracles, not logical premises of Lean proofs.
   signature-result rows, witness rows, unmodeled flags, unmodeled failure tags,
   and non-minimal raw pushes under `MINIMALDATA` with structured reasons. The
   audit API retains source indices and exact mismatch details, and its CLI can
-  display every unsupported row.
+  display every unsupported row. Detailed audit categories preserve whether a
+  source failure came from scriptSig or scriptPubKey and identify its first
+  unsupported textual opcode or raw opcode byte.
 
 ## Legend
 
