@@ -19,6 +19,7 @@ structure OpcodeArityFixture where
 /-- Exact fixed main-stack arity for every modeled opcode. `CHECKMULTISIG`
     remains separate because its input count is encoded in the stack. -/
 def opcodeArityFixtures : List OpcodeArityFixture := [
+  ⟨.OP_NOP, some 0⟩,
   ⟨.OP_IF, some 1⟩,
   ⟨.OP_NOTIF, some 1⟩,
   ⟨.OP_ELSE, some 0⟩,

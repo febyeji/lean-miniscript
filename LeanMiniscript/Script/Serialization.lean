@@ -13,6 +13,7 @@ def MAX_PUSHDATA_SIZE : Nat := 4294967295
 
 /-- Byte value assigned to each modeled Bitcoin Script opcode. -/
 def opcodeByte : Opcode → UInt8
+  | .OP_NOP => 0x61
   | .OP_IF => 0x63
   | .OP_NOTIF => 0x64
   | .OP_ELSE => 0x67

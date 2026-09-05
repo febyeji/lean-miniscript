@@ -77,6 +77,8 @@ def evaluate (oracle : CryptoOracle) (script : Script)
       evaluate oracle rest (data :: stack) altStack flags ctx
   | .pushNum value :: rest =>
       evaluate oracle rest (scriptNum value :: stack) altStack flags ctx
+  | .op .OP_NOP :: rest =>
+      evaluate oracle rest stack altStack flags ctx
   | .op .OP_IF :: rest =>
       match stack with
       | [] => .failure .stackUnderflow

@@ -9,7 +9,8 @@ open LeanMiniscript.Miniscript
 numeric encodings, and representative compiler outputs. -/
 
 def opcodeSerializationFixtures : List (Opcode × UInt8) :=
-  [(.OP_IF, 0x63), (.OP_NOTIF, 0x64), (.OP_ELSE, 0x67), (.OP_ENDIF, 0x68),
+  [(.OP_NOP, 0x61), (.OP_IF, 0x63), (.OP_NOTIF, 0x64),
+   (.OP_ELSE, 0x67), (.OP_ENDIF, 0x68),
    (.OP_IFDUP, 0x73), (.OP_DUP, 0x76), (.OP_SWAP, 0x7c),
    (.OP_TOALTSTACK, 0x6b), (.OP_FROMALTSTACK, 0x6c),
    (.OP_ADD, 0x93), (.OP_BOOLAND, 0x9a), (.OP_BOOLOR, 0x9b),

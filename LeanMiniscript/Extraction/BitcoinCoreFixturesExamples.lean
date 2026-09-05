@@ -20,7 +20,8 @@ private def rejectingOracle : CryptoOracle :=
     (fun _signatures _pubkeys _sigHash => false)
 
 private def coreOpcodeNameFixtures : List (String × Opcode) :=
-  [("IF", .OP_IF), ("NOTIF", .OP_NOTIF), ("ELSE", .OP_ELSE),
+  [("NOP", .OP_NOP), ("IF", .OP_IF), ("NOTIF", .OP_NOTIF),
+   ("ELSE", .OP_ELSE),
    ("ENDIF", .OP_ENDIF), ("IFDUP", .OP_IFDUP), ("DUP", .OP_DUP),
    ("SWAP", .OP_SWAP), ("TOALTSTACK", .OP_TOALTSTACK),
    ("FROMALTSTACK", .OP_FROMALTSTACK), ("ADD", .OP_ADD),
@@ -93,6 +94,10 @@ private def pinnedCoreFixtureJson : String := r#"
   ["0x4e 0x01000000 0x09", "9 EQUAL", "P2SH,STRICTENC", "OK", "0x4e is OP_PUSHDATA4"],
   ["1", "IF 1 ENDIF", "P2SH,STRICTENC", "OK"],
   ["0", "IF ELSE 1 ENDIF", "P2SH,STRICTENC", "OK"],
+  ["1", "NOP", "P2SH,STRICTENC", "OK"],
+  ["1", "NOP", "P2SH,STRICTENC,DISCOURAGE_UPGRADABLE_NOPS", "OK",
+    "Discourage NOPx flag allows OP_NOP"],
+  ["NOP", "1", "P2SH,STRICTENC", "OK"],
   ["0", "IF 0 ELSE 1 ELSE 0 ENDIF", "P2SH,STRICTENC", "OK",
     "Multiple ELSE's are valid and executed inverts on each ELSE encountered"],
   ["1 0", "SWAP 1 EQUALVERIFY 0 EQUAL", "P2SH,STRICTENC", "OK"],
@@ -122,7 +127,7 @@ private def pinnedFixtureCheck : Bool :=
   | .error _ => false
   | .ok entries =>
       let tests := fixtureTests entries
-      tests.length == 16 && tests.all fun test =>
+      tests.length == 19 && tests.all fun test =>
         match checkCoreFixture rejectingOracle test with
         | .ok matched => matched
         | .error _ => false
@@ -134,6 +139,7 @@ example : pinnedFixtureCheck = true := by
 private def pinnedCoreFailureFixtureJson : String := r#"
 [
   ["", "", "P2SH,STRICTENC", "EVAL_FALSE"],
+  ["", "NOP", "P2SH,STRICTENC", "EVAL_FALSE"],
   ["0", "VERIFY 1", "P2SH,STRICTENC", "VERIFY"],
   ["1", "SWAP", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
   ["1", "FROMALTSTACK", "P2SH,STRICTENC", "INVALID_ALTSTACK_OPERATION"],
@@ -163,7 +169,7 @@ private def pinnedFailureFixtureCheck : Bool :=
   | .error _ => false
   | .ok entries =>
       let tests := fixtureTests entries
-      tests.length == 13 && tests.all fun test =>
+      tests.length == 14 && tests.all fun test =>
         match checkCoreFixture rejectingOracle test with
         | .ok matched => matched
         | .error _ => false
@@ -205,7 +211,7 @@ private def rejectsDrop : Bool :=
   | .error (.unsupportedToken "DROP") => true
   | _ => false
 
-/-- An opcode outside the modeled 27-opcode subset is reported by token. -/
+/-- An opcode outside the modeled 28-opcode subset is reported by token. -/
 example : rejectsDrop = true := by
   native_decide
 

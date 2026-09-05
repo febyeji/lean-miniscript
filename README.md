@@ -33,12 +33,13 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   subset; its model-oracle result is proved equivalent to `Eval`, while the
   executable oracle uses the pinned pure-Lean hashes and accepts injected
   signature checks. A conservative importer parses Bitcoin Core's positional
-  `script_tests.json` format and fixture Script syntax; 16 pinned positive
+  `script_tests.json` format and fixture Script syntax; 19 pinned positive
   non-signature rows exercise pushes, control flow, stack operations, and all
   four executable hash operations without silently accepting unsupported
-  flags or execution modes. Thirteen pinned rejection rows additionally compare
+  flags or execution modes. Fourteen pinned rejection rows additionally compare
   final-false behavior and exact Core tags for the modeled failure classes;
-  unclosed conditionals preserve Core's active-branch runtime-error precedence.
+  `OP_NOP` preserves both stacks, and unclosed conditionals preserve Core's
+  active-branch runtime-error precedence.
   A checked-in audit command runs a complete fixture file, compares every
   supported row, and reports each unsupported row by structured reason.
   Execution behavior targets
@@ -70,8 +71,8 @@ through the supported comparison boundary:
 lake exe core_fixture_audit -- path/to/script_tests.json
 ```
 
-The pinned file currently reports 1,222 tests: 268 compared and matched, zero
-mismatches, and 954 explicitly unsupported. Pass `--show-details` before the
+The pinned file currently reports 1,222 tests: 306 compared and matched, zero
+mismatches, and 916 explicitly unsupported. Pass `--show-details` before the
 path to split source failures by scriptSig/scriptPubKey and their first
 unsupported textual opcode or raw opcode byte. Pass `--show-unsupported` to
 print every excluded row and its structured reason; the two options can be

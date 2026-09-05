@@ -28,6 +28,7 @@ def byteArrayHex (bytes : ByteArray) : String :=
 
 /-- BIP-style mnemonic for a modeled opcode. -/
 def opcodeAssembly : Opcode → String
+  | .OP_NOP => "NOP"
   | .OP_IF => "IF"
   | .OP_NOTIF => "NOTIF"
   | .OP_ELSE => "ELSE"
