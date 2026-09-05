@@ -77,6 +77,7 @@ inductive ScriptError where
     `OP_FROMALTSTACK` have fixed main-stack arity zero; their structural and
     alternate-stack requirements are modeled separately. -/
 def Opcode.fixedMainStackInputs? : Opcode → Option Nat
+  | .OP_NOP => some 0
   | .OP_IF | .OP_NOTIF => some 1
   | .OP_ELSE | .OP_ENDIF => some 0
   | .OP_IFDUP | .OP_DUP => some 1

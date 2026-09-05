@@ -36,6 +36,18 @@ example : isSingleSuccess (scriptNum 3)
       [] [] fixtureFlags fixtureTxContext) = true := by
   native_decide
 
+/-- OP_NOP preserves both stacks and continues with the remaining script. -/
+example : Eval [.op .OP_NOP] [trueElement] [falseElement]
+    fixtureFlags fixtureTxContext
+    (.success [trueElement] [falseElement]) := by
+  apply Eval.nop
+  exact Eval.empty [trueElement] [falseElement] fixtureFlags fixtureTxContext
+
+example : evaluate rejectingOracle [.op .OP_NOP] [trueElement]
+    [falseElement] fixtureFlags fixtureTxContext =
+    .success [trueElement] [falseElement] := by
+  simp [evaluate]
+
 /-- Repeated same-depth `ELSE` toggles use the same executable splitter as the
     relational semantics. -/
 example : isSingleSuccess (scriptNum 2)

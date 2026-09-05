@@ -266,6 +266,12 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval rest (scriptNum n :: stack) altStack flags ctx result →
       Eval (.pushNum n :: rest) stack altStack flags ctx result
 
+  -- OP_NOP
+  | nop : (rest : Script) → (stack altStack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      Eval rest stack altStack flags ctx result →
+      Eval (.op .OP_NOP :: rest) stack altStack flags ctx result
+
   -- Fixed-arity opcode failure. Variable-arity CHECKMULTISIG and malformed
   -- operand encodings have their own semantic boundaries.
   | stack_underflow : (opcode : Opcode) → (required : Nat) →
@@ -1115,6 +1121,10 @@ theorem Eval.exists_result
                 evaluated⟩
           | op opcode =>
               cases opcode with
+              | OP_NOP =>
+                  rcases next stack altStack with ⟨result, evaluated⟩
+                  exact ⟨result, .nop rest stack altStack flags ctx result
+                    evaluated⟩
               | OP_IF =>
                   cases stack with
                   | nil =>

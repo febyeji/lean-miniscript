@@ -181,7 +181,8 @@ script and initial state, using strict conditional-branch length decrease;
 combined with `Eval.result_unique`, `Eval.existsUnique_result` proves global
 existence and result determinism for the modeled relation.
 `evaluate` implements every modeled opcode as a terminating function returning
-`ExecResult`. `evaluate_eq_of_eval` and `evaluate_sound` prove refinement for
+`ExecResult`; `OP_NOP` preserves both stacks and continues with the literal
+tail. `evaluate_eq_of_eval` and `evaluate_sound` prove refinement for
 any `CryptoOracle` that agrees pointwise with the abstract model, and
 `evaluate_model_iff` packages the model-oracle equivalence. Executable fixtures
 cover arithmetic, conditional toggles, typed failures, the pinned pure-Lean
@@ -189,20 +190,20 @@ SHA-256 implementation, and injected signature results. A native secp256k1
 oracle and full semantic support for the Bitcoin Core differential suite remain
 future work.
 The initial importer targets the pinned v31.1 positional JSON and textual
-fixture syntax, including raw `0x...` byte concatenation. Sixteen verbatim
+fixture syntax, including raw `0x...` byte concatenation. Nineteen verbatim
 positive rows run offline through the evaluator and cover direct and PUSHDATA
-pushes, conditional branches with repeated `ELSE`, stack/arithmetic behavior,
-SHA256, HASH256, RIPEMD160, and HASH160. Unsupported execution modes and
-unmodeled expected-error rows remain visible as explicit classifications rather
-than being dropped from the comparison boundary. `coreScriptErrorTag` maps all
-modeled evaluator failures to Core tags; thirteen verbatim rejection rows cover
-final-false results, stack and alt-stack underflow, VERIFY/EQUALVERIFY,
+pushes, `OP_NOP`, conditional branches with repeated `ELSE`, stack/arithmetic
+behavior, SHA256, HASH256, RIPEMD160, and HASH160. Unsupported execution modes
+and unmodeled expected-error rows remain visible as explicit classifications
+rather than being dropped from the comparison boundary. `coreScriptErrorTag`
+maps all modeled evaluator failures to Core tags. Fourteen verbatim rejection
+rows cover final-false results, stack and alt-stack underflow, VERIFY/EQUALVERIFY,
 Script-number overflow and non-minimal operands, malformed conditionals,
 negative and unsatisfied CSV, and CHECKMULTISIG count failures. Signature
 callbacks remain excluded unless the expected error is guaranteed to occur
 before cryptographic verification. Running `core_fixture_audit` on the complete
-pinned file currently classifies 1,222 tests: 268 supported rows all match,
-with zero mismatches and 954 rows retained under explicit unsupported reasons.
+pinned file currently classifies 1,222 tests: 306 supported rows all match,
+with zero mismatches and 916 rows retained under explicit unsupported reasons.
 Conditional execution uses an executable depth-aware splitter: nested
 delimiters stay within their branch, repeated same-depth `ELSE` opcodes toggle
 selected segments as in Bitcoin Core, and a missing matching `ENDIF` or

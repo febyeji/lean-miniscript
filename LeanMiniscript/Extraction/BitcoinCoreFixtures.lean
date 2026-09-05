@@ -189,8 +189,9 @@ private def decodeRawHexToken (token : String) :
       return ⟨(← decodeHexChars token digits).toArray⟩
   | _ => .error (.invalidHex token)
 
-/-- Map the 27 modeled opcode names used by Bitcoin Core fixture sources. -/
+/-- Map the modeled opcode names used by Bitcoin Core fixture sources. -/
 def opcodeFromCoreName? : String → Option Opcode
+  | "NOP" => some .OP_NOP
   | "IF" => some .OP_IF
   | "NOTIF" => some .OP_NOTIF
   | "ELSE" => some .OP_ELSE
@@ -221,6 +222,7 @@ def opcodeFromCoreName? : String → Option Opcode
   | _ => none
 
 private def opcodeFromByte? : Nat → Option Opcode
+  | 0x61 => some .OP_NOP
   | 0x63 => some .OP_IF
   | 0x64 => some .OP_NOTIF
   | 0x67 => some .OP_ELSE
@@ -384,10 +386,13 @@ private def isP2SHScript : Script → Bool
   | [.op .OP_HASH160, .pushData hash, .op .OP_EQUAL] => hash.size == 20
   | _ => false
 
+/-- `DISCOURAGE_UPGRADABLE_NOPS` does not apply to `OP_NOP`; NOP1 through
+    NOP10 remain rejected at the source boundary. -/
 private def firstUnsupportedFlag (names : List String) : Option String :=
   names.find? fun flag =>
     !["P2SH", "STRICTENC", "MINIMALDATA", "MINIMALIF", "NULLDUMMY",
-      "CHECKLOCKTIMEVERIFY", "CHECKSEQUENCEVERIFY"].contains flag
+      "CHECKLOCKTIMEVERIFY", "CHECKSEQUENCEVERIFY",
+      "DISCOURAGE_UPGRADABLE_NOPS"].contains flag
 
 private def flagsForCoreFixture (names : List String) : ScriptFlags where
   minimalIf := names.contains "MINIMALIF"

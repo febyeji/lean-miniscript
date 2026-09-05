@@ -3,10 +3,12 @@ instance : Repr ByteArray where
 
 namespace LeanMiniscript.Script
 
-/-- Bitcoin Script opcodes used by Miniscript (BIP 379).
-    27 opcodes organized by category. -/
+/-- Bitcoin Script opcodes represented by the current execution model.
+    The compiler emits the BIP 379 subset; additional opcodes support
+    differential execution against Bitcoin Core fixtures. -/
 inductive Opcode where
   -- Flow control
+  | OP_NOP
   | OP_IF
   | OP_NOTIF
   | OP_ELSE
