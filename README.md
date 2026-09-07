@@ -46,9 +46,12 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   [Bitcoin Core v31.1](https://github.com/bitcoin/bitcoin/tree/9be056a8a72b624dae9623b2f7bded92c2a21c91)
   at the pinned commit recorded in the coverage baseline; `Eval` remains a
   documented subset rather than a complete Bitcoin Core interpreter.
-- General soundness, satisfaction, non-malleability, small-step semantics,
-  production secp256k1 bindings, unsupported Core failure classes, and the
-  full semantic coverage of the Bitcoin Core differential suite are unfinished.
+- Basic satisfaction is executable for constants, `c(pk_k)`, and timelocks,
+  with local acceptance and dissatisfaction soundness lemmas.
+- General soundness, full satisfaction coverage, non-malleability, small-step
+  semantics, production secp256k1 bindings, unsupported Core failure classes,
+  and full semantic coverage of the Bitcoin Core differential suite are
+  unfinished.
 
 See [`MINISCRIPT_COVERAGE.md`](MINISCRIPT_COVERAGE.md) for the constructor-level
 coverage matrix, proof-status legend, semantic conventions, and subsystem pins.

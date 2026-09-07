@@ -112,12 +112,12 @@ provisional structural estimates;
 
 | Constructor | Validation | Correctness typing | Malleability typing | Compilation | Evaluation | Satisfy | Dissatisfy | Resources | Semantic proof |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `zero` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
-| `one` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
+| `zero` | Done | Done | Done | Done | Partial | Missing | Basic | Partial | Basic dissatisfaction |
+| `one` | Done | Done | Done | Done | Partial | Basic | Missing | Partial | Basic satisfaction |
 | `pk_k` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Example |
 | `pk_h` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
-| `older` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
-| `after` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
+| `older` | Done | Done | Done | Done | Partial | Basic | Missing | Partial | Basic satisfaction |
+| `after` | Done | Done | Done | Done | Partial | Basic | Missing | Partial | Basic satisfaction |
 | `sha256` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `hash256` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `ripemd160` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
@@ -131,7 +131,7 @@ provisional structural estimates;
 | `andor` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `a` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Example chain only |
 | `s` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
-| `c` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Example chain only |
+| `c` | Done | Done | Done | Done | Partial | Basic (`c(pk_k)`) | Basic (`c(pk_k)`) | Partial | Basic soundness |
 | `d` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `v` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Example chain only |
 | `j` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
@@ -212,6 +212,16 @@ unclosed-frame projection executes only the alternating active segments first:
 an active runtime failure takes precedence, while successful execution through
 EOF becomes `UNBALANCED_CONDITIONAL`. Relational, executable, and fixture-level
 regressions cover active, inactive, and repeated-`ELSE` cases.
+
+Satisfaction now has an executable first slice for `one`, `c(pk_k)`, `older`,
+and `after`; dissatisfaction covers `zero` and `c(pk_k)`. Signature generation
+uses serialized witness order, and timelock availability reuses the exact
+`TxContext` predicates from Script execution. Soundness lemmas connect returned
+witnesses to `Accepts` or `Dissatisfies`; timelock lemmas expose the numeric
+well-formedness premises that the eventual validity theorem must discharge.
+`SatEnv.Sound` explicitly records that the canonical empty signature fails.
+Hashlocks, other wrappers, connectives, thresholds, and multisignature
+candidate selection remain unsupported and return `none`.
 
 ## Surface Constructor Matrix
 
