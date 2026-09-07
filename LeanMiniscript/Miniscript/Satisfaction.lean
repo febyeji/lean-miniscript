@@ -47,6 +47,8 @@ def Sound (env : SatEnv) : Prop :=
   (∀ key signature,
       env.signatureFor key = some signature →
       checkSig signature key.bytes env.txCtx.sigHash = true) ∧
+  (∀ key : PubKey,
+      checkSig falseElement key.bytes env.txCtx.sigHash = false) ∧
   (∀ lock preimage,
       env.preimageFor lock = some preimage →
       lock.Matches preimage)
@@ -60,19 +62,28 @@ inductive SatResult where
   | impossible : SatResult           -- Cannot satisfy or dissatisfy
   deriving Repr
 
-/-- Compute a satisfaction witness for a core AST fragment given an environment.
-    Returns None if the fragment cannot be satisfied. -/
+/-- Compute a satisfaction witness for the currently supported basic B-type
+    fragments. Timelocks consult the same transaction predicates as `Eval`, and
+    signatures are returned in serialized witness order. Composite fragments
+    and hashlocks remain unsupported until their candidate-selection rules are
+    represented explicitly. -/
 def satisfy : CoreFragment → SatEnv → Option Witness
-  -- TODO: Implement satisfaction algorithm for each fragment
-  | _ => fun _ => none  -- Placeholder
+  | .one, _ => some []
+  | .c (.pk_k key), env => List.singleton <$> env.signatureFor key
+  | .older n, env => if sequenceSatisfied n env.txCtx then some [] else none
+  | .after n, env => if locktimeSatisfied n env.txCtx then some [] else none
+  | _, _ => none
 
-/-- Compute a dissatisfaction witness for a core AST fragment. -/
+/-- Compute a clean dissatisfaction witness for the currently supported basic
+    B-type fragments. `0` needs no witness; `c(pk_k)` uses the canonical empty
+    signature whose failure is part of `SatEnv.Sound`. -/
 def dissatisfy : CoreFragment → SatEnv → Option Witness
-  -- TODO: Implement dissatisfaction algorithm
-  | _ => fun _ => none  -- Placeholder
+  | .zero, _ => some []
+  | .c (.pk_k _), _ => some [falseElement]
+  | _, _ => none
 
--- TODO: Prove Satisfaction Correctness (Theorem 2)
--- TODO: Prove Dissatisfaction Correctness (Theorem 3)
+-- TODO(theorem): Extend satisfaction and dissatisfaction correctness through
+-- hashlocks, wrappers, connectives, thresholds, `multi`, and `multi_a`.
 -- TODO: Analyze non-malleable satisfaction (unique canonical witness)
 
 end LeanMiniscript.Miniscript
