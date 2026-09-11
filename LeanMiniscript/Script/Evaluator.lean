@@ -229,7 +229,12 @@ def evaluate (oracle : CryptoOracle) (script : Script)
       match stack with
       | pubkey :: sig :: stackRest =>
           let checked := oracle.checkSig sig pubkey ctx.sigHash
-          evaluate oracle rest (boolToElement checked :: stackRest) altStack flags ctx
+          if checked then
+            evaluate oracle rest (trueElement :: stackRest) altStack flags ctx
+          else if _nullFail : nullFailSatisfied flags [sig] then
+            evaluate oracle rest (falseElement :: stackRest) altStack flags ctx
+          else
+            .failure .sigNullFail
       | _ => .failure .stackUnderflow
   | .op .OP_CHECKSIGADD :: rest =>
       match stack with
@@ -238,9 +243,13 @@ def evaluate (oracle : CryptoOracle) (script : Script)
               maxArithmeticScriptNumBytes with
           | .error error => .failure error
           | .ok count =>
-              let increment := if oracle.checkSig sig pubkey ctx.sigHash then 1 else 0
-              evaluate oracle rest (scriptNum (count + increment) :: stackRest)
-                altStack flags ctx
+              if oracle.checkSig sig pubkey ctx.sigHash then
+                evaluate oracle rest (scriptNum (count + 1) :: stackRest)
+                  altStack flags ctx
+              else if _nullFail : nullFailSatisfied flags [sig] then
+                evaluate oracle rest (scriptNum count :: stackRest) altStack flags ctx
+              else
+                .failure .sigNullFail
       | _ => .failure .stackUnderflow
   | .op .OP_CHECKMULTISIG :: rest =>
       match decodeCheckMultiSigOperands flags stack with
@@ -249,8 +258,12 @@ def evaluate (oracle : CryptoOracle) (script : Script)
           if _dummy : nullDummySatisfied flags operands.dummy then
             let checked := oracle.checkMultiSig operands.signatures
               operands.pubkeys ctx.sigHash
-            evaluate oracle rest (boolToElement checked :: operands.rest)
-              altStack flags ctx
+            if checked then
+              evaluate oracle rest (trueElement :: operands.rest) altStack flags ctx
+            else if _nullFail : nullFailSatisfied flags operands.signatures then
+              evaluate oracle rest (falseElement :: operands.rest) altStack flags ctx
+            else
+              .failure .sigNullFail
           else
             .failure .nullDummy
   | .op .OP_CHECKSEQUENCEVERIFY :: rest =>

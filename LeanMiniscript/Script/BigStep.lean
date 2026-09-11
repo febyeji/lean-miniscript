@@ -351,8 +351,17 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       (script : Script) → (altStack : Stack) → (flags : ScriptFlags) →
       (ctx : TxContext) → (result : ExecResult) →
       checkSig sig pubkey ctx.sigHash = false →
+      nullFailSatisfied flags [sig] →
       Eval script (falseElement :: rest) altStack flags ctx result →
       Eval (.op .OP_CHECKSIG :: script) (pubkey :: sig :: rest) altStack flags ctx result
+
+  | checksig_nullfail_failure : (pubkey sig : StackElement) → (rest : Stack) →
+      (script : Script) → (altStack : Stack) → (flags : ScriptFlags) →
+      (ctx : TxContext) →
+      checkSig sig pubkey ctx.sigHash = false →
+      ¬ nullFailSatisfied flags [sig] →
+      Eval (.op .OP_CHECKSIG :: script) (pubkey :: sig :: rest) altStack flags ctx
+        (.failure .sigNullFail)
 
   -- OP_CHECKSIGADD: pubkey on top, accumulated count below, signature below that.
   | checksigadd_success : (pubkey countBytes sig : StackElement) → (count : Int) →
@@ -371,9 +380,22 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       decodeScriptNum countBytes flags.minimalData maxArithmeticScriptNumBytes =
         .ok count →
       checkSig sig pubkey ctx.sigHash = false →
+      nullFailSatisfied flags [sig] →
       Eval script (scriptNum count :: rest) altStack flags ctx result →
       Eval (.op .OP_CHECKSIGADD :: script)
         (pubkey :: countBytes :: sig :: rest) altStack flags ctx result
+
+  | checksigadd_nullfail_failure :
+      (pubkey countBytes sig : StackElement) → (count : Int) →
+      (rest : Stack) → (script : Script) → (altStack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) →
+      decodeScriptNum countBytes flags.minimalData maxArithmeticScriptNumBytes =
+        .ok count →
+      checkSig sig pubkey ctx.sigHash = false →
+      ¬ nullFailSatisfied flags [sig] →
+      Eval (.op .OP_CHECKSIGADD :: script)
+        (pubkey :: countBytes :: sig :: rest) altStack flags ctx
+        (.failure .sigNullFail)
 
   -- OP_CHECKMULTISIG: dynamically decoded counts, public keys, signatures, and
   -- the historical dummy argument. Decoder failures are terminal before the
@@ -402,8 +424,19 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       decodeCheckMultiSigOperands flags stack = .ok operands →
       nullDummySatisfied flags operands.dummy →
       checkMultiSig operands.signatures operands.pubkeys ctx.sigHash = false →
+      nullFailSatisfied flags operands.signatures →
       Eval script (falseElement :: operands.rest) altStack flags ctx result →
       Eval (.op .OP_CHECKMULTISIG :: script) stack altStack flags ctx result
+
+  | checkmultisig_nullfail_failure : (stack : Stack) →
+      (operands : CheckMultiSigOperands) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      decodeCheckMultiSigOperands flags stack = .ok operands →
+      nullDummySatisfied flags operands.dummy →
+      checkMultiSig operands.signatures operands.pubkeys ctx.sigHash = false →
+      ¬ nullFailSatisfied flags operands.signatures →
+      Eval (.op .OP_CHECKMULTISIG :: script) stack altStack flags ctx
+        (.failure .sigNullFail)
 
   | checkmultisig_nulldummy_failure : (stack : Stack) →
       (operands : CheckMultiSigOperands) → (script : Script) →
@@ -1087,6 +1120,54 @@ theorem Eval.result_unique
     try solve_by_elim
     try grind
 
+/-- A CHECKSIG NULLFAIL premise uniquely determines the terminal result. -/
+theorem Eval.checksigNullFailFailure_result
+    {pubkey sig : StackElement} {rest : Stack} {script : Script}
+    {altStack : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    {result : ExecResult}
+    (checked : checkSig sig pubkey ctx.sigHash = false)
+    (nullFail : ¬ nullFailSatisfied flags [sig])
+    (evaluated : Eval (.op .OP_CHECKSIG :: script) (pubkey :: sig :: rest)
+      altStack flags ctx result) :
+    result = .failure .sigNullFail :=
+  Eval.result_unique evaluated
+    (.checksig_nullfail_failure pubkey sig rest script altStack flags ctx
+      checked nullFail)
+
+/-- CHECKSIGADD decodes its accumulator before applying NULLFAIL. -/
+theorem Eval.checksigaddNullFailFailure_result
+    {pubkey countBytes sig : StackElement} {count : Int} {rest : Stack}
+    {script : Script} {altStack : Stack} {flags : ScriptFlags}
+    {ctx : TxContext} {result : ExecResult}
+    (decoded : decodeScriptNum countBytes flags.minimalData
+      maxArithmeticScriptNumBytes = .ok count)
+    (checked : checkSig sig pubkey ctx.sigHash = false)
+    (nullFail : ¬ nullFailSatisfied flags [sig])
+    (evaluated : Eval (.op .OP_CHECKSIGADD :: script)
+      (pubkey :: countBytes :: sig :: rest) altStack flags ctx result) :
+    result = .failure .sigNullFail :=
+  Eval.result_unique evaluated
+    (.checksigadd_nullfail_failure pubkey countBytes sig count rest script
+      altStack flags ctx decoded checked nullFail)
+
+/-- A decoded CHECKMULTISIG frame with rejected nonempty signatures has only
+    the NULLFAIL result. -/
+theorem Eval.checkMultiSigNullFailFailure_result
+    {stack : Stack} {operands : CheckMultiSigOperands} {script : Script}
+    {altStack : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    {result : ExecResult}
+    (decoded : decodeCheckMultiSigOperands flags stack = .ok operands)
+    (dummy : nullDummySatisfied flags operands.dummy)
+    (checked : checkMultiSig operands.signatures operands.pubkeys
+      ctx.sigHash = false)
+    (nullFail : ¬ nullFailSatisfied flags operands.signatures)
+    (evaluated : Eval (.op .OP_CHECKMULTISIG :: script) stack altStack flags ctx
+      result) :
+    result = .failure .sigNullFail :=
+  Eval.result_unique evaluated
+    (.checkmultisig_nullfail_failure stack operands script altStack flags ctx
+      decoded dummy checked nullFail)
+
 /-- Every script in the modeled opcode subset has an evaluation result.
 
     Strong induction is needed because a conditional continues with the
@@ -1489,10 +1570,14 @@ theorem Eval.exists_result
                       | cons sig stackRest =>
                           cases hChecked : checkSig sig pubkey ctx.sigHash with
                           | false =>
-                              rcases next (falseElement :: stackRest) altStack with
-                                ⟨result, evaluated⟩
-                              exact ⟨result, .checksig_failure pubkey sig stackRest rest
-                                altStack flags ctx result hChecked evaluated⟩
+                              by_cases nullFail : nullFailSatisfied flags [sig]
+                              · rcases next (falseElement :: stackRest) altStack with
+                                  ⟨result, evaluated⟩
+                                exact ⟨result, .checksig_failure pubkey sig stackRest rest
+                                  altStack flags ctx result hChecked nullFail evaluated⟩
+                              · exact ⟨.failure .sigNullFail,
+                                  .checksig_nullfail_failure pubkey sig stackRest rest
+                                    altStack flags ctx hChecked nullFail⟩
                           | true =>
                               rcases next (trueElement :: stackRest) altStack with
                                 ⟨result, evaluated⟩
@@ -1526,11 +1611,16 @@ theorem Eval.exists_result
                               | ok count =>
                                   cases hChecked : checkSig sig pubkey ctx.sigHash with
                                   | false =>
-                                      rcases next (scriptNum count :: stackRest) altStack
-                                        with ⟨result, evaluated⟩
-                                      exact ⟨result, .checksigadd_failure pubkey countBytes
-                                        sig count stackRest rest altStack flags ctx result
-                                        hDecoded hChecked evaluated⟩
+                                      by_cases nullFail : nullFailSatisfied flags [sig]
+                                      · rcases next (scriptNum count :: stackRest) altStack
+                                          with ⟨result, evaluated⟩
+                                        exact ⟨result, .checksigadd_failure pubkey
+                                          countBytes sig count stackRest rest altStack flags
+                                          ctx result hDecoded hChecked nullFail evaluated⟩
+                                      · exact ⟨.failure .sigNullFail,
+                                          .checksigadd_nullfail_failure pubkey countBytes sig
+                                            count stackRest rest altStack flags ctx hDecoded
+                                            hChecked nullFail⟩
                                   | true =>
                                       rcases next (scriptNum (count + 1) :: stackRest)
                                         altStack with ⟨result, evaluated⟩
@@ -1547,10 +1637,16 @@ theorem Eval.exists_result
                       · cases hChecked : checkMultiSig operands.signatures
                             operands.pubkeys ctx.sigHash with
                         | false =>
-                            rcases next (falseElement :: operands.rest) altStack with
-                              ⟨result, evaluated⟩
-                            exact ⟨result, .checkmultisig_failure stack operands rest
-                              altStack flags ctx result hDecoded dummy hChecked evaluated⟩
+                            by_cases nullFail :
+                                nullFailSatisfied flags operands.signatures
+                            · rcases next (falseElement :: operands.rest) altStack with
+                                ⟨result, evaluated⟩
+                              exact ⟨result, .checkmultisig_failure stack operands rest
+                                altStack flags ctx result hDecoded dummy hChecked nullFail
+                                evaluated⟩
+                            · exact ⟨.failure .sigNullFail,
+                                .checkmultisig_nullfail_failure stack operands rest altStack
+                                  flags ctx hDecoded dummy hChecked nullFail⟩
                         | true =>
                             rcases next (trueElement :: operands.rest) altStack with
                               ⟨result, evaluated⟩
@@ -1682,10 +1778,21 @@ theorem Eval.checksigFalse
     {altStack : Stack} {flags : ScriptFlags} {ctx : TxContext}
     {result : ExecResult}
     (checked : checkSig sig pubkey ctx.sigHash = false)
+    (nullFail : nullFailSatisfied flags [sig])
     (next : Eval script (falseElement :: rest) altStack flags ctx result) :
     Eval (.op .OP_CHECKSIG :: script) (pubkey :: sig :: rest)
       altStack flags ctx result :=
-  .checksig_failure pubkey sig rest script altStack flags ctx result checked next
+  .checksig_failure pubkey sig rest script altStack flags ctx result checked nullFail next
+
+/-- A failed nonempty signature check terminates immediately under NULLFAIL. -/
+theorem Eval.checksigNullFail
+    {pubkey sig : StackElement} {rest : Stack} {script : Script}
+    {altStack : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    (checked : checkSig sig pubkey ctx.sigHash = false)
+    (nullFail : ¬ nullFailSatisfied flags [sig]) :
+    Eval (.op .OP_CHECKSIG :: script) (pubkey :: sig :: rest)
+      altStack flags ctx (.failure .sigNullFail) :=
+  .checksig_nullfail_failure pubkey sig rest script altStack flags ctx checked nullFail
 
 theorem Eval.verifyTrue
     {top : StackElement} {rest : Stack} {script : Script} {altStack : Stack}
