@@ -143,10 +143,23 @@ has a local result-uniqueness lemma. Legacy `CHECKMULTISIG` now decodes arbitrar
 public-key and signature count elements in Bitcoin Core's validation order,
 enforces `0 ≤ k ≤ n ≤ 20`, checks each variable stack-frame boundary, places
 the historical dummy below the signatures, and reports typed count,
-Script-number, underflow, and NULLDUMMY failures. Bitcoin Core op-counting,
-signature-encoding and NULLFAIL errors, malformed control flow,
-context-invalid opcodes, full failure completeness, and global evaluation
-determinism remain unfinished.
+Script-number, underflow, and NULLDUMMY failures.
+
+Conditional execution uses a depth-aware executable splitter for `IF`/`NOTIF`.
+Only matching-depth delimiters select branches; repeated `ELSE` toggles are
+supported. Skipped branches do not consume stack inputs or check MINIMALIF.
+Stray `ELSE`/`ENDIF` and reaching end-of-script with an open conditional produce
+`unbalancedConditional`; earlier selector or selected-code errors retain
+precedence. The splitter has uniqueness and closed-block append theorems, and
+`Eval.conditional_closed_iff` excludes alternative block decompositions.
+Build-checked regressions cover nesting, adjacent blocks, skipped code, empty
+branches, repeated `ELSE`, malformed blocks, error precedence, and compiled
+nested `or_i`. These cases were checked against the conditional handling in the
+pinned Bitcoin Core source; they are not an executable differential test suite.
+
+Bitcoin Core op-counting, push-size checks (including in skipped branches),
+signature-encoding and NULLFAIL errors, context-invalid opcodes, full failure
+completeness, and global evaluation determinism remain unfinished.
 
 ## Surface Constructor Matrix
 

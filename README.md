@@ -25,7 +25,8 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   general formal semantics retain an abstract hash boundary.
 - Basic metrics and resource accounting are implemented, but not proved.
 - Partial big-step semantics include explicit stack-underflow, Script-number,
-  and variable-frame `CHECKMULTISIG` failures, together with a few soundness
+  and variable-frame `CHECKMULTISIG` failures, depth-aware conditional
+  selection and malformed-control-flow errors, together with a few soundness
   lemmas. Execution behavior targets
   [Bitcoin Core v31.1](https://github.com/bitcoin/bitcoin/tree/9be056a8a72b624dae9623b2f7bded92c2a21c91)
   at the pinned commit recorded in the coverage baseline; `Eval` remains a

@@ -14,6 +14,7 @@
 
 import LeanMiniscript.Script.Syntax
 import LeanMiniscript.Script.State
+import LeanMiniscript.Script.Conditional
 
 namespace LeanMiniscript.Script
 
@@ -346,117 +347,58 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op .OP_NUMEQUAL :: script) (aBytes :: bBytes :: rest)
         altStack flags ctx result
 
-  -- OP_IF/OP_NOTIF/OP_ELSE/OP_ENDIF
-  -- Structural model for compiled Miniscript control-flow blocks.
-  | if_true : (top : StackElement) → (rest altStack : Stack) →
-      (thenBranch elseBranch after : Script) →
+  -- Conditional selection is executable and uniquely determines the matching
+  -- ENDIF. MINIMALIF is checked before scanning or executing either branch.
+  | conditional : (opcode : Opcode) → (top : StackElement) →
+      (rest altStack : Stack) → (script : Script) →
       (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      (opcode = .OP_IF ∨ opcode = .OP_NOTIF) →
       minimalIfSatisfied flags top →
-      castToBool top = true →
-      Eval (thenBranch ++ after) rest altStack flags ctx result →
-      Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ELSE] ++
-            elseBranch ++ [.op .OP_ENDIF] ++ after)
-           (top :: rest) altStack flags ctx result
+      (block : ConditionalBlock) →
+      splitConditional (if opcode == .OP_NOTIF then !castToBool top else castToBool top)
+        script = block →
+      block.closed = true →
+      Eval (block.selected ++ block.after) rest altStack flags ctx result →
+      Eval (.op opcode :: script) (top :: rest) altStack flags ctx result
 
-  | if_false : (top : StackElement) → (rest altStack : Stack) →
-      (thenBranch elseBranch after : Script) →
-      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
-      minimalIfSatisfied flags top →
-      castToBool top = false →
-      Eval (elseBranch ++ after) rest altStack flags ctx result →
-      Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ELSE] ++
-            elseBranch ++ [.op .OP_ENDIF] ++ after)
-           (top :: rest) altStack flags ctx result
-
-  | if_else_minimalif_failure : (top : StackElement) → (rest altStack : Stack) →
-      (thenBranch elseBranch after : Script) →
+  | conditional_minimalif_failure : (opcode : Opcode) → (top : StackElement) →
+      (rest altStack : Stack) → (script : Script) →
       (flags : ScriptFlags) → (ctx : TxContext) →
-      flags.minimalIf = true →
-      minimalIfArg top = false →
-      Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ELSE] ++
-            elseBranch ++ [.op .OP_ENDIF] ++ after)
-           (top :: rest) altStack flags ctx (.failure .minimalIf)
+      (opcode = .OP_IF ∨ opcode = .OP_NOTIF) →
+      flags.minimalIf = true → minimalIfArg top = false →
+      Eval (.op opcode :: script) (top :: rest) altStack flags ctx (.failure .minimalIf)
 
-  | if_no_else_true : (top : StackElement) → (rest altStack : Stack) →
-      (thenBranch after : Script) →
-      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
-      minimalIfSatisfied flags top →
-      castToBool top = true →
-      Eval (thenBranch ++ after) rest altStack flags ctx result →
-      Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ENDIF] ++ after)
-           (top :: rest) altStack flags ctx result
-
-  | if_no_else_false : (top : StackElement) → (rest altStack : Stack) →
-      (thenBranch after : Script) →
-      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
-      minimalIfSatisfied flags top →
-      castToBool top = false →
-      Eval after rest altStack flags ctx result →
-      Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ENDIF] ++ after)
-           (top :: rest) altStack flags ctx result
-
-  | if_no_else_minimalif_failure : (top : StackElement) → (rest altStack : Stack) →
-      (thenBranch after : Script) →
+  | conditional_unclosed : (opcode : Opcode) → (top : StackElement) →
+      (rest altStack : Stack) → (script : Script) →
       (flags : ScriptFlags) → (ctx : TxContext) →
-      flags.minimalIf = true →
-      minimalIfArg top = false →
-      Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ENDIF] ++ after)
-           (top :: rest) altStack flags ctx (.failure .minimalIf)
-
-  | notif_true : (top : StackElement) → (rest altStack : Stack) →
-      (thenBranch elseBranch after : Script) →
-      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      (opcode = .OP_IF ∨ opcode = .OP_NOTIF) →
       minimalIfSatisfied flags top →
-      castToBool top = true →
-      Eval (elseBranch ++ after) rest altStack flags ctx result →
-      Eval ([.op .OP_NOTIF] ++ thenBranch ++ [.op .OP_ELSE] ++
-            elseBranch ++ [.op .OP_ENDIF] ++ after)
-           (top :: rest) altStack flags ctx result
+      (block : ConditionalBlock) →
+      splitConditional (if opcode == .OP_NOTIF then !castToBool top else castToBool top)
+        script = block →
+      block.closed = false →
+      (finalStack finalAltStack : Stack) →
+      Eval block.selected rest altStack flags ctx (.success finalStack finalAltStack) →
+      Eval (.op opcode :: script) (top :: rest) altStack flags ctx
+        (.failure .unbalancedConditional)
 
-  | notif_false : (top : StackElement) → (rest altStack : Stack) →
-      (thenBranch elseBranch after : Script) →
-      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
-      minimalIfSatisfied flags top →
-      castToBool top = false →
-      Eval (thenBranch ++ after) rest altStack flags ctx result →
-      Eval ([.op .OP_NOTIF] ++ thenBranch ++ [.op .OP_ELSE] ++
-            elseBranch ++ [.op .OP_ENDIF] ++ after)
-           (top :: rest) altStack flags ctx result
-
-  | notif_else_minimalif_failure : (top : StackElement) → (rest altStack : Stack) →
-      (thenBranch elseBranch after : Script) →
+  | conditional_unclosed_error : (opcode : Opcode) → (top : StackElement) →
+      (rest altStack : Stack) → (script : Script) →
       (flags : ScriptFlags) → (ctx : TxContext) →
-      flags.minimalIf = true →
-      minimalIfArg top = false →
-      Eval ([.op .OP_NOTIF] ++ thenBranch ++ [.op .OP_ELSE] ++
-            elseBranch ++ [.op .OP_ENDIF] ++ after)
-           (top :: rest) altStack flags ctx (.failure .minimalIf)
-
-  | notif_no_else_true : (top : StackElement) → (rest altStack : Stack) →
-      (thenBranch after : Script) →
-      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      (opcode = .OP_IF ∨ opcode = .OP_NOTIF) →
       minimalIfSatisfied flags top →
-      castToBool top = true →
-      Eval after rest altStack flags ctx result →
-      Eval ([.op .OP_NOTIF] ++ thenBranch ++ [.op .OP_ENDIF] ++ after)
-           (top :: rest) altStack flags ctx result
+      (block : ConditionalBlock) →
+      splitConditional (if opcode == .OP_NOTIF then !castToBool top else castToBool top)
+        script = block →
+      block.closed = false →
+      (error : ScriptError) →
+      Eval block.selected rest altStack flags ctx (.failure error) →
+      Eval (.op opcode :: script) (top :: rest) altStack flags ctx (.failure error)
 
-  | notif_no_else_false : (top : StackElement) → (rest altStack : Stack) →
-      (thenBranch after : Script) →
-      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
-      minimalIfSatisfied flags top →
-      castToBool top = false →
-      Eval (thenBranch ++ after) rest altStack flags ctx result →
-      Eval ([.op .OP_NOTIF] ++ thenBranch ++ [.op .OP_ENDIF] ++ after)
-           (top :: rest) altStack flags ctx result
-
-  | notif_no_else_minimalif_failure : (top : StackElement) → (rest altStack : Stack) →
-      (thenBranch after : Script) →
-      (flags : ScriptFlags) → (ctx : TxContext) →
-      flags.minimalIf = true →
-      minimalIfArg top = false →
-      Eval ([.op .OP_NOTIF] ++ thenBranch ++ [.op .OP_ENDIF] ++ after)
-           (top :: rest) altStack flags ctx (.failure .minimalIf)
+  | unexpected_conditional : (opcode : Opcode) → (stack altStack : Stack) →
+      (script : Script) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (opcode = .OP_ELSE ∨ opcode = .OP_ENDIF) →
+      Eval (.op opcode :: script) stack altStack flags ctx (.failure .unbalancedConditional)
 
   -- OP_SWAP
   | swap : (a b : StackElement) → (rest altStack : Stack) → (script : Script) →
@@ -520,50 +462,17 @@ theorem Eval.append
     cases resultEq <;>
     simp_all [List.append_assoc] <;>
     try grind [Eval]
-  case if_true.refl =>
-    rename_i top rest altStack thenBranch elseBranch after flags ctx
-      minimal truthy _ ih
-    simpa [List.append_assoc] using
-      (Eval.if_true top rest altStack thenBranch elseBranch (after ++ right)
-        flags ctx result minimal truthy (ih rightEval))
-  case if_false.refl =>
-    rename_i top rest altStack thenBranch elseBranch after flags ctx
-      minimal falsey _ ih
-    simpa [List.append_assoc] using
-      (Eval.if_false top rest altStack thenBranch elseBranch (after ++ right)
-        flags ctx result minimal falsey (ih rightEval))
-  case if_no_else_true.refl =>
-    rename_i top rest altStack thenBranch after flags ctx minimal truthy _ ih
-    simpa [List.append_assoc] using
-      (Eval.if_no_else_true top rest altStack thenBranch (after ++ right)
-        flags ctx result minimal truthy (ih rightEval))
-  case if_no_else_false.refl =>
-    rename_i top rest altStack thenBranch after flags ctx minimal falsey _ ih
-    simpa [List.append_assoc] using
-      (Eval.if_no_else_false top rest altStack thenBranch (after ++ right)
-        flags ctx result minimal falsey (ih rightEval))
-  case notif_true.refl =>
-    rename_i top rest altStack thenBranch elseBranch after flags ctx
-      minimal truthy _ ih
-    simpa [List.append_assoc] using
-      (Eval.notif_true top rest altStack thenBranch elseBranch (after ++ right)
-        flags ctx result minimal truthy (ih rightEval))
-  case notif_false.refl =>
-    rename_i top rest altStack thenBranch elseBranch after flags ctx
-      minimal falsey _ ih
-    simpa [List.append_assoc] using
-      (Eval.notif_false top rest altStack thenBranch elseBranch (after ++ right)
-        flags ctx result minimal falsey (ih rightEval))
-  case notif_no_else_true.refl =>
-    rename_i top rest altStack thenBranch after flags ctx minimal truthy _ ih
-    simpa [List.append_assoc] using
-      (Eval.notif_no_else_true top rest altStack thenBranch (after ++ right)
-        flags ctx result minimal truthy (ih rightEval))
-  case notif_no_else_false.refl =>
-    rename_i top rest altStack thenBranch after flags ctx minimal falsey _ ih
-    simpa [List.append_assoc] using
-      (Eval.notif_no_else_false top rest altStack thenBranch (after ++ right)
-        flags ctx result minimal falsey (ih rightEval))
+  case conditional.refl =>
+    rename_i opcode top rest altStack script flags ctx isConditional minimal block
+      split closed _ ih
+    have extended := scanConditional_append script right 0
+      (if opcode == .OP_NOTIF then !castToBool top else castToBool top)
+      (by rw [← split] at closed; exact closed)
+    apply Eval.conditional opcode top rest altStack (script ++ right) flags ctx result
+      isConditional minimal { block with after := block.after ++ right }
+    · simpa [splitConditional, ← split] using extended
+    · exact closed
+    · simpa [List.append_assoc] using ih rightEval
 
 /-! ## Proof-facing execution API
 
@@ -571,6 +480,65 @@ These lemmas keep unchanged scripts, stacks, flags, contexts, and results
 implicit. Soundness proofs can compose execution steps without repeating the
 full constructor argument list.
 -/
+
+/-- Execute the uniquely selected IF branch and its continuation. -/
+theorem Eval.ifNext
+    {top : StackElement} {stack altStack : Stack} {script : Script}
+    {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    (block : ConditionalBlock)
+    (minimal : minimalIfSatisfied flags top)
+    (split : splitConditional (castToBool top) script = block)
+    (closed : block.closed = true)
+    (next : Eval (block.selected ++ block.after) stack altStack flags ctx result) :
+    Eval (.op .OP_IF :: script) (top :: stack) altStack flags ctx result :=
+  .conditional .OP_IF top stack altStack script flags ctx result
+    (Or.inl rfl) minimal block split closed next
+
+/-- NOTIF uses the same splitter with the branch selector inverted. -/
+theorem Eval.notifNext
+    {top : StackElement} {stack altStack : Stack} {script : Script}
+    {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    (block : ConditionalBlock)
+    (minimal : minimalIfSatisfied flags top)
+    (split : splitConditional (!castToBool top) script = block)
+    (closed : block.closed = true)
+    (next : Eval (block.selected ++ block.after) stack altStack flags ctx result) :
+    Eval (.op .OP_NOTIF :: script) (top :: stack) altStack flags ctx result :=
+  .conditional .OP_NOTIF top stack altStack script flags ctx result
+    (Or.inr rfl) minimal block split closed next
+
+/-- For a closed block with an admissible selector, execution is exactly the
+    selected code followed by its uniquely determined continuation. In
+    particular, no alternative delimiter decomposition can produce a result. -/
+theorem Eval.conditional_closed_iff
+    {opcode : Opcode} {top : StackElement} {stack altStack : Stack}
+    {script : Script} {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    {block : ConditionalBlock}
+    (isConditional : opcode = .OP_IF ∨ opcode = .OP_NOTIF)
+    (minimal : minimalIfSatisfied flags top)
+    (split : splitConditional
+      (if opcode == .OP_NOTIF then !castToBool top else castToBool top) script = block)
+    (closed : block.closed = true) :
+    Eval (.op opcode :: script) (top :: stack) altStack flags ctx result ↔
+      Eval (block.selected ++ block.after) stack altStack flags ctx result := by
+  constructor
+  · intro evaluated
+    rcases isConditional with rfl | rfl <;> cases evaluated <;>
+      simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+        Opcode.usesTimelockScriptNum, minimalIfSatisfied] <;> omega
+  · exact Eval.conditional opcode top stack altStack script flags ctx result
+      isConditional minimal block split closed
+
+/-- A stray ELSE/ENDIF has only the structural-error result. -/
+theorem Eval.unexpectedConditional_result
+    {opcode : Opcode} {stack altStack : Stack} {script : Script}
+    {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    (delimiter : opcode = .OP_ELSE ∨ opcode = .OP_ENDIF)
+    (evaluated : Eval (.op opcode :: script) stack altStack flags ctx result) :
+    result = .failure .unbalancedConditional := by
+  rcases delimiter with rfl | rfl <;> cases evaluated <;>
+    simp_all [Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+      Opcode.usesTimelockScriptNum] <;> omega
 
 /-- A fixed-arity opcode fails immediately when its main stack is too short. -/
 theorem Eval.fixedArityStackUnderflow
@@ -817,9 +785,8 @@ theorem nonMinimalTruthy_if_else_minimalif_failure
           elseBranch ++ [.op .OP_ENDIF] ++ after)
          (nonMinimalTruthyElement :: rest) altStack flags ctx
          (.failure .minimalIf) := by
-  exact Eval.if_else_minimalif_failure nonMinimalTruthyElement rest altStack
-    thenBranch elseBranch after flags ctx
-    hflags nonMinimalTruthyElement_not_minimalIfArg
+  exact Eval.conditional_minimalif_failure .OP_IF nonMinimalTruthyElement rest altStack
+    _ flags ctx (Or.inl rfl) hflags nonMinimalTruthyElement_not_minimalIfArg
 
 /-- Without MINIMALIF, the same concrete non-minimal truthy IF argument selects
     the true branch. -/
@@ -827,13 +794,19 @@ theorem nonMinimalTruthy_if_else_relaxed_true
     (rest altStack : Stack) (thenBranch elseBranch after : Script)
     (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult)
     (hflags : flags.minimalIf = false)
+    (hsplit : splitConditional true (thenBranch ++ [.op .OP_ELSE] ++
+      elseBranch ++ [.op .OP_ENDIF] ++ after) = ⟨thenBranch, after, true⟩)
     (hthen : Eval (thenBranch ++ after) rest altStack flags ctx result) :
     Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ELSE] ++
           elseBranch ++ [.op .OP_ENDIF] ++ after)
          (nonMinimalTruthyElement :: rest) altStack flags ctx result := by
-  exact Eval.if_true nonMinimalTruthyElement rest altStack thenBranch elseBranch after
-    flags ctx result
-    (Or.inl hflags) nonMinimalTruthyElement_truthy hthen
+  apply Eval.conditional .OP_IF nonMinimalTruthyElement rest altStack _ flags ctx result
+    (Or.inl rfl) (Or.inl hflags) ⟨thenBranch, after, true⟩
+  · change splitConditional (castToBool nonMinimalTruthyElement) _ = _
+    rw [nonMinimalTruthyElement_truthy]
+    exact hsplit
+  · rfl
+  · exact hthen
 
 /-- Moving a stack element to the alt stack and immediately back preserves both
     stacks. -/
