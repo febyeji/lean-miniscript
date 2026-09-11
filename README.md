@@ -28,7 +28,8 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   explicit stack-underflow, Script-number, unbalanced-conditional, and
   variable-frame `CHECKMULTISIG` failures; Core-aligned BIP 65 and
   BIP 68/112 transaction-context checks cover CLTV and CSV, together with
-  global theorems that every modeled initial state has exactly one result.
+  NULLFAIL behavior for all three signature opcodes and global theorems that
+  every modeled initial state has exactly one result.
   An oracle-parameterized `evaluate` function executes that same modeled
   subset; its model-oracle result is proved equivalent to `Eval`, while the
   executable oracle uses the pinned pure-Lean hashes and accepts injected

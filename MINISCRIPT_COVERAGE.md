@@ -173,9 +173,13 @@ have local result-uniqueness lemmas. Legacy `CHECKMULTISIG` now decodes arbitrar
 public-key and signature count elements in Bitcoin Core's validation order,
 enforces `0 ≤ k ≤ n ≤ 20`, checks each variable stack-frame boundary, places
 the historical dummy below the signatures, and reports typed count,
-Script-number, underflow, and NULLDUMMY failures. Bitcoin Core op-counting,
-signature-encoding and NULLFAIL errors, unmodeled raw-script error precedence,
-context-invalid opcodes, and full failure completeness remain unfinished.
+Script-number, underflow, and NULLDUMMY failures. `CHECKSIG`, `CHECKSIGADD`, and
+`CHECKMULTISIG` enforce NULLFAIL after a rejected cryptographic check: nonempty
+signatures produce `SIG_NULLFAIL`, while empty signatures retain the ordinary
+false result; the relational and executable semantics agree on these branches.
+Bitcoin Core op-counting, signature-encoding errors, unmodeled raw-script error
+precedence, context-invalid opcodes, and full failure completeness remain
+unfinished.
 `Eval.exists_result` proves relational result existence for every modeled
 script and initial state, using strict conditional-branch length decrease;
 combined with `Eval.result_unique`, `Eval.existsUnique_result` proves global
