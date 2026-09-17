@@ -1,4 +1,5 @@
 import LeanMiniscript.Script.State
+import LeanMiniscript.Bitcoin.Secp256k1
 
 namespace LeanMiniscript.Script
 
@@ -30,12 +31,10 @@ def isValidSignatureEncoding (sig : StackElement) : Bool := Id.run do
   return true
 
 /-- secp256k1's group order. -/
-def secp256k1Order : Nat :=
-  0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141
+def secp256k1Order : Nat := Bitcoin.Secp256k1.order
 
 /-- secp256k1's group order divided by two, rounded down. -/
-def secp256k1HalfOrder : Nat :=
-  0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0
+def secp256k1HalfOrder : Nat := secp256k1Order / 2
 
 /-- Core's lax scalar parser replaces both scalars with zero if either
     overflows the group order. Such signatures pass LOW_S but fail crypto

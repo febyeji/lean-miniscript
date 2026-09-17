@@ -64,11 +64,11 @@ def generate(args):
   | .error _ => false
   | .ok commitment => commitment.leafVersion == version && commitment.leafHash.data == (hex leaf).data &&
       commitment.merkleRoot.data == (hex root).data) = true := by native_decide
-private def errorIs (expected : TaprootControlError) (result : Except TaprootControlError α) : Bool :=
+private def errorIs {α : Type} (expected : TaprootControlError) (result : Except TaprootControlError α) : Bool :=
   match result with
   | .error error => error == expected
   | .ok _ => false
-""".replace(' : Except TaprootControlError α', ' : Except TaprootControlError α').replace('private def errorIs (expected', 'private def errorIs {α : Type} (expected')
+"""
     s,c,q,_,_,_ = fixtures[-1]  # Depth-two path.
     text += f'def controlFixtureScript := hex "{s}"\ndef controlFixtureControl := hex "{c}"\ndef controlFixtureOutput := hex "{q}"\n'
     text += """

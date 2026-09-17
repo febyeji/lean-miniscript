@@ -417,6 +417,10 @@ The immediate proof work must extend named semantic predicates before extending
 
 `Bitcoin.Secp256k1` implements field exponentiation, affine point addition and
 scalar multiplication, and the even-Y `liftX` used at public-key boundaries.
+`Bitcoin.TaggedHash` contains the shared domain-separated SHA256 helper;
+Schnorr verification imports it without depending on transaction sighash types.
+ECDSA encoding checks reference the shared secp256k1 group order, deriving its
+half-order instead of duplicating either numeric constant.
 `Bitcoin.Schnorr.verify` implements BIP340's length checks, `r < p`, `s < n`,
 challenge tagged hash and `R = sG - eP`, rejecting infinity, odd Y and an X
 mismatch. Its message input can have arbitrary length. These operations handle
@@ -464,7 +468,13 @@ Consensus commitment errors map to `TAPROOT_WRONG_CONTROL_SIZE` or
 `WITNESS_PROGRAM_MISMATCH`; helper-only tweak/output byte-size errors use
 explicit MODEL tags.
 
-`execCommittedTapscriptTransaction` validates transaction-context shape,
+`prepareCommittedTapscriptTransaction` separates transaction/witness commitment
+checks from Script execution, returning raw `PreparedTapscript` material on
+success. This record is not a proof-carrying type: callers can construct it
+directly, so the validation guarantee is at the preparation function boundary.
+The execution entry always runs preparation first. Its result and error order
+are unchanged by this separation.
+The preparation function validates transaction-context shape,
 requires a selected native OP_1/PUSH32 spent output and an empty scriptSig,
 then parses the complete wire-order witness. A trailing annex is removed only
 when at least two elements exist and it starts with 0x50. The entry checks
