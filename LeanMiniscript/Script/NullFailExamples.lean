@@ -31,8 +31,10 @@ example (rejected : checkSig signature pubkey nullFailTx.sigHash = false) :
   apply Eval.checksigNullFail
   have encoded : checkSigEncodingFor nullFailFlags nullFailTx.sigVersion
       signature pubkey = .ok () := rfl
-  have verified : verifySigFor checkSig checkSchnorrSig nullFailTx
-      signature pubkey = false := rejected
+  have verified : checkedVerifySigFor checkSig checkSchnorrSig nullFailTx
+      signature pubkey = .ok false := by
+    change Except.ok (checkSig signature pubkey nullFailTx.sigHash) = .ok false
+    rw [rejected]
   simp only [checkSigWithEncoding, encoded, verified, Bool.false_eq_true, ↓reduceIte]
   rfl
 
@@ -50,8 +52,10 @@ example (rejected : checkSig signature pubkey nullFailTx.sigHash = false) :
   apply Eval.checksigFalse _ Eval.done
   have encoded : checkSigEncodingFor nullFailDisabledFlags nullFailTx.sigVersion
       signature pubkey = .ok () := rfl
-  have verified : verifySigFor checkSig checkSchnorrSig nullFailTx
-      signature pubkey = false := rejected
+  have verified : checkedVerifySigFor checkSig checkSchnorrSig nullFailTx
+      signature pubkey = .ok false := by
+    change Except.ok (checkSig signature pubkey nullFailTx.sigHash) = .ok false
+    rw [rejected]
   simp only [checkSigWithEncoding, encoded, verified, Bool.false_eq_true, ↓reduceIte]
   rfl
 

@@ -1,4 +1,5 @@
 import LeanMiniscript.Script.Syntax
+import LeanMiniscript.Bitcoin.TaprootSighash
 
 namespace LeanMiniscript.Script
 
@@ -47,11 +48,26 @@ structure TxContext where
   locktime : Nat
   /-- Input sequence number for OP_CHECKSEQUENCEVERIFY -/
   sequence : Nat
-  /-- Signature hash (simplified — real implementation needs full tx) -/
+  /-- Supplied hash for legacy/witness-v0 and abstract Tapscript contexts. -/
   sigHash : ByteArray
   /-- Execution signature version; independent of transaction version. -/
   sigVersion : SignatureVersion := .base
+  /-- Optional transaction-derived Taproot/Tapscript signature hashing. -/
+  taproot : Option Bitcoin.TaprootSigHashContext := none
   deriving Repr
+
+/-- Derive timelock fields from the same transaction used for sighash.
+    Script execution callers supply script-path metadata via the full witness. -/
+def TxContext.fromTaproot (hashContext : Bitcoin.TaprootSigHashContext)
+    (sigVersion : SignatureVersion := .tapscript) : Except Bitcoin.SighashError TxContext := do
+  Bitcoin.validateTaprootContext hashContext
+  return {
+    version := hashContext.transaction.signedVersion
+    locktime := hashContext.transaction.locktime.toNat
+    sequence := (hashContext.transaction.inputs[hashContext.inputIndex]!).sequence.toNat
+    sigHash := ByteArray.empty
+    sigVersion := sigVersion
+    taproot := some hashContext }
 
 /-- The complete execution state of the Bitcoin Script interpreter. -/
 structure ExecState where

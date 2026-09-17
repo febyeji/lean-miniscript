@@ -7,8 +7,9 @@ namespace LeanMiniscript.Script
 
 Targets Bitcoin Core v31.1, commit
 `9be056a8a72b624dae9623b2f7bded92c2a21c91`, `src/script/interpreter.cpp`,
-and BIP342. The supplied signature hash remains abstract. Transaction-dependent
-SIGHASH_SINGLE availability remains TODO. These opcode checks are resource-free;
+and BIP341/342. Signature hashing uses transaction data when supplied;
+abstract contexts keep
+their external hash. These opcode checks are resource-free;
 `ValidationWeight` adds the full-witness Tapscript execution budget.
 -/
 
@@ -45,19 +46,45 @@ def checkSigEncodingFor (flags : ScriptFlags) (version : SignatureVersion)
       else if sig.size != 0 then
         checkSchnorrSignatureEncoding sig
 
-/-- Version-aware crypto dispatch. Empty Tapscript signatures return false
-    without consulting either verifier; unknown key versions return true for
-    nonempty signatures. The Schnorr callback receives the 64 signature bytes,
-    with an explicit sighash byte removed. Hash construction remains external. -/
+/-- Compute a separate signing hash for each signature's hash-type byte.
+    Abstract contexts retain their supplied hash. Transaction contexts must
+    contain script-path metadata when used by a Tapscript signature opcode. -/
+def signatureHashFor (ctx : TxContext) (sig : StackElement) :
+    Except ScriptError ByteArray :=
+  match ctx.taproot with
+  | none => .ok ctx.sigHash
+  | some hashContext =>
+      match hashContext.spendPath with
+      | .keyPath => .error .schnorrSigHashType
+      | .scriptPath _ _ _ =>
+          match Bitcoin.taprootSignatureHash hashContext
+              (if sig.size = 65 then sig[64]! else 0) with
+          | .error _ => .error .schnorrSigHashType
+          | .ok digest => .ok digest
+
+/-- Crypto dispatch with transaction-derived hashing errors kept distinct
+    from a rejected Schnorr verification. Empty/unknown-key checks bypass
+    hashing exactly as they bypass the cryptographic verifier. -/
+def checkedVerifySigFor
+    (ecdsa schnorr : StackElement → StackElement → ByteArray → Bool)
+    (ctx : TxContext) (sig pubkey : StackElement) : Except ScriptError Bool :=
+  match ctx.sigVersion with
+  | .base | .witnessV0 => .ok (ecdsa sig pubkey ctx.sigHash)
+  | .tapscript =>
+      if sig.size == 0 then .ok false
+      else if pubkey.size != 32 then .ok true
+      else match signatureHashFor ctx sig with
+        | .error error => .error error
+        | .ok digest => .ok (schnorr (sig.extract 0 64) pubkey digest)
+
+/-- Boolean compatibility boundary used by satisfaction environments.
+    Hash construction failure cannot count as signature validity. -/
 def verifySigFor
     (ecdsa schnorr : StackElement → StackElement → ByteArray → Bool)
     (ctx : TxContext) (sig pubkey : StackElement) : Bool :=
-  match ctx.sigVersion with
-  | .base | .witnessV0 => ecdsa sig pubkey ctx.sigHash
-  | .tapscript =>
-      if sig.size == 0 then false
-      else if pubkey.size != 32 then true
-      else schnorr (sig.extract 0 64) pubkey ctx.sigHash
+  match checkedVerifySigFor ecdsa schnorr ctx sig pubkey with
+  | .error _ => false
+  | .ok checked => checked
 
 /-- Checked signature result shared by the executable and relational models.
     Rejected nonempty Schnorr signatures abort with SCHNORR_SIG even when
@@ -69,11 +96,14 @@ def checkSigWithEncoding
   match checkSigEncodingFor flags ctx.sigVersion sig pubkey with
   | .error error => .error error
   | .ok () =>
-      if verifySigFor ecdsa schnorr ctx sig pubkey then .ok true
-      else if ctx.sigVersion = .tapscript then
-        if sig.size != 0 then .error .schnorrSig else .ok false
-      else if nullFailSatisfied flags [sig] then .ok false
-      else .error .sigNullFail
+      match checkedVerifySigFor ecdsa schnorr ctx sig pubkey with
+      | .error error => .error error
+      | .ok checked =>
+          if checked then .ok true
+          else if ctx.sigVersion = .tapscript then
+            if sig.size != 0 then .error .schnorrSig else .ok false
+          else if nullFailSatisfied flags [sig] then .ok false
+          else .error .sigNullFail
 
 theorem checkSigWithEncoding_true
     {ecdsa schnorr : StackElement → StackElement → ByteArray → Bool}
@@ -81,7 +111,11 @@ theorem checkSigWithEncoding_true
     (encoded : checkSigEncodingFor flags ctx.sigVersion sig pubkey = .ok ())
     (checked : verifySigFor ecdsa schnorr ctx sig pubkey = true) :
     checkSigWithEncoding ecdsa schnorr flags ctx sig pubkey = .ok true := by
-  simp [checkSigWithEncoding, encoded, checked]
+  cases verified : checkedVerifySigFor ecdsa schnorr ctx sig pubkey with
+  | error error => simp [verifySigFor, verified] at checked
+  | ok valid =>
+      have validTrue : valid = true := by simpa [verifySigFor, verified] using checked
+      simp [checkSigWithEncoding, encoded, verified, validTrue]
 
 theorem checkSigWithEncoding_empty
     {ecdsa schnorr : StackElement → StackElement → ByteArray → Bool}
@@ -89,7 +123,11 @@ theorem checkSigWithEncoding_empty
     (encoded : checkSigEncodingFor flags ctx.sigVersion falseElement pubkey = .ok ())
     (checked : verifySigFor ecdsa schnorr ctx falseElement pubkey = false) :
     checkSigWithEncoding ecdsa schnorr flags ctx falseElement pubkey = .ok false := by
-  simp only [checkSigWithEncoding, encoded, checked, Bool.false_eq_true, ↓reduceIte]
+  have verified : checkedVerifySigFor ecdsa schnorr ctx falseElement pubkey = .ok false := by
+    cases version : ctx.sigVersion <;>
+      simp only [verifySigFor, checkedVerifySigFor, version] at checked ⊢
+    all_goals first | rfl | rw [checked]
+  simp only [checkSigWithEncoding, encoded, verified, Bool.false_eq_true, ↓reduceIte]
   split <;> simp [falseElement_nullFailSatisfied] <;> rfl
 
 /-- Version errors precede accumulator decoding. -/

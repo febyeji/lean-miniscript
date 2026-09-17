@@ -1,3 +1,5 @@
+import LeanMiniscript.Bitcoin.Transaction
+import LeanMiniscript.Bitcoin.TaprootSighash
 import LeanMiniscript.Script.Syntax
 import LeanMiniscript.Script.Assembly
 import LeanMiniscript.Script.ControlFlow

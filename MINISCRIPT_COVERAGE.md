@@ -247,8 +247,58 @@ branches, witness-size initialization and annex-funded signature reuse.
 Taproot control-block commitment validation and initial stack/element limits
 remain caller obligations. Boundary-only script-byte and annex errors have
 explicit `MODEL_` audit tags; they are not presented as Core consensus errors.
-Real
-transaction-derived sighashes, including SIGHASH_SINGLE output availability,
+`Bitcoin.Transaction` represents uint32 version/locktime/sequences and outpoint
+indices, uint64 amounts, wire-order transaction IDs, input/output vectors and
+raw scripts. `TaprootSigHashContext` requires spent outputs aligned with every
+input, even for ANYONECANPAY, and validates input bounds, txid lengths, annex
+markers and even leaf versions. It does not prove transaction consensus validity
+or that supplied prevouts match the chain.
+`taprootSignatureMessage` constructs epoch 0, BIP341 SigMsg and optional BIP342
+TapLeaf/key-version/CODESEPARATOR extension. All seven defined hash types are
+supported. Missing SIGHASH_SINGLE outputs fail instead of receiving a zero-hash
+fallback. `taprootSignatureHash` uses the pinned pure-Lean SHA256 implementation
+with the TapSighash tag; its linkage to the complete message API is proved by
+`taprootSignatureHash_of_message`. This is not a cryptographic security or full
+BIP-conformance theorem.
+`TxContext.taproot` enables per-signature transaction hashing. `checkedVerifySigFor`
+preserves hash failures separately from rejected Schnorr checks. Known-key
+nonempty Tapscript signatures compute their own hash-type-specific digest;
+unknown key versions and empty signatures bypass hash computation. Missing
+SINGLE output availability maps to `SCHNORR_SIG_HASHTYPE`. Legacy/witness-v0
+and abstract Tapscript contexts retain caller-supplied hashes.
+`evaluateTapscript` binds signing annex and leaf bytes to the full witness,
+uses leaf version 0xc0 and no executed CODESEPARATOR (0xffffffff), and derives
+timelock fields from the signing transaction/input. `execTapscriptTransaction`
+exposes this transaction-backed, budget-aware entry point.
+`evaluateTapscript_eq_model` and `execTapscriptTransaction_eq_model` prove
+oracle refinement through full-witness binding and transaction-context setup.
+The standalone hash API permits explicit CODESEPARATOR positions, but the Script AST does not
+execute that opcode: BIP379 Miniscript compilation never emits it.
+Offline fixtures compare exact transaction serialization, all five component
+hashes, seven official signing preimages/digests and 56 additional valid pinned
+Core cases spanning all hash types, annex presence, key/script path and three
+CODESEPARATOR positions. Script fixtures verify per-signature dispatch with
+different hash types in the same execution, stripping to 64 bytes, overriding
+stale metadata, SINGLE failure, unknown-key bypass, signed transaction version,
+and ALL/NONE/ANYONECANPAY commitment boundaries.
+The source pins and SHA256 checks are in
+`scripts/generate_taproot_sighash_fixtures.py`; reproduce both fixture modules:
+
+```sh
+python3 scripts/generate_taproot_sighash_fixtures.py --wallet-vectors WALLET_JSON --core-script CORE_SCRIPT_PY --output LeanMiniscript/Bitcoin/TaprootSighashExamples.lean
+python3 scripts/generate_sighash_execution_fixtures.py --wallet-vectors WALLET_JSON --core-script CORE_SCRIPT_PY --output LeanMiniscript/Script/SighashExecutionExamples.lean
+```
+
+`WALLET_JSON` is BIP341 `wallet-test-vectors.json` at BIPs commit
+`55083d36ddebcd2a039135a2f4ee74917a5803d3`; `CORE_SCRIPT_PY` is
+`test/functional/test_framework/script.py` at the pinned Core commit. Core's
+test helper can serialize deliberately invalid SINGLE cases by zero-filling;
+these cases are excluded from valid hash fixtures and Lean explicitly rejects
+them as required by BIP341. CI runs checked-in fixtures without network access.
+The generator checks every official message/digest/component before producing
+additional cases, and regenerated modules must match byte-for-byte.
+
+Legacy/BIP143 transaction-derived sighashes, native Schnorr verification,
 Taproot key-path and witness/control-block validation, Bitcoin Core op-counting,
 other unmodeled raw-script errors, and full failure completeness remain unfinished.
 `Eval.exists_result` proves relational result existence for every modeled

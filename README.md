@@ -38,6 +38,13 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   public-key version rules, and terminal verification errors; CHECKSIGADD is
   unavailable before Tapscript, while CHECKMULTISIG is disabled in Tapscript.
   Witness-v0 optionally enforces compressed-key policy.
+  Transaction-backed `execTapscriptTransaction` computes BIP341/342 signing
+  hashes per signature using bounded transaction fields, aligned spent outputs,
+  the selected input, annex and TapLeaf extension. It derives timelock fields
+  from that same input. Hash messages and digests match all seven official
+  BIP341 wallet cases and 56 additional pinned-Core reference cases offline.
+  Abstract contexts can still supply a hash; signature verification stays at
+  the separate Schnorr oracle boundary.
   `evaluateWithValidationWeight` / `WeightedEval` add BIP342 validation-weight
   accounting and return the remaining weight with both stacks. `execTapscript`
   initializes it from the full serialized input witness, including script,
@@ -69,8 +76,10 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   semantics, production secp256k1 bindings, unsupported Core failure classes,
   and full semantic coverage of the Bitcoin Core differential suite are
   unfinished. The older `Eval` / `Accepts` APIs are resource-free; complete
-  budget checks use the full-witness Tapscript APIs above. Transaction-derived sighashes (including SIGHASH_SINGLE output
-  availability), and Taproot witness/control-block validation remain TODO.
+  budget checks use the full-witness Tapscript APIs above. Legacy/BIP143
+  transaction-derived sighashes and Taproot witness/control-block commitment
+  validation remain TODO. Script execution covers Miniscript-generated opcodes;
+  arbitrary CODESEPARATOR execution is outside the current AST.
   The Miniscript acceptance contract requires its matching execution version.
 
 See [`MINISCRIPT_COVERAGE.md`](MINISCRIPT_COVERAGE.md) for the constructor-level
