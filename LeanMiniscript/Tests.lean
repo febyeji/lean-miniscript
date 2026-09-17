@@ -1,3 +1,5 @@
+import LeanMiniscript.Script.SchnorrExecutionExamples
+import LeanMiniscript.Bitcoin.SchnorrExamples
 import LeanMiniscript
 import LeanMiniscript.Bitcoin.TaprootSighashExamples
 import LeanMiniscript.Extraction.BitcoinCoreAuditExamples
