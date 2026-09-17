@@ -22,7 +22,9 @@ def execTapscript (oracle : CryptoOracle) (script : Script)
   evaluateTapscript oracle script witness flags ctx
 
 /-- Transaction-backed Tapscript execution: hashes are calculated per
-    signature, and timelocks and sighashes use the same selected input. -/
+    signature, and timelocks and sighashes use the same selected input. Callers
+    validate the control-block commitment separately; the committed entry in
+    `Extraction.Taproot` performs that check from the wire witness. -/
 def execTapscriptTransaction (oracle : CryptoOracle) (script : Script)
     (witness : TapscriptWitness) (flags : ScriptFlags)
     (transaction : Bitcoin.Transaction) (spentOutputs : Array Bitcoin.TxOutput)

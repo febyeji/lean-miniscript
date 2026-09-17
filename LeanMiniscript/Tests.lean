@@ -1,3 +1,5 @@
+import LeanMiniscript.Extraction.TaprootExamples
+import LeanMiniscript.Bitcoin.TaprootControlBlockExamples
 import LeanMiniscript.Script.SchnorrExecutionExamples
 import LeanMiniscript.Bitcoin.SchnorrExamples
 import LeanMiniscript

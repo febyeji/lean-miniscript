@@ -252,8 +252,9 @@ successful budgeted execution has the same result in `Eval`.
 Fixtures cover CompactSize boundaries, exact exhaustion, repeated checks,
 unknown key charging, count/error precedence, skipped/nested/duplicate-ELSE
 branches, witness-size initialization and annex-funded signature reuse.
-Taproot control-block commitment validation and initial stack/element limits
-remain caller obligations. Boundary-only script-byte and annex errors have
+Initial stack/element limits remain caller obligations. The older entry points
+also require caller control-block validation; `execCommittedTapscriptTransaction`
+validates that commitment as described below. Boundary-only script-byte and annex errors have
 explicit `MODEL_` audit tags; they are not presented as Core consensus errors.
 `Bitcoin.Transaction` represents uint32 version/locktime/sequences and outpoint
 indices, uint64 amounts, wire-order transaction IDs, input/output vectors and
@@ -307,7 +308,7 @@ The generator checks every official message/digest/component before producing
 additional cases, and regenerated modules must match byte-for-byte.
 
 Legacy/BIP143 transaction-derived sighashes, executable ECDSA verification,
-Taproot key-path and witness/control-block validation, Bitcoin Core op-counting,
+Taproot key-path execution and initial witness limits, Bitcoin Core op-counting,
 other unmodeled raw-script errors, and full failure completeness remain unfinished.
 `Eval.exists_result` proves relational result existence for every modeled
 script and initial state, using strict conditional-branch length decrease;
@@ -445,5 +446,65 @@ then uses the public test key from vector zero. Lean builds use checked-in
 fixtures without downloading or running Python. There is no theorem proving
 these curve operations or this verifier correct, nor an unconditional theorem
 that `pureLeanSchnorr.RefinesModel`. Existing execution/refinement theorems
-retain their explicit agreement premise. Taproot control-block commitment
-validation remains a separate caller obligation.
+retain their explicit agreement premise. The committed execution boundary below
+adds control-block validation without claiming curve correctness.
+
+## Taproot Control Blocks And Committed Execution
+
+`parseTaprootControlBlock` enforces the 33 + 32*m byte shape, with m from 0
+through 128. It extracts the masked leaf version, output parity, x-only internal
+key and bottom-to-top Merkle proof nodes. `verifyTaprootControlBlock` computes
+TapLeaf and the lexicographically sorted TapBranch chain, derives TapTweak,
+lifts the internal key and computes Q = P + tG. It rejects t ≥ n without
+modular reduction, invalid internal keys, infinity, and mismatches in output
+X or parity. The standalone checker supports every masked leaf version; it
+validates the commitment and does not execute the script. Official-vector
+coverage does not establish a general BIP341 or curve-correctness theorem.
+Consensus commitment errors map to `TAPROOT_WRONG_CONTROL_SIZE` or
+`WITNESS_PROGRAM_MISMATCH`; helper-only tweak/output byte-size errors use
+explicit MODEL tags.
+
+`execCommittedTapscriptTransaction` validates transaction-context shape,
+requires a selected native OP_1/PUSH32 spent output and an empty scriptSig,
+then parses the complete wire-order witness. A trailing annex is removed only
+when at least two elements exist and it starts with 0x50. The entry checks
+the actual script/control commitment against that spent output before Script
+execution and binds the witness's script and annex to per-signature hashing.
+The full witness, including control block and annex, supplies the validation
+budget. The AST must serialize to the committed witness script bytes.
+Key paths and future leaf versions return explicit unsupported-model errors;
+they are not classified as Bitcoin consensus-invalid. Commitment validation
+precedes that future-version scope check. Setup/commitment errors are separate
+from weighted Script results. Initial stack/element limits, final acceptance,
+transaction consensus validity and the chain provenance of prevouts remain
+caller obligations. Older `execTapscript` / `execTapscriptTransaction` APIs
+retain their documented unchecked-commitment boundary.
+
+`execCommittedTapscriptTransaction_eq_model` proves conditional evaluator
+refinement through these deterministic setup/commitment checks, retaining the
+explicit `CryptoOracle.RefinesModel` premise. It does not prove cryptographic
+correctness or unconditional refinement for the concrete Schnorr verifier.
+
+Offline fixtures match all 12 official BIP341 control blocks, exact leaf hashes
+and Merkle roots, including both output parities, proof depths 0/1/2 and a 0xfa
+leaf. A reference-generated depth-128 commitment succeeds; depth 129 and
+malformed lengths reject. Negative fixtures cover mutated parity, script,
+output key, proof nodes and proof order; invalid internal keys; zero, n, n-1,
+oversized and malformed tweaks; and infinity. Complete execution fixtures use
+a real native P2TR commitment, pinned-Core transaction digests and reference
+Schnorr signatures, with and without annex. They check parsing/reconstruction,
+remaining weight, actual spent-output binding, Script-byte binding and exact
+setup/commitment/crypto error separation.
+
+Reproduce the checked-in fixtures using the same pinned sources documented
+above (`BIP340_REFERENCE_PY`, `WALLET_JSON`, `CORE_SCRIPT_PY`):
+
+```sh
+python3 scripts/generate_taproot_control_fixtures.py --bip340-reference BIP340_REFERENCE_PY --wallet-vectors WALLET_JSON --core-script CORE_SCRIPT_PY --control-output LeanMiniscript/Bitcoin/TaprootControlBlockExamples.lean --execution-output LeanMiniscript/Extraction/TaprootExamples.lean
+```
+
+The generator verifies source SHA256 hashes and independently checks every
+official commitment before generating additional cases. Lean builds consume
+checked-in fixtures offline. The older Core script-test audit remains a
+BASE-only comparison boundary and does not become a full Taproot consensus
+differential suite through these additions.

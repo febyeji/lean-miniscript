@@ -11,6 +11,7 @@ import LeanMiniscript.Miniscript.Soundness
 import LeanMiniscript.Properties.ResourceBounds
 import LeanMiniscript.Properties.NonMalleability
 import LeanMiniscript.Extraction.RefInterp
+import LeanMiniscript.Extraction.Taproot
 import LeanMiniscript.Extraction.BitcoinCoreFixtures
 
 /-!
