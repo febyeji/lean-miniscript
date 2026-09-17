@@ -319,7 +319,39 @@ def evaluateTapscript (oracle : CryptoOracle) (script : Script)
     | .error _ => false) then .failure .tapscriptWitnessScript
   else if witness.annex.any (fun bytes => bytes.size == 0 || bytes[0]! != 0x50) then
     .failure .tapscriptAnnex
-  else evaluateWithValidationWeight oracle script witness.arguments.reverse [] flags ctx
-    (initialValidationWeight witness.fullWitness)
+  else
+    match ctx.taproot with
+    | none => evaluateWithValidationWeight oracle script witness.arguments.reverse [] flags ctx
+        (initialValidationWeight witness.fullWitness)
+    | some hashContext =>
+        -- The full witness supplies annex and leaf bytes, not caller hints.
+        -- The modeled AST has no CODESEPARATOR, so none has executed.
+        let bound := { hashContext with
+          annex := witness.annex
+          spendPath := .scriptPath witness.scriptBytes 0xc0 4294967295 }
+        match TxContext.fromTaproot bound .tapscript with
+        | .error _ => .failure .schnorrSigHashType
+        | .ok signingCtx => evaluateWithValidationWeight oracle script
+            witness.arguments.reverse [] flags signingCtx
+            (initialValidationWeight witness.fullWitness)
+
+/-- Full-witness metadata binding and transaction-derived hashing preserve
+    oracle refinement at the Tapscript execution entry point. -/
+theorem evaluateTapscript_eq_model
+    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
+    (script : Script) (witness : TapscriptWitness) (flags : ScriptFlags) (ctx : TxContext) :
+    evaluateTapscript oracle script witness flags ctx =
+      evaluateTapscript CryptoOracle.model script witness flags ctx := by
+  have compute (script : Script) (stack alt : Stack) (flags : ScriptFlags)
+      (ctx : TxContext) (weight : Nat) :
+      evaluateWithValidationWeight oracle script stack alt flags ctx weight =
+        evaluateWithValidationWeight CryptoOracle.model script stack alt flags ctx weight :=
+    evaluateWithValidationWeight_eq_of_eval agreement
+      (evaluateWithValidationWeight_sound CryptoOracle.model_refines script stack alt flags ctx weight)
+  unfold evaluateTapscript
+  repeat' first | rfl | split
+  all_goals try dsimp only
+  all_goals repeat' first | rfl | split
+  all_goals apply compute
 
 end LeanMiniscript.Script

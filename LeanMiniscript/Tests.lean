@@ -1,4 +1,5 @@
 import LeanMiniscript
+import LeanMiniscript.Bitcoin.TaprootSighashExamples
 import LeanMiniscript.Extraction.BitcoinCoreAuditExamples
 import LeanMiniscript.Extraction.BitcoinCoreFixturesExamples
 import LeanMiniscript.Extraction.SignatureEncodingCoreExamples
@@ -18,6 +19,7 @@ import LeanMiniscript.Script.EvaluatorExamples
 import LeanMiniscript.Script.NullFailExamples
 import LeanMiniscript.Script.ScriptNumExamples
 import LeanMiniscript.Script.SignatureEncodingExamples
+import LeanMiniscript.Script.SighashExecutionExamples
 import LeanMiniscript.Script.SignatureVersionExamples
 import LeanMiniscript.Script.SerializationExamples
 import LeanMiniscript.Script.ValidationWeightExamples
