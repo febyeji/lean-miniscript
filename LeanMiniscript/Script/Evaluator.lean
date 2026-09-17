@@ -7,14 +7,14 @@ namespace LeanMiniscript.Script
 
     The model oracle below preserves the abstract functions used by `Eval`.
     Executable callers can instead use `pureLeanHashes`, supplying signature
-    verification at the application boundary. -/
+    per-key signature verification at the application boundary. Legacy
+    multisignature matching and byte-error precedence stay in the evaluator. -/
 structure CryptoOracle where
   sha256 : StackElement → StackElement
   hash256 : StackElement → StackElement
   ripemd160 : StackElement → StackElement
   hash160 : StackElement → StackElement
   checkSig : StackElement → StackElement → ByteArray → Bool
-  checkMultiSig : List StackElement → List StackElement → ByteArray → Bool
 
 namespace CryptoOracle
 
@@ -26,16 +26,13 @@ def model : CryptoOracle where
   ripemd160 := LeanMiniscript.Script.ripemd160
   hash160 := LeanMiniscript.Script.hash160
   checkSig := LeanMiniscript.Script.checkSig
-  checkMultiSig := LeanMiniscript.Script.checkMultiSig
 
 /-- Executable pure-Lean hashes paired with caller-supplied signature checks.
 
     A production signature implementation can be supplied through an FFI
     without coupling the proof-facing evaluator to one native library. -/
 def pureLeanHashes
-    (verifySignature : StackElement → StackElement → ByteArray → Bool)
-    (verifyMultiSignature :
-      List StackElement → List StackElement → ByteArray → Bool) :
+    (verifySignature : StackElement → StackElement → ByteArray → Bool) :
     CryptoOracle where
   sha256 := LeanHash160.SHA256.hash
   hash256 := fun bytes =>
@@ -43,7 +40,6 @@ def pureLeanHashes
   ripemd160 := LeanHash160.RIPEMD160.hash
   hash160 := LeanHash160.hash160
   checkSig := verifySignature
-  checkMultiSig := verifyMultiSignature
 
 /-- Pointwise agreement with the abstract cryptographic boundary of `Eval`. -/
 def RefinesModel (oracle : CryptoOracle) : Prop :=
@@ -53,10 +49,7 @@ def RefinesModel (oracle : CryptoOracle) : Prop :=
   (∀ bytes, oracle.hash160 bytes = LeanMiniscript.Script.hash160 bytes) ∧
   (∀ sig pubkey sigHash,
     oracle.checkSig sig pubkey sigHash =
-      LeanMiniscript.Script.checkSig sig pubkey sigHash) ∧
-  (∀ signatures pubkeys sigHash,
-    oracle.checkMultiSig signatures pubkeys sigHash =
-      LeanMiniscript.Script.checkMultiSig signatures pubkeys sigHash)
+      LeanMiniscript.Script.checkSig sig pubkey sigHash)
 
 theorem model_refines : model.RefinesModel := by
   simp [RefinesModel, model]
@@ -228,13 +221,16 @@ def evaluate (oracle : CryptoOracle) (script : Script)
   | .op .OP_CHECKSIG :: rest =>
       match stack with
       | pubkey :: sig :: stackRest =>
-          let checked := oracle.checkSig sig pubkey ctx.sigHash
-          if checked then
-            evaluate oracle rest (trueElement :: stackRest) altStack flags ctx
-          else if _nullFail : nullFailSatisfied flags [sig] then
-            evaluate oracle rest (falseElement :: stackRest) altStack flags ctx
-          else
-            .failure .sigNullFail
+          match checkECDSAEncoding flags sig pubkey with
+          | .error error => .failure error
+          | .ok () =>
+              let checked := oracle.checkSig sig pubkey ctx.sigHash
+              if checked then
+                evaluate oracle rest (trueElement :: stackRest) altStack flags ctx
+              else if _nullFail : nullFailSatisfied flags [sig] then
+                evaluate oracle rest (falseElement :: stackRest) altStack flags ctx
+              else
+                .failure .sigNullFail
       | _ => .failure .stackUnderflow
   | .op .OP_CHECKSIGADD :: rest =>
       match stack with
@@ -255,17 +251,18 @@ def evaluate (oracle : CryptoOracle) (script : Script)
       match decodeCheckMultiSigOperands flags stack with
       | .error error => .failure error
       | .ok operands =>
-          if _dummy : nullDummySatisfied flags operands.dummy then
-            let checked := oracle.checkMultiSig operands.signatures
-              operands.pubkeys ctx.sigHash
-            if checked then
-              evaluate oracle rest (trueElement :: operands.rest) altStack flags ctx
-            else if _nullFail : nullFailSatisfied flags operands.signatures then
-              evaluate oracle rest (falseElement :: operands.rest) altStack flags ctx
-            else
-              .failure .sigNullFail
-          else
-            .failure .nullDummy
+          match checkMultiSigWithEncoding oracle.checkSig flags ctx.sigHash
+              operands.signatures operands.pubkeys with
+          | .error error => .failure error
+          | .ok checked =>
+              if _allowed : checked = true ∨ nullFailSatisfied flags operands.signatures then
+                match checkMultiSigDummy flags operands.dummy with
+                | .error error => .failure error
+                | .ok () =>
+                    evaluate oracle rest (boolToElement checked :: operands.rest)
+                      altStack flags ctx
+              else
+                .failure .sigNullFail
   | .op .OP_CHECKSEQUENCEVERIFY :: rest =>
       match stack with
       | [] => .failure .stackUnderflow
@@ -330,11 +327,14 @@ theorem evaluate_eq_of_eval
     {ctx : TxContext} {result : ExecResult}
     (evaluated : Eval script stack altStack flags ctx result) :
     evaluate oracle script stack altStack flags ctx = result := by
+  have verifier : oracle.checkSig = LeanMiniscript.Script.checkSig :=
+    funext fun sig => funext fun pubkey => funext fun hash =>
+      agreement.2.2.2.2 sig pubkey hash
   induction evaluated <;>
     simp_all [evaluate, CryptoOracle.RefinesModel,
       Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
       Opcode.usesTimelockScriptNum, minimalIfSatisfied,
-      nullDummySatisfied, boolToElement] <;>
+      boolToElement] <;>
     try omega <;>
     try grind
   case stack_underflow =>

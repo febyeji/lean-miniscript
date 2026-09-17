@@ -17,7 +17,6 @@ silently dropping them.
 private def rejectingOracle : CryptoOracle :=
   CryptoOracle.pureLeanHashes
     (fun _sig _pubkey _sigHash => false)
-    (fun _signatures _pubkeys _sigHash => false)
 
 private def coreOpcodeNameFixtures : List (String × Opcode) :=
   [("NOP", .OP_NOP), ("IF", .OP_IF), ("NOTIF", .OP_NOTIF),
@@ -64,6 +63,10 @@ private def coreErrorTagFixtures : List (ScriptError × String) :=
    (.negativeLocktime, "NEGATIVE_LOCKTIME"),
    (.nullDummy, "SIG_NULLDUMMY"),
    (.sigNullFail, "SIG_NULLFAIL"),
+   (.sigDer, "SIG_DER"),
+   (.sigHighS, "SIG_HIGH_S"),
+   (.sigHashType, "SIG_HASHTYPE"),
+   (.pubkeyType, "PUBKEYTYPE"),
    (.equalVerify, "EQUALVERIFY"),
    (.verify, "VERIFY"),
    (.checkSequenceVerify, "UNSATISFIED_LOCKTIME"),
@@ -297,8 +300,8 @@ example : classifiesP2SH = true := by
 
 private def signatureFixture : CoreScriptTest where
   witness := none
-  scriptSigSource := "0 0"
-  scriptPubKeySource := "CHECKSIG"
+  scriptSigSource := "0x09 0x300602010102010101"
+  scriptPubKeySource := "0x21 0x020101010101010101010101010101010101010101010101010101010101010101 CHECKSIG"
   flagSource := "STRICTENC"
   expectedError := "OK"
   comments := []

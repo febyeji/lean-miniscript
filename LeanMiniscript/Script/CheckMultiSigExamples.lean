@@ -14,12 +14,13 @@ followed by public keys, the signature count, signatures, the historical dummy,
 and the untouched stack tail.
 -/
 
-private def checkMultiSigFlags : ScriptFlags := {}
+private def checkMultiSigFlags : ScriptFlags := { strictEncoding := false }
 
 private def relaxedCheckMultiSigFlags : ScriptFlags where
   minimalData := false
 
 private def nullFailDisabledCheckMultiSigFlags : ScriptFlags where
+  strictEncoding := false
   nullFail := false
 
 private def checkMultiSigTx : TxContext where
@@ -44,7 +45,7 @@ private def oneOfTwoStack : Stack :=
 private def oneOfTwoOperands : CheckMultiSigOperands where
   pubkeys := [keyB, keyA]
   signatures := [signature]
-  dummy := falseElement
+  dummy := some falseElement
   rest := []
 
 /-! ## Decoder order and bounds -/
@@ -76,7 +77,7 @@ example : decodeCheckMultiSigOperands checkMultiSigFlags
       .ok {
         pubkeys := List.replicate 20 keyA
         signatures := []
-        dummy := falseElement
+        dummy := some falseElement
         rest := []
       } := by
   rfl
@@ -106,7 +107,7 @@ example : decodeCheckMultiSigOperands checkMultiSigFlags
 
 example : decodeCheckMultiSigOperands checkMultiSigFlags
     [scriptNum 1, keyA, scriptNum 1, signature] =
-      .error .stackUnderflow := by
+      .ok { pubkeys := [keyA], signatures := [signature], dummy := none, rest := [] } := by
   rfl
 
 /-- Relaxed flags accept redundant count encodings while preserving the same
@@ -116,7 +117,7 @@ example : decodeCheckMultiSigOperands relaxedCheckMultiSigFlags
       .ok {
         pubkeys := [keyA]
         signatures := [signature]
-        dummy := falseElement
+        dummy := some falseElement
         rest := []
       } := by
   rfl
@@ -127,84 +128,85 @@ example : Eval [.op .OP_CHECKMULTISIG] [] [] checkMultiSigFlags checkMultiSigTx
     (.failure .stackUnderflow) := by
   exact Eval.checkMultiSigOperandFailure (by rfl)
 
-/-- NULLDUMMY is checked at the decoded dummy position, below all signatures. -/
+/-- NULLDUMMY is checked after matching, at the dummy below all signatures. -/
 example : Eval [.op .OP_CHECKMULTISIG]
-    [scriptNum 2, keyB, keyA, scriptNum 1, signature, trueElement] []
+    [scriptNum 2, keyB, keyA, scriptNum 0, trueElement] []
     checkMultiSigFlags checkMultiSigTx (.failure .nullDummy) := by
-  apply Eval.checkmultisig_nulldummy_failure (operands := {
+  apply Eval.checkmultisig_dummy_failure (checked := true) (operands := {
     pubkeys := [keyB, keyA]
-    signatures := [signature]
-    dummy := trueElement
+    signatures := []
+    dummy := some trueElement
     rest := []
   })
   · rfl
-  · simp [nullDummySatisfied, checkMultiSigFlags, stackElementEq,
+  · simp [checkMultiSigWithEncoding]
+  · exact Or.inl rfl
+  · simp [checkMultiSigDummy, nullDummySatisfied, checkMultiSigFlags, stackElementEq,
       trueElement, falseElement]
 
 example : ¬ ∃ main alt,
     Eval [.op .OP_CHECKMULTISIG]
-      [scriptNum 2, keyB, keyA, scriptNum 1, signature, trueElement] []
+      [scriptNum 2, keyB, keyA, scriptNum 0, trueElement] []
       checkMultiSigFlags checkMultiSigTx (.success main alt) := by
   rintro ⟨main, alt, evaluated⟩
   have impossible := Eval.checkMultiSigNullDummyFailure_result
     (operands := {
       pubkeys := [keyB, keyA]
-      signatures := [signature]
-      dummy := trueElement
+      signatures := []
+      dummy := some trueElement
       rest := []
     })
     (decoded := by rfl)
+    (verified := by simp [checkMultiSigWithEncoding])
+    (allowed := Or.inl rfl)
     (invalidDummy := by
-      simp [nullDummySatisfied, checkMultiSigFlags, stackElementEq,
+      simp [checkMultiSigDummy, nullDummySatisfied, checkMultiSigFlags, stackElementEq,
         trueElement, falseElement])
     evaluated
   cases impossible
 
 example
-    (verified : checkMultiSig [signature] [keyB, keyA]
-      checkMultiSigTx.sigHash = true) :
+    (verified : checkMultiSigWithEncoding checkSig checkMultiSigFlags
+      checkMultiSigTx.sigHash [signature] [keyB, keyA] = .ok true) :
     Eval [.op .OP_CHECKMULTISIG] oneOfTwoStack [] checkMultiSigFlags
       checkMultiSigTx (.success [trueElement] []) := by
   apply Eval.checkmultisig_success (operands := oneOfTwoOperands)
   · rfl
-  · simp [nullDummySatisfied, checkMultiSigFlags, oneOfTwoOperands,
-      stackElementEq, falseElement]
   · exact verified
+  · simp [checkMultiSigDummy, nullDummySatisfied, checkMultiSigFlags, oneOfTwoOperands,
+      stackElementEq, falseElement]
   · exact Eval.done
 
 example
-    (rejected : checkMultiSig [signature] [keyB, keyA]
-      checkMultiSigTx.sigHash = false) :
+    (rejected : checkMultiSigWithEncoding checkSig nullFailDisabledCheckMultiSigFlags
+      checkMultiSigTx.sigHash [signature] [keyB, keyA] = .ok false) :
     Eval [.op .OP_CHECKMULTISIG] oneOfTwoStack [] nullFailDisabledCheckMultiSigFlags
       checkMultiSigTx (.success [falseElement] []) := by
   apply Eval.checkmultisig_failure (operands := oneOfTwoOperands)
   · rfl
-  · simp [nullDummySatisfied, nullFailDisabledCheckMultiSigFlags,
-      oneOfTwoOperands,
-      stackElementEq, falseElement]
   · exact rejected
   · simp [nullFailSatisfied, nullFailDisabledCheckMultiSigFlags]
+  · simp [checkMultiSigDummy, nullDummySatisfied, nullFailDisabledCheckMultiSigFlags,
+      oneOfTwoOperands, stackElementEq, falseElement]
   · exact Eval.done
 
 /-- A failed CHECKMULTISIG with a nonempty signature terminates under
     NULLFAIL instead of pushing false. -/
 example
-    (rejected : checkMultiSig [signature] [keyB, keyA]
-      checkMultiSigTx.sigHash = false) :
+    (rejected : checkMultiSigWithEncoding checkSig checkMultiSigFlags
+      checkMultiSigTx.sigHash [signature] [keyB, keyA] = .ok false) :
     Eval [.op .OP_CHECKMULTISIG] oneOfTwoStack [] checkMultiSigFlags
       checkMultiSigTx (.failure .sigNullFail) := by
   apply Eval.checkmultisig_nullfail_failure (operands := oneOfTwoOperands)
   · rfl
-  · simp [nullDummySatisfied, checkMultiSigFlags, oneOfTwoOperands,
-      stackElementEq, falseElement]
   · exact rejected
   · native_decide
 
 /-- Compiler-emitted `multi(1, keyA, keyB)` reaches the decoder with signatures
     above the historical dummy and keys in top-first evaluation order. -/
 example
-    (verified : checkMultiSig [signature] [keyB, keyA]
-      checkMultiSigTx.sigHash = true) :
+    (verified : checkMultiSigWithEncoding checkSig checkMultiSigFlags
+      checkMultiSigTx.sigHash [signature] [keyB, keyA] = .ok true) :
     Eval (compile oneOfTwoFragment) [signature, falseElement] []
       checkMultiSigFlags checkMultiSigTx (.success [trueElement] []) := by
   simp only [oneOfTwoFragment, compile, compileWithKeyHash, compileKeyPushes]
@@ -214,9 +216,9 @@ example
   apply Eval.pushNum
   apply Eval.checkmultisig_success (operands := oneOfTwoOperands)
   · rfl
-  · simp [nullDummySatisfied, checkMultiSigFlags, oneOfTwoOperands,
-      stackElementEq, falseElement]
   · exact verified
+  · simp [checkMultiSigDummy, nullDummySatisfied, checkMultiSigFlags, oneOfTwoOperands,
+      stackElementEq, falseElement]
   · exact Eval.done
 
 /-- A decoder failure excludes successful evaluation of the same state. -/

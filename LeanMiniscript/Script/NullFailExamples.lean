@@ -10,9 +10,10 @@ and CHECKMULTISIG. A failed check may push its ordinary false result only when
 every supplied signature is empty or the flag is disabled.
 -/
 
-private def nullFailFlags : ScriptFlags := {}
+private def nullFailFlags : ScriptFlags := { strictEncoding := false }
 
 private def nullFailDisabledFlags : ScriptFlags where
+  strictEncoding := false
   nullFail := false
 
 private def nullFailTx : TxContext where
@@ -27,18 +28,18 @@ private def signature : StackElement := ⟨#[0x30]⟩
 example (rejected : checkSig signature pubkey nullFailTx.sigHash = false) :
     Eval [.op .OP_CHECKSIG] [pubkey, signature] [] nullFailFlags nullFailTx
       (.failure .sigNullFail) := by
-  exact Eval.checksigNullFail rejected (by native_decide)
+  exact Eval.checksigNullFail (by rfl) rejected (by native_decide)
 
 example (rejected : checkSig falseElement pubkey nullFailTx.sigHash = false) :
     Eval [.op .OP_CHECKSIG] [pubkey, falseElement] [] nullFailFlags nullFailTx
       (.success [falseElement] []) := by
-  exact Eval.checksigFalse rejected
+  exact Eval.checksigFalse (by rfl) rejected
     (falseElement_nullFailSatisfied nullFailFlags) Eval.done
 
 example (rejected : checkSig signature pubkey nullFailTx.sigHash = false) :
     Eval [.op .OP_CHECKSIG] [pubkey, signature] [] nullFailDisabledFlags nullFailTx
       (.success [falseElement] []) := by
-  apply Eval.checksigFalse rejected
+  apply Eval.checksigFalse (by rfl) rejected
   · simp [nullFailSatisfied, nullFailDisabledFlags]
   · exact Eval.done
 
@@ -62,7 +63,6 @@ example (rejected : checkSig falseElement pubkey nullFailTx.sigHash = false) :
 private def rejectingOracle : CryptoOracle :=
   CryptoOracle.pureLeanHashes
     (fun _sig _pubkey _sigHash => false)
-    (fun _signatures _pubkeys _sigHash => false)
 
 private def isFailure (expected : ScriptError) : ExecResult → Bool
   | .failure actual => actual == expected

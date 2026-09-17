@@ -177,7 +177,24 @@ Script-number, underflow, and NULLDUMMY failures. `CHECKSIG`, `CHECKSIGADD`, and
 `CHECKMULTISIG` enforce NULLFAIL after a rejected cryptographic check: nonempty
 signatures produce `SIG_NULLFAIL`, while empty signatures retain the ordinary
 false result; the relational and executable semantics agree on these branches.
-Bitcoin Core op-counting, signature-encoding errors, unmodeled raw-script error
+ECDSA `CHECKSIG` and legacy `CHECKMULTISIG` now check signature and public-key
+bytes before cryptographic verification. DERSIG, LOW_S, and STRICTENC select
+strict DER, low-S, defined sighash, and compressed/uncompressed-key checks,
+reporting `SIG_DER`, `SIG_HIGH_S`, `SIG_HASHTYPE`, and `PUBKEYTYPE` in Core's
+order. Empty signatures bypass signature encoding but still check the key.
+LOW_S preserves Core's lax scalar-overflow behavior: overflow of either scalar
+produces an invalid zeroed signature that passes the low-S check.
+Multisignature matching uses the same per-key `checkSig` boundary instead of an
+opaque aggregate callback, checking only reached pairs and stopping when too
+few keys remain. Matching errors precede NULLFAIL; NULLFAIL precedes missing
+dummy and NULLDUMMY checks. The decoder therefore retains a missing dummy as
+`none` until matching finishes. Byte fixtures cover each DER rejection branch,
+all 256 sighash bytes, scalar boundaries, selective matching, skipped inputs,
+and competing terminal errors. Global existence, determinism, and evaluator
+refinement remain proved for this expanded relation.
+The P2WSH acceptance contract enables STRICTENC; the Tapscript contract disables
+all ECDSA encoding flags. Signature-version-aware Schnorr checks,
+WITNESS_PUBKEYTYPE, Bitcoin Core op-counting, other unmodeled raw-script error
 precedence, context-invalid opcodes, and full failure completeness remain
 unfinished.
 `Eval.exists_result` proves relational result existence for every modeled
@@ -203,11 +220,18 @@ rather than being dropped from the comparison boundary. `coreScriptErrorTag`
 maps all modeled evaluator failures to Core tags. Fourteen verbatim rejection
 rows cover final-false results, stack and alt-stack underflow, VERIFY/EQUALVERIFY,
 Script-number overflow and non-minimal operands, malformed conditionals,
-negative and unsatisfied CSV, and CHECKMULTISIG count failures. Signature
-callbacks remain excluded unless the expected error is guaranteed to occur
-before cryptographic verification. Running `core_fixture_audit` on the complete
-pinned file currently classifies 1,222 tests: 306 supported rows all match,
-with zero mismatches and 916 rows retained under explicit unsupported reasons.
+negative and unsatisfied CSV, and CHECKMULTISIG count failures. Fifteen additional
+verbatim encoding-error rows
+compare exact tags with both accepting and rejecting signature oracles; one
+verbatim BIP66 row whose later error depends on matching stays excluded.
+Signature callbacks remain excluded unless execution is shown to fail before
+the first verifier call. A straight-line signature-free prefix and the first
+pair's byte checks establish that boundary independently of the expected tag;
+signature-containing conditional prefixes remain conservatively unsupported.
+The prior 3-of-3 nonzero-dummy row is now excluded because its matching must
+consult a verifier before the dummy can be checked. Running `core_fixture_audit`
+on the complete pinned file currently classifies 1,222 tests: 321 supported
+rows all match, with zero mismatches and 901 explicitly unsupported rows.
 Conditional execution uses an executable depth-aware splitter: nested
 delimiters stay within their branch, repeated same-depth `ELSE` opcodes toggle
 selected segments as in Bitcoin Core, and a missing matching `ENDIF` or
@@ -224,6 +248,9 @@ uses serialized witness order, and timelock availability reuses the exact
 witnesses to `Accepts` or `Dissatisfies`; timelock lemmas expose the numeric
 well-formedness premises that the eventual validity theorem must discharge.
 `SatEnv.Sound` explicitly records that the canonical empty signature fails.
+Basic satisfaction soundness additionally requires `SatEnv.EncodingSound` for
+supplied signatures and keys under the chosen flags; basic dissatisfaction
+soundness requires the fragment's key to pass its selected public-key checks.
 Hashlocks, other wrappers, connectives, thresholds, and multisignature
 candidate selection remain unsupported and return `none`.
 

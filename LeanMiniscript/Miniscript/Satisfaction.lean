@@ -1,6 +1,7 @@
 import LeanMiniscript.Miniscript.Syntax
 import LeanMiniscript.Miniscript.Types
 import LeanMiniscript.Miniscript.Witness
+import LeanMiniscript.Script.SignatureEncoding
 
 namespace LeanMiniscript.Miniscript
 
@@ -52,6 +53,13 @@ def Sound (env : SatEnv) : Prop :=
   (∀ lock preimage,
       env.preimageFor lock = some preimage →
       lock.Matches preimage)
+
+/-- Supplied signatures and their keys pass the ECDSA byte checks selected by
+    the execution flags. Cryptographic soundness alone does not imply this. -/
+def EncodingSound (env : SatEnv) (flags : ScriptFlags) : Prop :=
+  ∀ key signature,
+    env.signatureFor key = some signature →
+    checkECDSAEncoding flags signature key.bytes = .ok ()
 
 end SatEnv
 
