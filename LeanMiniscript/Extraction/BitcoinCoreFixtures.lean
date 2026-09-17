@@ -390,7 +390,7 @@ private def isP2SHScript : Script → Bool
     NOP10 remain rejected at the source boundary. -/
 private def firstUnsupportedFlag (names : List String) : Option String :=
   names.find? fun flag =>
-    !["P2SH", "STRICTENC", "MINIMALDATA", "MINIMALIF", "NULLDUMMY", "NULLFAIL",
+    !["P2SH", "STRICTENC", "DERSIG", "LOW_S", "MINIMALDATA", "MINIMALIF", "NULLDUMMY", "NULLFAIL",
       "CHECKLOCKTIMEVERIFY", "CHECKSEQUENCEVERIFY",
       "DISCOURAGE_UPGRADABLE_NOPS"].contains flag
 
@@ -400,6 +400,8 @@ private def flagsForCoreFixture (names : List String) : ScriptFlags where
   nullDummy := names.contains "NULLDUMMY"
   nullFail := names.contains "NULLFAIL"
   strictEncoding := names.contains "STRICTENC"
+  derSig := names.contains "DERSIG"
+  lowS := names.contains "LOW_S"
 
 private def sourceUsesMinimalPushes (source : String) (script : Script) : Bool :=
   match coreScriptSourceBytes source, serializeScript script with
@@ -418,6 +420,10 @@ def coreScriptErrorTag : ScriptError → String
   | .negativeLocktime => "NEGATIVE_LOCKTIME"
   | .nullDummy => "SIG_NULLDUMMY"
   | .sigNullFail => "SIG_NULLFAIL"
+  | .sigDer => "SIG_DER"
+  | .sigHighS => "SIG_HIGH_S"
+  | .sigHashType => "SIG_HASHTYPE"
+  | .pubkeyType => "PUBKEYTYPE"
   | .equalVerify => "EQUALVERIFY"
   | .verify => "VERIFY"
   | .checkSequenceVerify => "UNSATISFIED_LOCKTIME"
@@ -429,17 +435,79 @@ private def supportedExpectedError : String → Bool
   | "OK" | "EVAL_FALSE" | "INVALID_STACK_OPERATION" |
       "INVALID_ALTSTACK_OPERATION" | "SCRIPTNUM" | "MINIMALDATA" |
       "PUBKEY_COUNT" | "SIG_COUNT" | "NEGATIVE_LOCKTIME" |
-      "SIG_NULLDUMMY" | "SIG_NULLFAIL" | "EQUALVERIFY" | "VERIFY" |
+      "SIG_NULLDUMMY" | "SIG_NULLFAIL" | "SIG_DER" | "SIG_HIGH_S" |
+      "SIG_HASHTYPE" | "PUBKEYTYPE" | "EQUALVERIFY" | "VERIFY" |
       "UNSATISFIED_LOCKTIME" | "MINIMALIF" |
       "UNBALANCED_CONDITIONAL" => true
   | _ => false
 
-/-- Errors that are decided before any signature-verification callback can be
-    reached, even though the parsed script contains a signature opcode. -/
-private def expectedBeforeSignatureCheck : String → Bool
-  | "INVALID_STACK_OPERATION" | "SCRIPTNUM" | "MINIMALDATA" |
-      "PUBKEY_COUNT" | "SIG_COUNT" | "SIG_NULLDUMMY" => true
-  | _ => false
+/-- No signature verifier is invoked while executing a signature-free prefix.
+    Conditional delimiters are conservatively excluded here because a split
+    prefix could manufacture an EOF error or lose a branch's execution state. -/
+private def errorBeforeFirstSignature (script : Script) (stack : Stack)
+    (flags : ScriptFlags) : Option ScriptError := Id.run do
+  let leadingScript := script.takeWhile fun element =>
+    match element with
+    | .op .OP_CHECKSIG | .op .OP_CHECKSIGADD | .op .OP_CHECKMULTISIG => false
+    | _ => true
+  if leadingScript.any (fun element =>
+      match element with
+      | .op .OP_IF | .op .OP_NOTIF | .op .OP_ELSE | .op .OP_ENDIF => true
+      | _ => false) then return none
+  let oracle := CryptoOracle.pureLeanHashes (fun _ _ _ => false)
+  let tx : TxContext :=
+    { version := 1, locktime := 0, sequence := 0xffffffff, sigHash := ⟨#[]⟩ }
+  match evaluate oracle leadingScript stack [] flags tx with
+  | .failure error => return some error
+  | .success stack _ =>
+      match script.drop leadingScript.length with
+      | .op .OP_CHECKSIG :: _ =>
+          match stack with
+          | pubkey :: sig :: _ =>
+              match checkECDSAEncoding flags sig pubkey with
+              | .error error => return some error
+              | .ok () => return none
+          | _ => return some .stackUnderflow
+      | .op .OP_CHECKSIGADD :: _ =>
+          match stack with
+          | _ :: countBytes :: _ :: _ =>
+              match decodeScriptNum countBytes flags.minimalData
+                  maxArithmeticScriptNumBytes with
+              | .error error => return some error
+              | .ok _ => return none
+          | _ => return some .stackUnderflow
+      | .op .OP_CHECKMULTISIG :: _ =>
+          match decodeCheckMultiSigOperands flags stack with
+          | .error error => return some error
+          | .ok operands =>
+              match operands.signatures, operands.pubkeys with
+              | [], _ =>
+                  match checkMultiSigDummy flags operands.dummy with
+                  | .error error => return some error
+                  | .ok () => return none
+              | sig :: _, pubkey :: _ =>
+                  match checkECDSAEncoding flags sig pubkey with
+                  | .error error => return some error
+                  | .ok () => return none
+              | _, _ => return none
+      | _ => return none
+
+/-- Admit a signature-opcode row only when execution fails before the first
+    verifier call. The expected tag does not itself establish independence:
+    a later malformed signature may be reached only after a successful match.
+    A signature-free scriptSig can be run in full, resetting its alt stack at
+    the scriptPubKey boundary as Core does. -/
+private def coreErrorBeforeSignature (scriptSig scriptPubKey : Script)
+    (flags : ScriptFlags) : Option ScriptError :=
+  if scriptContainsSignature scriptSig then
+    errorBeforeFirstSignature scriptSig [] flags
+  else
+    let oracle := CryptoOracle.pureLeanHashes (fun _ _ _ => false)
+    let tx : TxContext :=
+      { version := 1, locktime := 0, sequence := 0xffffffff, sigHash := ⟨#[]⟩ }
+    match evaluate oracle scriptSig [] [] flags tx with
+    | .failure error => some error
+    | .success stack _ => errorBeforeFirstSignature scriptPubKey stack flags
 
 /-- Conservatively prepare an upstream test. Flags are ignored only when their
     affected semantics are absent: `P2SH` requires a non-P2SH scriptPubKey,
@@ -458,13 +526,14 @@ def prepareCoreFixture (test : CoreScriptTest) :
     throw (.unsupportedFlag flag)
   if flagNames.contains "P2SH" && isP2SHScript scriptPubKey then
     throw .p2shEvaluation
-  if (scriptContainsSignature scriptSig || scriptContainsSignature scriptPubKey) &&
-      !expectedBeforeSignatureCheck test.expectedError then
-    throw .signatureOpcode
   if flagNames.contains "MINIMALDATA" &&
       (!sourceUsesMinimalPushes test.scriptSigSource scriptSig ||
         !sourceUsesMinimalPushes test.scriptPubKeySource scriptPubKey) then
     throw .nonMinimalPushEncoding
+  if scriptContainsSignature scriptSig || scriptContainsSignature scriptPubKey then
+    match coreErrorBeforeSignature scriptSig scriptPubKey (flagsForCoreFixture flagNames) with
+    | none => throw .signatureOpcode
+    | some _ => pure ()
   if (scriptContainsOpcode .OP_CHECKLOCKTIMEVERIFY scriptSig ||
       scriptContainsOpcode .OP_CHECKLOCKTIMEVERIFY scriptPubKey) &&
       !flagNames.contains "CHECKLOCKTIMEVERIFY" then

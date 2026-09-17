@@ -1,6 +1,7 @@
 import LeanMiniscript
 import LeanMiniscript.Extraction.BitcoinCoreAuditExamples
 import LeanMiniscript.Extraction.BitcoinCoreFixturesExamples
+import LeanMiniscript.Extraction.SignatureEncodingCoreExamples
 import LeanMiniscript.Miniscript.CompileExamples
 import LeanMiniscript.Miniscript.ContextSafetyExamples
 import LeanMiniscript.Miniscript.MalleabilityExamples
@@ -16,6 +17,7 @@ import LeanMiniscript.Script.DeterminismExamples
 import LeanMiniscript.Script.EvaluatorExamples
 import LeanMiniscript.Script.NullFailExamples
 import LeanMiniscript.Script.ScriptNumExamples
+import LeanMiniscript.Script.SignatureEncodingExamples
 import LeanMiniscript.Script.SerializationExamples
 import LeanMiniscript.Script.TimelockExamples
 

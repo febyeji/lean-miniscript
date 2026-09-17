@@ -15,12 +15,10 @@ private def fixtureTxContext : TxContext where
 private def rejectingOracle : CryptoOracle :=
   CryptoOracle.pureLeanHashes
     (fun _sig _pubkey _sigHash => false)
-    (fun _signatures _pubkeys _sigHash => false)
 
 private def acceptingOracle : CryptoOracle :=
   CryptoOracle.pureLeanHashes
     (fun _sig _pubkey _sigHash => true)
-    (fun _signatures _pubkeys _sigHash => true)
 
 private def isSingleSuccess (expected : StackElement) : ExecResult → Bool
   | .success [actual] [] => stackElementEq actual expected
@@ -96,7 +94,8 @@ example : isSingleSuccess sha256Abc
 /-- Signature behavior is injected independently of the executable hashes. -/
 example : isSingleSuccess trueElement
     (evaluate acceptingOracle [.op .OP_CHECKSIG]
-      [⟨#[0x02]⟩, ⟨#[0x30]⟩] [] fixtureFlags fixtureTxContext) = true := by
+      [⟨#[0x02]⟩, ⟨#[0x30]⟩] [] { fixtureFlags with strictEncoding := false }
+      fixtureTxContext) = true := by
   native_decide
 
 /-- The model oracle evaluator is equivalent to the relational semantics. -/

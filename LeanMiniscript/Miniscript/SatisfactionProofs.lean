@@ -14,12 +14,14 @@ inductive BasicSatisfactionFragment : CoreFragment → Prop where
   | cPkK (key : PubKey) : BasicSatisfactionFragment (.c (.pk_k key))
 
 /-- Every witness returned for a supported basic fragment is accepted by its
-    compiled script under the environment transaction and modeled flags. -/
+    compiled script under the environment transaction and modeled flags,
+    provided the supplied material also passes the selected encoding checks. -/
 theorem satisfy_basic_sound
     {ctx : ScriptContext} {m : CoreFragment} {env : SatEnv}
     {witness : Witness} {flags : ScriptFlags}
     (supported : BasicSatisfactionFragment m)
     (sound : env.Sound)
+    (encodings : env.EncodingSound flags)
     (modeled : ModeledContextFlags ctx flags)
     (generated : satisfy m env = some witness) :
     Accepts ctx (compile m) witness flags env.txCtx := by
@@ -42,7 +44,7 @@ theorem satisfy_basic_sound
       change Eval [ScriptElement.pushData key.bytes, .op .OP_CHECKSIG]
         [signature] [] flags env.txCtx (.success [trueElement] [])
       exact Eval.pushDataNext
-        (Eval.checksigTrue checked Eval.done)
+        (Eval.checksigTrue (encodings key signature signatureFor) checked Eval.done)
 
 /-- A returned `older` witness is accepted whenever its compiler-produced
     numeric operand is valid and truthy. `WellFormed` supplies these numeric
@@ -92,12 +94,15 @@ theorem satisfy_after_sound
         (Eval.empty [scriptNum n] [] flags env.txCtx)))
 
 /-- Every witness returned for a supported basic dissatisfiable fragment
-    executes successfully to a clean false result. -/
+    executes successfully to a clean false result when the fragment's key
+    passes the public-key encoding check, even with an empty signature. -/
 theorem dissatisfy_basic_sound
     {ctx : ScriptContext} {m : CoreFragment} {env : SatEnv}
     {witness : Witness} {flags : ScriptFlags}
     (supported : m = .zero ∨ ∃ key, m = .c (.pk_k key))
     (sound : env.Sound)
+    (keys : ∀ key, m = .c (.pk_k key) →
+      checkPubKeyEncoding flags key.bytes = .ok ())
     (modeled : ModeledContextFlags ctx flags)
     (generated : dissatisfy m env = some witness) :
     Dissatisfies ctx (compile m) witness flags env.txCtx := by
@@ -118,6 +123,7 @@ theorem dissatisfy_basic_sound
     change Eval [ScriptElement.pushData key.bytes, .op .OP_CHECKSIG]
       [falseElement] [] flags env.txCtx (.success [falseElement] [])
     exact Eval.pushDataNext
-      (Eval.checksigFalse rejected (falseElement_nullFailSatisfied flags) Eval.done)
+      (Eval.checksigFalse (by simpa using keys key rfl) rejected
+        (falseElement_nullFailSatisfied flags) Eval.done)
 
 end LeanMiniscript.Miniscript

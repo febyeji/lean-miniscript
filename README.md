@@ -29,7 +29,10 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   variable-frame `CHECKMULTISIG` failures; Core-aligned BIP 65 and
   BIP 68/112 transaction-context checks cover CLTV and CSV, together with
   NULLFAIL behavior for all three signature opcodes and global theorems that
-  every modeled initial state has exactly one result.
+  every modeled initial state has exactly one result. ECDSA CHECKSIG and legacy
+  CHECKMULTISIG enforce DERSIG, LOW_S, and STRICTENC with typed DER, high-S,
+  sighash-type, and public-key-format errors. Multisignature matching checks
+  only reached pairs, then applies NULLFAIL and historical-dummy checks.
   An oracle-parameterized `evaluate` function executes that same modeled
   subset; its model-oracle result is proved equivalent to `Eval`, while the
   executable oracle uses the pinned pure-Lean hashes and accepts injected
@@ -40,7 +43,9 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   flags or execution modes. Fourteen pinned rejection rows additionally compare
   final-false behavior and exact Core tags for the modeled failure classes;
   `OP_NOP` preserves both stacks, and unclosed conditionals preserve Core's
-  active-branch runtime-error precedence.
+  active-branch runtime-error precedence. Fifteen additional pinned encoding
+  rejection rows match with both accepting and rejecting signature oracles;
+  a verifier-dependent BIP66 row remains explicitly unsupported.
   A checked-in audit command runs a complete fixture file, compares every
   supported row, and reports each unsupported row by structured reason.
   Execution behavior targets
@@ -52,7 +57,9 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
 - General soundness, full satisfaction coverage, non-malleability, small-step
   semantics, production secp256k1 bindings, unsupported Core failure classes,
   and full semantic coverage of the Bitcoin Core differential suite are
-  unfinished.
+  unfinished. Signature-version-aware Schnorr checks and WITNESS_PUBKEYTYPE
+  remain outside the modeled subset; the Tapscript acceptance contract disables
+  ECDSA encoding flags to preserve its abstract signature boundary.
 
 See [`MINISCRIPT_COVERAGE.md`](MINISCRIPT_COVERAGE.md) for the constructor-level
 coverage matrix, proof-status legend, semantic conventions, and subsystem pins.
@@ -75,8 +82,8 @@ through the supported comparison boundary:
 lake exe core_fixture_audit -- path/to/script_tests.json
 ```
 
-The pinned file currently reports 1,222 tests: 306 compared and matched, zero
-mismatches, and 916 explicitly unsupported. Pass `--show-details` before the
+The pinned file currently reports 1,222 tests: 321 compared and matched, zero
+mismatches, and 901 explicitly unsupported. Pass `--show-details` before the
 path to split source failures by scriptSig/scriptPubKey and their first
 unsupported textual opcode or raw opcode byte. Pass `--show-unsupported` to
 print every excluded row and its structured reason; the two options can be

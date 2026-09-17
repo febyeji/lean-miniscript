@@ -19,7 +19,11 @@ structure ScriptFlags where
   nullDummy : Bool := true
   /-- `SCRIPT_VERIFY_NULLFAIL`: failed signature checks require empty signatures. -/
   nullFail : Bool := true
-  /-- BIP 66: Strict DER signature encoding -/
+  /-- `SCRIPT_VERIFY_DERSIG`: require strict DER ECDSA signatures. -/
+  derSig : Bool := false
+  /-- `SCRIPT_VERIFY_LOW_S`: require DER signatures with a low S scalar. -/
+  lowS : Bool := false
+  /-- `SCRIPT_VERIFY_STRICTENC`: check DER, sighash types, and public-key format. -/
   strictEncoding : Bool := true
   deriving Repr
 
@@ -65,6 +69,10 @@ inductive ScriptError where
   | negativeLocktime
   | nullDummy
   | sigNullFail
+  | sigDer
+  | sigHighS
+  | sigHashType
+  | pubkeyType
   | equalVerify
   | verify
   | checkSequenceVerify
@@ -264,13 +272,14 @@ def decodeBinaryScriptNums (flags : ScriptFlags) (top belowTop : StackElement) :
 
 /-- Dynamically decoded legacy multisignature operands in top-first stack order.
 
-    The count elements and dummy are consumed by `OP_CHECKMULTISIG`; `rest`
-    remains below them. Public keys and signatures retain the order in which
+    The count elements and any present dummy are consumed by `OP_CHECKMULTISIG`;
+    `rest` remains below them. `none` records a missing dummy for its deferred
+    stack-underflow check. Public keys and signatures retain the order in which
     the Bitcoin Core interpreter visits them from the top of the stack. -/
 structure CheckMultiSigOperands where
   pubkeys : Stack
   signatures : Stack
-  dummy : StackElement
+  dummy : Option StackElement
   rest : Stack
   deriving Repr
 
@@ -278,9 +287,10 @@ structure CheckMultiSigOperands where
 
     This follows Bitcoin Core's observable validation order: decode and bound
     the public-key count, require the public-key frame and signature-count
-    element, decode and bound the signature count, then require the signatures
-    and historical dummy element. The ordinary four-byte Script-number limit
-    applies to both counts. -/
+    element, decode and bound the signature count, then require the signature
+    frame. A missing historical dummy is retained as `none`: Core checks it
+    only after matching and NULLFAIL. The ordinary four-byte Script-number
+    limit applies to both counts. -/
 def decodeCheckMultiSigOperands (flags : ScriptFlags) (stack : Stack) :
     Except ScriptError CheckMultiSigOperands := do
   let (pubkeyCountBytes, afterPubkeyCount) ←
@@ -310,13 +320,13 @@ def decodeCheckMultiSigOperands (flags : ScriptFlags) (stack : Stack) :
             .error .signatureCount
           else
             let k := signatureCount.toNat
-            if afterSignatureCount.length < k + 1 then
+            if afterSignatureCount.length < k then
               .error .stackUnderflow
             else
               let signatures := afterSignatureCount.take k
               match afterSignatureCount.drop k with
-              | [] => .error .stackUnderflow
-              | dummy :: rest => .ok { pubkeys, signatures, dummy, rest }
+              | [] => .ok { pubkeys, signatures, dummy := none, rest := [] }
+              | dummy :: rest => .ok { pubkeys, signatures, dummy := some dummy, rest }
 
 theorem scriptNum_zero : scriptNum 0 = falseElement := by
   rfl
@@ -478,11 +488,5 @@ opaque hash160 (x : StackElement) : StackElement
     In formal proofs we treat this as an opaque predicate.
     Returns true iff the signature is valid for the given key and sighash. -/
 opaque checkSig (sig : StackElement) (pubkey : StackElement) (sigHash : ByteArray) : Bool
-
-/-- Abstract legacy multisignature verification.
-    This models the cryptographic matching of signatures to public keys while
-    keeping the stack discipline of `OP_CHECKMULTISIG` explicit in `Eval`. -/
-opaque checkMultiSig
-  (sigs : List StackElement) (pubkeys : List StackElement) (sigHash : ByteArray) : Bool
 
 end LeanMiniscript.Script

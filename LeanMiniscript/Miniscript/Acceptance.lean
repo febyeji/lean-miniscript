@@ -23,20 +23,24 @@ flags that the current `Eval` semantics enforces.
     Both contexts require minimal Script-number operands. P2WSH additionally
     uses the modeled Miniscript-facing MINIMALIF and NULLDUMMY settings.
     Both contexts enforce NULLFAIL, while Tapscript also requires MINIMALIF.
-    Signature encoding is intentionally excluded:
-    the current opaque `checkSig` does not receive flags or a signature version.
-    Tapscript signature and disabled-opcode rules need separate modeling. -/
+    P2WSH enables the pre-Tapscript STRICTENC checks. Tapscript disables all
+    ECDSA encoding flags, so Schnorr bytes are never checked as DER.
+    Signature-version-aware Schnorr and disabled-opcode rules remain TODO. -/
 def ModeledContextFlags (ctx : ScriptContext) (flags : ScriptFlags) : Prop :=
   match ctx with
   | .p2wsh =>
       flags.minimalIf = true ∧
       flags.minimalData = true ∧
       flags.nullDummy = true ∧
-      flags.nullFail = true
+      flags.nullFail = true ∧
+      flags.strictEncoding = true
   | .tapscript =>
       flags.minimalIf = true ∧
       flags.minimalData = true ∧
-      flags.nullFail = true
+      flags.nullFail = true ∧
+      flags.strictEncoding = false ∧
+      flags.derSig = false ∧
+      flags.lowS = false
 
 /-- Execute a serialized-order witness against a script. The operational
     semantics receives a top-first main stack and an initially empty alt stack. -/
@@ -129,9 +133,8 @@ example : ¬ ModeledContextFlags .tapscript
     ({ minimalData := false } : ScriptFlags) := by
   simp [ModeledContextFlags]
 
-/-- Strict signature encoding remains outside the modeled flag contract until
-    signature-version-aware checks are part of `Eval`. -/
-example : ModeledContextFlags .p2wsh
+/-- P2WSH acceptance requires the modeled pre-Tapscript encoding checks. -/
+example : ¬ ModeledContextFlags .p2wsh
     ({ strictEncoding := false } : ScriptFlags) := by
   simp [ModeledContextFlags]
 

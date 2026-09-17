@@ -125,7 +125,6 @@ end CoreFixtureAudit
 def rejectingFixtureOracle : CryptoOracle :=
   CryptoOracle.pureLeanHashes
     (fun _sig _pubkey _sigHash => false)
-    (fun _signatures _pubkeys _sigHash => false)
 
 private def auditCoreFixtureEntry (oracle : CryptoOracle)
     (audit : CoreFixtureAudit) (indexed : CoreFixtureEntry × Nat) :
