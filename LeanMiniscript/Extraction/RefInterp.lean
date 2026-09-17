@@ -46,7 +46,7 @@ theorem execTapscriptTransaction_eq_model
   · exact evaluateTapscript_eq_model agreement script witness flags _
 
 -- TODO: Extend differential execution to push-encoding, witness, and P2SH rows
--- TODO: Add a secp256k1 oracle for signature-result rows
+-- TODO: Add executable ECDSA verification for Core signature-result rows
 -- TODO: CLI interface for standalone Script-source execution
 
 end LeanMiniscript.Extraction

@@ -1,4 +1,5 @@
 import LeanHash160
+import LeanMiniscript.Bitcoin.Schnorr
 import LeanMiniscript.Script.BigStep
 
 namespace LeanMiniscript.Script
@@ -45,6 +46,14 @@ def pureLeanHashes
   hash160 := LeanHash160.hash160
   checkSig := verifySignature
   checkSchnorrSig := verifySchnorrSignature
+
+/-- Pure-Lean hashes and executable BIP340 verification. ECDSA remains
+caller-supplied and defaults to rejection. No unconditional `RefinesModel`
+claim is made for this concrete cryptographic implementation. -/
+def pureLeanSchnorr
+    (verifyECDSA : StackElement → StackElement → ByteArray → Bool :=
+      fun _ _ _ => false) : CryptoOracle :=
+  pureLeanHashes verifyECDSA Bitcoin.Schnorr.verify
 
 /-- Pointwise agreement with the abstract cryptographic boundary of `Eval`. -/
 def RefinesModel (oracle : CryptoOracle) : Prop :=

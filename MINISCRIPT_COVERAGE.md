@@ -27,6 +27,11 @@ theorem target is not a proved theorem.
   rows visible rather than treating them as successful comparisons.
 - Concrete key HASH160 uses `lean-hash160` commit
   [`d55f38607f76104609004cdaca27ef0e21f372b6`](https://github.com/febyeji/lean-hash160/tree/d55f38607f76104609004cdaca27ef0e21f372b6).
+- BIP340 verification fixtures and reference-signed execution fixtures use
+  `bitcoin/bips` commit
+  [`55083d36ddebcd2a039135a2f4ee74917a5803d3`](https://github.com/bitcoin/bips/tree/55083d36ddebcd2a039135a2f4ee74917a5803d3),
+  files `bip-0340/test-vectors.csv` and `bip-0340/reference.py`. Source SHA256
+  digests are enforced by `scripts/generate_schnorr_fixtures.py`.
 - The checked toolchain is `leanprover/lean4:v4.32.0`.
 
 Changing a pin requires regenerating the affected fixtures and recording any
@@ -74,8 +79,11 @@ oracles, not logical premises of Lean proofs.
 - `CryptoOracle.model` retains the proof semantics' abstract hashes and
   signature checks. `CryptoOracle.pureLeanHashes` provides executable SHA-256,
   HASH256, RIPEMD-160, and HASH160 from the pinned `lean-hash160` package while
-  leaving signature verification injectable; no production secp256k1 binding
-  is currently part of the trusted runtime boundary.
+  leaving signature verification injectable. `CryptoOracle.pureLeanSchnorr`
+  additionally supplies executable BIP340 verification; its ECDSA callback
+  defaults to rejection. No native secp256k1 dependency is required. The
+  abstract oracle refinement premises remain explicit; concrete curve and
+  verifier correctness have vector coverage but no general Lean proof.
 - The Bitcoin Core fixture importer preserves positional JSON rows and compiles
   Core's number, quoted-data, raw-hex, and opcode tokens through their serialized
   Script-byte boundary. It rejects unsupported opcodes, P2SH evaluation,
@@ -298,7 +306,7 @@ them as required by BIP341. CI runs checked-in fixtures without network access.
 The generator checks every official message/digest/component before producing
 additional cases, and regenerated modules must match byte-for-byte.
 
-Legacy/BIP143 transaction-derived sighashes, native Schnorr verification,
+Legacy/BIP143 transaction-derived sighashes, executable ECDSA verification,
 Taproot key-path and witness/control-block validation, Bitcoin Core op-counting,
 other unmodeled raw-script errors, and full failure completeness remain unfinished.
 `Eval.exists_result` proves relational result existence for every modeled
@@ -311,9 +319,9 @@ tail. `evaluate_eq_of_eval` and `evaluate_sound` prove refinement for
 any `CryptoOracle` that agrees pointwise with the abstract model, and
 `evaluate_model_iff` packages the model-oracle equivalence. Executable fixtures
 cover arithmetic, conditional toggles, typed failures, the pinned pure-Lean
-SHA-256 implementation, and injected signature results. A native secp256k1
-oracle and full semantic support for the Bitcoin Core differential suite remain
-future work.
+SHA-256 implementation, and injected signature results. Executable Schnorr
+verification is described below; full semantic support for the Bitcoin Core
+differential suite remains future work.
 The initial importer targets the pinned v31.1 positional JSON and textual
 fixture syntax, including raw `0x...` byte concatenation. Nineteen verbatim
 positive rows run offline through the evaluator and cover direct and PUSHDATA
@@ -403,3 +411,39 @@ but are propositions to be proved rather than completed theorems:
 
 The immediate proof work must extend named semantic predicates before extending
 `SupportedMiniType`. Unsupported modifier combinations do not reduce to `True`.
+
+## Executable Schnorr Verification
+
+`Bitcoin.Secp256k1` implements field exponentiation, affine point addition and
+scalar multiplication, and the even-Y `liftX` used at public-key boundaries.
+`Bitcoin.Schnorr.verify` implements BIP340's length checks, `r < p`, `s < n`,
+challenge tagged hash and `R = sG - eP`, rejecting infinity, odd Y and an X
+mismatch. Its message input can have arbitrary length. These operations handle
+public verification inputs; there is no signing API or constant-time claim.
+Low-level point operations require canonical on-curve points, which `liftX`
+and the generator supply in the verifier.
+
+`CryptoOracle.pureLeanSchnorr` combines this verifier with the existing pinned
+pure-Lean hashes. Script performs its version/encoding checks and supplies the
+64-byte signature body and per-signature 32-byte transaction digest. All 19
+official BIP340 vectors are checked offline, including invalid curve keys,
+field/order boundaries, infinity/parity failures and messages of length
+0, 1, 17, 32 and 100. Additional length guards reject truncated and oversized
+keys/signatures. Execution fixtures use all seven Taproot hash types, annex
+and CHECKSIGADD signatures made by the pinned BIP340 reference implementation
+over independently computed Core digests. Signature, transaction and annex
+mutations reject, and empty signatures remain ordinary false results.
+
+Reproduce the two checked-in fixture modules with the pinned public sources:
+
+```sh
+python3 scripts/generate_schnorr_fixtures.py --bip340-vectors BIP340_CSV --bip340-reference BIP340_REFERENCE_PY --wallet-vectors WALLET_JSON --core-script CORE_SCRIPT_PY --vectors-output LeanMiniscript/Bitcoin/SchnorrExamples.lean --execution-output LeanMiniscript/Script/SchnorrExecutionExamples.lean
+```
+
+The generator first verifies source hashes and every official BIP340 result,
+then uses the public test key from vector zero. Lean builds use checked-in
+fixtures without downloading or running Python. There is no theorem proving
+these curve operations or this verifier correct, nor an unconditional theorem
+that `pureLeanSchnorr.RefinesModel`. Existing execution/refinement theorems
+retain their explicit agreement premise. Taproot control-block commitment
+validation remains a separate caller obligation.

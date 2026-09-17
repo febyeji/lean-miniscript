@@ -43,8 +43,11 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   the selected input, annex and TapLeaf extension. It derives timelock fields
   from that same input. Hash messages and digests match all seven official
   BIP341 wallet cases and 56 additional pinned-Core reference cases offline.
-  Abstract contexts can still supply a hash; signature verification stays at
-  the separate Schnorr oracle boundary.
+  Abstract contexts can still supply a hash. `CryptoOracle.pureLeanSchnorr`
+  connects an executable pure-Lean BIP340 verifier, checked against all 19
+  official vectors and independently signed transaction execution cases.
+  ECDSA remains caller-supplied, with rejection as the default. Curve and
+  verifier correctness and refinement of the abstract oracle are not proved.
   `evaluateWithValidationWeight` / `WeightedEval` add BIP342 validation-weight
   accounting and return the remaining weight with both stacks. `execTapscript`
   initializes it from the full serialized input witness, including script,
@@ -73,7 +76,8 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
 - Basic satisfaction is executable for constants, `c(pk_k)`, and timelocks,
   with local acceptance and dissatisfaction soundness lemmas.
 - General soundness, full satisfaction coverage, non-malleability, small-step
-  semantics, production secp256k1 bindings, unsupported Core failure classes,
+  semantics, cryptographic correctness proofs, executable ECDSA verification,
+  unsupported Core failure classes,
   and full semantic coverage of the Bitcoin Core differential suite are
   unfinished. The older `Eval` / `Accepts` APIs are resource-free; complete
   budget checks use the full-witness Tapscript APIs above. Legacy/BIP143
