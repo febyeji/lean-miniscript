@@ -136,8 +136,10 @@ example :
     let settings := { flags with witnessPubKeyType := true }
     errorIs .witnessPubkeyType (checkMultiSigFor (fun _ _ _ => true) settings witness
       [derSig] [uncompressedKey, compressedKey]) &&
-    !(errorIs .pubkeyType (checkMultiSigFor (fun _ _ _ => true) settings witness
-      [derSig] [compressedKey, unknownKey])) = true := by
+    (match checkMultiSigFor (fun _ _ _ => true) settings witness
+        [derSig] [compressedKey, unknownKey] with
+      | .ok true => true
+      | _ => false) = true := by
   native_decide
 
 /-- CHECKSIGADD preserves negative counts and adds one only on success. -/
