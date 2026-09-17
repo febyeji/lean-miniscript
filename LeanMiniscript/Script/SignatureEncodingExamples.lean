@@ -135,7 +135,8 @@ example : Eval [.op .OP_CHECKMULTISIG]
   apply Eval.checkmultisig_encoding_failure (operands := {
     pubkeys := [badKey], signatures := [badSig], dummy := some trueElement, rest := [] })
   · rfl
-  · exact checkMultiSigWithEncoding_first_error checkSig (by rfl)
+  · simp only [checkMultiSigFor, checkSigEncodingFor, tx]
+    rfl
 
 /-- Encoding errors occur before any verifier result and before NULLFAIL and
     NULLDUMMY. Passing encoding still permits a terminal NULLFAIL error. -/
@@ -160,24 +161,24 @@ private def selective : CryptoOracle := CryptoOracle.pureLeanHashes fun sig key 
   (stackElementEq sig goodSig && stackElementEq key goodKey) ||
     (stackElementEq sig secondSig && stackElementEq key secondKey)
 
-example : okIs true (checkMultiSigWithEncoding selective.checkSig strict tx.sigHash
+example : okIs true (checkMultiSigFor selective.checkSig strict tx
       [goodSig] [secondKey, goodKey]) &&
-    okIs true (checkMultiSigWithEncoding selective.checkSig strict tx.sigHash
+    okIs true (checkMultiSigFor selective.checkSig strict tx
       [goodSig, secondSig] [goodKey, goodKey, secondKey]) &&
-    okIs false (checkMultiSigWithEncoding selective.checkSig strict tx.sigHash
+    okIs false (checkMultiSigFor selective.checkSig strict tx
       [goodSig, secondSig] [secondKey, goodKey]) = true := by native_decide
 
 /-- Early matching failure skips later signatures, while a successful first
     match reaches their encoding checks. Prevalidating every input is wrong. -/
-example : okIs false (checkMultiSigWithEncoding rejecting.checkSig derOnly tx.sigHash
+example : okIs false (checkMultiSigFor rejecting.checkSig derOnly tx
       [goodSig, badSig] [goodKey, goodKey]) &&
-    errorIs .sigDer (checkMultiSigWithEncoding accepting.checkSig derOnly tx.sigHash
+    errorIs .sigDer (checkMultiSigFor accepting.checkSig derOnly tx
       [goodSig, badSig] [goodKey, goodKey]) &&
-    okIs true (checkMultiSigWithEncoding accepting.checkSig strict tx.sigHash
+    okIs true (checkMultiSigFor accepting.checkSig strict tx
       [goodSig] [goodKey, badKey]) &&
-    errorIs .pubkeyType (checkMultiSigWithEncoding accepting.checkSig strict tx.sigHash
+    errorIs .pubkeyType (checkMultiSigFor accepting.checkSig strict tx
       [goodSig] [badKey, goodKey]) &&
-    okIs true (checkMultiSigWithEncoding rejecting.checkSig strict tx.sigHash
+    okIs true (checkMultiSigFor rejecting.checkSig strict tx
       [] [badKey]) = true := by native_decide
 
 example : isSingleSuccess falseElement (evaluate rejecting [.op .OP_CHECKMULTISIG]
@@ -204,8 +205,10 @@ example : isFailure .nullDummy (evaluate rejecting [.op .OP_CHECKMULTISIG]
     boundary. CHECKSIGADD never applies DER rules to Schnorr-shaped bytes. -/
 example : isSingleSuccess trueElement (evaluate accepting [.op .OP_CHECKSIG]
       [badKey, badSig] [] relaxed tx) &&
-    isSingleSuccess (scriptNum 2) (evaluate accepting [.op .OP_CHECKSIGADD]
-      [⟨Array.replicate 32 1⟩, scriptNum 1, ⟨Array.replicate 64 1⟩] [] strict tx) =
+    isSingleSuccess (scriptNum 2) (evaluate (CryptoOracle.pureLeanHashes (fun _ _ _ => false)
+      (fun _ _ _ => true)) [.op .OP_CHECKSIGADD]
+      [⟨Array.replicate 32 1⟩, scriptNum 1, ⟨Array.replicate 64 1⟩] [] strict
+        { tx with sigVersion := .tapscript }) =
     true := by native_decide
 
 end LeanMiniscript.Script

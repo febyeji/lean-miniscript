@@ -76,7 +76,7 @@ example : Eval [.op .OP_EQUAL] [trueElement] [] fixtureFlags fixtureTxContext
   exact Eval.fixedArityStackUnderflow rfl (by decide)
 
 example : Eval [.op .OP_CHECKSIGADD] [trueElement, falseElement] []
-    fixtureFlags fixtureTxContext (.failure .stackUnderflow) := by
+    fixtureFlags { fixtureTxContext with sigVersion := .tapscript } (.failure .stackUnderflow) := by
   exact Eval.fixedArityStackUnderflow rfl (by decide)
 
 example : Eval [.op .OP_IF, .pushNum 1, .op .OP_ENDIF] [] []

@@ -22,11 +22,11 @@ theorem satisfy_basic_sound
     (supported : BasicSatisfactionFragment m)
     (sound : env.Sound)
     (encodings : env.EncodingSound flags)
+    (version : ModeledContextVersion ctx env.txCtx)
     (modeled : ModeledContextFlags ctx flags)
     (generated : satisfy m env = some witness) :
     Accepts ctx (compile m) witness flags env.txCtx := by
-  constructor
-  · exact modeled
+  refine ⟨modeled, version, ?_⟩
   cases supported with
   | one =>
       simp [satisfy] at generated
@@ -44,7 +44,8 @@ theorem satisfy_basic_sound
       change Eval [ScriptElement.pushData key.bytes, .op .OP_CHECKSIG]
         [signature] [] flags env.txCtx (.success [trueElement] [])
       exact Eval.pushDataNext
-        (Eval.checksigTrue (encodings key signature signatureFor) checked Eval.done)
+        (Eval.checksigTrue
+          (checkSigWithEncoding_true (encodings key signature signatureFor) checked) Eval.done)
 
 /-- A returned `older` witness is accepted whenever its compiler-produced
     numeric operand is valid and truthy. `WellFormed` supplies these numeric
@@ -52,6 +53,7 @@ theorem satisfy_basic_sound
 theorem satisfy_older_sound
     {ctx : ScriptContext} {n : Nat} {env : SatEnv}
     {witness : Witness} {flags : ScriptFlags}
+    (version : ModeledContextVersion ctx env.txCtx)
     (modeled : ModeledContextFlags ctx flags)
     (decoded : decodeScriptNum (scriptNum n) flags.minimalData
       maxTimelockScriptNumBytes = .ok n)
@@ -60,8 +62,7 @@ theorem satisfy_older_sound
     Accepts ctx (compile (.older n)) witness flags env.txCtx := by
   simp [satisfy] at generated
   rcases generated with ⟨satisfied, rfl⟩
-  constructor
-  · exact modeled
+  refine ⟨modeled, version, ?_⟩
   refine ⟨scriptNum n, [], ?_, positive⟩
   simpa [compile, compileWithKeyHash, Executes, Witness.toInitialStack] using
     (Eval.pushNum n [.op .OP_CHECKSEQUENCEVERIFY] [] [] flags env.txCtx
@@ -75,6 +76,7 @@ theorem satisfy_older_sound
 theorem satisfy_after_sound
     {ctx : ScriptContext} {n : Nat} {env : SatEnv}
     {witness : Witness} {flags : ScriptFlags}
+    (version : ModeledContextVersion ctx env.txCtx)
     (modeled : ModeledContextFlags ctx flags)
     (decoded : decodeScriptNum (scriptNum n) flags.minimalData
       maxTimelockScriptNumBytes = .ok n)
@@ -83,8 +85,7 @@ theorem satisfy_after_sound
     Accepts ctx (compile (.after n)) witness flags env.txCtx := by
   simp [satisfy] at generated
   rcases generated with ⟨satisfied, rfl⟩
-  constructor
-  · exact modeled
+  refine ⟨modeled, version, ?_⟩
   refine ⟨scriptNum n, [], ?_, positive⟩
   simpa [compile, compileWithKeyHash, Executes, Witness.toInitialStack] using
     (Eval.pushNum n [.op .OP_CHECKLOCKTIMEVERIFY] [] [] flags env.txCtx
@@ -102,12 +103,12 @@ theorem dissatisfy_basic_sound
     (supported : m = .zero ∨ ∃ key, m = .c (.pk_k key))
     (sound : env.Sound)
     (keys : ∀ key, m = .c (.pk_k key) →
-      checkPubKeyEncoding flags key.bytes = .ok ())
+      checkSigEncodingFor flags env.txCtx.sigVersion falseElement key.bytes = .ok ())
+    (version : ModeledContextVersion ctx env.txCtx)
     (modeled : ModeledContextFlags ctx flags)
     (generated : dissatisfy m env = some witness) :
     Dissatisfies ctx (compile m) witness flags env.txCtx := by
-  constructor
-  · exact modeled
+  refine ⟨modeled, version, ?_⟩
   rcases supported with rfl | ⟨key, rfl⟩
   · simp [dissatisfy] at generated
     subst witness
@@ -123,7 +124,7 @@ theorem dissatisfy_basic_sound
     change Eval [ScriptElement.pushData key.bytes, .op .OP_CHECKSIG]
       [falseElement] [] flags env.txCtx (.success [falseElement] [])
     exact Eval.pushDataNext
-      (Eval.checksigFalse (by simpa using keys key rfl) rejected
-        (falseElement_nullFailSatisfied flags) Eval.done)
+      (Eval.checksigFalse
+        (checkSigWithEncoding_empty (keys key rfl) rejected) Eval.done)
 
 end LeanMiniscript.Miniscript

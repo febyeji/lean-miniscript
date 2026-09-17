@@ -101,30 +101,25 @@ def BTypeOGuarantee (m : CoreFragment) : Prop :=
 theorem c_pk_k_soundness (key : PubKey) :
     BTypeOGuarantee (.c (.pk_k key)) := by
   intro wit stack altStack flags ctx
-  cases encoded : checkECDSAEncoding flags wit key with
+  cases checked : checkSigWithEncoding checkSig checkSchnorrSig flags ctx wit key with
   | error error =>
-    exact Or.inr ⟨error,
-        by simpa [compile, compileWithKeyHash] using
-          (Eval.pushDataNext (data := key)
-            (Eval.checksig_encoding_failure key wit stack [] altStack flags ctx
-              error encoded))⟩
-  | ok value =>
-    cases value
-    by_cases h : checkSig wit key ctx.sigHash = true
-    · exact Or.inl ⟨trueElement,
-        by simpa [compile, compileWithKeyHash] using
+      right
+      refine ⟨error, ?_⟩
+      simpa [compile, compileWithKeyHash] using
         (Eval.pushDataNext (data := key)
-          (Eval.checksigTrue (pubkey := key) (sig := wit) encoded h Eval.done))⟩
-    · simp at h
-      by_cases nullFail : nullFailSatisfied flags [wit]
-      · exact Or.inl ⟨falseElement,
-          by simpa [compile, compileWithKeyHash] using
-          (Eval.pushDataNext (data := key)
-            (Eval.checksigFalse (pubkey := key) (sig := wit) encoded h nullFail Eval.done))⟩
-      · exact Or.inr ⟨.sigNullFail,
-          by simpa [compile, compileWithKeyHash] using
-          (Eval.pushDataNext (data := key)
-            (Eval.checksigNullFail (pubkey := key) (sig := wit) encoded h nullFail))⟩
+          (Eval.checksig_encoding_failure key wit stack [] altStack flags ctx error checked))
+  | ok valid =>
+      cases valid with
+      | false =>
+          left
+          refine ⟨falseElement, ?_⟩
+          simpa [compile, compileWithKeyHash] using
+            (Eval.pushDataNext (data := key) (Eval.checksigFalse checked Eval.done))
+      | true =>
+          left
+          refine ⟨trueElement, ?_⟩
+          simpa [compile, compileWithKeyHash] using
+            (Eval.pushDataNext (data := key) (Eval.checksigTrue checked Eval.done))
 
 /-- What a V-type fragment with 'o' modifier guarantees:
     Consumes one witness element. On success, the stack below is unchanged
@@ -143,33 +138,26 @@ def VTypeOGuarantee (m : CoreFragment) : Prop :=
 theorem v_c_pk_k_soundness (key : PubKey) :
     VTypeOGuarantee (.v (.c (.pk_k key))) := by
   intro wit stack altStack flags ctx
-  cases encoded : checkECDSAEncoding flags wit key with
+  cases checked : checkSigWithEncoding checkSig checkSchnorrSig flags ctx wit key with
   | error error =>
-    exact Or.inr ⟨error,
-        by simpa [compile, compileWithKeyHash] using
-          (Eval.pushDataNext (data := key)
-            (Eval.checksig_encoding_failure key wit stack [.op .OP_VERIFY]
-              altStack flags ctx error encoded))⟩
-  | ok value =>
-    cases value
-    by_cases h : checkSig wit key ctx.sigHash = true
-    · left
+      right
+      refine ⟨error, ?_⟩
       simpa [compile, compileWithKeyHash] using
         (Eval.pushDataNext (data := key)
-          (Eval.checksigTrue (pubkey := key) (sig := wit) encoded h
-            (Eval.verifyTrue (top := trueElement) (by native_decide) Eval.done)))
-    · right
-      simp at h
-      by_cases nullFail : nullFailSatisfied flags [wit]
-      · exact ⟨.verify,
-          by simpa [compile, compileWithKeyHash] using
-          (Eval.pushDataNext (data := key)
-            (Eval.checksigFalse (pubkey := key) (sig := wit) encoded h nullFail
-              (Eval.verifyFalse (top := falseElement) (by native_decide))))⟩
-      · exact ⟨.sigNullFail,
-          by simpa [compile, compileWithKeyHash] using
-          (Eval.pushDataNext (data := key)
-            (Eval.checksigNullFail (pubkey := key) (sig := wit) encoded h nullFail))⟩
+          (Eval.checksig_encoding_failure key wit stack [.op .OP_VERIFY] altStack flags ctx error checked))
+  | ok valid =>
+      cases valid with
+      | false =>
+          right
+          refine ⟨.verify, ?_⟩
+          simpa [compile, compileWithKeyHash] using
+            (Eval.pushDataNext (data := key)
+              (Eval.checksigFalse checked (Eval.verifyFalse (top := falseElement) (by native_decide))))
+      | true =>
+          left
+          simpa [compile, compileWithKeyHash] using
+            (Eval.pushDataNext (data := key)
+              (Eval.checksigTrue checked (Eval.verifyTrue (top := trueElement) (by native_decide) Eval.done)))
 
 /-- What a W-type fragment with 'o' modifier guarantees in the current
     stack-shape model:
@@ -224,40 +212,31 @@ def TypeSoundnessSurface : Prop :=
 theorem a_c_pk_k_soundness (key : PubKey) :
     WTypeOGuarantee (.a (.c (.pk_k key))) := by
   intro saved wit stack altStack flags ctx
-  cases encoded : checkECDSAEncoding flags wit key with
+  cases checked : checkSigWithEncoding checkSig checkSchnorrSig flags ctx wit key with
   | error error =>
-    right
-    refine ⟨error, ?_⟩
-    simpa [compile, compileWithKeyHash] using
-      (Eval.toAltStackNext (x := saved)
-        (Eval.pushDataNext (data := key)
-          (Eval.checksig_encoding_failure key wit stack [.op .OP_FROMALTSTACK]
-            (saved :: altStack) flags ctx error encoded)))
-  | ok value =>
-    cases value
-    by_cases h : checkSig wit key ctx.sigHash = true
-    · left
-      refine ⟨trueElement, ?_⟩
+      right
+      refine ⟨error, ?_⟩
       simpa [compile, compileWithKeyHash] using
         (Eval.toAltStackNext (x := saved)
           (Eval.pushDataNext (data := key)
-            (Eval.checksigTrue (pubkey := key) (sig := wit) encoded h
-              (Eval.fromAltStackNext (x := saved) Eval.done))))
-    · simp at h
-      by_cases nullFail : nullFailSatisfied flags [wit]
-      · left
-        refine ⟨falseElement, ?_⟩
-        simpa [compile, compileWithKeyHash] using
-          (Eval.toAltStackNext (x := saved)
-            (Eval.pushDataNext (data := key)
-              (Eval.checksigFalse (pubkey := key) (sig := wit) encoded h nullFail
-                (Eval.fromAltStackNext (x := saved) Eval.done))))
-      · right
-        refine ⟨.sigNullFail, ?_⟩
-        simpa [compile, compileWithKeyHash] using
-          (Eval.toAltStackNext (x := saved)
-            (Eval.pushDataNext (data := key)
-              (Eval.checksigNullFail (pubkey := key) (sig := wit) encoded h nullFail)))
+            (Eval.checksig_encoding_failure key wit stack [.op .OP_FROMALTSTACK]
+              (saved :: altStack) flags ctx error checked)))
+  | ok valid =>
+      cases valid with
+      | false =>
+          left
+          refine ⟨falseElement, ?_⟩
+          simpa [compile, compileWithKeyHash] using
+            (Eval.toAltStackNext (x := saved)
+              (Eval.pushDataNext (data := key)
+                (Eval.checksigFalse checked (Eval.fromAltStackNext (x := saved) Eval.done))))
+      | true =>
+          left
+          refine ⟨trueElement, ?_⟩
+          simpa [compile, compileWithKeyHash] using
+            (Eval.toAltStackNext (x := saved)
+              (Eval.pushDataNext (data := key)
+                (Eval.checksigTrue checked (Eval.fromAltStackNext (x := saved) Eval.done))))
 
 /-- The `pk_k` example packaged through the shared semantic selector. -/
 theorem pk_k_mini_type_soundness (key : PubKey) :
@@ -300,6 +279,7 @@ def SatisfactionCorrectnessCore : Prop :=
     ValidMiniscript ctx m →
     env.Sound →
     env.EncodingSound flags →
+    ModeledContextVersion ctx env.txCtx →
     ModeledContextFlags ctx flags →
     satisfy m env = some witness →
     Accepts ctx (compile m) witness flags env.txCtx
@@ -311,6 +291,7 @@ def SatisfactionCorrectnessSurface : Prop :=
     ValidSurfaceMiniscript ctx m →
     env.Sound →
     env.EncodingSound flags →
+    ModeledContextVersion ctx env.txCtx →
     ModeledContextFlags ctx flags →
     satisfy (desugar m) env = some witness →
     Accepts ctx (compileSurface m) witness flags env.txCtx
@@ -327,7 +308,8 @@ def DissatisfactionCorrectnessCore : Prop :=
     ValidDissatisfiableMiniscript ctx m →
     env.Sound →
     (∀ key, m = .c (.pk_k key) →
-      checkPubKeyEncoding flags key.bytes = .ok ()) →
+      checkSigEncodingFor flags env.txCtx.sigVersion falseElement key.bytes = .ok ()) →
+    ModeledContextVersion ctx env.txCtx →
     ModeledContextFlags ctx flags →
     dissatisfy m env = some witness →
     Dissatisfies ctx (compile m) witness flags env.txCtx
@@ -339,7 +321,8 @@ def DissatisfactionCorrectnessSurface : Prop :=
     ValidDissatisfiableSurfaceMiniscript ctx m →
     env.Sound →
     (∀ key, desugar m = .c (.pk_k key) →
-      checkPubKeyEncoding flags key.bytes = .ok ()) →
+      checkSigEncodingFor flags env.txCtx.sigVersion falseElement key.bytes = .ok ()) →
+    ModeledContextVersion ctx env.txCtx →
     ModeledContextFlags ctx flags →
     dissatisfy (desugar m) env = some witness →
     Dissatisfies ctx (compileSurface m) witness flags env.txCtx

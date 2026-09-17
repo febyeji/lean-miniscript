@@ -173,7 +173,7 @@ have local result-uniqueness lemmas. Legacy `CHECKMULTISIG` now decodes arbitrar
 public-key and signature count elements in Bitcoin Core's validation order,
 enforces `0 ≤ k ≤ n ≤ 20`, checks each variable stack-frame boundary, places
 the historical dummy below the signatures, and reports typed count,
-Script-number, underflow, and NULLDUMMY failures. `CHECKSIG`, `CHECKSIGADD`, and
+Script-number, underflow, and NULLDUMMY failures. Pre-Tapscript `CHECKSIG` and
 `CHECKMULTISIG` enforce NULLFAIL after a rejected cryptographic check: nonempty
 signatures produce `SIG_NULLFAIL`, while empty signatures retain the ordinary
 false result; the relational and executable semantics agree on these branches.
@@ -192,11 +192,41 @@ dummy and NULLDUMMY checks. The decoder therefore retains a missing dummy as
 all 256 sighash bytes, scalar boundaries, selective matching, skipped inputs,
 and competing terminal errors. Global existence, determinism, and evaluator
 refinement remain proved for this expanded relation.
-The P2WSH acceptance contract enables STRICTENC; the Tapscript contract disables
-all ECDSA encoding flags. Signature-version-aware Schnorr checks,
-WITNESS_PUBKEYTYPE, Bitcoin Core op-counting, other unmodeled raw-script error
-precedence, context-invalid opcodes, and full failure completeness remain
-unfinished.
+`TxContext.sigVersion` distinguishes BASE, WITNESS_V0, and TAPSCRIPT, with BASE
+as the default for raw Script callers. P2WSH and Tapscript acceptance additionally
+require the matching execution version. P2WSH enables STRICTENC; Tapscript
+ignores DERSIG, LOW_S, STRICTENC, and NULLFAIL in its signature checks.
+The version-aware `checkSigWithEncoding` boundary is shared by `Eval` and
+`evaluate`. Under Tapscript it reports `TAPSCRIPT_EMPTY_PUBKEY` before Schnorr
+encoding; a 32-byte key accepts an empty signature as false without calling any
+verifier. Nonempty signatures must be 64 bytes with an implicit default, or 65
+bytes with one of `01`, `02`, `03`, `81`, `82`, `83`. Other lengths report
+`SCHNORR_SIG_SIZE`; explicit default and reserved sighash types report
+`SCHNORR_SIG_HASHTYPE`; a rejected cryptographic check reports `SCHNORR_SIG`
+independently of NULLFAIL. Unknown nonempty key versions accept nonempty
+signatures without checking their encoding or crypto; the optional
+DISCOURAGE_UPGRADABLE_PUBKEYTYPE flag rejects those keys, even with empty
+signatures. These rules target the pinned Core interpreter and
+[BIP342](https://github.com/bitcoin/bips/blob/master/bip-0342.mediawiki).
+`CryptoOracle.checkSchnorrSig` is separate from its ECDSA callback and receives
+64 signature bytes plus the caller-supplied signature hash. `pureLeanHashes`
+defaults this new callback to rejection unless explicitly supplied.
+CHECKSIGADD reports BAD_OPCODE before stack/count validation outside Tapscript;
+within Tapscript it decodes the accumulator before signature checks. Tapscript
+CHECKMULTISIG reports TAPSCRIPT_CHECKMULTISIG before any frame decoding. Skipped
+conditional branches do not execute either opcode. WITNESS_PUBKEYTYPE optionally
+requires compressed keys only under WITNESS_V0, following ordinary ECDSA byte
+checks; matching still examines only reached pairs.
+Build-checked version fixtures cover all 256 explicit Schnorr sighash bytes,
+length boundaries, verifier dispatch and signature-byte stripping, empty and
+upgradable key versions, policy flags, count/error priority, disabled opcodes,
+and skipped branches. Existence, determinism, and evaluator refinement remain
+proved for all modeled versions.
+Tapscript validation-weight accounting remains TODO: these checks assume
+sufficient budget and do not claim its exhaustion/error precedence. Real
+transaction-derived sighashes, including SIGHASH_SINGLE output availability,
+Taproot key-path and witness/control-block validation, Bitcoin Core op-counting,
+other unmodeled raw-script errors, and full failure completeness remain unfinished.
 `Eval.exists_result` proves relational result existence for every modeled
 script and initial state, using strict conditional-branch length decrease;
 combined with `Eval.result_unique`, `Eval.existsUnique_result` proves global
@@ -250,7 +280,9 @@ well-formedness premises that the eventual validity theorem must discharge.
 `SatEnv.Sound` explicitly records that the canonical empty signature fails.
 Basic satisfaction soundness additionally requires `SatEnv.EncodingSound` for
 supplied signatures and keys under the chosen flags; basic dissatisfaction
-soundness requires the fragment's key to pass its selected public-key checks.
+soundness requires the fragment's empty-signature/key pair to pass its selected
+version-specific byte checks. Both contracts require execution-version agreement
+with the Miniscript context; `SatEnv.Sound` uses version-aware verifier dispatch.
 Hashlocks, other wrappers, connectives, thresholds, and multisignature
 candidate selection remain unsupported and return `none`.
 
@@ -288,9 +320,9 @@ but are propositions to be proved rather than completed theorems:
   relational typing, and an explicitly supported non-vacuous semantic case;
 - `SatisfactionCorrectnessCore` and `SatisfactionCorrectnessSurface` require a
   cryptographically sound material environment and encoding soundness under
-  the selected flags, and conclude `Accepts`;
+  the selected flags and execution version, and conclude `Accepts`;
 - `DissatisfactionCorrectnessCore` and its surface counterpart require the `d`
-  modifier and public-key encoding for the supported signature fragment, and
+  modifier and version-specific empty-signature/key encoding for the supported signature fragment, and
   conclude `Dissatisfies`; and
 - `ResourceBoundsSound` gives the first conservative combined main/alt-stack
   growth target for successful compiler-output evaluation.

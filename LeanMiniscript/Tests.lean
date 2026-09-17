@@ -18,6 +18,7 @@ import LeanMiniscript.Script.EvaluatorExamples
 import LeanMiniscript.Script.NullFailExamples
 import LeanMiniscript.Script.ScriptNumExamples
 import LeanMiniscript.Script.SignatureEncodingExamples
+import LeanMiniscript.Script.SignatureVersionExamples
 import LeanMiniscript.Script.SerializationExamples
 import LeanMiniscript.Script.TimelockExamples
 

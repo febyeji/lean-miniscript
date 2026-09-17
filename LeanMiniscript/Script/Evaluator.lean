@@ -6,8 +6,8 @@ namespace LeanMiniscript.Script
 /-- Cryptographic operations needed by the executable Script evaluator.
 
     The model oracle below preserves the abstract functions used by `Eval`.
-    Executable callers can instead use `pureLeanHashes`, supplying signature
-    per-key signature verification at the application boundary. Legacy
+    Executable callers can instead use `pureLeanHashes`, supplying separate ECDSA and Schnorr
+    signature verification at the application boundary. Legacy
     multisignature matching and byte-error precedence stay in the evaluator. -/
 structure CryptoOracle where
   sha256 : StackElement → StackElement
@@ -15,6 +15,7 @@ structure CryptoOracle where
   ripemd160 : StackElement → StackElement
   hash160 : StackElement → StackElement
   checkSig : StackElement → StackElement → ByteArray → Bool
+  checkSchnorrSig : StackElement → StackElement → ByteArray → Bool
 
 namespace CryptoOracle
 
@@ -26,13 +27,16 @@ def model : CryptoOracle where
   ripemd160 := LeanMiniscript.Script.ripemd160
   hash160 := LeanMiniscript.Script.hash160
   checkSig := LeanMiniscript.Script.checkSig
+  checkSchnorrSig := LeanMiniscript.Script.checkSchnorrSig
 
 /-- Executable pure-Lean hashes paired with caller-supplied signature checks.
 
     A production signature implementation can be supplied through an FFI
     without coupling the proof-facing evaluator to one native library. -/
 def pureLeanHashes
-    (verifySignature : StackElement → StackElement → ByteArray → Bool) :
+    (verifySignature : StackElement → StackElement → ByteArray → Bool)
+    (verifySchnorrSignature : StackElement → StackElement → ByteArray → Bool :=
+      fun _ _ _ => false) :
     CryptoOracle where
   sha256 := LeanHash160.SHA256.hash
   hash256 := fun bytes =>
@@ -40,6 +44,7 @@ def pureLeanHashes
   ripemd160 := LeanHash160.RIPEMD160.hash
   hash160 := LeanHash160.hash160
   checkSig := verifySignature
+  checkSchnorrSig := verifySchnorrSignature
 
 /-- Pointwise agreement with the abstract cryptographic boundary of `Eval`. -/
 def RefinesModel (oracle : CryptoOracle) : Prop :=
@@ -49,7 +54,10 @@ def RefinesModel (oracle : CryptoOracle) : Prop :=
   (∀ bytes, oracle.hash160 bytes = LeanMiniscript.Script.hash160 bytes) ∧
   (∀ sig pubkey sigHash,
     oracle.checkSig sig pubkey sigHash =
-      LeanMiniscript.Script.checkSig sig pubkey sigHash)
+      LeanMiniscript.Script.checkSig sig pubkey sigHash) ∧
+  (∀ sig pubkey sigHash,
+    oracle.checkSchnorrSig sig pubkey sigHash =
+      LeanMiniscript.Script.checkSchnorrSig sig pubkey sigHash)
 
 theorem model_refines : model.RefinesModel := by
   simp [RefinesModel, model]
@@ -221,37 +229,29 @@ def evaluate (oracle : CryptoOracle) (script : Script)
   | .op .OP_CHECKSIG :: rest =>
       match stack with
       | pubkey :: sig :: stackRest =>
-          match checkECDSAEncoding flags sig pubkey with
+          match checkSigWithEncoding oracle.checkSig oracle.checkSchnorrSig flags ctx sig pubkey with
           | .error error => .failure error
-          | .ok () =>
-              let checked := oracle.checkSig sig pubkey ctx.sigHash
-              if checked then
-                evaluate oracle rest (trueElement :: stackRest) altStack flags ctx
-              else if _nullFail : nullFailSatisfied flags [sig] then
-                evaluate oracle rest (falseElement :: stackRest) altStack flags ctx
-              else
-                .failure .sigNullFail
+          | .ok checked =>
+              evaluate oracle rest (boolToElement checked :: stackRest) altStack flags ctx
       | _ => .failure .stackUnderflow
   | .op .OP_CHECKSIGADD :: rest =>
-      match stack with
+      if ctx.sigVersion ≠ .tapscript then .failure .badOpcode
+      else match stack with
       | pubkey :: countBytes :: sig :: stackRest =>
-          match decodeScriptNum countBytes flags.minimalData
-              maxArithmeticScriptNumBytes with
+          match decodeCheckSigAddCount flags ctx countBytes with
           | .error error => .failure error
           | .ok count =>
-              if oracle.checkSig sig pubkey ctx.sigHash then
-                evaluate oracle rest (scriptNum (count + 1) :: stackRest)
-                  altStack flags ctx
-              else if _nullFail : nullFailSatisfied flags [sig] then
-                evaluate oracle rest (scriptNum count :: stackRest) altStack flags ctx
-              else
-                .failure .sigNullFail
+              match checkSigWithEncoding oracle.checkSig oracle.checkSchnorrSig flags ctx sig pubkey with
+              | .error error => .failure error
+              | .ok checked =>
+                  evaluate oracle rest (scriptNum (count + if checked then 1 else 0) :: stackRest)
+                    altStack flags ctx
       | _ => .failure .stackUnderflow
   | .op .OP_CHECKMULTISIG :: rest =>
-      match decodeCheckMultiSigOperands flags stack with
+      match decodeCheckMultiSigOperandsFor flags ctx stack with
       | .error error => .failure error
       | .ok operands =>
-          match checkMultiSigWithEncoding oracle.checkSig flags ctx.sigHash
+          match checkMultiSigFor oracle.checkSig flags ctx
               operands.signatures operands.pubkeys with
           | .error error => .failure error
           | .ok checked =>
@@ -329,12 +329,15 @@ theorem evaluate_eq_of_eval
     evaluate oracle script stack altStack flags ctx = result := by
   have verifier : oracle.checkSig = LeanMiniscript.Script.checkSig :=
     funext fun sig => funext fun pubkey => funext fun hash =>
-      agreement.2.2.2.2 sig pubkey hash
+      agreement.2.2.2.2.1 sig pubkey hash
+  have schnorrVerifier : oracle.checkSchnorrSig = LeanMiniscript.Script.checkSchnorrSig :=
+    funext fun sig => funext fun pubkey => funext fun hash =>
+      agreement.2.2.2.2.2 sig pubkey hash
   induction evaluated <;>
     simp_all [evaluate, CryptoOracle.RefinesModel,
-      Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+      Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
       Opcode.usesTimelockScriptNum, minimalIfSatisfied,
-      boolToElement] <;>
+      boolToElement, decodeCheckSigAddCount] <;>
     try omega <;>
     try grind
   case stack_underflow =>
@@ -348,6 +351,19 @@ theorem evaluate_eq_of_eval
     all_goals
       rename_i belowTop stackTail
       cases stackTail <;> simp_all [evaluate] <;> omega
+  case checksigadd_unavailable =>
+    rename_i stack rest alt flags ctx unavailable
+    cases stack <;> try simp_all [evaluate]
+    rename_i pubkey tail
+    cases tail <;> try simp_all [evaluate]
+    rename_i countBytes tail
+    cases tail <;> try simp_all [evaluate]
+  case checksigadd_success =>
+    split <;> simp_all
+  case checksigadd_failure =>
+    split <;> simp_all
+  case checksigadd_encoding_failure =>
+    split <;> simp_all
   case binary_scriptnum_failure =>
     rename_i opcode top belowTop stackRest rest alt flags ctx error uses decoded
     cases opcode <;>

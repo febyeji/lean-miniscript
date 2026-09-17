@@ -424,6 +424,14 @@ def coreScriptErrorTag : ScriptError → String
   | .sigHighS => "SIG_HIGH_S"
   | .sigHashType => "SIG_HASHTYPE"
   | .pubkeyType => "PUBKEYTYPE"
+  | .witnessPubkeyType => "WITNESS_PUBKEYTYPE"
+  | .schnorrSigSize => "SCHNORR_SIG_SIZE"
+  | .schnorrSigHashType => "SCHNORR_SIG_HASHTYPE"
+  | .schnorrSig => "SCHNORR_SIG"
+  | .tapscriptEmptyPubkey => "TAPSCRIPT_EMPTY_PUBKEY"
+  | .discourageUpgradablePubkeyType => "DISCOURAGE_UPGRADABLE_PUBKEYTYPE"
+  | .badOpcode => "BAD_OPCODE"
+  | .tapscriptCheckMultiSig => "TAPSCRIPT_CHECKMULTISIG"
   | .equalVerify => "EQUALVERIFY"
   | .verify => "VERIFY"
   | .checkSequenceVerify => "UNSATISFIED_LOCKTIME"
@@ -468,14 +476,7 @@ private def errorBeforeFirstSignature (script : Script) (stack : Stack)
               | .error error => return some error
               | .ok () => return none
           | _ => return some .stackUnderflow
-      | .op .OP_CHECKSIGADD :: _ =>
-          match stack with
-          | _ :: countBytes :: _ :: _ =>
-              match decodeScriptNum countBytes flags.minimalData
-                  maxArithmeticScriptNumBytes with
-              | .error error => return some error
-              | .ok _ => return none
-          | _ => return some .stackUnderflow
+      | .op .OP_CHECKSIGADD :: _ => return some .badOpcode
       | .op .OP_CHECKMULTISIG :: _ =>
           match decodeCheckMultiSigOperands flags stack with
           | .error error => return some error

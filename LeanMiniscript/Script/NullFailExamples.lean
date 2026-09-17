@@ -5,8 +5,8 @@ namespace LeanMiniscript.Script
 /-!
 # NULLFAIL fixtures
 
-These examples cover the common NULLFAIL boundary for CHECKSIG, CHECKSIGADD,
-and CHECKMULTISIG. A failed check may push its ordinary false result only when
+These examples cover the pre-Tapscript NULLFAIL boundary for CHECKSIG and
+CHECKMULTISIG. A failed check may push its ordinary false result only when
 every supplied signature is empty or the flag is disabled.
 -/
 
@@ -28,37 +28,32 @@ private def signature : StackElement := ⟨#[0x30]⟩
 example (rejected : checkSig signature pubkey nullFailTx.sigHash = false) :
     Eval [.op .OP_CHECKSIG] [pubkey, signature] [] nullFailFlags nullFailTx
       (.failure .sigNullFail) := by
-  exact Eval.checksigNullFail (by rfl) rejected (by native_decide)
+  apply Eval.checksigNullFail
+  have encoded : checkSigEncodingFor nullFailFlags nullFailTx.sigVersion
+      signature pubkey = .ok () := rfl
+  have verified : verifySigFor checkSig checkSchnorrSig nullFailTx
+      signature pubkey = false := rejected
+  simp only [checkSigWithEncoding, encoded, verified, Bool.false_eq_true, ↓reduceIte]
+  rfl
 
 example (rejected : checkSig falseElement pubkey nullFailTx.sigHash = false) :
     Eval [.op .OP_CHECKSIG] [pubkey, falseElement] [] nullFailFlags nullFailTx
       (.success [falseElement] []) := by
-  exact Eval.checksigFalse (by rfl) rejected
-    (falseElement_nullFailSatisfied nullFailFlags) Eval.done
+  apply Eval.checksigFalse _ Eval.done
+  apply checkSigWithEncoding_empty
+  · rfl
+  · exact rejected
 
 example (rejected : checkSig signature pubkey nullFailTx.sigHash = false) :
     Eval [.op .OP_CHECKSIG] [pubkey, signature] [] nullFailDisabledFlags nullFailTx
       (.success [falseElement] []) := by
-  apply Eval.checksigFalse (by rfl) rejected
-  · simp [nullFailSatisfied, nullFailDisabledFlags]
-  · exact Eval.done
-
-example (rejected : checkSig signature pubkey nullFailTx.sigHash = false) :
-    Eval [.op .OP_CHECKSIGADD] [pubkey, scriptNum 2, signature] []
-      nullFailFlags nullFailTx (.failure .sigNullFail) := by
-  apply Eval.checksigadd_nullfail_failure (count := 2)
-  · rfl
-  · exact rejected
-  · native_decide
-
-example (rejected : checkSig falseElement pubkey nullFailTx.sigHash = false) :
-    Eval [.op .OP_CHECKSIGADD] [pubkey, scriptNum 2, falseElement] []
-      nullFailFlags nullFailTx (.success [scriptNum 2] []) := by
-  apply Eval.checksigadd_failure (count := 2)
-  · rfl
-  · exact rejected
-  · exact falseElement_nullFailSatisfied nullFailFlags
-  · exact Eval.done
+  apply Eval.checksigFalse _ Eval.done
+  have encoded : checkSigEncodingFor nullFailDisabledFlags nullFailTx.sigVersion
+      signature pubkey = .ok () := rfl
+  have verified : verifySigFor checkSig checkSchnorrSig nullFailTx
+      signature pubkey = false := rejected
+  simp only [checkSigWithEncoding, encoded, verified, Bool.false_eq_true, ↓reduceIte]
+  rfl
 
 private def rejectingOracle : CryptoOracle :=
   CryptoOracle.pureLeanHashes
@@ -72,7 +67,7 @@ example : isFailure .sigNullFail (evaluate rejectingOracle [.op .OP_CHECKSIG]
     [pubkey, signature] [] nullFailFlags nullFailTx) = true := by
   native_decide
 
-example : isFailure .sigNullFail (evaluate rejectingOracle [.op .OP_CHECKSIGADD]
+example : isFailure .badOpcode (evaluate rejectingOracle [.op .OP_CHECKSIGADD]
     [pubkey, scriptNum 2, signature] [] nullFailFlags nullFailTx) = true := by
   native_decide
 

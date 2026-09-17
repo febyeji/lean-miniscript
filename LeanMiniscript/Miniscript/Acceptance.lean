@@ -22,10 +22,9 @@ flags that the current `Eval` semantics enforces.
 
     Both contexts require minimal Script-number operands. P2WSH additionally
     uses the modeled Miniscript-facing MINIMALIF and NULLDUMMY settings.
-    Both contexts enforce NULLFAIL, while Tapscript also requires MINIMALIF.
-    P2WSH enables the pre-Tapscript STRICTENC checks. Tapscript disables all
-    ECDSA encoding flags, so Schnorr bytes are never checked as DER.
-    Signature-version-aware Schnorr and disabled-opcode rules remain TODO. -/
+    P2WSH enables NULLFAIL and STRICTENC. Tapscript requires MINIMALIF and
+    ignores the ECDSA encoding and NULLFAIL flags; its signature failures are
+    controlled by the signature version. -/
 def ModeledContextFlags (ctx : ScriptContext) (flags : ScriptFlags) : Prop :=
   match ctx with
   | .p2wsh =>
@@ -36,11 +35,13 @@ def ModeledContextFlags (ctx : ScriptContext) (flags : ScriptFlags) : Prop :=
       flags.strictEncoding = true
   | .tapscript =>
       flags.minimalIf = true ∧
-      flags.minimalData = true ∧
-      flags.nullFail = true ∧
-      flags.strictEncoding = false ∧
-      flags.derSig = false ∧
-      flags.lowS = false
+      flags.minimalData = true
+
+/-- The execution version must agree with the Miniscript script context. -/
+def ModeledContextVersion (ctx : ScriptContext) (txCtx : TxContext) : Prop :=
+  txCtx.sigVersion = match ctx with
+    | .p2wsh => .witnessV0
+    | .tapscript => .tapscript
 
 /-- Execute a serialized-order witness against a script. The operational
     semantics receives a top-first main stack and an initially empty alt stack. -/
@@ -63,6 +64,7 @@ def CleanStackResult (script : Script) (witness : Witness)
 def Accepts (ctx : ScriptContext) (script : Script) (witness : Witness)
     (flags : ScriptFlags) (txCtx : TxContext) : Prop :=
   ModeledContextFlags ctx flags ∧
+  ModeledContextVersion ctx txCtx ∧
   CleanStackResult script witness flags txCtx true
 
 /-- A clean dissatisfaction executes without a Script error and leaves exactly
@@ -70,6 +72,7 @@ def Accepts (ctx : ScriptContext) (script : Script) (witness : Witness)
 def Dissatisfies (ctx : ScriptContext) (script : Script) (witness : Witness)
     (flags : ScriptFlags) (txCtx : TxContext) : Prop :=
   ModeledContextFlags ctx flags ∧
+  ModeledContextVersion ctx txCtx ∧
   CleanStackResult script witness flags txCtx false
 
 private def contractExampleFlags : ScriptFlags := {}
@@ -79,11 +82,12 @@ private def contractExampleTxCtx : TxContext where
   locktime := 0
   sequence := 0
   sigHash := ⟨#[]⟩
+  sigVersion := .witnessV0
 
 /-- The acceptance contract is inhabited by the canonical true script. -/
 example : Accepts .p2wsh [.pushNum 1] []
     contractExampleFlags contractExampleTxCtx := by
-  constructor
+  refine ⟨?_, rfl, ?_⟩
   · simp [ModeledContextFlags, contractExampleFlags]
   · refine ⟨trueElement, [], ?_, by native_decide⟩
     simpa [Executes, Witness.toInitialStack, scriptNum_one] using
@@ -96,7 +100,7 @@ example : Accepts .p2wsh [.pushNum 1] []
 example : Accepts .p2wsh
     [.pushNum 1, .op .OP_TOALTSTACK, .pushNum 1] []
     contractExampleFlags contractExampleTxCtx := by
-  constructor
+  refine ⟨?_, rfl, ?_⟩
   · simp [ModeledContextFlags, contractExampleFlags]
   · refine ⟨scriptNum 1, [scriptNum 1], ?_, by native_decide⟩
     simpa [Executes, Witness.toInitialStack] using
@@ -113,7 +117,7 @@ example : Accepts .p2wsh
 /-- A successful false result is a dissatisfaction, not an execution error. -/
 example : Dissatisfies .p2wsh [.pushNum 0] []
     contractExampleFlags contractExampleTxCtx := by
-  constructor
+  refine ⟨?_, rfl, ?_⟩
   · simp [ModeledContextFlags, contractExampleFlags]
   · refine ⟨falseElement, [], ?_, by native_decide⟩
     simpa [Executes, Witness.toInitialStack, scriptNum_zero] using
