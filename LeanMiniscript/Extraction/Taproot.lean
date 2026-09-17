@@ -34,16 +34,21 @@ def parseTapscriptWitness (fullWitness : List ByteArray) :
           controlBlock := control
           annex := if hasAnnex then some last else none }
 
-/-- Native P2TR script-path execution with commitment validation, per-signature
-transaction hashing and the full witness budget. The spent output supplies the
-output key; caller key hints cannot replace it. Leaf version 0xc0 uses the
-Miniscript Script AST. Key paths/future versions are explicitly unsupported.
-Initial stack/element limits and final acceptance remain separate obligations,
-as do the validity and provenance of the supplied transaction/prevouts. -/
-def execCommittedTapscriptTransaction (oracle : CryptoOracle) (script : Script)
-    (fullWitness : List ByteArray) (flags : ScriptFlags)
-    (transaction : Transaction) (spentOutputs : Array TxOutput) (inputIndex : Nat) :
-    Except TaprootScriptPathError WeightedResult := do
+/-- Material prepared for the modeled Tapscript entry point. Obtaining this
+from the preparation function validates its native-output commitment. The
+record itself is raw data, with no constructor-level proof invariant. -/
+structure PreparedTapscript where
+  witness : TapscriptWitness
+  context : TxContext
+  deriving Repr
+
+/-- Validate transaction-context shape and a wire-order script-path witness's
+commitment to the selected native P2TR spent output. Execution, flags and final
+acceptance are separate; key paths/future leaf versions remain unsupported. -/
+def prepareCommittedTapscriptTransaction
+    (fullWitness : List ByteArray) (transaction : Transaction)
+    (spentOutputs : Array TxOutput) (inputIndex : Nat) :
+    Except TaprootScriptPathError PreparedTapscript := do
   let ctx ← (TxContext.fromTaproot {
     transaction := transaction, spentOutputs := spentOutputs, inputIndex := inputIndex }).mapError
       TaprootScriptPathError.context
@@ -57,7 +62,19 @@ def execCommittedTapscriptTransaction (oracle : CryptoOracle) (script : Script)
     witness.scriptBytes witness.controlBlock).mapError TaprootScriptPathError.control
   if commitment.leafVersion != 0xc0 then
     throw (.leafVersionUnsupported commitment.leafVersion)
-  return evaluateTapscript oracle script witness flags ctx
+  return { witness := witness, context := ctx }
+
+/-- Execute a committed native P2TR script-path witness with transaction-backed
+hashing and the full witness budget. Preparation checks the commitment against
+the selected spent output before execution. Initial stack/element limits,
+final acceptance, transaction validity and prevout provenance remain caller
+obligations. The AST must serialize to the committed script bytes. -/
+def execCommittedTapscriptTransaction (oracle : CryptoOracle) (script : Script)
+    (fullWitness : List ByteArray) (flags : ScriptFlags)
+    (transaction : Transaction) (spentOutputs : Array TxOutput) (inputIndex : Nat) :
+    Except TaprootScriptPathError WeightedResult := do
+  let prepared ← prepareCommittedTapscriptTransaction fullWitness transaction spentOutputs inputIndex
+  return evaluateTapscript oracle script prepared.witness flags prepared.context
 
 /-- Deterministic commitment/setup checks preserve the evaluator's existing
 conditional oracle-refinement guarantee. This does not prove curve correctness. -/

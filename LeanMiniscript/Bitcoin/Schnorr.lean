@@ -1,5 +1,5 @@
 import LeanMiniscript.Bitcoin.Secp256k1
-import LeanMiniscript.Bitcoin.TaprootSighash
+import LeanMiniscript.Bitcoin.TaggedHash
 
 namespace LeanMiniscript.Bitcoin.Schnorr
 open Secp256k1

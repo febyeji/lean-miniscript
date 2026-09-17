@@ -1,4 +1,4 @@
-import LeanHash160
+import LeanMiniscript.Bitcoin.TaggedHash
 import LeanMiniscript.Bitcoin.Transaction
 
 namespace LeanMiniscript.Bitcoin
@@ -45,10 +45,6 @@ def taprootOutputType (hashType : UInt8) : Nat :=
 
 def taprootAnyoneCanPay (hashType : UInt8) : Bool :=
   hashType.toNat / 128 == 1
-
-def taggedHash (tag : String) (message : ByteArray) : ByteArray :=
-  let tagHash := LeanHash160.SHA256.hash tag.toUTF8
-  LeanHash160.SHA256.hash (tagHash ++ tagHash ++ message)
 
 def tapleafHash (scriptBytes : ByteArray) (leafVersion : UInt8 := 0xc0) : ByteArray :=
   taggedHash "TapLeaf" (⟨#[leafVersion]⟩ ++ serializeByteVector scriptBytes)

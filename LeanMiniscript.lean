@@ -1,3 +1,4 @@
+import LeanMiniscript.Bitcoin.TaggedHash
 import LeanMiniscript.Bitcoin.Transaction
 import LeanMiniscript.Bitcoin.TaprootSighash
 import LeanMiniscript.Bitcoin.Schnorr
