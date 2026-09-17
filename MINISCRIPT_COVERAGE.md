@@ -222,8 +222,32 @@ length boundaries, verifier dispatch and signature-byte stripping, empty and
 upgradable key versions, policy flags, count/error priority, disabled opcodes,
 and skipped branches. Existence, determinism, and evaluator refinement remain
 proved for all modeled versions.
-Tapscript validation-weight accounting remains TODO: these checks assume
-sufficient budget and do not claim its exhaustion/error precedence. Real
+`Eval` and `evaluate` remain resource-free opcode interfaces.
+`ValidationWeight.lean` adds `WeightedEval` and `evaluateWithValidationWeight`,
+composing single-opcode transitions with BIP342 resource debits. Nonempty
+signatures cost 50, including unknown key versions; empty signatures and skipped
+branches cost zero. Exhaustion reports `TAPSCRIPT_VALIDATION_WEIGHT` before
+key/signature/oracle checks, after arity and CHECKSIGADD count decoding.
+`WeightedResult.success` carries remaining weight across sequential execution.
+`initialValidationWeight` is 50 plus the CompactSize-prefixed serialization of
+**all** input-witness items. `TapscriptWitness` explicitly includes arguments,
+script bytes, control block and optional annex; `evaluateTapscript` / `execTapscript`
+bind the canonical modeled script to those bytes and check the annex marker.
+`TapscriptAccepts` / `TapscriptDissatisfies` apply clean-stack and modeled flags to
+this budget-checked full-witness boundary. The older `Accepts`, satisfaction
+lemmas and type-guarantee targets remain resource-free and must not be cited
+as budget-aware acceptance results.
+`evaluateWithValidationWeight_eq_of_eval`, `evaluateWithValidationWeight_sound`,
+`weighted_model_iff` and `WeightedEval.deterministic` prove resource-aware
+refinement, existence and determinism. `WeightedEval.erase_success` proves
+successful budgeted execution has the same result in `Eval`.
+Fixtures cover CompactSize boundaries, exact exhaustion, repeated checks,
+unknown key charging, count/error precedence, skipped/nested/duplicate-ELSE
+branches, witness-size initialization and annex-funded signature reuse.
+Taproot control-block commitment validation and initial stack/element limits
+remain caller obligations. Boundary-only script-byte and annex errors have
+explicit `MODEL_` audit tags; they are not presented as Core consensus errors.
+Real
 transaction-derived sighashes, including SIGHASH_SINGLE output availability,
 Taproot key-path and witness/control-block validation, Bitcoin Core op-counting,
 other unmodeled raw-script errors, and full failure completeness remain unfinished.

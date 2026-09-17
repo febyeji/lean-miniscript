@@ -72,6 +72,9 @@ private def coreErrorTagFixtures : List (ScriptError × String) :=
   (.schnorrSigHashType, "SCHNORR_SIG_HASHTYPE"),
   (.schnorrSig, "SCHNORR_SIG"),
   (.tapscriptEmptyPubkey, "TAPSCRIPT_EMPTY_PUBKEY"),
+  (.tapscriptValidationWeight, "TAPSCRIPT_VALIDATION_WEIGHT"),
+  (.tapscriptWitnessScript, "MODEL_TAPSCRIPT_WITNESS_SCRIPT"),
+  (.tapscriptAnnex, "MODEL_TAPSCRIPT_ANNEX"),
   (.discourageUpgradablePubkeyType, "DISCOURAGE_UPGRADABLE_PUBKEYTYPE"),
   (.badOpcode, "BAD_OPCODE"),
   (.tapscriptCheckMultiSig, "TAPSCRIPT_CHECKMULTISIG"),
@@ -82,7 +85,7 @@ private def coreErrorTagFixtures : List (ScriptError × String) :=
    (.minimalIf, "MINIMALIF"),
    (.unbalancedConditional, "UNBALANCED_CONDITIONAL")]
 
-/-- Every modeled evaluator failure has an explicit Bitcoin Core tag. -/
+/-- Every modeled failure has an explicit Core or MODEL_ boundary tag. -/
 example : ∀ error, ∃ tag, (error, tag) ∈ coreErrorTagFixtures := by
   intro error
   cases error <;> simp [coreErrorTagFixtures]

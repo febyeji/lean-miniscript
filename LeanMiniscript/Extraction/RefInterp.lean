@@ -1,4 +1,4 @@
-import LeanMiniscript.Script.Evaluator
+import LeanMiniscript.Script.ValidationWeight
 
 namespace LeanMiniscript.Extraction
 
@@ -13,6 +13,13 @@ def execScript (oracle : CryptoOracle) (script : Script)
     (initialStack : Stack) (flags : ScriptFlags) (ctx : TxContext) :
     ExecResult :=
   evaluate oracle script initialStack [] flags ctx
+
+/-- Execute a Tapscript script-path witness with validation-weight accounting.
+    Callers validate the Taproot/control-block commitment separately. -/
+def execTapscript (oracle : CryptoOracle) (script : Script)
+    (witness : TapscriptWitness) (flags : ScriptFlags) (ctx : TxContext) :
+    WeightedResult :=
+  evaluateTapscript oracle script witness flags ctx
 
 -- TODO: Extend differential execution to push-encoding, witness, and P2SH rows
 -- TODO: Add a secp256k1 oracle for signature-result rows
