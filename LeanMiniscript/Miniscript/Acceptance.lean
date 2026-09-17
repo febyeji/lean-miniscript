@@ -1,4 +1,4 @@
-import LeanMiniscript.Script.BigStep
+import LeanMiniscript.Script.ValidationWeight
 import LeanMiniscript.Miniscript.Context
 import LeanMiniscript.Miniscript.Witness
 
@@ -9,7 +9,7 @@ open LeanMiniscript.Script
 /-!
 # Execution and final acceptance
 
-`Eval` describes instruction execution and may finish with any successful stack
+`Eval` describes resource-free instruction execution and may finish with any successful stack
 shape. The predicates below state the additional witness-order, context-flag,
 truth-value, and clean-stack conditions used by Miniscript-facing claims.
 
@@ -74,6 +74,25 @@ def Dissatisfies (ctx : ScriptContext) (script : Script) (witness : Witness)
   ModeledContextFlags ctx flags ∧
   ModeledContextVersion ctx txCtx ∧
   CleanStackResult script witness flags txCtx false
+
+/-- Resource-aware script-path acceptance. The script bytes and annex are
+    checked at the full-witness boundary; the control-block commitment and
+    initial stack/element limits remain caller obligations. Unlike `Accepts`,
+    this predicate enforces the BIP342 validation-weight budget. -/
+def TapscriptAccepts (script : Script) (witness : TapscriptWitness)
+    (flags : ScriptFlags) (txCtx : TxContext) : Prop :=
+  ModeledContextFlags .tapscript flags ∧
+  ∃ top finalAlt weight,
+    evaluateTapscript CryptoOracle.model script witness flags txCtx =
+      .success [top] finalAlt weight ∧ castToBool top = true
+
+/-- A budget-checked clean false result, without a terminal Script error. -/
+def TapscriptDissatisfies (script : Script) (witness : TapscriptWitness)
+    (flags : ScriptFlags) (txCtx : TxContext) : Prop :=
+  ModeledContextFlags .tapscript flags ∧
+  ∃ top finalAlt weight,
+    evaluateTapscript CryptoOracle.model script witness flags txCtx =
+      .success [top] finalAlt weight ∧ castToBool top = false
 
 private def contractExampleFlags : ScriptFlags := {}
 

@@ -38,6 +38,12 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   public-key version rules, and terminal verification errors; CHECKSIGADD is
   unavailable before Tapscript, while CHECKMULTISIG is disabled in Tapscript.
   Witness-v0 optionally enforces compressed-key policy.
+  `evaluateWithValidationWeight` / `WeightedEval` add BIP342 validation-weight
+  accounting and return the remaining weight with both stacks. `execTapscript`
+  initializes it from the full serialized input witness, including script,
+  control block and annex. `TapscriptAccepts` / `TapscriptDissatisfies` expose
+  the resource-aware clean-stack boundary. Refinement, determinism and successful
+  execution's erasure to the resource-free `Eval` relation are proved.
   An oracle-parameterized `evaluate` function executes that same modeled
   subset; its model-oracle result is proved equivalent to `Eval`, while the
   executable oracle uses the pinned pure-Lean hashes and accepts injected
@@ -62,8 +68,8 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
 - General soundness, full satisfaction coverage, non-malleability, small-step
   semantics, production secp256k1 bindings, unsupported Core failure classes,
   and full semantic coverage of the Bitcoin Core differential suite are
-  unfinished. Tapscript checks assume sufficient validation weight; budget
-  accounting, transaction-derived sighashes (including SIGHASH_SINGLE output
+  unfinished. The older `Eval` / `Accepts` APIs are resource-free; complete
+  budget checks use the full-witness Tapscript APIs above. Transaction-derived sighashes (including SIGHASH_SINGLE output
   availability), and Taproot witness/control-block validation remain TODO.
   The Miniscript acceptance contract requires its matching execution version.
 

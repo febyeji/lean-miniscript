@@ -409,7 +409,8 @@ private def sourceUsesMinimalPushes (source : String) (script : Script) : Bool :
   | _, _ => false
 
 /-- Bitcoin Core `ScriptErrorString` tag corresponding to each modeled
-    evaluator failure. Several Lean errors intentionally share one Core tag. -/
+    evaluator failure. Several Lean errors intentionally share one Core tag. Boundary-only
+    validation errors use explicit MODEL_ tags, not claimed Core errors. -/
 def coreScriptErrorTag : ScriptError → String
   | .stackUnderflow => "INVALID_STACK_OPERATION"
   | .altStackUnderflow => "INVALID_ALTSTACK_OPERATION"
@@ -429,6 +430,9 @@ def coreScriptErrorTag : ScriptError → String
   | .schnorrSigHashType => "SCHNORR_SIG_HASHTYPE"
   | .schnorrSig => "SCHNORR_SIG"
   | .tapscriptEmptyPubkey => "TAPSCRIPT_EMPTY_PUBKEY"
+  | .tapscriptValidationWeight => "TAPSCRIPT_VALIDATION_WEIGHT"
+  | .tapscriptWitnessScript => "MODEL_TAPSCRIPT_WITNESS_SCRIPT"
+  | .tapscriptAnnex => "MODEL_TAPSCRIPT_ANNEX"
   | .discourageUpgradablePubkeyType => "DISCOURAGE_UPGRADABLE_PUBKEYTYPE"
   | .badOpcode => "BAD_OPCODE"
   | .tapscriptCheckMultiSig => "TAPSCRIPT_CHECKMULTISIG"

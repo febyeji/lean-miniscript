@@ -8,8 +8,8 @@ namespace LeanMiniscript.Script
 Targets Bitcoin Core v31.1, commit
 `9be056a8a72b624dae9623b2f7bded92c2a21c91`, `src/script/interpreter.cpp`,
 and BIP342. The supplied signature hash remains abstract. Transaction-dependent
-SIGHASH_SINGLE availability and Tapscript validation-weight accounting are TODO;
-the modeled Tapscript checks assume sufficient validation weight.
+SIGHASH_SINGLE availability remains TODO. These opcode checks are resource-free;
+`ValidationWeight` adds the full-witness Tapscript execution budget.
 -/
 
 def isCompressedPubKey (pubkey : StackElement) : Bool :=

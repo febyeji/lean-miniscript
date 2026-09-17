@@ -1,6 +1,7 @@
 import LeanMiniscript
 import LeanMiniscript.Script.BigStep
 import LeanMiniscript.Script.Evaluator
+import LeanMiniscript.Script.ValidationWeight
 import LeanMiniscript.Script.SmallStep
 import LeanMiniscript.Script.Equivalence
 import LeanMiniscript.Miniscript.Witness

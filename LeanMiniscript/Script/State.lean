@@ -92,6 +92,9 @@ inductive ScriptError where
   | schnorrSigHashType
   | schnorrSig
   | tapscriptEmptyPubkey
+  | tapscriptValidationWeight
+  | tapscriptWitnessScript
+  | tapscriptAnnex
   | discourageUpgradablePubkeyType
   | badOpcode
   | tapscriptCheckMultiSig
