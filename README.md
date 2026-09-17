@@ -28,11 +28,16 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   explicit stack-underflow, Script-number, unbalanced-conditional, and
   variable-frame `CHECKMULTISIG` failures; Core-aligned BIP 65 and
   BIP 68/112 transaction-context checks cover CLTV and CSV, together with
-  NULLFAIL behavior for all three signature opcodes and global theorems that
+  NULLFAIL behavior for ECDSA signature opcodes and global theorems that
   every modeled initial state has exactly one result. ECDSA CHECKSIG and legacy
   CHECKMULTISIG enforce DERSIG, LOW_S, and STRICTENC with typed DER, high-S,
   sighash-type, and public-key-format errors. Multisignature matching checks
   only reached pairs, then applies NULLFAIL and historical-dummy checks.
+  Execution versions distinguish legacy, witness-v0, and Tapscript rules.
+  Tapscript CHECKSIG/CHECKSIGADD enforce Schnorr size and sighash encoding,
+  public-key version rules, and terminal verification errors; CHECKSIGADD is
+  unavailable before Tapscript, while CHECKMULTISIG is disabled in Tapscript.
+  Witness-v0 optionally enforces compressed-key policy.
   An oracle-parameterized `evaluate` function executes that same modeled
   subset; its model-oracle result is proved equivalent to `Eval`, while the
   executable oracle uses the pinned pure-Lean hashes and accepts injected
@@ -57,9 +62,10 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
 - General soundness, full satisfaction coverage, non-malleability, small-step
   semantics, production secp256k1 bindings, unsupported Core failure classes,
   and full semantic coverage of the Bitcoin Core differential suite are
-  unfinished. Signature-version-aware Schnorr checks and WITNESS_PUBKEYTYPE
-  remain outside the modeled subset; the Tapscript acceptance contract disables
-  ECDSA encoding flags to preserve its abstract signature boundary.
+  unfinished. Tapscript checks assume sufficient validation weight; budget
+  accounting, transaction-derived sighashes (including SIGHASH_SINGLE output
+  availability), and Taproot witness/control-block validation remain TODO.
+  The Miniscript acceptance contract requires its matching execution version.
 
 See [`MINISCRIPT_COVERAGE.md`](MINISCRIPT_COVERAGE.md) for the constructor-level
 coverage matrix, proof-status legend, semantic conventions, and subsystem pins.

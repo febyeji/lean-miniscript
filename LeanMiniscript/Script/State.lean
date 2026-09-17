@@ -25,7 +25,19 @@ structure ScriptFlags where
   lowS : Bool := false
   /-- `SCRIPT_VERIFY_STRICTENC`: check DER, sighash types, and public-key format. -/
   strictEncoding : Bool := true
+  /-- Witness-v0 policy requires compressed public keys when enabled. -/
+  witnessPubKeyType : Bool := false
+  /-- Reject unknown Tapscript public-key versions when enabled. -/
+  discourageUpgradablePubKeyType : Bool := false
   deriving Repr
+
+/-- Script signature algorithms and opcode availability. Taproot key-path
+    verification has no Script execution and is outside this type. -/
+inductive SignatureVersion where
+  | base
+  | witnessV0
+  | tapscript
+  deriving Repr, DecidableEq, BEq
 
 /-- Transaction context needed for signature verification and timelocks. -/
 structure TxContext where
@@ -37,6 +49,8 @@ structure TxContext where
   sequence : Nat
   /-- Signature hash (simplified — real implementation needs full tx) -/
   sigHash : ByteArray
+  /-- Execution signature version; independent of transaction version. -/
+  sigVersion : SignatureVersion := .base
   deriving Repr
 
 /-- The complete execution state of the Bitcoin Script interpreter. -/
@@ -73,6 +87,14 @@ inductive ScriptError where
   | sigHighS
   | sigHashType
   | pubkeyType
+  | witnessPubkeyType
+  | schnorrSigSize
+  | schnorrSigHashType
+  | schnorrSig
+  | tapscriptEmptyPubkey
+  | discourageUpgradablePubkeyType
+  | badOpcode
+  | tapscriptCheckMultiSig
   | equalVerify
   | verify
   | checkSequenceVerify
@@ -104,6 +126,14 @@ def Opcode.fixedMainStackInputs? : Opcode → Option Nat
   | .OP_CHECKMULTISIG => none
   | .OP_CHECKSEQUENCEVERIFY | .OP_CHECKLOCKTIMEVERIFY => some 1
   | .OP_VERIFY | .OP_SIZE => some 1
+
+/-- Fixed arity only for opcodes available in this signature version.
+    CHECKSIGADD outside Tapscript fails before any stack access. -/
+def Opcode.activeFixedMainStackInputs? (opcode : Opcode)
+    (version : SignatureVersion) : Option Nat :=
+  match opcode with
+  | .OP_CHECKSIGADD => if version ≠ .tapscript then none else some 3
+  | _ => opcode.fixedMainStackInputs?
 
 /-- Opcodes in the generated subset that decode both operands as Script
     numbers with the ordinary four-byte limit. -/
@@ -488,5 +518,10 @@ opaque hash160 (x : StackElement) : StackElement
     In formal proofs we treat this as an opaque predicate.
     Returns true iff the signature is valid for the given key and sighash. -/
 opaque checkSig (sig : StackElement) (pubkey : StackElement) (sigHash : ByteArray) : Bool
+
+/-- BIP340 cryptographic boundary, separate from ECDSA. The byte and
+    signature-version rules are executable in `SignatureChecks`. -/
+opaque checkSchnorrSig (sig : StackElement) (pubkey : StackElement)
+    (sigHash : ByteArray) : Bool
 
 end LeanMiniscript.Script

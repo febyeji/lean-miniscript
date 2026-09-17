@@ -3,6 +3,7 @@ import LeanMiniscript.Script.Assembly
 import LeanMiniscript.Script.ControlFlow
 import LeanMiniscript.Script.State
 import LeanMiniscript.Script.SignatureEncoding
+import LeanMiniscript.Script.SignatureChecks
 import LeanMiniscript.Script.Serialization
 import LeanMiniscript.Miniscript.KeyExpr
 import LeanMiniscript.Miniscript.Syntax

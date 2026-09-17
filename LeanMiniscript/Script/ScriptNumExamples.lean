@@ -142,9 +142,10 @@ example : Eval [.op .OP_0NOTEQUAL] [nonMinimalOne] []
     oracle, so malformed counts fail without a cryptographic premise. -/
 example : Eval [.op .OP_CHECKSIGADD]
     [⟨#[0x02]⟩, nonMinimalOne, ⟨#[]⟩] []
-    strictNumberFlags numberFixtureTx (.failure .scriptNumNonMinimal) := by
+    strictNumberFlags { numberFixtureTx with sigVersion := .tapscript } (.failure .scriptNumNonMinimal) := by
   apply Eval.checksigadd_scriptnum_failure
-  rfl
+  · rfl
+  · rfl
 
 /-! ## Timelock numeric boundaries -/
 

@@ -7,8 +7,8 @@ namespace LeanMiniscript.Script
 
 The byte checks and matching order target Bitcoin Core v31.1 at
 `9be056a8a72b624dae9623b2f7bded92c2a21c91`, `src/script/interpreter.cpp`.
-They apply to ECDSA CHECKSIG and legacy CHECKMULTISIG. CHECKSIGADD retains its
-existing abstract boundary; signature-version-aware Schnorr rules remain TODO.
+They apply to ECDSA CHECKSIG and legacy CHECKMULTISIG. `SignatureChecks`
+selects these checks by signature version and implements Schnorr byte rules.
 -/
 
 /-- BIP 66 encoding, including the final sighash byte. This checks the shape
