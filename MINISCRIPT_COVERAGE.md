@@ -287,9 +287,11 @@ but are propositions to be proved rather than completed theorems:
 - `TypeSoundnessCore` and `TypeSoundnessSurface` require context validity,
   relational typing, and an explicitly supported non-vacuous semantic case;
 - `SatisfactionCorrectnessCore` and `SatisfactionCorrectnessSurface` require a
-  sound material environment and conclude `Accepts`;
+  cryptographically sound material environment and encoding soundness under
+  the selected flags, and conclude `Accepts`;
 - `DissatisfactionCorrectnessCore` and its surface counterpart require the `d`
-  modifier and conclude `Dissatisfies`; and
+  modifier and public-key encoding for the supported signature fragment, and
+  conclude `Dissatisfies`; and
 - `ResourceBoundsSound` gives the first conservative combined main/alt-stack
   growth target for successful compiler-output evaluation.
 

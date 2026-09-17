@@ -293,12 +293,13 @@ Core proof tasks:
 
 /-- Target contract for core satisfaction. Returned serialized-order witnesses
     must be accepted by the compiled script in the environment's transaction
-    context. -/
+    context, with both cryptographic and encoding soundness premises. -/
 def SatisfactionCorrectnessCore : Prop :=
   ∀ {ctx : ScriptContext} {m : CoreFragment} {env : SatEnv}
       {witness : Witness} {flags : ScriptFlags},
     ValidMiniscript ctx m →
     env.Sound →
+    env.EncodingSound flags →
     ModeledContextFlags ctx flags →
     satisfy m env = some witness →
     Accepts ctx (compile m) witness flags env.txCtx
@@ -309,6 +310,7 @@ def SatisfactionCorrectnessSurface : Prop :=
       {witness : Witness} {flags : ScriptFlags},
     ValidSurfaceMiniscript ctx m →
     env.Sound →
+    env.EncodingSound flags →
     ModeledContextFlags ctx flags →
     satisfy (desugar m) env = some witness →
     Accepts ctx (compileSurface m) witness flags env.txCtx
@@ -316,12 +318,16 @@ def SatisfactionCorrectnessSurface : Prop :=
 /-! ## Theorem 3: Dissatisfaction Correctness -/
 
 /-- Target contract for core dissatisfaction. The returned witness must execute
-    successfully to a clean false result rather than aborting. -/
+    successfully to a clean false result rather than aborting. The key premise
+    covers the signature fragment currently supported by `dissatisfy`.
+    TODO(theorem): extend encoding premises alongside composite dissatisfaction. -/
 def DissatisfactionCorrectnessCore : Prop :=
   ∀ {ctx : ScriptContext} {m : CoreFragment} {env : SatEnv}
       {witness : Witness} {flags : ScriptFlags},
     ValidDissatisfiableMiniscript ctx m →
     env.Sound →
+    (∀ key, m = .c (.pk_k key) →
+      checkPubKeyEncoding flags key.bytes = .ok ()) →
     ModeledContextFlags ctx flags →
     dissatisfy m env = some witness →
     Dissatisfies ctx (compile m) witness flags env.txCtx
@@ -332,6 +338,8 @@ def DissatisfactionCorrectnessSurface : Prop :=
       {witness : Witness} {flags : ScriptFlags},
     ValidDissatisfiableSurfaceMiniscript ctx m →
     env.Sound →
+    (∀ key, desugar m = .c (.pk_k key) →
+      checkPubKeyEncoding flags key.bytes = .ok ()) →
     ModeledContextFlags ctx flags →
     dissatisfy (desugar m) env = some witness →
     Dissatisfies ctx (compileSurface m) witness flags env.txCtx
