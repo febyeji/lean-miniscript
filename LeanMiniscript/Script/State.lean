@@ -17,6 +17,8 @@ structure ScriptFlags where
   minimalData : Bool := true
   /-- BIP 147: Require dummy element for CHECKMULTISIG to be null -/
   nullDummy : Bool := true
+  /-- `SCRIPT_VERIFY_NULLFAIL`: failed signature checks require empty signatures. -/
+  nullFail : Bool := true
   /-- BIP 66: Strict DER signature encoding -/
   strictEncoding : Bool := true
   deriving Repr
@@ -62,6 +64,7 @@ inductive ScriptError where
   | signatureCount
   | negativeLocktime
   | nullDummy
+  | sigNullFail
   | equalVerify
   | verify
   | checkSequenceVerify
@@ -417,6 +420,26 @@ instance (flags : ScriptFlags) (dummy : StackElement) :
     Decidable (nullDummySatisfied flags dummy) := by
   unfold nullDummySatisfied
   infer_instance
+
+/-- Whether signatures satisfy NULLFAIL after their cryptographic check fails.
+    With the flag disabled any signatures are permitted; with it enabled every
+    supplied signature must be the empty byte vector. -/
+def nullFailSatisfied (flags : ScriptFlags) (signatures : List StackElement) : Prop :=
+  flags.nullFail = false ∨ ∀ signature ∈ signatures, signature.size = 0
+
+instance (flags : ScriptFlags) (signatures : List StackElement) :
+    Decidable (nullFailSatisfied flags signatures) := by
+  unfold nullFailSatisfied
+  infer_instance
+
+/-- The canonical empty signature always satisfies NULLFAIL. -/
+theorem falseElement_nullFailSatisfied (flags : ScriptFlags) :
+    nullFailSatisfied flags [falseElement] := by
+  right
+  intro signature member
+  simp only [List.mem_singleton] at member
+  subst signature
+  rfl
 
 theorem falseElement_minimalIfArg : minimalIfArg falseElement = true :=
   by native_decide

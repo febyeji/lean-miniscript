@@ -19,6 +19,9 @@ private def checkMultiSigFlags : ScriptFlags := {}
 private def relaxedCheckMultiSigFlags : ScriptFlags where
   minimalData := false
 
+private def nullFailDisabledCheckMultiSigFlags : ScriptFlags where
+  nullFail := false
+
 private def checkMultiSigTx : TxContext where
   version := 2
   locktime := 0
@@ -172,14 +175,30 @@ example
 example
     (rejected : checkMultiSig [signature] [keyB, keyA]
       checkMultiSigTx.sigHash = false) :
-    Eval [.op .OP_CHECKMULTISIG] oneOfTwoStack [] checkMultiSigFlags
+    Eval [.op .OP_CHECKMULTISIG] oneOfTwoStack [] nullFailDisabledCheckMultiSigFlags
       checkMultiSigTx (.success [falseElement] []) := by
   apply Eval.checkmultisig_failure (operands := oneOfTwoOperands)
+  · rfl
+  · simp [nullDummySatisfied, nullFailDisabledCheckMultiSigFlags,
+      oneOfTwoOperands,
+      stackElementEq, falseElement]
+  · exact rejected
+  · simp [nullFailSatisfied, nullFailDisabledCheckMultiSigFlags]
+  · exact Eval.done
+
+/-- A failed CHECKMULTISIG with a nonempty signature terminates under
+    NULLFAIL instead of pushing false. -/
+example
+    (rejected : checkMultiSig [signature] [keyB, keyA]
+      checkMultiSigTx.sigHash = false) :
+    Eval [.op .OP_CHECKMULTISIG] oneOfTwoStack [] checkMultiSigFlags
+      checkMultiSigTx (.failure .sigNullFail) := by
+  apply Eval.checkmultisig_nullfail_failure (operands := oneOfTwoOperands)
   · rfl
   · simp [nullDummySatisfied, checkMultiSigFlags, oneOfTwoOperands,
       stackElementEq, falseElement]
   · exact rejected
-  · exact Eval.done
+  · native_decide
 
 /-- Compiler-emitted `multi(1, keyA, keyB)` reaches the decoder with signatures
     above the historical dummy and keys in top-first evaluation order. -/

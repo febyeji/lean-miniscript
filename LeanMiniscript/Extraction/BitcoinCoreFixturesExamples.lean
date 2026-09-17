@@ -63,6 +63,7 @@ private def coreErrorTagFixtures : List (ScriptError × String) :=
    (.signatureCount, "SIG_COUNT"),
    (.negativeLocktime, "NEGATIVE_LOCKTIME"),
    (.nullDummy, "SIG_NULLDUMMY"),
+   (.sigNullFail, "SIG_NULLFAIL"),
    (.equalVerify, "EQUALVERIFY"),
    (.verify, "VERIFY"),
    (.checkSequenceVerify, "UNSATISFIED_LOCKTIME"),

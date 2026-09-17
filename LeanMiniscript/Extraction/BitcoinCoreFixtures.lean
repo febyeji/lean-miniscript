@@ -390,7 +390,7 @@ private def isP2SHScript : Script → Bool
     NOP10 remain rejected at the source boundary. -/
 private def firstUnsupportedFlag (names : List String) : Option String :=
   names.find? fun flag =>
-    !["P2SH", "STRICTENC", "MINIMALDATA", "MINIMALIF", "NULLDUMMY",
+    !["P2SH", "STRICTENC", "MINIMALDATA", "MINIMALIF", "NULLDUMMY", "NULLFAIL",
       "CHECKLOCKTIMEVERIFY", "CHECKSEQUENCEVERIFY",
       "DISCOURAGE_UPGRADABLE_NOPS"].contains flag
 
@@ -398,6 +398,7 @@ private def flagsForCoreFixture (names : List String) : ScriptFlags where
   minimalIf := names.contains "MINIMALIF"
   minimalData := names.contains "MINIMALDATA"
   nullDummy := names.contains "NULLDUMMY"
+  nullFail := names.contains "NULLFAIL"
   strictEncoding := names.contains "STRICTENC"
 
 private def sourceUsesMinimalPushes (source : String) (script : Script) : Bool :=
@@ -416,6 +417,7 @@ def coreScriptErrorTag : ScriptError → String
   | .signatureCount => "SIG_COUNT"
   | .negativeLocktime => "NEGATIVE_LOCKTIME"
   | .nullDummy => "SIG_NULLDUMMY"
+  | .sigNullFail => "SIG_NULLFAIL"
   | .equalVerify => "EQUALVERIFY"
   | .verify => "VERIFY"
   | .checkSequenceVerify => "UNSATISFIED_LOCKTIME"
@@ -427,7 +429,7 @@ private def supportedExpectedError : String → Bool
   | "OK" | "EVAL_FALSE" | "INVALID_STACK_OPERATION" |
       "INVALID_ALTSTACK_OPERATION" | "SCRIPTNUM" | "MINIMALDATA" |
       "PUBKEY_COUNT" | "SIG_COUNT" | "NEGATIVE_LOCKTIME" |
-      "SIG_NULLDUMMY" | "EQUALVERIFY" | "VERIFY" |
+      "SIG_NULLDUMMY" | "SIG_NULLFAIL" | "EQUALVERIFY" | "VERIFY" |
       "UNSATISFIED_LOCKTIME" | "MINIMALIF" |
       "UNBALANCED_CONDITIONAL" => true
   | _ => false

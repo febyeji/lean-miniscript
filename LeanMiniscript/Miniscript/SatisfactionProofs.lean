@@ -118,6 +118,6 @@ theorem dissatisfy_basic_sound
     change Eval [ScriptElement.pushData key.bytes, .op .OP_CHECKSIG]
       [falseElement] [] flags env.txCtx (.success [falseElement] [])
     exact Eval.pushDataNext
-      (Eval.checksigFalse rejected Eval.done)
+      (Eval.checksigFalse rejected (falseElement_nullFailSatisfied flags) Eval.done)
 
 end LeanMiniscript.Miniscript

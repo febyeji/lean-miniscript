@@ -107,10 +107,15 @@ theorem c_pk_k_soundness (key : PubKey) :
       (Eval.pushDataNext (data := key)
         (Eval.checksigTrue (pubkey := key) (sig := wit) h Eval.done))⟩
   · simp at h
-    exact Or.inl ⟨falseElement,
-      by simpa [compile, compileWithKeyHash] using
-      (Eval.pushDataNext (data := key)
-        (Eval.checksigFalse (pubkey := key) (sig := wit) h Eval.done))⟩
+    by_cases nullFail : nullFailSatisfied flags [wit]
+    · exact Or.inl ⟨falseElement,
+        by simpa [compile, compileWithKeyHash] using
+        (Eval.pushDataNext (data := key)
+          (Eval.checksigFalse (pubkey := key) (sig := wit) h nullFail Eval.done))⟩
+    · exact Or.inr ⟨.sigNullFail,
+        by simpa [compile, compileWithKeyHash] using
+        (Eval.pushDataNext (data := key)
+          (Eval.checksigNullFail (pubkey := key) (sig := wit) h nullFail))⟩
 
 /-- What a V-type fragment with 'o' modifier guarantees:
     Consumes one witness element. On success, the stack below is unchanged
@@ -137,23 +142,31 @@ theorem v_c_pk_k_soundness (key : PubKey) :
           (Eval.verifyTrue (top := trueElement) (by native_decide) Eval.done)))
   · right
     simp at h
-    exact ⟨.verify,
-      by simpa [compile, compileWithKeyHash] using
-      (Eval.pushDataNext (data := key)
-        (Eval.checksigFalse (pubkey := key) (sig := wit) h
-          (Eval.verifyFalse (top := falseElement) (by native_decide))))⟩
+    by_cases nullFail : nullFailSatisfied flags [wit]
+    · exact ⟨.verify,
+        by simpa [compile, compileWithKeyHash] using
+        (Eval.pushDataNext (data := key)
+          (Eval.checksigFalse (pubkey := key) (sig := wit) h nullFail
+            (Eval.verifyFalse (top := falseElement) (by native_decide))))⟩
+    · exact ⟨.sigNullFail,
+        by simpa [compile, compileWithKeyHash] using
+        (Eval.pushDataNext (data := key)
+          (Eval.checksigNullFail (pubkey := key) (sig := wit) h nullFail))⟩
 
 /-- What a W-type fragment with 'o' modifier guarantees in the current
     stack-shape model:
     Temporarily protects the top stack element on the alt stack, executes a
     B-type one-argument fragment below it, and restores the protected element
-    above the boolean result. -/
+    above the boolean result on success. Like the other composite guarantees,
+    it also admits a modeled terminal Script error such as NULLFAIL. -/
 def WTypeOGuarantee (m : CoreFragment) : Prop :=
   ∀ (saved wit : StackElement) (stack altStack : Stack)
       (flags : ScriptFlags) (ctx : TxContext),
-    ∃ (result : StackElement),
+    (∃ (result : StackElement),
       Eval (compile m) (saved :: wit :: stack) altStack flags ctx
-        (.success (saved :: result :: stack) altStack)
+        (.success (saved :: result :: stack) altStack)) ∨
+    ∃ (err : ScriptError),
+      Eval (compile m) (saved :: wit :: stack) altStack flags ctx (.failure err)
 
 /-- Type cases for which this file has a reusable, non-vacuous semantic
     predicate. Unsupported combinations are excluded explicitly. In particular,
@@ -194,19 +207,28 @@ theorem a_c_pk_k_soundness (key : PubKey) :
     WTypeOGuarantee (.a (.c (.pk_k key))) := by
   intro saved wit stack altStack flags ctx
   by_cases h : checkSig wit key ctx.sigHash = true
-  · refine ⟨trueElement, ?_⟩
+  · left
+    refine ⟨trueElement, ?_⟩
     simpa [compile, compileWithKeyHash] using
       (Eval.toAltStackNext (x := saved)
         (Eval.pushDataNext (data := key)
           (Eval.checksigTrue (pubkey := key) (sig := wit) h
             (Eval.fromAltStackNext (x := saved) Eval.done))))
   · simp at h
-    refine ⟨falseElement, ?_⟩
-    simpa [compile, compileWithKeyHash] using
-      (Eval.toAltStackNext (x := saved)
-        (Eval.pushDataNext (data := key)
-          (Eval.checksigFalse (pubkey := key) (sig := wit) h
-            (Eval.fromAltStackNext (x := saved) Eval.done))))
+    by_cases nullFail : nullFailSatisfied flags [wit]
+    · left
+      refine ⟨falseElement, ?_⟩
+      simpa [compile, compileWithKeyHash] using
+        (Eval.toAltStackNext (x := saved)
+          (Eval.pushDataNext (data := key)
+            (Eval.checksigFalse (pubkey := key) (sig := wit) h nullFail
+              (Eval.fromAltStackNext (x := saved) Eval.done))))
+    · right
+      refine ⟨.sigNullFail, ?_⟩
+      simpa [compile, compileWithKeyHash] using
+        (Eval.toAltStackNext (x := saved)
+          (Eval.pushDataNext (data := key)
+            (Eval.checksigNullFail (pubkey := key) (sig := wit) h nullFail)))
 
 /-- The `pk_k` example packaged through the shared semantic selector. -/
 theorem pk_k_mini_type_soundness (key : PubKey) :
