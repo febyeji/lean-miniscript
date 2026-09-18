@@ -414,6 +414,10 @@ private def sourceUsesMinimalPushes (source : String) (script : Script) : Bool :
 def coreScriptErrorTag : ScriptError → String
   | .stackUnderflow => "INVALID_STACK_OPERATION"
   | .altStackUnderflow => "INVALID_ALTSTACK_OPERATION"
+  | .stackSize => "STACK_SIZE"
+  | .pushSize => "PUSH_SIZE"
+  | .cleanStack => "CLEANSTACK"
+  | .evalFalse => "EVAL_FALSE"
   | .scriptNumOverflow => "SCRIPTNUM"
   | .scriptNumNonMinimal => "SCRIPTNUM"
   | .pubkeyCount => "PUBKEY_COUNT"
@@ -433,6 +437,7 @@ def coreScriptErrorTag : ScriptError → String
   | .tapscriptValidationWeight => "TAPSCRIPT_VALIDATION_WEIGHT"
   | .tapscriptWitnessScript => "MODEL_TAPSCRIPT_WITNESS_SCRIPT"
   | .tapscriptAnnex => "MODEL_TAPSCRIPT_ANNEX"
+  | .tapscriptFlags => "MODEL_TAPSCRIPT_FLAGS"
   | .discourageUpgradablePubkeyType => "DISCOURAGE_UPGRADABLE_PUBKEYTYPE"
   | .badOpcode => "BAD_OPCODE"
   | .tapscriptCheckMultiSig => "TAPSCRIPT_CHECKMULTISIG"

@@ -1,5 +1,6 @@
 import LeanMiniscript.Extraction.RefInterp
 import LeanMiniscript.Bitcoin.TaprootControlBlock
+import LeanMiniscript.Miniscript.Acceptance
 
 namespace LeanMiniscript.Extraction
 open LeanMiniscript.Script LeanMiniscript.Bitcoin
@@ -66,9 +67,10 @@ def prepareCommittedTapscriptTransaction
 
 /-- Execute a committed native P2TR script-path witness with transaction-backed
 hashing and the full witness budget. Preparation checks the commitment against
-the selected spent output before execution. Initial stack/element limits,
-final acceptance, transaction validity and prevout provenance remain caller
-obligations. The AST must serialize to the committed script bytes. -/
+the selected spent output before initial argument limits and execution. Final
+acceptance is separate; runtime stack/push limits, transaction validity and
+prevout provenance remain outside this model. The AST must serialize to the
+committed script bytes. -/
 def execCommittedTapscriptTransaction (oracle : CryptoOracle) (script : Script)
     (fullWitness : List ByteArray) (flags : ScriptFlags)
     (transaction : Transaction) (spentOutputs : Array TxOutput) (inputIndex : Nat) :
@@ -85,5 +87,52 @@ theorem execCommittedTapscriptTransaction_eq_model
     execCommittedTapscriptTransaction oracle script fullWitness flags transaction spentOutputs inputIndex =
       execCommittedTapscriptTransaction CryptoOracle.model script fullWitness flags transaction spentOutputs inputIndex := by
   simp only [execCommittedTapscriptTransaction, evaluateTapscript_eq_model agreement]
+
+/-- Keep setup/commitment errors distinct from modeled execution and acceptance
+    errors, including unsupported Miniscript flag settings. -/
+inductive TaprootVerificationError where
+  | setup (error : TaprootScriptPathError)
+  | script (error : ScriptError)
+  deriving Repr, DecidableEq, BEq
+
+/-- Check a committed native P2TR script-path witness through final modeled
+    Miniscript acceptance, returning its unused signature budget. Setup and
+    commitment checks precede the flag contract, initial limits and execution.
+    This is not full Bitcoin consensus verification: runtime stack/push limits,
+    OP_SUCCESSx, key paths and future leaf versions are outside the model. -/
+def verifyCommittedTapscriptTransaction (oracle : CryptoOracle) (script : Script)
+    (fullWitness : List ByteArray) (flags : ScriptFlags)
+    (transaction : Transaction) (spentOutputs : Array TxOutput) (inputIndex : Nat) :
+    Except TaprootVerificationError Nat := do
+  let prepared ← (prepareCommittedTapscriptTransaction fullWitness transaction spentOutputs inputIndex).mapError
+    TaprootVerificationError.setup
+  (Miniscript.checkTapscriptAcceptance oracle script prepared.witness flags prepared.context).mapError
+    TaprootVerificationError.script
+
+theorem verifyCommittedTapscriptTransaction_eq_model
+    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
+    (script : Script) (fullWitness : List ByteArray) (flags : ScriptFlags)
+    (transaction : Transaction) (spentOutputs : Array TxOutput) (inputIndex : Nat) :
+    verifyCommittedTapscriptTransaction oracle script fullWitness flags transaction spentOutputs inputIndex =
+      verifyCommittedTapscriptTransaction CryptoOracle.model script fullWitness flags transaction spentOutputs inputIndex := by
+  simp only [verifyCommittedTapscriptTransaction, Miniscript.checkTapscriptAcceptance,
+    evaluateTapscript_eq_model agreement]
+
+/-- After successful commitment preparation, the public verification entry
+    accepts exactly the witnesses satisfying the modeled acceptance predicate.
+    A raw PreparedTapscript value alone is not evidence of preparation. -/
+theorem verifyCommittedTapscriptTransaction_iff
+    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
+    (script : Script) (fullWitness : List ByteArray) (flags : ScriptFlags)
+    (transaction : Transaction) (spentOutputs : Array TxOutput) (inputIndex : Nat)
+    {prepared : PreparedTapscript}
+    (preparation : prepareCommittedTapscriptTransaction fullWitness transaction spentOutputs inputIndex =
+      .ok prepared) :
+    (∃ weight, verifyCommittedTapscriptTransaction oracle script fullWitness flags
+      transaction spentOutputs inputIndex = .ok weight) ↔
+      Miniscript.TapscriptAccepts script prepared.witness flags prepared.context := by
+  rw [← Miniscript.checkTapscriptAcceptance_iff agreement]
+  simp only [verifyCommittedTapscriptTransaction, preparation, Except.mapError, bind, Except.bind]
+  cases Miniscript.checkTapscriptAcceptance oracle script prepared.witness flags prepared.context <;> simp
 
 end LeanMiniscript.Extraction

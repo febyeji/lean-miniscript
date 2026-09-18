@@ -10,10 +10,10 @@ open LeanMiniscript.Miniscript
 open LeanMiniscript.Script
 
 /-- Bitcoin consensus limits. -/
-def MAX_STACK_SIZE : Nat := 1000
+def MAX_STACK_SIZE : Nat := maxStackSize
 def MAX_SCRIPT_SIZE : Nat := 10000
 def MAX_OPS_PER_SCRIPT : Nat := 201
-def MAX_SCRIPT_ELEMENT_SIZE : Nat := 520
+def MAX_SCRIPT_ELEMENT_SIZE : Nat := maxScriptElementSize
 
 /-- Whether a script element is a non-push opcode for the BIP 379 opcode-count
     accounting layer. -/

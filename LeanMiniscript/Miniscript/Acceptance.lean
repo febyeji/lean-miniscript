@@ -75,10 +75,10 @@ def Dissatisfies (ctx : ScriptContext) (script : Script) (witness : Witness)
   ModeledContextVersion ctx txCtx ∧
   CleanStackResult script witness flags txCtx false
 
-/-- Resource-aware script-path acceptance. The script bytes and annex are
-    checked at the full-witness boundary; the control-block commitment and
-    initial stack/element limits remain caller obligations. Unlike `Accepts`,
-    this predicate enforces the BIP342 validation-weight budget. -/
+/-- Resource-aware script-path acceptance. The full-witness boundary checks
+    script bytes, annex, initial argument limits and the BIP342 signature budget.
+    Control-block commitment and runtime stack/push limits remain outside this
+    predicate. Unlike `Accepts`, this includes validation-weight accounting. -/
 def TapscriptAccepts (script : Script) (witness : TapscriptWitness)
     (flags : ScriptFlags) (txCtx : TxContext) : Prop :=
   ModeledContextFlags .tapscript flags ∧
@@ -93,6 +93,48 @@ def TapscriptDissatisfies (script : Script) (witness : TapscriptWitness)
   ∃ top finalAlt weight,
     evaluateTapscript CryptoOracle.model script witness flags txCtx =
       .success [top] finalAlt weight ∧ castToBool top = false
+
+/-- Executable acceptance for the modeled Miniscript Tapscript flag contract.
+    Unsupported flags produce a MODEL error; execution failures and Core's
+    CLEANSTACK/EVAL_FALSE checks retain their own errors. Success returns the
+    unused signature budget. This does not validate the control-block commitment. -/
+def checkTapscriptAcceptance (oracle : CryptoOracle) (script : Script)
+    (witness : TapscriptWitness) (flags : ScriptFlags) (txCtx : TxContext) :
+    Except ScriptError Nat :=
+  if flags.minimalIf && flags.minimalData then
+    (evaluateTapscript oracle script witness flags txCtx).checkAcceptance
+  else .error .tapscriptFlags
+
+/-- The executable check exactly reflects the existing acceptance proposition
+    when the supplied cryptographic oracle agrees with the model. -/
+theorem checkTapscriptAcceptance_iff
+    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
+    (script : Script) (witness : TapscriptWitness) (flags : ScriptFlags) (txCtx : TxContext) :
+    (∃ weight, checkTapscriptAcceptance oracle script witness flags txCtx = .ok weight) ↔
+      TapscriptAccepts script witness flags txCtx := by
+  by_cases enabled : flags.minimalIf = true ∧ flags.minimalData = true
+  · have checkEq : checkTapscriptAcceptance oracle script witness flags txCtx =
+        (evaluateTapscript CryptoOracle.model script witness flags txCtx).checkAcceptance := by
+      simp [checkTapscriptAcceptance, enabled.1, enabled.2, evaluateTapscript_eq_model agreement]
+    constructor
+    · rintro ⟨weight, checked⟩
+      rw [checkEq] at checked
+      obtain ⟨top, alt, evaluated, truth⟩ :=
+        (WeightedResult.checkAcceptance_ok_iff _ weight).mp checked
+      exact ⟨enabled, top, alt, weight, evaluated, truth⟩
+    · rintro ⟨_, top, alt, weight, evaluated, truth⟩
+      refine ⟨weight, ?_⟩
+      rw [checkEq]
+      exact (WeightedResult.checkAcceptance_ok_iff _ weight).mpr ⟨top, alt, evaluated, truth⟩
+  · have checkEq : checkTapscriptAcceptance oracle script witness flags txCtx =
+        .error .tapscriptFlags := by
+      simp [checkTapscriptAcceptance, enabled]
+    constructor
+    · rintro ⟨weight, checked⟩
+      rw [checkEq] at checked
+      contradiction
+    · rintro ⟨modeled, _⟩
+      exact False.elim (enabled modeled)
 
 private def contractExampleFlags : ScriptFlags := {}
 

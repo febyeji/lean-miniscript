@@ -10,6 +10,13 @@ abbrev StackElement := ByteArray
 /-- The main and alt stacks. -/
 abbrev Stack := List StackElement
 
+/-- Bitcoin's combined main/alternate stack limit, also applied to the initial
+    Tapscript argument stack. -/
+def maxStackSize : Nat := 1000
+
+/-- Maximum byte length of an initial witness argument or Script push. -/
+def maxScriptElementSize : Nat := 520
+
 /-- Script verification flags that affect execution semantics. -/
 structure ScriptFlags where
   /-- BIP 141: Require minimal encoding for IF/NOTIF arguments -/
@@ -92,6 +99,10 @@ structure ExecState where
 inductive ScriptError where
   | stackUnderflow
   | altStackUnderflow
+  | stackSize
+  | pushSize
+  | cleanStack
+  | evalFalse
   | scriptNumOverflow
   | scriptNumNonMinimal
   | pubkeyCount
@@ -111,6 +122,7 @@ inductive ScriptError where
   | tapscriptValidationWeight
   | tapscriptWitnessScript
   | tapscriptAnnex
+  | tapscriptFlags
   | discourageUpgradablePubkeyType
   | badOpcode
   | tapscriptCheckMultiSig
