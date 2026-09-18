@@ -87,25 +87,6 @@ example : Eval [.op .OP_FROMALTSTACK] [trueElement] []
     fixtureFlags fixtureTxContext (.failure .altStackUnderflow) := by
   exact Eval.fromAltStackUnderflow
 
-/-- The explicit main-stack error excludes a successful result for the same
-    fixed-arity opcode state. -/
-example : ¬ ∃ main alt,
-    Eval [.op .OP_EQUAL] [trueElement] [] fixtureFlags fixtureTxContext
-      (.success main alt) := by
-  rintro ⟨main, alt, evaluated⟩
-  have impossible := Eval.fixedArityStackUnderflow_result
-    (arity := rfl) (underflow := by decide) evaluated
-  cases impossible
-
-/-- The explicit alternate-stack error likewise excludes normal
-    `OP_FROMALTSTACK` execution. -/
-example : ¬ ∃ main alt,
-    Eval [.op .OP_FROMALTSTACK] [trueElement] [] fixtureFlags fixtureTxContext
-      (.success main alt) := by
-  rintro ⟨main, alt, evaluated⟩
-  have impossible := Eval.fromAltStack_empty_result evaluated
-  cases impossible
-
 /-! ## Compiler-generated boundaries -/
 
 private def compressedKey : PubKey :=

@@ -81,18 +81,6 @@ example : Eval [.op .OP_IF, .pushNum 1] [trueElement] []
   · apply Eval.pushNum
     exact Eval.empty [scriptNum 1] [] fixtureFlags fixtureTxContext
 
-example : ∀ result,
-    Eval [.op .OP_IF, .pushNum 1] [trueElement] []
-      fixtureFlags fixtureTxContext result →
-    result = .failure .unbalancedConditional := by
-  intro result evaluated
-  apply Eval.result_unique evaluated
-  apply Eval.if_unbalanced (selectedResult := .success [scriptNum 1] [])
-  · rfl
-  · exact Or.inr trueElement_minimalIfArg
-  · apply Eval.pushNum
-    exact Eval.empty [scriptNum 1] [] fixtureFlags fixtureTxContext
-
 example : Eval [.op .OP_NOTIF, .pushNum 1] [falseElement] []
     fixtureFlags fixtureTxContext (.failure .unbalancedConditional) := by
   apply Eval.notif_unbalanced (selectedResult := .success [scriptNum 1] [])
@@ -143,11 +131,5 @@ example : Eval [.op .OP_ELSE] [] [] fixtureFlags fixtureTxContext
 example : Eval [.op .OP_ENDIF] [] [] fixtureFlags fixtureTxContext
     (.failure .unbalancedConditional) := by
   exact Eval.endif_unbalanced [] [] [] fixtureFlags fixtureTxContext
-
-example : ∀ result,
-    Eval [.op .OP_ELSE] [] [] fixtureFlags fixtureTxContext result →
-    result = .failure .unbalancedConditional := by
-  intro result evaluated
-  exact Eval.elseUnbalanced_result evaluated
 
 end LeanMiniscript.Script

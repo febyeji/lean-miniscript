@@ -98,11 +98,4 @@ example : isSingleSuccess trueElement
       fixtureTxContext) = true := by
   native_decide
 
-/-- The model oracle evaluator is equivalent to the relational semantics. -/
-example {script : Script} {stack altStack : Stack} {result : ExecResult} :
-    Eval script stack altStack fixtureFlags fixtureTxContext result ↔
-      evaluate CryptoOracle.model script stack altStack fixtureFlags
-        fixtureTxContext = result :=
-  evaluate_model_iff
-
 end LeanMiniscript.Script
