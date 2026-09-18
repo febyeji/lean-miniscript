@@ -68,8 +68,8 @@ def prepareCommittedTapscriptTransaction
 /-- Execute a committed native P2TR script-path witness with transaction-backed
 hashing and the full witness budget. Preparation checks the commitment against
 the selected spent output before initial argument limits and execution. Final
-acceptance is separate; runtime stack/push limits, transaction validity and
-prevout provenance remain outside this model. The AST must serialize to the
+acceptance is separate; execution enforces runtime stack/push limits. Transaction
+validity and prevout provenance remain outside this model. The AST must serialize to the
 committed script bytes. -/
 def execCommittedTapscriptTransaction (oracle : CryptoOracle) (script : Script)
     (fullWitness : List ByteArray) (flags : ScriptFlags)
@@ -98,8 +98,8 @@ inductive TaprootVerificationError where
 /-- Check a committed native P2TR script-path witness through final modeled
     Miniscript acceptance, returning its unused signature budget. Setup and
     commitment checks precede the flag contract, initial limits and execution.
-    This is not full Bitcoin consensus verification: runtime stack/push limits,
-    OP_SUCCESSx, key paths and future leaf versions are outside the model. -/
+    This is not full Bitcoin consensus verification: OP_SUCCESSx, key paths,
+    future leaf versions and arbitrary raw-script parsing are outside the model. -/
 def verifyCommittedTapscriptTransaction (oracle : CryptoOracle) (script : Script)
     (fullWitness : List ByteArray) (flags : ScriptFlags)
     (transaction : Transaction) (spentOutputs : Array TxOutput) (inputIndex : Nat) :

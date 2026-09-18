@@ -231,7 +231,7 @@ upgradable key versions, policy flags, count/error priority, disabled opcodes,
 and skipped branches. Existence, determinism, and evaluator refinement remain
 proved for all modeled versions.
 `Eval` and `evaluate` remain resource-free opcode interfaces.
-`ValidationWeight.lean` adds `WeightedEval` and `evaluateWithValidationWeight`,
+`ValidationWeightCore.lean` defines `WeightedEval` and `evaluateWithValidationWeight`,
 composing single-opcode transitions with BIP342 resource debits. Nonempty
 signatures cost 50, including unknown key versions; empty signatures and skipped
 branches cost zero. Exhaustion reports `TAPSCRIPT_VALIDATION_WEIGHT` before
@@ -250,7 +250,7 @@ this budget-checked full-witness boundary. The older `Accepts`, satisfaction
 lemmas and type-guarantee targets remain resource-free and must not be cited
 as budget-aware acceptance results.
 `evaluateWithValidationWeight_eq_of_eval`, `evaluateWithValidationWeight_sound`,
-`weighted_model_iff` and `WeightedEval.deterministic` prove resource-aware
+`weighted_model_iff` and `WeightedEval.deterministic` prove budget-only
 refinement, existence and determinism. `WeightedEval.erase_success` proves
 successful budgeted execution has the same result in `Eval`.
 Fixtures cover CompactSize boundaries, exact exhaustion, repeated checks,
@@ -258,11 +258,36 @@ unknown key charging, count/error precedence, skipped/nested/duplicate-ELSE
 branches, witness-size initialization and annex-funded signature reuse.
 `checkTapscriptInitialStack_ok_iff` characterizes the exact input bounds, and
 `evaluateTapscript_initialStack` proves them for every successful full-witness
-execution. Runtime combined stack growth and Script push-size checks remain
-unmodeled. The AST has no OP_SUCCESSx, so no unconditional-success bypass is
+execution. `RuntimeLimits.lean` adds source-order traversal with an explicit
+conditional stack. Push sizes are checked before dispatch, including in inactive
+branches and for canonical numeric pushes. The combined main/alt-stack count
+is checked after each instruction, with the inclusive 1,000-element bound.
+Opcode errors precede that count check; earlier failures precede later pushes.
+The full-witness entry now uses `evaluateWithRuntimeLimits`. The public
+`ValidationWeight` import continues to export the original budget-only API.
+The AST has no OP_SUCCESSx, so no unconditional-success bypass is
 represented. The older entry points require caller control-block validation; `execCommittedTapscriptTransaction`
 validates that commitment as described below. Boundary-only script-byte and annex errors have
 explicit `MODEL_` audit tags; they are not presented as Core consensus errors.
+
+`RuntimeEval` composes source-order steps using the model oracle and existing
+single-opcode execution. `evaluateRuntime_eq_of_eval`, `evaluateRuntime_sound`,
+`runtime_model_iff` and `RuntimeEval.deterministic` establish conditional oracle
+refinement, existence and determinism for this relation. `runtimeStep_stackBound`
+and `runtimeStep_pushBound` apply to every successful transition;
+`evaluateRuntime_bounds` and `evaluateTapscript_runtimeBounds` prove final combined
+stack bounds and bounds for every source push on success, without an oracle
+agreement premise. These are runtime enforcement properties, not the static
+`ResourceBoundsSound` theorem. A general whole-script erasure bridge from
+`RuntimeEval` to the older branch-projection `Eval`/`WeightedEval` remains unproved;
+`WeightedEval.erase_success` continues to apply only to the budget-only API.
+Runtime regressions cover both limits, main/alt-stack transfers, transient
+overflow, nested/repeated-ELSE/NOTIF control flow, inactive pushes, signature
+budget reuse and failure precedence. Two exact pinned Core PUSH_SIZE source
+rows (active and inactive pushes) are compared separately through the new
+runtime evaluator. They do not change the conservative BASE audit counts.
+An additional 44,444 small-program/input combinations compare source-order
+execution with the budget-only branch-projection evaluator below the limits.
 `Bitcoin.Transaction` represents uint32 version/locktime/sequences and outpoint
 indices, uint64 amounts, wire-order transaction IDs, input/output vectors and
 raw scripts. `TaprootSigHashContext` requires spent outputs aligned with every
@@ -315,7 +340,7 @@ The generator checks every official message/digest/component before producing
 additional cases, and regenerated modules must match byte-for-byte.
 
 Legacy/BIP143 transaction-derived sighashes, executable ECDSA verification,
-Taproot key-path execution, runtime stack/push limits, Bitcoin Core op-counting,
+Taproot key-path execution, Bitcoin Core op-counting,
 other unmodeled raw-script errors, and full failure completeness remain unfinished.
 `Eval.exists_result` proves relational result existence for every modeled
 script and initial state, using strict conditional-branch length decrease;
@@ -511,8 +536,7 @@ alt stack is unrestricted. Success returns the remaining validation weight;
 These checks follow `ExecuteWitnessScript` in the pinned Core
 [`interpreter.cpp`](https://github.com/bitcoin/bitcoin/blob/9be056a8a72b624dae9623b2f7bded92c2a21c91/src/script/interpreter.cpp#L1689).
 This remains acceptance for the modeled subset, not complete consensus
-verification: runtime stack/push limits, arbitrary raw-script parsing and
-OP_SUCCESSx are still unmodeled.
+verification: arbitrary raw-script parsing and OP_SUCCESSx are still unmodeled.
 
 `WeightedResult.checkAcceptance_ok_iff` characterizes successful final-stack
 checking. `checkTapscriptAcceptance_iff` proves that executable acceptance

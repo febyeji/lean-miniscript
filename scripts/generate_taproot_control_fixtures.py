@@ -235,6 +235,12 @@ private def tooMany := List.replicate 1001 oversized ++ [scriptBytes, control]
 example : verify [oversized, scriptBytes, control] = .error (.script .pushSize) := by native_decide
 example : verify tooMany = .error (.script .stackSize) := by native_decide
 example : scriptErrorIs .stackSize (run tooMany) = true := by native_decide
+-- Initial arguments fit, but the committed key push exceeds the runtime count.
+example : verify (List.replicate 999 ByteArray.empty ++ fullWitness) =
+    .error (.script .stackSize) := by native_decide
+-- One fewer argument reaches signature verification, then fails final cleanstack.
+example : verify (List.replicate 998 ByteArray.empty ++ fullWitness) =
+    .error (.script .cleanStack) := by native_decide
 -- Commitment errors precede flag-contract and initial-limit errors.
 example : verify [oversized, scriptBytes, flip control 0] =
     .error (.setup (.control .commitmentMismatch)) := by native_decide
