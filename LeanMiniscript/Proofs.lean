@@ -13,6 +13,6 @@ import LeanMiniscript.Properties.ResourceBoundsProofs
 # Proof-oriented lean-miniscript modules
 
 This umbrella exports conformance, structural, inference, surface
-normalization, and final stack-growth guarantees without adding their proof
-graph to the stable executable facade.
+normalization, stack-growth, and runtime prefix-bound guarantees without adding
+their proof graph to the stable executable facade.
 -/

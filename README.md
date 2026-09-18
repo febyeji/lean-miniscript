@@ -26,8 +26,12 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
 - Basic metrics and resource accounting are implemented. `ResourceBoundsSound`
   is proved: successful execution grows the final combined main/alt stack by at
   most the compiled instruction count. The proof applies to every modeled
-  Script and has core, surface, and runtime corollaries. The provisional
-  peak-stack estimate remains unproved.
+  Script and has core, surface, and runtime corollaries. `RuntimeStackBounds`
+  additionally bounds every reachable prefix before combined-stack checks.
+  When initial combined size plus instruction count is at most 1,000, those
+  checks cannot reject and omitting them preserves the full result, including
+  failures, under explicit oracle agreement. Whole-program success is not a
+  premise. The provisional AST-depth estimate remains unproved.
 - The modeled big-step relation includes depth-aware conditional selection plus
   explicit stack-underflow, Script-number, unbalanced-conditional, and
   variable-frame `CHECKMULTISIG` failures; Core-aligned BIP 65 and
