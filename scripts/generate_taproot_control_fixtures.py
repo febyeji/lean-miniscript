@@ -208,6 +208,44 @@ example : (match execCommittedTapscriptTransaction CryptoOracle.pureLeanSchnorr 
     text += f'private def futureControl := hex "{future_control.hex()}"\nprivate def futurePrevouts := prevouts.modify 0 (fun output => {{ output with scriptPubKey := hex "5120{future_key.hex()}" }})\n'
     text += 'example : errorIs (.leafVersionUnsupported 0xfa) (run [hex "51", futureControl] futurePrevouts) = true := by native_decide\n'
     text += 'example : errorIs (.control .commitmentMismatch) (run [hex "51", flip futureControl 0] futurePrevouts) = true := by native_decide\n'
+    text += """
+-- Final acceptance uses the same real commitment, digest and Schnorr signature.
+local instance {ε α : Type} [DecidableEq ε] [DecidableEq α] : DecidableEq (Except ε α) := by
+  intro a b
+  cases a <;> cases b
+  · rename_i x y
+    exact decidable_of_iff (x = y) (by simp)
+  · exact isFalse (by intro h; cases h)
+  · exact isFalse (by intro h; cases h)
+  · rename_i x y
+    exact decidable_of_iff (x = y) (by simp)
+private def verify (witness : List ByteArray) (flags : ScriptFlags := {}) :
+    Except TaprootVerificationError Nat :=
+  verifyCommittedTapscriptTransaction CryptoOracle.pureLeanSchnorr script witness flags
+    sighashFixtureTransaction prevouts 0
+example : verify fullWitness = .ok (initialValidationWeight fullWitness - 50) := by native_decide
+example : verify annexWitness = .ok (initialValidationWeight annexWitness - 50) := by native_decide
+example : verify [ByteArray.empty, scriptBytes, control] = .error (.script .evalFalse) := by native_decide
+example : verify (ByteArray.empty :: fullWitness) = .error (.script .cleanStack) := by native_decide
+example : verify [flip signature 40, scriptBytes, control] = .error (.script .schnorrSig) := by native_decide
+example : verify fullWitness { minimalIf := false } = .error (.script .tapscriptFlags) := by native_decide
+private def oversized : ByteArray := ⟨Array.replicate 521 1⟩
+private def tooMany := List.replicate 1001 oversized ++ [scriptBytes, control]
+-- Initial limits precede signatures; count precedes element size.
+example : verify [oversized, scriptBytes, control] = .error (.script .pushSize) := by native_decide
+example : verify tooMany = .error (.script .stackSize) := by native_decide
+example : scriptErrorIs .stackSize (run tooMany) = true := by native_decide
+-- Commitment errors precede flag-contract and initial-limit errors.
+example : verify [oversized, scriptBytes, flip control 0] =
+    .error (.setup (.control .commitmentMismatch)) := by native_decide
+example : verify [signature, scriptBytes, flip control 0] { minimalIf := false } =
+    .error (.setup (.control .commitmentMismatch)) := by native_decide
+example : (match verifyCommittedTapscriptTransaction CryptoOracle.pureLeanSchnorr [.pushNum 1]
+    (List.replicate 1001 oversized ++ [hex "51", futureControl]) {}
+    sighashFixtureTransaction futurePrevouts 0 with
+  | .error (.setup (.leafVersionUnsupported 0xfa)) => true
+  | _ => false) = true := by native_decide
+"""
     text += 'end LeanMiniscript.Extraction\n'
     args.execution_output.write_text(text)
 

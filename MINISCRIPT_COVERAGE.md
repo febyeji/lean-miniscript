@@ -241,6 +241,10 @@ key/signature/oracle checks, after arity and CHECKSIGADD count decoding.
 **all** input-witness items. `TapscriptWitness` explicitly includes arguments,
 script bytes, control block and optional annex; `evaluateTapscript` / `execTapscript`
 bind the canonical modeled script to those bytes and check the annex marker.
+They then check the initial argument stack: at most 1,000 elements, each at
+most 520 bytes. Count errors (`STACK_SIZE`) precede size errors (`PUSH_SIZE`),
+and both precede opcode execution. Script bytes, control block and annex are
+excluded from these argument limits but remain included in the signature budget.
 `TapscriptAccepts` / `TapscriptDissatisfies` apply clean-stack and modeled flags to
 this budget-checked full-witness boundary. The older `Accepts`, satisfaction
 lemmas and type-guarantee targets remain resource-free and must not be cited
@@ -252,8 +256,11 @@ successful budgeted execution has the same result in `Eval`.
 Fixtures cover CompactSize boundaries, exact exhaustion, repeated checks,
 unknown key charging, count/error precedence, skipped/nested/duplicate-ELSE
 branches, witness-size initialization and annex-funded signature reuse.
-Initial stack/element limits remain caller obligations. The older entry points
-also require caller control-block validation; `execCommittedTapscriptTransaction`
+`checkTapscriptInitialStack_ok_iff` characterizes the exact input bounds, and
+`evaluateTapscript_initialStack` proves them for every successful full-witness
+execution. Runtime combined stack growth and Script push-size checks remain
+unmodeled. The AST has no OP_SUCCESSx, so no unconditional-success bypass is
+represented. The older entry points require caller control-block validation; `execCommittedTapscriptTransaction`
 validates that commitment as described below. Boundary-only script-byte and annex errors have
 explicit `MODEL_` audit tags; they are not presented as Core consensus errors.
 `Bitcoin.Transaction` represents uint32 version/locktime/sequences and outpoint
@@ -308,7 +315,7 @@ The generator checks every official message/digest/component before producing
 additional cases, and regenerated modules must match byte-for-byte.
 
 Legacy/BIP143 transaction-derived sighashes, executable ECDSA verification,
-Taproot key-path execution and initial witness limits, Bitcoin Core op-counting,
+Taproot key-path execution, runtime stack/push limits, Bitcoin Core op-counting,
 other unmodeled raw-script errors, and full failure completeness remain unfinished.
 `Eval.exists_result` proves relational result existence for every modeled
 script and initial state, using strict conditional-branch length decrease;
@@ -485,10 +492,42 @@ budget. The AST must serialize to the committed witness script bytes.
 Key paths and future leaf versions return explicit unsupported-model errors;
 they are not classified as Bitcoin consensus-invalid. Commitment validation
 precedes that future-version scope check. Setup/commitment errors are separate
-from weighted Script results. Initial stack/element limits, final acceptance,
-transaction consensus validity and the chain provenance of prevouts remain
-caller obligations. Older `execTapscript` / `execTapscriptTransaction` APIs
+from weighted Script results. The full-witness evaluator enforces initial
+argument count and size after commitment and leaf-version checks. Final
+acceptance is provided by the separate verification entry below. Transaction
+consensus validity and the chain provenance of prevouts remain caller
+obligations. Older `execTapscript` / `execTapscriptTransaction` APIs
 retain their documented unchecked-commitment boundary.
+
+`verifyCommittedTapscriptTransaction` runs preparation, then
+`checkTapscriptAcceptance`. The latter enforces the existing Miniscript flag
+contract (`minimalIf` and `minimalData` enabled); unsupported settings return
+`MODEL_TAPSCRIPT_FLAGS`, a model-scope error rather than a Core consensus error.
+Execution errors retain their original tags. Successful execution must leave
+exactly one main-stack item (`CLEANSTACK` otherwise, including an empty stack),
+then a truthy item (`EVAL_FALSE` otherwise, including negative zero). The final
+alt stack is unrestricted. Success returns the remaining validation weight;
+`TaprootVerificationError` keeps setup/commitment and Script errors distinct.
+These checks follow `ExecuteWitnessScript` in the pinned Core
+[`interpreter.cpp`](https://github.com/bitcoin/bitcoin/blob/9be056a8a72b624dae9623b2f7bded92c2a21c91/src/script/interpreter.cpp#L1689).
+This remains acceptance for the modeled subset, not complete consensus
+verification: runtime stack/push limits, arbitrary raw-script parsing and
+OP_SUCCESSx are still unmodeled.
+
+`WeightedResult.checkAcceptance_ok_iff` characterizes successful final-stack
+checking. `checkTapscriptAcceptance_iff` proves that executable acceptance
+exactly reflects `TapscriptAccepts` for any oracle refining the model.
+`verifyCommittedTapscriptTransaction_eq_model` preserves that explicit
+oracle-agreement boundary through commitment preparation;
+`verifyCommittedTapscriptTransaction_iff` connects its success to
+`TapscriptAccepts` under an explicit successful preparation premise.
+Build-checked boundary regressions cover 1,000/1,001 arguments, 520/521-byte
+elements, metadata exclusion, empty/multiple/false/negative-zero results,
+noncanonical truthy values, nonempty final alt stacks, and error precedence.
+The regenerated committed fixtures additionally test real Schnorr acceptance,
+annex acceptance, false and dirty-stack rejection, initial-limit failures and
+commitment/future-version precedence. These local regressions do not expand
+the BASE-only Core fixture audit's supported set.
 
 `execCommittedTapscriptTransaction_eq_model` proves conditional evaluator
 refinement through these deterministic setup/commitment checks, retaining the

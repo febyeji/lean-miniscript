@@ -10,7 +10,8 @@ BIP342 validation weight is an execution resource separate from the stacks.
 single-instruction transitions with debits and conditional selection. Complete
 Tapscript callers use `evaluateTapscript`, supplying the script-path witness
 including script, control block and optional annex. Control-block commitment
-validation and initial stack/element limits remain outside this boundary.
+validation remains outside this boundary. The full-witness entry checks initial
+argument count and size; runtime stack growth and push limits remain unmodeled.
 -/
 
 def validationWeightOffset : Nat := 50
@@ -63,6 +64,29 @@ inductive WeightedResult where
 def WeightedResult.erase : WeightedResult → ExecResult
   | .success stack altStack _ => .success stack altStack
   | .failure error => .failure error
+
+/-- Final witness-script acceptance, in Core's order: retain any execution
+    error, require exactly one main-stack item, then test its truth value.
+    The alt stack does not affect clean-stack; success returns remaining weight. -/
+def WeightedResult.checkAcceptance : WeightedResult → Except ScriptError Nat
+  | .failure error => .error error
+  | .success [top] _ weight =>
+      if castToBool top then .ok weight else .error .evalFalse
+  | .success _ _ _ => .error .cleanStack
+
+theorem WeightedResult.checkAcceptance_ok_iff (result : WeightedResult) (weight : Nat) :
+    result.checkAcceptance = .ok weight ↔
+      ∃ top alt, result = .success [top] alt weight ∧ castToBool top = true := by
+  cases result with
+  | failure => simp [checkAcceptance]
+  | success stack alt remaining =>
+      cases stack with
+      | nil => simp [checkAcceptance]
+      | cons top rest =>
+          cases rest with
+          | cons => simp [checkAcceptance]
+          | nil =>
+              cases truth : castToBool top <;> simp [checkAcceptance, truth, and_assoc]
 
 def finishWeightedUnclosed : WeightedResult → WeightedResult
   | .success _ _ _ => .failure .unbalancedConditional
@@ -308,6 +332,24 @@ structure TapscriptWitness where
 def TapscriptWitness.fullWitness (witness : TapscriptWitness) : List ByteArray :=
   witness.arguments ++ [witness.scriptBytes, witness.controlBlock] ++ witness.annex.toList
 
+/-- Initial Tapscript limits apply only to arguments, after script/control and
+    annex removal. Count precedes element size, as in Core's ExecuteWitnessScript.
+    OP_SUCCESSx is outside the modeled AST, so no success bypass is represented. -/
+def checkTapscriptInitialStack (arguments : List ByteArray) : Except ScriptError Unit :=
+  if arguments.length > maxStackSize then .error .stackSize
+  else if arguments.any (fun item => item.size > maxScriptElementSize) then .error .pushSize
+  else .ok ()
+
+theorem checkTapscriptInitialStack_ok_iff (arguments : List ByteArray) :
+    checkTapscriptInitialStack arguments = .ok () ↔
+      arguments.length ≤ maxStackSize ∧
+        ∀ item ∈ arguments, item.size ≤ maxScriptElementSize := by
+  unfold checkTapscriptInitialStack
+  split
+  · rename_i tooMany
+    simp [Nat.not_le.mpr tooMany]
+  · simp_all [List.any_eq_true, Nat.not_lt]
+
 /-- The caller supplies already parsed/validated script-path metadata. Bind
     the modeled script to the actual witness script bytes before execution. -/
 def evaluateTapscript (oracle : CryptoOracle) (script : Script)
@@ -320,20 +362,37 @@ def evaluateTapscript (oracle : CryptoOracle) (script : Script)
   else if witness.annex.any (fun bytes => bytes.size == 0 || bytes[0]! != 0x50) then
     .failure .tapscriptAnnex
   else
-    match ctx.taproot with
-    | none => evaluateWithValidationWeight oracle script witness.arguments.reverse [] flags ctx
-        (initialValidationWeight witness.fullWitness)
-    | some hashContext =>
-        -- The full witness supplies annex and leaf bytes, not caller hints.
-        -- The modeled AST has no CODESEPARATOR, so none has executed.
-        let bound := { hashContext with
-          annex := witness.annex
-          spendPath := .scriptPath witness.scriptBytes 0xc0 4294967295 }
-        match TxContext.fromTaproot bound .tapscript with
-        | .error _ => .failure .schnorrSigHashType
-        | .ok signingCtx => evaluateWithValidationWeight oracle script
-            witness.arguments.reverse [] flags signingCtx
+    match checkTapscriptInitialStack witness.arguments with
+    | .error error => .failure error
+    | .ok () =>
+      match ctx.taproot with
+      | none => evaluateWithValidationWeight oracle script witness.arguments.reverse [] flags ctx
             (initialValidationWeight witness.fullWitness)
+      | some hashContext =>
+          -- The full witness supplies annex and leaf bytes, not caller hints.
+          -- The modeled AST has no CODESEPARATOR, so none has executed.
+          let bound := { hashContext with
+            annex := witness.annex
+            spendPath := .scriptPath witness.scriptBytes 0xc0 4294967295 }
+          match TxContext.fromTaproot bound .tapscript with
+          | .error _ => .failure .schnorrSigHashType
+          | .ok signingCtx => evaluateWithValidationWeight oracle script
+              witness.arguments.reverse [] flags signingCtx
+              (initialValidationWeight witness.fullWitness)
+
+/-- Successful full-witness execution certifies both initial argument limits. -/
+theorem evaluateTapscript_initialStack
+    {oracle : CryptoOracle} {script : Script} {witness : TapscriptWitness}
+    {flags : ScriptFlags} {ctx : TxContext} {stack alt : Stack} {weight : Nat}
+    (success : evaluateTapscript oracle script witness flags ctx = .success stack alt weight) :
+    witness.arguments.length ≤ maxStackSize ∧
+      ∀ item ∈ witness.arguments, item.size ≤ maxScriptElementSize := by
+  apply (checkTapscriptInitialStack_ok_iff witness.arguments).mp
+  cases checked : checkTapscriptInitialStack witness.arguments with
+  | ok value => cases value; rfl
+  | error error =>
+      simp only [evaluateTapscript, checked] at success
+      repeat' first | contradiction | split at success
 
 /-- Full-witness metadata binding and transaction-derived hashing preserve
     oracle refinement at the Tapscript execution entry point. -/

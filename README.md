@@ -54,6 +54,11 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   the full witness budget. All 12 official BIP341 control blocks match,
   including an unknown leaf version in the standalone commitment checker.
   The execution entry explicitly excludes key paths and future leaf versions.
+  Full-witness execution checks initial argument count and element size.
+  `verifyCommittedTapscriptTransaction` additionally checks the modeled flag
+  contract and final clean-stack/truth conditions, returning the unused
+  signature budget with distinct setup and Script errors. Its acceptance check
+  is proved equivalent to `TapscriptAccepts` under explicit oracle agreement.
   `evaluateWithValidationWeight` / `WeightedEval` add BIP342 validation-weight
   accounting and return the remaining weight with both stacks. `execTapscript`
   initializes it from the full serialized input witness, including script,
@@ -87,8 +92,8 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   and full semantic coverage of the Bitcoin Core differential suite are
   unfinished. The older `Eval` / `Accepts` APIs are resource-free; complete
   budget checks use the full-witness Tapscript APIs above. Legacy/BIP143
-  transaction-derived sighashes, Taproot key-path execution and initial
-  witness stack/element limits remain TODO. The older Tapscript entry points
+  transaction-derived sighashes, Taproot key-path execution, runtime combined
+  stack limits and Script push-size checks remain TODO. The older Tapscript entry points
   still require callers to validate the control-block commitment. Script execution covers Miniscript-generated opcodes;
   arbitrary CODESEPARATOR execution is outside the current AST.
   The Miniscript acceptance contract requires its matching execution version.
