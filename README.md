@@ -23,7 +23,11 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
 - Executable `pk_h`/`pkh` compilation uses the commit-pinned, pure Lean
   [`lean-hash160`](https://github.com/febyeji/lean-hash160) package while the
   general formal semantics retain an abstract hash boundary.
-- Basic metrics and resource accounting are implemented, but not proved.
+- Basic metrics and resource accounting are implemented. `ResourceBoundsSound`
+  is proved: successful execution grows the final combined main/alt stack by at
+  most the compiled instruction count. The proof applies to every modeled
+  Script and has core, surface, and runtime corollaries. The provisional
+  peak-stack estimate remains unproved.
 - The modeled big-step relation includes depth-aware conditional selection plus
   explicit stack-underflow, Script-number, unbalanced-conditional, and
   variable-frame `CHECKMULTISIG` failures; Core-aligned BIP 65 and

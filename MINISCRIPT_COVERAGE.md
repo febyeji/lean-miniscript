@@ -113,8 +113,10 @@ and `Eval.result_unique` prove that the relational semantics has exactly one
 result for every fixed initial state. The total `evaluate` function covers the
 same cases, and `evaluate_model_iff` proves equivalence for the model oracle.
 Resource coverage means exact serialized size and sigop accounting plus
-provisional structural estimates;
-`ResourceBoundsSound` remains unproved.
+provisional structural estimates. `resourceBoundsSound` proves the existing
+`ResourceBoundsSound` contract: final main/alt-stack size is at most the initial
+combined size plus compiled instruction count. Peak-stack analysis remains
+unproved.
 
 ## Core Constructor Matrix
 
@@ -277,8 +279,8 @@ refinement, existence and determinism for this relation. `runtimeStep_stackBound
 and `runtimeStep_pushBound` apply to every successful transition;
 `evaluateRuntime_bounds` and `evaluateTapscript_runtimeBounds` prove final combined
 stack bounds and bounds for every source push on success, without an oracle
-agreement premise. These are runtime enforcement properties, not the static
-`ResourceBoundsSound` theorem.
+agreement premise. These runtime enforcement properties are separate from the
+final-state growth bound proved by `resourceBoundsSound`.
 
 `RuntimeErasure.lean`, exported through `LeanMiniscript.Proofs`, closes the
 whole-script success-preservation bridge. `evaluateWithRuntimeLimits_erase_success`
@@ -291,7 +293,8 @@ connect successful model execution to `WeightedEval` and resource-free `Eval`.
 `evaluateWithRuntimeLimits_eval_success` gives the executable-to-`Eval` result
 under oracle agreement. This is a success implication; additional runtime
 resource failures need not match the older evaluator's result. It does not
-establish static `ResourceBoundsSound` or cryptographic correctness.
+establish cryptographic correctness. The separate `StackGrowth` proof below
+supplies the static final-state bound.
 Runtime regressions cover both limits, main/alt-stack transfers, transient
 overflow, nested/repeated-ELSE/NOTIF control flow, inactive pushes, signature
 budget reuse and failure precedence. Two exact pinned Core PUSH_SIZE source
@@ -449,9 +452,22 @@ but are propositions to be proved rather than completed theorems:
   the selected flags and execution version, and conclude `Accepts`;
 - `DissatisfactionCorrectnessCore` and its surface counterpart require the `d`
   modifier and version-specific empty-signature/key encoding for the supported signature fragment, and
-  conclude `Dissatisfies`; and
-- `ResourceBoundsSound` gives the first conservative combined main/alt-stack
-  growth target for successful compiler-output evaluation.
+  conclude `Dissatisfies`.
+
+`ResourceBoundsSound` is now proved by `resourceBoundsSound` in
+`Properties/ResourceBoundsProofs.lean`, exported through `LeanMiniscript.Proofs`.
+The underlying `Eval.stackGrowth` theorem in `Script/StackGrowth.lean` applies to
+every modeled Script, with arbitrary initial main/alt stacks, flags, and
+transaction context; no typing or initial resource-bound premise is needed.
+It bounds final combined stack size by initial combined size plus source
+instruction count. The proof handles dynamic CHECKMULTISIG frames and nested
+or repeated-ELSE conditionals. `compile_stackGrowth` and
+`compileSurface_stackGrowth` specialize it to core and surface compilation.
+`RuntimeEval.stackGrowth` reuses success erasure, and
+`evaluateWithRuntimeLimits_stackGrowth` exposes the executable result under
+explicit oracle agreement. These are final-state bounds, not peak-stack
+analysis, a proof of the provisional `maxStackDepth` estimate, or a guarantee
+that execution avoids resource failures.
 
 The immediate proof work must extend named semantic predicates before extending
 `SupportedMiniType`. Unsupported modifier combinations do not reduce to `True`.

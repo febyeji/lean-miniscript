@@ -82,7 +82,8 @@ end
 def maxStackDepth (fragment : CoreFragment) : Nat :=
   fragment.depth
 
-/-- Target theorem for the first conservative runtime bound. Counting the main
+/-- Contract for the first conservative final-state growth bound, proved by
+    `resourceBoundsSound` in `ResourceBoundsProofs`. Counting the main
     and alt stacks together avoids treating `TOALTSTACK` as allocation. Each
     executed compiler element may increase that total by at most one, so the
     complete compiled script length is a conservative allowance independent of
@@ -98,15 +99,10 @@ def ResourceBoundsSound : Prop :=
       initialStack.length + initialAltStack.length + scriptElementCount fragment
 
 /-!
-TODO(theorem): resource-bound soundness.
-
-Core proof tasks:
-- Prove `ResourceBoundsSound` by induction over compiler output evaluation.
-- Replace the provisional AST-depth estimate with a proved peak-main-stack
-  analyzer; the combined-stack theorem above is only the first conservative
-  contract.
-- State the surface corollary by applying the core theorem to `desugar s`, so
-  surface syntax does not need a duplicate resource proof.
+TODO(theorem): Replace the provisional AST-depth estimate with a proved
+peak-main-stack analyzer. `resourceBoundsSound` and `compileSurface_stackGrowth`
+prove final combined-stack growth; they do not establish intermediate peaks
+or absence of runtime resource failures.
 -/
 
 end LeanMiniscript.Properties
