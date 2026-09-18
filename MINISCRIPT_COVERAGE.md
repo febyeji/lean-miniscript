@@ -278,9 +278,20 @@ and `runtimeStep_pushBound` apply to every successful transition;
 `evaluateRuntime_bounds` and `evaluateTapscript_runtimeBounds` prove final combined
 stack bounds and bounds for every source push on success, without an oracle
 agreement premise. These are runtime enforcement properties, not the static
-`ResourceBoundsSound` theorem. A general whole-script erasure bridge from
-`RuntimeEval` to the older branch-projection `Eval`/`WeightedEval` remains unproved;
-`WeightedEval.erase_success` continues to apply only to the budget-only API.
+`ResourceBoundsSound` theorem.
+
+`RuntimeErasure.lean`, exported through `LeanMiniscript.Proofs`, closes the
+whole-script success-preservation bridge. `evaluateWithRuntimeLimits_erase_success`
+proves that runtime success preserves both stacks and the remaining signature
+budget in `evaluateWithValidationWeight`, for every oracle and with no script
+length or control-flow restriction. The proof covers arbitrary nesting and
+repeated ELSE segments by relating source-order projection to the existing
+conditional splitter. `RuntimeEval.toWeightedEval` and `RuntimeEval.erase_success`
+connect successful model execution to `WeightedEval` and resource-free `Eval`.
+`evaluateWithRuntimeLimits_eval_success` gives the executable-to-`Eval` result
+under oracle agreement. This is a success implication; additional runtime
+resource failures need not match the older evaluator's result. It does not
+establish static `ResourceBoundsSound` or cryptographic correctness.
 Runtime regressions cover both limits, main/alt-stack transfers, transient
 overflow, nested/repeated-ELSE/NOTIF control flow, inactive pushes, signature
 budget reuse and failure precedence. Two exact pinned Core PUSH_SIZE source
