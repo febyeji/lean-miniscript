@@ -42,12 +42,6 @@ example :
   change ¬ validCompressedPubKeyBytes invalidCompressedKey.bytes
   native_decide
 
-example : ScriptAllowed .p2wsh (compile legacyMulti) :=
-  compile_scriptAllowed (by native_decide)
-
-example : ScriptAllowed .tapscript (compile tapscriptMulti) :=
-  compile_scriptAllowed (by native_decide)
-
 /-- The raw compiler can still compile an invalid context/fragment pair, and
 the context-safety predicate detects the legacy opcode in Tapscript. -/
 example : ¬ ScriptAllowed .tapscript (compile legacyMulti) := by

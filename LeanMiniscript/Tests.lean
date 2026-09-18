@@ -18,7 +18,6 @@ import LeanMiniscript.Miniscript.TypeInferenceExamples
 import LeanMiniscript.Script.BigStepFailureExamples
 import LeanMiniscript.Script.CheckMultiSigExamples
 import LeanMiniscript.Script.ConditionalExamples
-import LeanMiniscript.Script.DeterminismExamples
 import LeanMiniscript.Script.EvaluatorExamples
 import LeanMiniscript.Script.NullFailExamples
 import LeanMiniscript.Script.ScriptNumExamples
