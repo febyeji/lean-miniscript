@@ -95,6 +95,84 @@ private def splitConditionalAux (depth : Nat) (currentRev : Script)
 def splitConditional (script : Script) : Option ConditionalFrame :=
   splitConditionalAux 0 [] [] script
 
+/-- Proof-facing, source-order projection of one open conditional. Nested
+    delimiters are retained in selected segments; same-depth ELSE toggles the
+    selection, and the matching ENDIF returns the untouched suffix. -/
+def selectConditionalTail (depth : Nat) (selected : Bool) : Script → Option Script
+  | [] => none
+  | element :: rest =>
+      let keep := fun tail => if selected then element :: tail else tail
+      match element with
+      | .op .OP_IF | .op .OP_NOTIF =>
+          (selectConditionalTail (depth + 1) selected rest).map keep
+      | .op .OP_ELSE =>
+          match depth with
+          | 0 => selectConditionalTail 0 (!selected) rest
+          | _ + 1 => (selectConditionalTail depth selected rest).map keep
+      | .op .OP_ENDIF =>
+          match depth with
+          | 0 => some rest
+          | nested + 1 => (selectConditionalTail nested selected rest).map keep
+      | _ => (selectConditionalTail depth selected rest).map keep
+
+private def advanceChoice : Nat → Bool → Bool
+  | 0, selected => selected
+  | count + 1, selected => !(advanceChoice count selected)
+
+private theorem advanceChoice_not (count : Nat) (selected : Bool) :
+    advanceChoice count (!selected) = !(advanceChoice count selected) := by
+  induction count with
+  | zero => rfl
+  | succ count ih => simp [advanceChoice, ih]
+
+private theorem selectConditionalBranches_append (selected : Bool)
+    (left right : List Script) :
+    selectConditionalBranches selected (left ++ right) =
+      selectConditionalBranches selected left ++
+        selectConditionalBranches (advanceChoice left.length selected) right := by
+  induction left generalizing selected with
+  | nil => simp [selectConditionalBranches, advanceChoice]
+  | cons branch rest ih =>
+      simp [selectConditionalBranches, ih, advanceChoice, advanceChoice_not,
+        List.append_assoc]
+
+private theorem splitConditionalAux_select
+    (script : Script) (depth : Nat) (currentRev : Script)
+    (completedRev : List Script) (selected : Bool) :
+    (splitConditionalAux depth currentRev completedRev script).map
+        (fun frame => frame.select selected) =
+      (selectConditionalTail depth (advanceChoice completedRev.length selected) script).map
+        (fun tail => selectConditionalBranches selected completedRev.reverse ++
+          (if advanceChoice completedRev.length selected then currentRev.reverse else []) ++ tail) := by
+  induction script generalizing depth currentRev completedRev selected with
+  | nil => simp [splitConditionalAux, selectConditionalTail]
+  | cons element rest ih =>
+      cases element with
+      | pushData data | pushNum data =>
+          simp only [splitConditionalAux, selectConditionalTail, ih, Option.map_map,
+            List.reverse_cons]
+          congr 1
+          funext tail
+          split <;> simp [List.append_assoc]
+      | op opcode =>
+          cases opcode <;> cases depth <;>
+            simp only [splitConditionalAux, selectConditionalTail, ih, Option.map_map,
+              List.reverse_cons]
+          all_goals try simp [ConditionalFrame.select, selectConditionalBranches_append,
+            selectConditionalBranches, advanceChoice, List.append_assoc]
+          all_goals
+            congr 1
+            funext tail
+            split <;> simp [List.append_assoc]
+
+/-- The source-order projection is exactly the existing branch-frame selection,
+    including arbitrarily nested conditionals and repeated ELSE segments. -/
+theorem selectConditionalTail_eq (script : Script) (selected : Bool) :
+    selectConditionalTail 0 selected script =
+      (splitConditional script).map (fun frame => frame.select selected) := by
+  simpa [splitConditional, advanceChoice, selectConditionalBranches] using
+    (splitConditionalAux_select script 0 [] [] selected).symm
+
 /-- Collect same-depth branch segments when a leading conditional has no
     matching `OP_ENDIF`. Nested delimiters remain inside their branch so that
     an active nested conditional is evaluated normally. -/

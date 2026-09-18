@@ -70,8 +70,10 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   relation retains refinement, determinism and successful execution's erasure
   to resource-free `Eval`. The full entry uses `RuntimeEval` with conditional
   oracle refinement and determinism; its stack/push bound proofs require no
-  oracle agreement. A whole-script erasure bridge from this source-order
-  relation to the older branch-projection relation is not yet proved.
+  oracle agreement. `RuntimeErasure` proves that successful source-order
+  execution preserves both stacks and the remaining budget in the older
+  branch-projection evaluator for every oracle, and connects model execution
+  to `WeightedEval` and `Eval`. Resource failures need not agree.
   An oracle-parameterized `evaluate` function executes that same modeled
   subset; its model-oracle result is proved equivalent to `Eval`, while the
   executable oracle uses the pinned pure-Lean hashes and accepts injected
