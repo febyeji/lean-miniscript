@@ -99,10 +99,11 @@ def ResourceBoundsSound : Prop :=
       initialStack.length + initialAltStack.length + scriptElementCount fragment
 
 /-!
-TODO(theorem): Replace the provisional AST-depth estimate with a proved
-peak-main-stack analyzer. `resourceBoundsSound` and `compileSurface_stackGrowth`
-prove final combined-stack growth; they do not establish intermediate peaks
-or absence of runtime resource failures.
+TODO(theorem): Replace the provisional AST-depth estimate with a tighter
+fragment-specific peak-stack analyzer. `RuntimeStackBounds` proves conservative
+intermediate combined-stack bounds from source instruction counts and rules out
+rejection by the stack-size check under that allowance. It does not validate
+`maxStackDepth` or rule out other execution/resource failures.
 -/
 
 end LeanMiniscript.Properties

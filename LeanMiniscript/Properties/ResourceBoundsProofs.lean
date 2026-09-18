@@ -1,5 +1,5 @@
 import LeanMiniscript.Properties.ResourceBounds
-import LeanMiniscript.Script.StackGrowth
+import LeanMiniscript.Script.RuntimeStackBounds
 
 namespace LeanMiniscript.Properties
 
@@ -31,5 +31,29 @@ theorem compileSurface_stackGrowth
     finalStack.length + finalAlt.length ≤
       stack.length + alt.length + scriptElementCount (desugar fragment) :=
   compile_stackGrowth evaluated
+
+/-- The compiled instruction count also bounds every reachable intermediate
+    combined stack, before runtime stack-size checks are applied. -/
+theorem compile_prefix_stackBound
+    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
+    {fragment : CoreFragment} {visited : Script} {before after : RuntimeState}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (reached : RuntimePrefix oracle flags ctx visited before after)
+    (isPrefix : visited.IsPrefix (compile fragment))
+    (budget : before.stack.length + before.altStack.length + scriptElementCount fragment ≤ maxStackSize) :
+    after.stack.length + after.altStack.length ≤ maxStackSize :=
+  reached.stackBound agreement isPrefix budget
+
+/-- Surface prefix bounds use the instruction count of the desugared core. -/
+theorem compileSurface_prefix_stackBound
+    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
+    {fragment : SurfaceFragment} {visited : Script} {before after : RuntimeState}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (reached : RuntimePrefix oracle flags ctx visited before after)
+    (isPrefix : visited.IsPrefix (compileSurface fragment))
+    (budget : before.stack.length + before.altStack.length +
+      scriptElementCount (desugar fragment) ≤ maxStackSize) :
+    after.stack.length + after.altStack.length ≤ maxStackSize :=
+  reached.stackBound agreement isPrefix budget
 
 end LeanMiniscript.Properties
