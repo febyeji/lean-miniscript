@@ -76,9 +76,9 @@ def Dissatisfies (ctx : ScriptContext) (script : Script) (witness : Witness)
   CleanStackResult script witness flags txCtx false
 
 /-- Resource-aware script-path acceptance. The full-witness boundary checks
-    script bytes, annex, initial argument limits and the BIP342 signature budget.
-    Control-block commitment and runtime stack/push limits remain outside this
-    predicate. Unlike `Accepts`, this includes validation-weight accounting. -/
+    script bytes, annex, initial arguments, runtime stack/push limits and the
+    BIP342 signature budget. Control-block commitment remains outside this
+    predicate. Unlike `Accepts`, this includes runtime resource accounting. -/
 def TapscriptAccepts (script : Script) (witness : TapscriptWitness)
     (flags : ScriptFlags) (txCtx : TxContext) : Prop :=
   ModeledContextFlags .tapscript flags ∧
