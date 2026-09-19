@@ -299,30 +299,29 @@ def SatisfactionCorrectnessSurface : Prop :=
 /-! ## Theorem 3: Dissatisfaction Correctness -/
 
 /-- Target contract for core dissatisfaction. The returned witness must execute
-    successfully to a clean false result rather than aborting. The key premise
-    covers both key leaves currently propagated through wrapper `c`.
-    TODO(theorem): extend encoding premises alongside composite dissatisfaction. -/
+    successfully to a clean false result rather than aborting. Encoding
+    soundness covers selected signatures; context-valid keys plus the modeled
+    version and flags establish canonical empty-signature checks. -/
 def DissatisfactionCorrectnessCore : Prop :=
   ∀ {ctx : ScriptContext} {m : CoreFragment} {env : SatEnv}
       {witness : Witness} {flags : ScriptFlags},
     ValidDissatisfiableMiniscript ctx m →
     env.Sound →
-    (∀ key, (m = .c (.pk_k key) ∨ m = .c (.pk_h key)) →
-      checkSigEncodingFor flags env.txCtx.sigVersion falseElement key.bytes = .ok ()) →
+    env.EncodingSound flags →
     ModeledContextVersion ctx env.txCtx →
     ModeledContextFlags ctx flags →
     dissatisfy m env = some witness →
     Dissatisfies ctx (compile m) witness flags env.txCtx
 
-/-- Surface dissatisfaction is the core contract after desugaring. -/
+/-- Surface dissatisfaction is the core contract after desugaring. Its
+    encoding premise matches the proved core target so the surface proof can
+    follow as a separate corollary. -/
 def DissatisfactionCorrectnessSurface : Prop :=
   ∀ {ctx : ScriptContext} {m : SurfaceFragment} {env : SatEnv}
       {witness : Witness} {flags : ScriptFlags},
     ValidDissatisfiableSurfaceMiniscript ctx m →
     env.Sound →
-    (∀ key,
-      (desugar m = .c (.pk_k key) ∨ desugar m = .c (.pk_h key)) →
-      checkSigEncodingFor flags env.txCtx.sigVersion falseElement key.bytes = .ok ()) →
+    env.EncodingSound flags →
     ModeledContextVersion ctx env.txCtx →
     ModeledContextFlags ctx flags →
     dissatisfy (desugar m) env = some witness →

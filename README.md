@@ -165,9 +165,13 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   version/flag and sound environment premises, every publicly usable generated
   satisfaction or dissatisfaction carries the strong contract; this does not
   assert that either projection exists. Arithmetic-unsafe typed thresholds are
-  covered by their empty candidate pair.
-- General soundness, full satisfaction coverage, non-malleability, small-step
-  semantics, cryptographic correctness proofs, executable ECDSA verification,
+  covered by their empty candidate pair. `satisfactionCorrectnessCore` and
+  `dissatisfactionCorrectnessCore` now turn those selected top-level B
+  contracts into the resource-free `Accepts` and `Dissatisfies` predicates.
+  The corresponding surface theorems remain pending.
+- Type-system soundness, surface satisfaction/dissatisfaction correctness,
+  candidate completeness, non-malleability, small-step semantics,
+  cryptographic correctness proofs, executable ECDSA verification,
   unsupported Core failure classes,
   and full semantic coverage of the Bitcoin Core differential suite are
   unfinished. The older `Eval` / `Accepts` APIs are resource-free; complete

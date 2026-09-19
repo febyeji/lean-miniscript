@@ -10,6 +10,7 @@ import LeanMiniscript.Miniscript.SatisfactionCandidateProofs
 import LeanMiniscript.Miniscript.SatisfactionProofs
 import LeanMiniscript.Miniscript.SatisfactionGeneratedProofs
 import LeanMiniscript.Miniscript.SatisfactionGeneratedRecursiveProofs
+import LeanMiniscript.Miniscript.SatisfactionCorrectnessProofs
 import LeanMiniscript.Miniscript.SurfaceTextProofs
 import LeanMiniscript.Properties.ResourceBoundsProofs
 
