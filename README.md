@@ -108,7 +108,7 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   `c` wrappers, timelocks, all four 32-byte hashlocks, and linear propagation
   through `a`, `s`, `v`, and `n`, the guarded `d` and `j` rows, and the
   straight-line `and_v`, `and_b`, and `or_b` connectives, plus conditional
-  `or_c`, `or_d`, `or_i`, and `andor`. Paired
+  `or_c`, `or_d`, `or_i`, and `andor`, and exact-count `thresh` selection. Paired
   candidates track HASSIG, DONTUSE, canonical origin, and additive witness
   cost. Key leaves have exact K-frame lemmas; B leaves and well-typed `c`
   wrappers have arbitrary-stack lemmas leading to clean acceptance or
@@ -119,9 +119,11 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   premises for `and_b`/`or_b`. Balanced IF/NOTIF frame lemmas additionally
   prove the `or_c` B-to-V paths, `or_d` B paths, and `or_i`/`andor` B/K/V paths;
   child-produced selectors keep explicit truth and MINIMALIF premises, while
-  canonical `or_i` selectors discharge MINIMALIF internally. Recursive
-  generated-witness soundness for these wrappers and connectives remains
-  unfinished.
+  canonical `or_i` selectors discharge MINIMALIF internally. Threshold
+  accumulator lemmas support both W stack orders and retain an explicit numeric
+  decode premise for every `OP_ADD`; final `OP_EQUAL` uses byte equality.
+  Recursive generated-witness soundness for these wrappers, connectives, and
+  thresholds remains unfinished.
 - General soundness, full satisfaction coverage, non-malleability, small-step
   semantics, cryptographic correctness proofs, executable ECDSA verification,
   unsupported Core failure classes,

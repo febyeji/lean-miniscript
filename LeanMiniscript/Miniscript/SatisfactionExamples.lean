@@ -1082,6 +1082,180 @@ example {preimage nonPreimage : StackElement} {flags : ScriptFlags}
       (Or.inr falseElement_minimalIfArg) (by native_decide)
       (BExecution.v (one_execution flags ctx) (by native_decide))
 
+/-! ## Threshold candidates and execution -/
+
+private def signedB : CoreFragment := .c (.pk_k key)
+private def signedW : CoreFragment := .a signedB
+private def signedThreshold : CoreFragment :=
+  .thresh 2 [signedB, signedW, signedW]
+
+/-- The candidate fixture follows the threshold typing boundary: a Bdu first
+    child, Wdu tails, and `1 ≤ k ≤ n`. -/
+example : wellTyped .p2wsh signedThreshold := by
+  refine ⟨_, HasType.thresh (X := signedB) (Xs := [signedW, signedW])
+    (restTypes := [
+      ⟨.W, { d := true, u := true }⟩,
+      ⟨.W, { d := true, u := true }⟩])
+    (HasType.c_wrap (HasType.pk_k key)) rfl rfl ?_ ?_ (by decide)
+      (by decide)⟩
+  · exact HasTypeList.cons
+      (HasType.a_wrap (HasType.c_wrap (HasType.pk_k key)))
+      (HasTypeList.cons
+        (HasType.a_wrap (HasType.c_wrap (HasType.pk_k key)))
+        HasTypeList.nil)
+  · decide
+
+/-- Equal-cost two-of-three paths retain the left path: the first two
+    signatures satisfy while the third child uses its canonical zero. The
+    canonical all-zero path is the threshold dissatisfaction. -/
+example :
+    (satisfactionCandidates signedThreshold signingEnv).sat =
+        CandidateResult.usable
+          [falseElement, signature, signature] true ∧
+      (satisfactionCandidates signedThreshold signingEnv).dsat =
+        CandidateResult.usable
+          [falseElement, falseElement, falseElement] false ∧
+      satisfy signedThreshold signingEnv =
+        some [falseElement, signature, signature] ∧
+      dissatisfy signedThreshold signingEnv =
+        some [falseElement, falseElement, falseElement] := by
+  exact ⟨rfl, rfl, rfl, rfl⟩
+
+private def keyB : PubKey := ⟨⟨#[2, 4]⟩⟩
+private def keyC : PubKey := ⟨⟨#[2, 5]⟩⟩
+
+private def thresholdCostEnv : SatEnv where
+  signatureFor := fun selectedKey =>
+    if selectedKey.bytes == key.bytes then some signature
+    else if selectedKey.bytes == keyB.bytes then some countItemB
+    else if selectedKey.bytes == keyC.bytes then some falseElement
+    else none
+  preimageFor := fun _ => none
+  nonPreimageFor := fun _ => nonPreimage32
+  txCtx := unavailableEnv.txCtx
+
+private def costThreshold : CoreFragment :=
+  .thresh 2
+    [.c (.pk_k key), .a (.c (.pk_k keyB)), .a (.c (.pk_k keyC))]
+
+/-- With three available two-of-three paths, additive cost selects the short
+    signatures from the second and third children. -/
+example : (satisfactionCandidates costThreshold thresholdCostEnv).sat =
+    CandidateResult.usable [falseElement, countItemB, falseElement] true := by
+  rfl
+
+/-- Invalid raw thresholds have no candidates on either side. -/
+example :
+    satisfactionCandidates (.thresh 0 [signedB]) signingEnv = {} ∧
+      satisfactionCandidates (.thresh 2 [signedB]) signingEnv = {} ∧
+      satisfactionCandidates (.thresh 1 []) signingEnv = {} := by
+  exact ⟨rfl, rfl, rfl⟩
+
+/-- Multiple no-HASSIG one-of-two hash paths select a concrete representative
+    but mark it DONTUSE. The inherited canonical origin remains distinct from
+    overcomplete non-canonical rows. -/
+example :
+    (satisfactionCandidates
+      (.thresh 1 [.sha256 hashTarget, .a (.sha256 hashTarget)])
+      preimageEnv).sat =
+        CandidateResult.dontUse [nonPreimage32, preimage32] false .canonical := by
+  rfl
+
+/-- If the canonical count-zero state is impossible, a possible wrong positive
+    count remains available with overcomplete metadata. -/
+example : CandidatePair.thresholdDissatisfaction 1
+      [.impossible, .usable [countItemA] true,
+        .dontUse [countItemB] true .canonical] =
+    .dontUse [countItemB] true .nonCanonical := by
+  rfl
+
+/-- Exact-count witness blocks are serialized in reverse child order and turn
+    back into source order on the runtime stack. -/
+example :
+    Witness.toInitialStack [falseElement, signature, signature] =
+      Witness.toInitialStack [signature] ++
+        Witness.toInitialStack [signature] ++
+        Witness.toInitialStack [falseElement] := by
+  rfl
+
+/-- One execution fixture exercises saved-first `a`, result-first `s`, both
+    explicit `OP_ADD` decodes, and the final byte-equality comparison. -/
+example {firstPreimage secondPreimage thirdNonPreimage : StackElement}
+    (firstMatches : (HashLock.sha256 hashTarget).Matches firstPreimage)
+    (secondMatches : (HashLock.sha256 hashTarget).Matches secondPreimage)
+    (thirdMismatches : (HashLock.sha256 hashTarget).Mismatches thirdNonPreimage) :
+    BExecutionOutcome
+      (.thresh 2 [(.sha256 hashTarget), .a (.sha256 hashTarget),
+        .s (.sha256 hashTarget)])
+      [firstPreimage, secondPreimage, thirdNonPreimage] true
+      ({} : ScriptFlags) unavailableEnv.txCtx := by
+  have tail : ThresholdTailExecution ({} : ScriptFlags) unavailableEnv.txCtx 1
+      [.a (.sha256 hashTarget), .s (.sha256 hashTarget)]
+      [[secondPreimage], [thirdNonPreimage]] 2 := by
+    refine ThresholdTailExecution.cons (truth := true) (order := .savedFirst)
+      (by simpa [HashLock.fragment, boolToElement] using
+        BExecution.a (hash_satisfaction_execution secondMatches))
+      (by
+        change decodeBinaryScriptNums ({} : ScriptFlags) (scriptNat 1)
+          trueElement = .ok (1, 1)
+        rfl) ?_
+    refine ThresholdTailExecution.cons (truth := false) (order := .resultFirst)
+      (by simpa [HashLock.fragment, boolToElement] using
+        BExecution.s (hash_dissatisfaction_execution thirdMismatches))
+      (by
+        change decodeBinaryScriptNums ({} : ScriptFlags) falseElement
+          (scriptNat 2) = .ok (0, 2)
+        rfl) ?_
+    exact ThresholdTailExecution.nil 2
+  exact BExecution.threshOutcome
+    (threshold := 2) (first := .sha256 hashTarget)
+    (fragments := [.a (.sha256 hashTarget), .s (.sha256 hashTarget)])
+    (firstArgs := [firstPreimage])
+    (argumentFrames := [[secondPreimage], [thirdNonPreimage]])
+    (firstTruth := true) (total := 2)
+    (by simpa [HashLock.fragment, boolToElement] using
+      hash_satisfaction_execution firstMatches)
+    tail (by native_decide)
+
+/-- The all-dissatisfied path runs the same accumulator contract to zero and
+    exercises the false `OP_EQUAL` branch for a two-of-three threshold. -/
+example {firstNonPreimage secondNonPreimage thirdNonPreimage : StackElement}
+    (firstMismatches : (HashLock.sha256 hashTarget).Mismatches firstNonPreimage)
+    (secondMismatches : (HashLock.sha256 hashTarget).Mismatches secondNonPreimage)
+    (thirdMismatches : (HashLock.sha256 hashTarget).Mismatches thirdNonPreimage) :
+    BExecutionOutcome
+      (.thresh 2 [(.sha256 hashTarget), .a (.sha256 hashTarget),
+        .s (.sha256 hashTarget)])
+      [firstNonPreimage, secondNonPreimage, thirdNonPreimage] false
+      ({} : ScriptFlags) unavailableEnv.txCtx := by
+  have tail : ThresholdTailExecution ({} : ScriptFlags) unavailableEnv.txCtx 0
+      [.a (.sha256 hashTarget), .s (.sha256 hashTarget)]
+      [[secondNonPreimage], [thirdNonPreimage]] 0 := by
+    refine ThresholdTailExecution.cons (truth := false) (order := .savedFirst)
+      (by simpa [HashLock.fragment, boolToElement] using
+        BExecution.a (hash_dissatisfaction_execution secondMismatches))
+      (by
+        change decodeBinaryScriptNums ({} : ScriptFlags) (scriptNat 0)
+          falseElement = .ok (0, 0)
+        rfl) ?_
+    refine ThresholdTailExecution.cons (truth := false) (order := .resultFirst)
+      (by simpa [HashLock.fragment, boolToElement] using
+        BExecution.s (hash_dissatisfaction_execution thirdMismatches))
+      (by
+        change decodeBinaryScriptNums ({} : ScriptFlags) falseElement
+          (scriptNat 0) = .ok (0, 0)
+        rfl) ?_
+    exact ThresholdTailExecution.nil 0
+  exact BExecution.threshOutcome
+    (threshold := 2) (first := .sha256 hashTarget)
+    (fragments := [.a (.sha256 hashTarget), .s (.sha256 hashTarget)])
+    (firstArgs := [firstNonPreimage])
+    (argumentFrames := [[secondNonPreimage], [thirdNonPreimage]])
+    (firstTruth := false) (total := 0)
+    (by simpa [HashLock.fragment, boolToElement] using
+      hash_dissatisfaction_execution firstMismatches)
+    tail (by native_decide)
+
 /-- Truthiness alone does not discharge a child-produced selector's MINIMALIF
     premise when the flag is active. -/
 example :

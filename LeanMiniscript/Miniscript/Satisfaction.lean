@@ -594,6 +594,21 @@ theorem selectExactly_eq_impossible_of_lt
                 CandidateResult.usable, SatisfactionCandidate.combine,
                 CandidateStatus.combine, CandidateOrigin.combine]
 
+/-- Select the threshold dissatisfaction from an exact-count table. Count zero
+    is the canonical all-dissatisfied row. Every positive count other than the
+    satisfying threshold is a possible overcomplete row, so it retains its
+    witness and HASSIG flag while becoming DONTUSE and non-canonical. -/
+def thresholdDissatisfaction (threshold : Nat)
+    (states : List CandidateResult) : CandidateResult :=
+  match states with
+  | [] => .impossible
+  | canonical :: positiveCounts =>
+      (positiveCounts.zipIdx 1).foldl
+        (fun selected entry =>
+          if entry.2 = threshold then selected
+          else selected.select entry.1.markOvercomplete)
+        canonical
+
 end CandidatePair
 
 /-- Construct the BIP 379 key row. `keyTail` is empty for `pk_k` and contains
@@ -615,6 +630,7 @@ def hashCandidates (lock : HashLock) (env : SatEnv) : CandidatePair where
     | some preimage => .usable [preimage] false
   dsat := .dontUse [env.nonPreimageFor lock] false .canonical
 
+mutual
 /-- Compute the candidate pair for the supported leaf, wrapper, and connective
     rows. Unsupported rows are explicitly impossible on both sides. -/
 @[simp] def satisfactionCandidates : CoreFragment → SatEnv → CandidatePair
@@ -682,6 +698,13 @@ def hashCandidates (lock : HashLock) (env : SatEnv) : CandidatePair where
           (firstCandidates.dsat.combine thirdCandidates.sat)
         dsat := (firstCandidates.dsat.combine thirdCandidates.dsat).select
           ((firstCandidates.sat.combine secondCandidates.dsat).markNonCanonical) }
+  | .thresh threshold fragments, env =>
+      if threshold = 0 ∨ fragments.length < threshold then {}
+      else
+        let children := satisfactionCandidatesList fragments env
+        let states := CandidatePair.countCandidates children
+        { sat := CandidatePair.selectExactly threshold children
+          dsat := CandidatePair.thresholdDissatisfaction threshold states }
   | .c fragment, env => satisfactionCandidates fragment env
   | .a fragment, env => satisfactionCandidates fragment env
   | .s fragment, env => satisfactionCandidates fragment env
@@ -697,6 +720,24 @@ def hashCandidates (lock : HashLock) (env : SatEnv) : CandidatePair where
             |>.requireNonemptyRuntimeTop
             |>.markNonCanonical) }
   | _, _ => {}
+
+/-- Compute child candidate pairs without hiding recursive fragment calls
+    behind a higher-order list operation. -/
+@[simp] def satisfactionCandidatesList :
+    List CoreFragment → SatEnv → List CandidatePair
+  | [], _ => []
+  | fragment :: fragments, env =>
+      satisfactionCandidates fragment env ::
+        satisfactionCandidatesList fragments env
+end
+
+@[simp] theorem satisfactionCandidatesList_eq_map
+    (fragments : List CoreFragment) (env : SatEnv) :
+    satisfactionCandidatesList fragments env =
+      fragments.map (fun fragment => satisfactionCandidates fragment env) := by
+  induction fragments with
+  | nil => rfl
+  | cons fragment fragments ih => simp [ih]
 
 /-- Project the usable satisfaction candidate. This is the leaf/composition
     projection only; final timelock/HASSIG policy remains a later step. -/
@@ -1302,8 +1343,80 @@ theorem satisfactionCandidates_dsat_witness
           |>.markNonCanonical)).usableWitness? := by
   rfl
 
+/-- Invalid raw threshold arities have no satisfaction or dissatisfaction.
+    Well-typed thresholds rule these cases out with `1 ≤ k ≤ n`. -/
+@[simp] theorem satisfactionCandidates_thresh_invalid
+    (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
+    (invalid : threshold = 0 ∨ fragments.length < threshold) :
+    satisfactionCandidates (.thresh threshold fragments) env = {} := by
+  simp [satisfactionCandidates, invalid]
+
+/-- A valid raw threshold uses the shared exact-count table for satisfaction
+    and the canonical/overcomplete count selection for dissatisfaction. -/
+@[simp] theorem satisfactionCandidates_thresh_valid
+    (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
+    (valid : threshold ≠ 0 ∧ ¬ fragments.length < threshold) :
+    satisfactionCandidates (.thresh threshold fragments) env =
+      let children := fragments.map (fun fragment =>
+        satisfactionCandidates fragment env)
+      let states := CandidatePair.countCandidates children
+      { sat := CandidatePair.selectExactly threshold children
+        dsat := CandidatePair.thresholdDissatisfaction threshold states } := by
+  simp [satisfactionCandidates, valid.1, valid.2]
+
+@[simp] theorem satisfactionCandidates_thresh_sat
+    (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
+    (valid : threshold ≠ 0 ∧ ¬ fragments.length < threshold) :
+    (satisfactionCandidates (.thresh threshold fragments) env).sat =
+      CandidatePair.selectExactly threshold
+        (fragments.map (fun fragment => satisfactionCandidates fragment env)) := by
+  rw [satisfactionCandidates_thresh_valid threshold fragments env valid]
+
+@[simp] theorem satisfactionCandidates_thresh_dsat
+    (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
+    (valid : threshold ≠ 0 ∧ ¬ fragments.length < threshold) :
+    (satisfactionCandidates (.thresh threshold fragments) env).dsat =
+      CandidatePair.thresholdDissatisfaction threshold
+        (CandidatePair.countCandidates
+          (fragments.map (fun fragment =>
+            satisfactionCandidates fragment env))) := by
+  rw [satisfactionCandidates_thresh_valid threshold fragments env valid]
+
+@[simp] theorem satisfy_thresh_invalid
+    (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
+    (invalid : threshold = 0 ∨ fragments.length < threshold) :
+    satisfy (.thresh threshold fragments) env = none := by
+  simp [satisfy, invalid]
+
+@[simp] theorem dissatisfy_thresh_invalid
+    (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
+    (invalid : threshold = 0 ∨ fragments.length < threshold) :
+    dissatisfy (.thresh threshold fragments) env = none := by
+  simp [dissatisfy, invalid]
+
+@[simp] theorem satisfy_thresh_valid
+    (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
+    (valid : threshold ≠ 0 ∧ ¬ fragments.length < threshold) :
+    satisfy (.thresh threshold fragments) env =
+      (CandidatePair.selectExactly threshold
+        (fragments.map (fun fragment =>
+          satisfactionCandidates fragment env))).usableWitness? := by
+  unfold satisfy
+  rw [satisfactionCandidates_thresh_sat threshold fragments env valid]
+
+@[simp] theorem dissatisfy_thresh_valid
+    (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
+    (valid : threshold ≠ 0 ∧ ¬ fragments.length < threshold) :
+    dissatisfy (.thresh threshold fragments) env =
+      (CandidatePair.thresholdDissatisfaction threshold
+        (CandidatePair.countCandidates
+          (fragments.map (fun fragment =>
+            satisfactionCandidates fragment env)))).usableWitness? := by
+  unfold dissatisfy
+  rw [satisfactionCandidates_thresh_dsat threshold fragments env valid]
+
 -- TODO(theorem): Extend satisfaction and dissatisfaction correctness through
--- connectives, thresholds, `multi`, and `multi_a`.
+-- thresholds, `multi`, and `multi_a`.
 -- TODO: Analyze non-malleable satisfaction (unique canonical witness)
 
 end LeanMiniscript.Miniscript

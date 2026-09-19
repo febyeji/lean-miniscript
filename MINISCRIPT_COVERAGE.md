@@ -150,7 +150,7 @@ path-sensitive peak analysis remains unfinished.
 | `v` | Done | Done | Done | Done | Partial | Pass-through | Impossible | Partial | Truthy B-to-V frame |
 | `j` | Done | Done | Done | Done | Partial | Pass-through | Guarded choice | Partial | Nonempty child / canonical zero frames |
 | `n` | Done | Done | Done | Done | Partial | Pass-through | Pass-through | Partial | ScriptNum-normalized B frame |
-| `thresh` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
+| `thresh` | Done | Done | Done | Done | Partial | Exact-count candidate | Canonical/overcomplete choice | Partial | Local accumulator frame |
 | `multi` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `multi_a` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 
@@ -231,6 +231,26 @@ separate `minimalIfSatisfied` and `castToBool` premises; `or_i` discharges
 MINIMALIF internally for its canonical selectors. No numeric decoding premise
 is used for these branch selectors. These local contracts do not yet prove
 recursive soundness for witnesses selected by the candidate algorithm.
+
+Threshold candidates use a shared exact-count dynamic-programming table. State
+`j` holds the selected witness with exactly `j` satisfied children; each step
+combines the previous witness with the next child's dissatisfaction without
+changing `j`, or with its satisfaction while incrementing `j`. Combination
+preserves source execution order and reverse serialized witness-block order,
+and the ordinary HASSIG/DONTUSE/cost selection rules apply within each state.
+Valid `thresh(k, ...)` satisfaction selects state `k`. Dissatisfaction starts
+with the canonical all-dissatisfied state zero, skips state `k`, and considers
+every other positive state only after marking it DONTUSE and non-canonical as
+an overcomplete row. Raw `k = 0`, empty, and `k > n` forms have no candidates;
+the type system already excludes them.
+
+The local threshold execution contract covers a nonempty B child followed by
+W children and `OP_ADD`. It supports both saved-first and result-first W stack
+orders, and requires an explicit successful `decodeBinaryScriptNums` premise
+for every addition. The accumulator is carried as canonical Script-number
+bytes; the final literal `k` and `OP_EQUAL` proof uses byte equality directly.
+It does not infer four-byte arithmetic decodability from typing and does not
+claim recursive soundness for generated child witnesses.
 
 `HasType ctx` covers all rows, and `inferType ctx` has soundness, completeness,
 uniqueness, and success/reflection theorems. A constructor-exhaustive fixture
@@ -486,7 +506,7 @@ Satisfaction now has executable candidate rows for constants, `pk_k`, `pk_h`,
 their `c` wrappers, timelocks, all four hashlocks, linear wrapper propagation
 through `a`, `s`, `v`, and `n`, guarded wrappers `d` and `j`, and straight-line
 connectives `and_v`, `and_b`, and `or_b`, plus conditional connectives `or_c`,
-`or_d`, `or_i`, and `andor`. Paired
+`or_d`, `or_i`, and `andor`, and thresholds. Paired
 candidates retain HASSIG, DONTUSE, canonical origin, and additive witness cost
 metadata while the public projection returns only usable witnesses. Signature
 and key material use serialized witness order, and timelock availability reuses
@@ -506,7 +526,9 @@ dissatisfaction requires the empty-signature/key pair to pass the selected
 version-specific byte checks. Guarded wrappers `d` and `j` and the supported
 straight-line and conditional connectives have the local arbitrary-stack
 contracts described above, without a recursive theorem tying every generated
-candidate to child execution. Threshold and multisignature candidate selection
+candidate to child execution. Thresholds have the local accumulator contract
+described above, without a recursive theorem connecting their selected table
+entry to every child execution. `multi` and `multi_a` candidate selection
 remain unsupported and return `none`.
 
 ## Surface Constructor Matrix
