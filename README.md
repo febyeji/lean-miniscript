@@ -110,7 +110,10 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   straight-line `and_v`, `and_b`, and `or_b` connectives, plus conditional
   `or_c`, `or_d`, `or_i`, and `andor`, exact-count `thresh` selection, and
   both `multi` encodings. Paired candidates track HASSIG, DONTUSE, canonical
-  origin, and additive witness cost. Key leaves have exact K-frame lemmas; B
+  origin, and additive witness cost. `thresh` and `multi_a` share a
+  proof-carrying arithmetic guard that rejects threshold literals at or above
+  `2^31` and retains their exact four-byte decode result under both
+  minimal-data modes. Key leaves have exact K-frame lemmas; B
   leaves and well-typed `c` wrappers have arbitrary-stack lemmas leading to
   clean acceptance or dissatisfaction. Wrapper lemmas additionally prove the
   two exact W stack orders, truthy B-to-V conversion, `n`'s explicit

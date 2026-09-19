@@ -261,6 +261,10 @@ def scriptNat (n : Nat) : StackElement :=
 /-- Ordinary arithmetic opcodes accept at most four encoded bytes. -/
 def maxArithmeticScriptNumBytes : Nat := 4
 
+/-- Exclusive upper bound for nonnegative values that fit the ordinary
+    four-byte signed-magnitude Script-number domain. -/
+def maxArithmeticScriptNatExclusive : Nat := 2147483648
+
 /-- CLTV and CSV accept five-byte operands so unsigned 32-bit transaction
     fields remain representable. -/
 def maxTimelockScriptNumBytes : Nat := 5
@@ -319,6 +323,46 @@ def decodeScriptNum (bytes : StackElement) (requireMinimal : Bool)
       .ok (-Int.ofNat magnitude)
     else
       .ok (Int.ofNat magnitude)
+
+/-- Proof-carrying guard for natural literals used by arithmetic opcodes.
+    The bound states the intended signed range, while the decoder clause keeps
+    the exact executable codec fact available under either minimal-data mode. -/
+def ArithmeticScriptNatSafe (n : Nat) : Prop :=
+  n < maxArithmeticScriptNatExclusive ∧
+    decodeScriptNum (scriptNat n) false maxArithmeticScriptNumBytes =
+      .ok (Int.ofNat n) ∧
+    decodeScriptNum (scriptNat n) true maxArithmeticScriptNumBytes =
+      .ok (Int.ofNat n)
+
+private def exceptOkDecidable {ε α : Type} [DecidableEq α]
+    (result : Except ε α) (expected : α) : Decidable (result = .ok expected) := by
+  cases result with
+  | error error =>
+      exact isFalse (by intro impossible; cases impossible)
+  | ok actual =>
+      by_cases equal : actual = expected
+      · exact isTrue (by simp [equal])
+      · exact isFalse (by simp [equal])
+
+instance (n : Nat) : Decidable (ArithmeticScriptNatSafe n) := by
+  unfold ArithmeticScriptNatSafe
+  let relaxed := exceptOkDecidable
+    (decodeScriptNum (scriptNat n) false maxArithmeticScriptNumBytes)
+    (Int.ofNat n)
+  let strict := exceptOkDecidable
+    (decodeScriptNum (scriptNat n) true maxArithmeticScriptNumBytes)
+    (Int.ofNat n)
+  let decoded := @instDecidableAnd _ _ relaxed strict
+  exact @instDecidableAnd _ _ (inferInstance) decoded
+
+/-- Recover the exact arithmetic Script-number decode promised by the guard. -/
+theorem ArithmeticScriptNatSafe.decode {n : Nat}
+    (safe : ArithmeticScriptNatSafe n) (minimalData : Bool) :
+    decodeScriptNum (scriptNat n) minimalData maxArithmeticScriptNumBytes =
+      .ok (Int.ofNat n) := by
+  cases minimalData
+  · exact safe.2.1
+  · exact safe.2.2
 
 /-- Decode two ordinary numeric operands. `belowTop` is decoded first to match
     Bitcoin Core's `stacktop(-2)` then `stacktop(-1)` evaluation order. The

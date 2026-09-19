@@ -354,6 +354,35 @@ example : CandidatePair.selectExactly 4
   apply CandidatePair.selectExactly_eq_impossible_of_lt
   decide
 
+/-! ## Arithmetic threshold guards -/
+
+/-- The largest nonnegative four-byte signed-magnitude Script number carries
+    decoder evidence under both minimal-data modes. The next value needs a
+    fifth sign byte and is rejected. -/
+example :
+    ArithmeticScriptNatSafe 2147483647 ∧
+      ¬ ArithmeticScriptNatSafe 2147483648 := by
+  native_decide
+
+/-- The shared candidate guard can represent the maximum safe arity without
+    allocating a list of that size, and rejects the first unsafe threshold even
+    when the abstract arity relation itself holds. -/
+example :
+    candidateThresholdValid 2147483647 2147483647 ∧
+      ¬ candidateThresholdValid 2147483648 2147483648 := by
+  native_decide
+
+/-- Arithmetic-unsafe threshold literals expose no candidate or public
+    satisfaction projection for either arithmetic threshold constructor. -/
+example :
+    satisfactionCandidates (.thresh 2147483648 [.one]) unavailableEnv = {} ∧
+      satisfy (.thresh 2147483648 [.one]) unavailableEnv = none ∧
+      dissatisfy (.thresh 2147483648 [.one]) unavailableEnv = none ∧
+      satisfactionCandidates (.multi_a 2147483648 [key]) unavailableEnv = {} ∧
+      satisfy (.multi_a 2147483648 [key]) unavailableEnv = none ∧
+      dissatisfy (.multi_a 2147483648 [key]) unavailableEnv = none := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+
 private def noSigCountA : CandidatePair where
   sat := .usable [countItemA] false
   dsat := .usable [] false
