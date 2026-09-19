@@ -143,13 +143,13 @@ path-sensitive peak analysis remains unfinished.
 | `or_d` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `or_i` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `andor` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
-| `a` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Example chain only |
-| `s` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
+| `a` | Done | Done | Done | Done | Partial | Pass-through | Pass-through | Partial | Saved-first W frame |
+| `s` | Done | Done | Done | Done | Partial | Pass-through | Pass-through | Partial | Singleton/result-first W frame |
 | `c` | Done | Done | Done | Done | Partial | Basic (key leaves) | Basic (key leaves) | Partial | Basic soundness |
 | `d` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
-| `v` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Example chain only |
+| `v` | Done | Done | Done | Done | Partial | Pass-through | Impossible | Partial | Truthy B-to-V frame |
 | `j` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
-| `n` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
+| `n` | Done | Done | Done | Done | Partial | Pass-through | Pass-through | Partial | ScriptNum-normalized B frame |
 | `thresh` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `multi` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `multi_a` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
@@ -166,6 +166,16 @@ Candidate generation is total over the raw AST, so structural `c` propagation
 also computes for ill-typed terms. Semantic correctness claims require the
 existing context-valid typing boundary and prove `c` execution only for K
 children.
+
+Linear wrappers retain the child's serialized witness. Wrappers `a`, `s`, and
+`n` preserve the complete candidate pair, including HASSIG, DONTUSE, origin,
+and cost; `v` preserves satisfaction and makes dissatisfaction impossible.
+Their stack-frame lemmas keep the operational side conditions explicit: `a`
+restores the protected element above the B result, `s` requires the child's
+single argument and leaves its result above the protected element, `v` requires
+a truthy B result, and `n` requires the exact child result to decode as a
+four-byte Script number. Raw-AST propagation therefore does not by itself
+establish that a wrapper is well typed.
 
 `HasType ctx` covers all rows, and `inferType ctx` has soundness, completeness,
 uniqueness, and success/reflection theorems. A constructor-exhaustive fixture
@@ -418,13 +428,14 @@ EOF becomes `UNBALANCED_CONDITIONAL`. Relational, executable, and fixture-level
 regressions cover active, inactive, and repeated-`ELSE` cases.
 
 Satisfaction now has executable candidate rows for constants, `pk_k`, `pk_h`,
-their `c` wrappers, timelocks, and all four hashlocks. Paired candidates retain
-HASSIG, DONTUSE, canonical origin, and additive witness cost metadata while the
-public projection returns only usable witnesses. Signature and key material use
+their `c` wrappers, timelocks, all four hashlocks, and linear wrapper
+propagation through `a`, `s`, `v`, and `n`. Paired candidates retain HASSIG,
+DONTUSE, canonical origin, and additive witness cost metadata while the public
+projection returns only usable witnesses. Signature and key material use
 serialized witness order, and timelock availability reuses the exact `TxContext`
 predicates from Script execution. Hash preimages and nonpreimages are required
 to be exactly 32 bytes; canonical hash dissatisfactions remain available to
-recursive proofs as DONTUSE candidates.
+recursive proofs as DONTUSE candidates, including through `a`, `s`, and `n`.
 
 Arbitrary-stack soundness lemmas connect returned B witnesses to `Accepts` or
 `Dissatisfies`; timelock lemmas expose the numeric well-formedness premises that
@@ -432,8 +443,9 @@ the eventual validity theorem must discharge. `SatEnv.Sound` records signature,
 preimage, and nonpreimage obligations at the cryptographic boundary. Basic key
 satisfaction additionally requires `SatEnv.EncodingSound`, and key
 dissatisfaction requires the empty-signature/key pair to pass the selected
-version-specific byte checks. Other wrappers, connectives, thresholds, and
-multisignature candidate selection remain unsupported and return `none`.
+version-specific byte checks. Conditional wrappers `d` and `j`, connectives,
+thresholds, and multisignature candidate selection remain unsupported and
+return `none`.
 
 ## Surface Constructor Matrix
 

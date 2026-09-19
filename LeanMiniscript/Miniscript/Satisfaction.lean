@@ -303,9 +303,10 @@ def hashCandidates (lock : HashLock) (env : SatEnv) : CandidatePair where
     | some preimage => .usable [preimage] false
   dsat := .dontUse [env.nonPreimageFor lock] false .canonical
 
-/-- Compute the candidate pair for the supported leaf rows and propagate K
-    candidates through wrapper `c`. Unsupported rows are explicitly
-    impossible on both sides. -/
+/-- Compute the candidate pair for the supported leaf rows. Wrapper `c` and
+    the linear wrappers `a`, `s`, and `n` preserve the complete child pair;
+    `v` preserves only satisfaction because V fragments cannot dissatisfy.
+    Unsupported rows are explicitly impossible on both sides. -/
 @[simp] def satisfactionCandidates : CoreFragment → SatEnv → CandidatePair
   | .zero, _ => { dsat := .usable [] false }
   | .one, _ => { sat := .usable [] false }
@@ -322,6 +323,10 @@ def hashCandidates (lock : HashLock) (env : SatEnv) : CandidatePair where
   | .ripemd160 hash, env => hashCandidates (.ripemd160 hash) env
   | .hash160 hash, env => hashCandidates (.hash160 hash) env
   | .c fragment, env => satisfactionCandidates fragment env
+  | .a fragment, env => satisfactionCandidates fragment env
+  | .s fragment, env => satisfactionCandidates fragment env
+  | .v fragment, env => { sat := (satisfactionCandidates fragment env).sat }
+  | .n fragment, env => satisfactionCandidates fragment env
   | _, _ => {}
 
 /-- Project the usable satisfaction candidate. This is the leaf/composition
@@ -462,8 +467,73 @@ theorem satisfactionCandidates_dsat_witness
     dissatisfy (.c fragment) env = dissatisfy fragment env := by
   rfl
 
+/-- Wrapper `a` changes execution stack placement, not candidate metadata or
+    serialized witness order. -/
+@[simp] theorem satisfactionCandidates_a
+    (fragment : CoreFragment) (env : SatEnv) :
+    satisfactionCandidates (.a fragment) env =
+      satisfactionCandidates fragment env := by
+  rfl
+
+@[simp] theorem satisfy_a (fragment : CoreFragment) (env : SatEnv) :
+    satisfy (.a fragment) env = satisfy fragment env := by
+  rfl
+
+@[simp] theorem dissatisfy_a (fragment : CoreFragment) (env : SatEnv) :
+    dissatisfy (.a fragment) env = dissatisfy fragment env := by
+  rfl
+
+/-- Wrapper `s` also preserves the candidate pair. Its singleton-argument
+    typing requirement is enforced by semantic proofs rather than this raw-AST
+    candidate function. -/
+@[simp] theorem satisfactionCandidates_s
+    (fragment : CoreFragment) (env : SatEnv) :
+    satisfactionCandidates (.s fragment) env =
+      satisfactionCandidates fragment env := by
+  rfl
+
+@[simp] theorem satisfy_s (fragment : CoreFragment) (env : SatEnv) :
+    satisfy (.s fragment) env = satisfy fragment env := by
+  rfl
+
+@[simp] theorem dissatisfy_s (fragment : CoreFragment) (env : SatEnv) :
+    dissatisfy (.s fragment) env = dissatisfy fragment env := by
+  rfl
+
+/-- Wrapper `v` preserves the child's satisfaction candidate and removes its
+    dissatisfaction candidate. -/
+@[simp] theorem satisfactionCandidates_v
+    (fragment : CoreFragment) (env : SatEnv) :
+    satisfactionCandidates (.v fragment) env =
+      { sat := (satisfactionCandidates fragment env).sat } := by
+  rfl
+
+@[simp] theorem satisfy_v (fragment : CoreFragment) (env : SatEnv) :
+    satisfy (.v fragment) env = satisfy fragment env := by
+  rfl
+
+@[simp] theorem dissatisfy_v (fragment : CoreFragment) (env : SatEnv) :
+    dissatisfy (.v fragment) env = none := by
+  rfl
+
+/-- Wrapper `n` preserves candidates; its opcode-level proof separately
+    requires the child's exact Script-number result. -/
+@[simp] theorem satisfactionCandidates_n
+    (fragment : CoreFragment) (env : SatEnv) :
+    satisfactionCandidates (.n fragment) env =
+      satisfactionCandidates fragment env := by
+  rfl
+
+@[simp] theorem satisfy_n (fragment : CoreFragment) (env : SatEnv) :
+    satisfy (.n fragment) env = satisfy fragment env := by
+  rfl
+
+@[simp] theorem dissatisfy_n (fragment : CoreFragment) (env : SatEnv) :
+    dissatisfy (.n fragment) env = dissatisfy fragment env := by
+  rfl
+
 -- TODO(theorem): Extend satisfaction and dissatisfaction correctness through
--- the remaining wrappers, connectives, thresholds, `multi`, and `multi_a`.
+-- wrappers `d`/`j`, connectives, thresholds, `multi`, and `multi_a`.
 -- TODO: Analyze non-malleable satisfaction (unique canonical witness)
 
 end LeanMiniscript.Miniscript
