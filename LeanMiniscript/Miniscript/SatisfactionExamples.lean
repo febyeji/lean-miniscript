@@ -31,6 +31,12 @@ private def preimageEnv : SatEnv where
   nonPreimageFor := fun _ => nonPreimage32
   txCtx := unavailableEnv.txCtx
 
+private def completeEnv : SatEnv where
+  signatureFor := fun _ => some signature
+  preimageFor := fun _ => some preimage32
+  nonPreimageFor := fun _ => nonPreimage32
+  txCtx := unavailableEnv.txCtx
+
 private def firstWitness : Witness := [⟨#[0x01]⟩, ⟨#[0x02]⟩]
 private def secondWitness : Witness := [⟨#[0x03]⟩]
 private def alternateTruthy : StackElement := ⟨#[0x02]⟩
@@ -385,6 +391,73 @@ example :
       dissatisfy (.v (.sha256 hashTarget)) unavailableEnv = none := by
   exact ⟨rfl, rfl, rfl⟩
 
+/-! ## Straight-line connective candidates -/
+
+/-- `and_v` stores the second child's witness before the first child's witness,
+    while runtime reversal restores fragment execution order. Its retained
+    dissatisfaction is non-canonical and propagates the hash DONTUSE marker. -/
+example :
+    satisfactionCandidates
+        (.and_v (.v (.c (.pk_k key))) (.sha256 hashTarget)) completeEnv = {
+      sat := CandidateResult.usable [preimage32, signature] true
+      dsat := CandidateResult.dontUse [nonPreimage32, signature] true
+        .nonCanonical } ∧
+      Witness.toInitialStack [preimage32, signature] = [signature, preimage32] ∧
+      satisfy (.and_v (.v (.c (.pk_k key))) (.sha256 hashTarget)) completeEnv =
+        some [preimage32, signature] ∧
+      dissatisfy (.and_v (.v (.c (.pk_k key))) (.sha256 hashTarget)) completeEnv =
+        none := by
+  exact ⟨rfl, rfl, rfl, rfl⟩
+
+/-- `and_b` evaluates all three dissatisfaction rows in fixed left-fold order.
+    Here the canonical and first overcomplete no-HASSIG rows tie in cost, so the
+    canonical hash DONTUSE witness stays selected. -/
+example :
+    satisfactionCandidates
+        (.and_b (.c (.pk_k key)) (.a (.sha256 hashTarget))) completeEnv = {
+      sat := CandidateResult.usable [preimage32, signature] true
+      dsat := CandidateResult.dontUse [nonPreimage32, falseElement] false
+        .canonical } ∧
+      Witness.toInitialStack [preimage32, signature] = [signature, preimage32] ∧
+      satisfy (.and_b (.c (.pk_k key)) (.a (.sha256 hashTarget))) completeEnv =
+        some [preimage32, signature] ∧
+      dissatisfy (.and_b (.c (.pk_k key)) (.a (.sha256 hashTarget))) completeEnv =
+        none := by
+  exact ⟨rfl, rfl, rfl, rfl⟩
+
+/-- `or_b` selects its unique no-HASSIG satisfaction and propagates the raw hash
+    DONTUSE dissatisfaction. Both witnesses retain second-then-first wire order. -/
+example :
+    satisfactionCandidates
+        (.or_b (.c (.pk_k key)) (.a (.sha256 hashTarget))) completeEnv = {
+      sat := CandidateResult.usable [preimage32, falseElement] false
+      dsat := CandidateResult.dontUse [nonPreimage32, falseElement] false
+        .canonical } ∧
+      Witness.toInitialStack [preimage32, falseElement] =
+        [falseElement, preimage32] ∧
+      satisfy (.or_b (.c (.pk_k key)) (.a (.sha256 hashTarget))) completeEnv =
+        some [preimage32, falseElement] ∧
+      dissatisfy (.or_b (.c (.pk_k key)) (.a (.sha256 hashTarget))) completeEnv =
+        none := by
+  exact ⟨rfl, rfl, rfl, rfl⟩
+
+/-- The three overcomplete rows used by `and_b` and `or_b` retain their exact
+    witnesses and HASSIG classification while becoming DONTUSE/non-canonical. -/
+example :
+    (((satisfactionCandidates (.c (.pk_k key)) completeEnv).dsat.combine
+        (satisfactionCandidates (.a (.sha256 hashTarget)) completeEnv).sat)
+      |>.markOvercomplete) =
+        CandidateResult.dontUse [preimage32, falseElement] false .nonCanonical ∧
+    (((satisfactionCandidates (.c (.pk_k key)) completeEnv).sat.combine
+        (satisfactionCandidates (.a (.sha256 hashTarget)) completeEnv).dsat)
+      |>.markOvercomplete) =
+        CandidateResult.dontUse [nonPreimage32, signature] true .nonCanonical ∧
+    (((satisfactionCandidates (.c (.pk_k key)) completeEnv).sat.combine
+        (satisfactionCandidates (.a (.sha256 hashTarget)) completeEnv).sat)
+      |>.markOvercomplete) =
+        CandidateResult.dontUse [preimage32, signature] true .nonCanonical := by
+  exact ⟨rfl, rfl, rfl⟩
+
 /-- Wrapper `a` restores the protected element above a hash result. -/
 example {preimage : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (matching : (HashLock.sha256 hashTarget).Matches preimage) :
@@ -528,7 +601,142 @@ example :
       dissatisfy (.j (.sha256 hashTarget)) unavailableEnv = none := by
   exact ⟨rfl, rfl, rfl⟩
 
-/-- Connectives remain outside this slice. -/
+/-! ## Straight-line connective execution -/
+
+/-- `and_v` preserves each possible result base of its second child. -/
+example :
+    BExecution (.and_v (.v .one) .zero) [] falseElement
+      ({} : ScriptFlags) unavailableEnv.txCtx ∧
+    KExecution (.and_v (.v .one) (.pk_k key)) [] key.bytes
+      ({} : ScriptFlags) unavailableEnv.txCtx ∧
+    VExecution (.and_v (.v .one) (.v .one)) []
+      ({} : ScriptFlags) unavailableEnv.txCtx := by
+  have first : VExecution (.v .one) [] ({} : ScriptFlags)
+      unavailableEnv.txCtx :=
+    BExecution.v (one_execution {} unavailableEnv.txCtx) (by native_decide)
+  exact ⟨
+    first.and_v_b (zero_execution {} unavailableEnv.txCtx),
+    first.and_v_k (pk_k_execution key {} unavailableEnv.txCtx),
+    first.and_v_v
+      (BExecution.v (one_execution {} unavailableEnv.txCtx) (by native_decide))⟩
+
+/-- Canonical Boolean elements satisfy the exact binary decoding premise in
+    both W stack orders. A five-byte numeric operand exposes the required
+    overflow boundary instead of being accepted from truthiness alone. -/
+example :
+    WStackOrder.BinaryDecoded .savedFirst ({} : ScriptFlags)
+        trueElement falseElement 1 0 ∧
+      WStackOrder.BinaryDecoded .resultFirst ({} : ScriptFlags)
+        falseElement trueElement 0 1 ∧
+      decodeBinaryScriptNums ({} : ScriptFlags)
+        ⟨#[1, 0, 0, 0, 0]⟩ falseElement = .error .scriptNumOverflow := by
+  exact ⟨rfl, rfl, rfl⟩
+
+/-- Saved-first W output covers all Boolean combinations for `and_b`. -/
+example :
+    BExecutionOutcome (.and_b .one (.a .one)) [] true
+        ({} : ScriptFlags) unavailableEnv.txCtx ∧
+      BExecutionOutcome (.and_b .one (.a .zero)) [] false
+        ({} : ScriptFlags) unavailableEnv.txCtx ∧
+      BExecutionOutcome (.and_b .zero (.a .one)) [] false
+        ({} : ScriptFlags) unavailableEnv.txCtx ∧
+      BExecutionOutcome (.and_b .zero (.a .zero)) [] false
+        ({} : ScriptFlags) unavailableEnv.txCtx := by
+  constructor
+  · exact BExecution.and_bOutcome
+      (one_execution {} unavailableEnv.txCtx)
+      (BExecution.a (one_execution {} unavailableEnv.txCtx))
+      (firstValue := 1) (secondValue := 1) (by rfl) rfl
+  constructor
+  · exact BExecution.and_bOutcome
+      (one_execution {} unavailableEnv.txCtx)
+      (BExecution.a (zero_execution {} unavailableEnv.txCtx))
+      (firstValue := 1) (secondValue := 0) (by rfl) rfl
+  constructor
+  · exact BExecution.and_bOutcome
+      (zero_execution {} unavailableEnv.txCtx)
+      (BExecution.a (one_execution {} unavailableEnv.txCtx))
+      (firstValue := 0) (secondValue := 1) (by rfl) rfl
+  · exact BExecution.and_bOutcome
+      (zero_execution {} unavailableEnv.txCtx)
+      (BExecution.a (zero_execution {} unavailableEnv.txCtx))
+      (firstValue := 0) (secondValue := 0) (by rfl) rfl
+
+/-- Hashlocks supply the required Bd/Wd children for a well-typed `or_b` while
+    saved-first W output covers all four Boolean combinations. -/
+example {firstPreimage firstNonPreimage secondPreimage secondNonPreimage : StackElement}
+    (firstMatches : (HashLock.sha256 hashTarget).Matches firstPreimage)
+    (firstMismatches : (HashLock.sha256 hashTarget).Mismatches firstNonPreimage)
+    (secondMatches : (HashLock.sha256 hashTarget).Matches secondPreimage)
+    (secondMismatches : (HashLock.sha256 hashTarget).Mismatches secondNonPreimage) :
+    BExecutionOutcome
+        (.or_b (HashLock.sha256 hashTarget).fragment
+          (.a (HashLock.sha256 hashTarget).fragment))
+        [firstPreimage, secondPreimage] true
+        ({} : ScriptFlags) unavailableEnv.txCtx ∧
+      BExecutionOutcome
+        (.or_b (HashLock.sha256 hashTarget).fragment
+          (.a (HashLock.sha256 hashTarget).fragment))
+        [firstPreimage, secondNonPreimage] true
+        ({} : ScriptFlags) unavailableEnv.txCtx ∧
+      BExecutionOutcome
+        (.or_b (HashLock.sha256 hashTarget).fragment
+          (.a (HashLock.sha256 hashTarget).fragment))
+        [firstNonPreimage, secondPreimage] true
+        ({} : ScriptFlags) unavailableEnv.txCtx ∧
+      BExecutionOutcome
+        (.or_b (HashLock.sha256 hashTarget).fragment
+          (.a (HashLock.sha256 hashTarget).fragment))
+        [firstNonPreimage, secondNonPreimage] false
+        ({} : ScriptFlags) unavailableEnv.txCtx := by
+  constructor
+  · exact BExecution.or_bOutcome
+      (hash_satisfaction_execution firstMatches)
+      (BExecution.a (hash_satisfaction_execution secondMatches))
+      (firstValue := 1) (secondValue := 1) (by rfl) rfl
+  constructor
+  · exact BExecution.or_bOutcome
+      (hash_satisfaction_execution firstMatches)
+      (BExecution.a (hash_dissatisfaction_execution secondMismatches))
+      (firstValue := 1) (secondValue := 0) (by rfl) rfl
+  constructor
+  · exact BExecution.or_bOutcome
+      (hash_dissatisfaction_execution firstMismatches)
+      (BExecution.a (hash_satisfaction_execution secondMatches))
+      (firstValue := 0) (secondValue := 1) (by rfl) rfl
+  · exact BExecution.or_bOutcome
+      (hash_dissatisfaction_execution firstMismatches)
+      (BExecution.a (hash_dissatisfaction_execution secondMismatches))
+      (firstValue := 0) (secondValue := 0) (by rfl) rfl
+
+/-- Result-first W output feeds the operands to `OP_BOOLAND` in physical stack
+    order while the theorem returns its canonical source-child order. -/
+example {preimage : StackElement}
+    (matching : (HashLock.sha256 hashTarget).Matches preimage) :
+    BExecutionOutcome
+      (.and_b .one (.s (HashLock.sha256 hashTarget).fragment)) [preimage] true
+      ({} : ScriptFlags) unavailableEnv.txCtx := by
+  exact BExecution.and_bOutcome
+    (one_execution {} unavailableEnv.txCtx)
+    (BExecution.s (hash_satisfaction_execution matching))
+    (firstValue := 1) (secondValue := 1) (by rfl) rfl
+
+/-- Result-first W output uses the corresponding OR commutativity path with the
+    same well-typed Bd/Wd child bases. -/
+example {preimage nonPreimage : StackElement}
+    (matching : (HashLock.sha256 hashTarget).Matches preimage)
+    (mismatches : (HashLock.sha256 hashTarget).Mismatches nonPreimage) :
+    BExecutionOutcome
+      (.or_b (HashLock.sha256 hashTarget).fragment
+        (.s (HashLock.sha256 hashTarget).fragment))
+      [preimage, nonPreimage] true
+      ({} : ScriptFlags) unavailableEnv.txCtx := by
+  exact BExecution.or_bOutcome
+    (hash_satisfaction_execution matching)
+    (BExecution.s (hash_dissatisfaction_execution mismatches))
+    (firstValue := 1) (secondValue := 0) (by rfl) rfl
+
+/-- Conditional connectives remain outside this slice. -/
 example : dissatisfy (.or_i .zero .one) unavailableEnv = none := by rfl
 
 end LeanMiniscript.Miniscript

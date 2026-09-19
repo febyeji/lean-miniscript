@@ -69,6 +69,17 @@ def outputs : WStackOrder → StackElement → StackElement → Stack
   | .savedFirst, saved, result => [saved, result]
   | .resultFirst, saved, result => [result, saved]
 
+/-- Exact numeric-decoding premise for a binary opcode following a W fragment.
+    `decodeBinaryScriptNums` receives the top element first, so the operand and
+    decoded-value order follows the W wrapper's concrete output order. -/
+def BinaryDecoded (order : WStackOrder) (flags : ScriptFlags)
+    (saved result : StackElement) (savedValue resultValue : Int) : Prop :=
+  match order with
+  | .savedFirst =>
+      decodeBinaryScriptNums flags saved result = .ok (savedValue, resultValue)
+  | .resultFirst =>
+      decodeBinaryScriptNums flags result saved = .ok (resultValue, savedValue)
+
 end WStackOrder
 
 /-- A selected W-type execution runs below one protected main-stack element
@@ -256,6 +267,206 @@ theorem BExecution.nOutcome
     BExecutionOutcome (.n fragment) args expected flags ctx := by
   refine ⟨boolToElement (value != 0), executed.n decoded, ?_⟩
   exact (castToBool_boolToElement (value != 0)).trans truth
+
+/-! ## Straight-line connective composition -/
+
+/-- `and_v` runs a V fragment before a B fragment, preserving the latter's
+    exact result and every surrounding main/alternate-stack suffix. -/
+theorem VExecution.and_v_b
+    {first second : CoreFragment} {firstArgs secondArgs : Stack}
+    {result : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : VExecution first firstArgs flags ctx)
+    (secondExec : BExecution second secondArgs result flags ctx) :
+    BExecution (.and_v first second) (firstArgs ++ secondArgs) result flags ctx := by
+  intro rest altStack
+  have firstRun := firstExec (secondArgs ++ rest) altStack
+  have secondRun := secondExec rest altStack
+  simpa [VExecution, BExecution, ExecutesStackFrame, compile,
+    compileWithKeyHash, List.append_assoc] using Eval.append firstRun secondRun
+
+/-- The K result of the second `and_v` child remains available to a following
+    signature check. -/
+theorem VExecution.and_v_k
+    {first second : CoreFragment} {firstArgs secondArgs : Stack}
+    {key : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : VExecution first firstArgs flags ctx)
+    (secondExec : KExecution second secondArgs key flags ctx) :
+    KExecution (.and_v first second) (firstArgs ++ secondArgs) key flags ctx := by
+  intro rest altStack
+  have firstRun := firstExec (secondArgs ++ rest) altStack
+  have secondRun := secondExec rest altStack
+  simpa [VExecution, KExecution, ExecutesStackFrame, compile,
+    compileWithKeyHash, List.append_assoc] using Eval.append firstRun secondRun
+
+/-- Two V fragments compose silently through `and_v`. -/
+theorem VExecution.and_v_v
+    {first second : CoreFragment} {firstArgs secondArgs : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : VExecution first firstArgs flags ctx)
+    (secondExec : VExecution second secondArgs flags ctx) :
+    VExecution (.and_v first second) (firstArgs ++ secondArgs) flags ctx := by
+  intro rest altStack
+  have firstRun := firstExec (secondArgs ++ rest) altStack
+  have secondRun := secondExec rest altStack
+  simpa [VExecution, ExecutesStackFrame, compile, compileWithKeyHash,
+    List.append_assoc] using Eval.append firstRun secondRun
+
+/-- A B truth outcome from the second child passes through `and_v`. -/
+theorem VExecution.and_v_bOutcome
+    {first second : CoreFragment} {firstArgs secondArgs : Stack}
+    {expected : Bool} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : VExecution first firstArgs flags ctx)
+    (secondExec : BExecutionOutcome second secondArgs expected flags ctx) :
+    BExecutionOutcome (.and_v first second) (firstArgs ++ secondArgs)
+      expected flags ctx := by
+  obtain ⟨result, frame, truth⟩ := secondExec
+  exact ⟨result, firstExec.and_v_b frame, truth⟩
+
+/-- `and_b` executes its B child, then its W child under that exact result, and
+    finally decodes both operands for `OP_BOOLAND`. The returned boolean uses
+    source-child order independently of the W wrapper's stack order. -/
+theorem BExecution.and_b
+    {first second : CoreFragment} {firstArgs secondArgs : Stack}
+    {firstResult secondResult : StackElement} {firstValue secondValue : Int}
+    {order : WStackOrder} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs firstResult flags ctx)
+    (secondExec : WExecution second secondArgs secondResult order flags ctx)
+    (decoded : order.BinaryDecoded flags firstResult secondResult
+      firstValue secondValue) :
+    BExecution (.and_b first second) (firstArgs ++ secondArgs)
+      (boolToElement ((firstValue != 0) && (secondValue != 0))) flags ctx := by
+  intro rest altStack
+  have firstRun := firstExec (secondArgs ++ rest) altStack
+  cases order with
+  | savedFirst =>
+      have secondRun := secondExec firstResult rest altStack
+      have childrenRun := Eval.append firstRun secondRun
+      have operatorRun :
+          Eval [.op .OP_BOOLAND] (firstResult :: secondResult :: rest)
+            altStack flags ctx
+            (.success
+              (boolToElement ((firstValue != 0) && (secondValue != 0)) :: rest)
+              altStack) := by
+        apply Eval.booland (a := firstValue) (b := secondValue)
+        · exact decoded
+        · exact Eval.done
+      simpa [BExecution, WExecution, WStackOrder.outputs,
+        WStackOrder.BinaryDecoded, ExecutesStackFrame, compile,
+        compileWithKeyHash, List.append_assoc] using
+        Eval.append childrenRun operatorRun
+  | resultFirst =>
+      have secondRun := secondExec firstResult rest altStack
+      have childrenRun := Eval.append firstRun secondRun
+      have operatorRun :
+          Eval [.op .OP_BOOLAND] (secondResult :: firstResult :: rest)
+            altStack flags ctx
+            (.success
+              (boolToElement ((firstValue != 0) && (secondValue != 0)) :: rest)
+              altStack) := by
+        simpa [Bool.and_comm] using
+          (Eval.booland secondResult firstResult secondValue firstValue rest []
+            altStack flags ctx
+            (.success
+              (boolToElement ((secondValue != 0) && (firstValue != 0)) :: rest)
+              altStack)
+            decoded
+            (Eval.done (stack :=
+              boolToElement ((secondValue != 0) && (firstValue != 0)) :: rest)
+              (altStack := altStack)))
+      simpa [BExecution, WExecution, WStackOrder.outputs,
+        WStackOrder.BinaryDecoded, ExecutesStackFrame, compile,
+        compileWithKeyHash, List.append_assoc] using
+        Eval.append childrenRun operatorRun
+
+/-- `and_b`'s canonical result has the requested truth value once its decoded
+    operands' nonzero tests establish that value. -/
+theorem BExecution.and_bOutcome
+    {first second : CoreFragment} {firstArgs secondArgs : Stack}
+    {firstResult secondResult : StackElement} {firstValue secondValue : Int}
+    {order : WStackOrder} {expected : Bool}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs firstResult flags ctx)
+    (secondExec : WExecution second secondArgs secondResult order flags ctx)
+    (decoded : order.BinaryDecoded flags firstResult secondResult
+      firstValue secondValue)
+    (truth : ((firstValue != 0) && (secondValue != 0)) = expected) :
+    BExecutionOutcome (.and_b first second) (firstArgs ++ secondArgs)
+      expected flags ctx := by
+  refine ⟨boolToElement ((firstValue != 0) && (secondValue != 0)),
+    firstExec.and_b secondExec decoded, ?_⟩
+  exact (castToBool_boolToElement _).trans truth
+
+/-- `or_b` has the same exact operand-order boundary as `and_b`, followed by
+    `OP_BOOLOR`. -/
+theorem BExecution.or_b
+    {first second : CoreFragment} {firstArgs secondArgs : Stack}
+    {firstResult secondResult : StackElement} {firstValue secondValue : Int}
+    {order : WStackOrder} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs firstResult flags ctx)
+    (secondExec : WExecution second secondArgs secondResult order flags ctx)
+    (decoded : order.BinaryDecoded flags firstResult secondResult
+      firstValue secondValue) :
+    BExecution (.or_b first second) (firstArgs ++ secondArgs)
+      (boolToElement ((firstValue != 0) || (secondValue != 0))) flags ctx := by
+  intro rest altStack
+  have firstRun := firstExec (secondArgs ++ rest) altStack
+  cases order with
+  | savedFirst =>
+      have secondRun := secondExec firstResult rest altStack
+      have childrenRun := Eval.append firstRun secondRun
+      have operatorRun :
+          Eval [.op .OP_BOOLOR] (firstResult :: secondResult :: rest)
+            altStack flags ctx
+            (.success
+              (boolToElement ((firstValue != 0) || (secondValue != 0)) :: rest)
+              altStack) := by
+        apply Eval.boolor (a := firstValue) (b := secondValue)
+        · exact decoded
+        · exact Eval.done
+      simpa [BExecution, WExecution, WStackOrder.outputs,
+        WStackOrder.BinaryDecoded, ExecutesStackFrame, compile,
+        compileWithKeyHash, List.append_assoc] using
+        Eval.append childrenRun operatorRun
+  | resultFirst =>
+      have secondRun := secondExec firstResult rest altStack
+      have childrenRun := Eval.append firstRun secondRun
+      have operatorRun :
+          Eval [.op .OP_BOOLOR] (secondResult :: firstResult :: rest)
+            altStack flags ctx
+            (.success
+              (boolToElement ((firstValue != 0) || (secondValue != 0)) :: rest)
+              altStack) := by
+        simpa [Bool.or_comm] using
+          (Eval.boolor secondResult firstResult secondValue firstValue rest []
+            altStack flags ctx
+            (.success
+              (boolToElement ((secondValue != 0) || (firstValue != 0)) :: rest)
+              altStack)
+            decoded
+            (Eval.done (stack :=
+              boolToElement ((secondValue != 0) || (firstValue != 0)) :: rest)
+              (altStack := altStack)))
+      simpa [BExecution, WExecution, WStackOrder.outputs,
+        WStackOrder.BinaryDecoded, ExecutesStackFrame, compile,
+        compileWithKeyHash, List.append_assoc] using
+        Eval.append childrenRun operatorRun
+
+/-- `or_b`'s normalized result has the requested truth value. -/
+theorem BExecution.or_bOutcome
+    {first second : CoreFragment} {firstArgs secondArgs : Stack}
+    {firstResult secondResult : StackElement} {firstValue secondValue : Int}
+    {order : WStackOrder} {expected : Bool}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs firstResult flags ctx)
+    (secondExec : WExecution second secondArgs secondResult order flags ctx)
+    (decoded : order.BinaryDecoded flags firstResult secondResult
+      firstValue secondValue)
+    (truth : ((firstValue != 0) || (secondValue != 0)) = expected) :
+    BExecutionOutcome (.or_b first second) (firstArgs ++ secondArgs)
+      expected flags ctx := by
+  refine ⟨boolToElement ((firstValue != 0) || (secondValue != 0)),
+    firstExec.or_b secondExec decoded, ?_⟩
+  exact (castToBool_boolToElement _).trans truth
 
 /-! ## Guarded wrapper composition -/
 

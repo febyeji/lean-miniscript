@@ -136,9 +136,9 @@ path-sensitive peak analysis remains unfinished.
 | `hash256` | Done | Done | Done | Done | Partial | Basic | DONTUSE candidate | Partial | Exact sat/dsat frames |
 | `ripemd160` | Done | Done | Done | Done | Partial | Basic | DONTUSE candidate | Partial | Exact sat/dsat frames |
 | `hash160` | Done | Done | Done | Done | Partial | Basic | DONTUSE candidate | Partial | Exact sat/dsat frames |
-| `and_v` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
-| `and_b` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
-| `or_b` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
+| `and_v` | Done | Done | Done | Done | Partial | Composed candidate | Non-canonical candidate | Partial | B/K/V frame composition |
+| `and_b` | Done | Done | Done | Done | Partial | Composed candidate | Selected candidate | Partial | B/W BOOLAND frame |
+| `or_b` | Done | Done | Done | Done | Partial | Selected candidate | Composed candidate | Partial | B/W BOOLOR frame |
 | `or_c` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `or_d` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `or_i` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
@@ -191,6 +191,25 @@ canonical false branch; `j` requires exact B execution on `top :: args`,
 `top.size ≠ 0`, and successful four-byte decoding of `scriptNat top.size`, and
 also proves its canonical empty branch. These lemmas do not yet establish
 recursive soundness for witnesses produced by the candidate algorithm.
+
+The straight-line connectives `and_v`, `and_b`, and `or_b` now implement all
+their BIP 379 candidate rows. Sequential candidate composition stores the
+second child's witness first while execution consumes the first child's frame
+first. `and_v` retains its Script-valid non-canonical dissatisfaction;
+`and_b` and `or_b` run their three alternatives through the shared left-folded
+selection algebra, marking both `and_b` rows and the `or_b` row overcomplete.
+HASSIG, DONTUSE, origin, and additive cost continue to come from the shared
+candidate operations, including DONTUSE hash dissatisfactions.
+
+Their local arbitrary-stack contracts compose `and_v` with B, K, and V result
+children. The `and_b` and `or_b` contracts support both exact W output orders
+and require `decodeBinaryScriptNums` to succeed for the physical top-first
+operand order before `OP_BOOLAND` or `OP_BOOLOR` executes. Result-first W
+frames use Boolean commutativity to expose one canonical source-child result
+order. These contracts preserve arbitrary main-stack suffixes and the complete
+alternate stack. They do not yet prove recursive soundness for witnesses
+selected by the candidate algorithm. Conditional connectives `or_c`, `or_d`,
+`or_i`, and `andor` remain unsupported by candidate generation.
 
 `HasType ctx` covers all rows, and `inferType ctx` has soundness, completeness,
 uniqueness, and success/reflection theorems. A constructor-exhaustive fixture
@@ -444,7 +463,8 @@ regressions cover active, inactive, and repeated-`ELSE` cases.
 
 Satisfaction now has executable candidate rows for constants, `pk_k`, `pk_h`,
 their `c` wrappers, timelocks, all four hashlocks, linear wrapper propagation
-through `a`, `s`, `v`, and `n`, and guarded wrappers `d` and `j`. Paired
+through `a`, `s`, `v`, and `n`, guarded wrappers `d` and `j`, and straight-line
+connectives `and_v`, `and_b`, and `or_b`. Paired
 candidates retain HASSIG, DONTUSE, canonical origin, and additive witness cost
 metadata while the public projection returns only usable witnesses. Signature
 and key material use serialized witness order, and timelock availability reuses
@@ -461,10 +481,11 @@ the eventual validity theorem must discharge. `SatEnv.Sound` records signature,
 preimage, and nonpreimage obligations at the cryptographic boundary. Basic key
 satisfaction additionally requires `SatEnv.EncodingSound`, and key
 dissatisfaction requires the empty-signature/key pair to pass the selected
-version-specific byte checks. Guarded wrappers `d` and `j` have the local
-arbitrary-stack contracts described above, without a recursive theorem tying
-every generated candidate to child execution. Connectives, thresholds, and
-multisignature candidate selection remain unsupported and return `none`.
+version-specific byte checks. Guarded wrappers `d` and `j` and the supported
+straight-line connectives have the local arbitrary-stack contracts described
+above, without a recursive theorem tying every generated candidate to child
+execution. Conditional connectives, thresholds, and multisignature candidate
+selection remain unsupported and return `none`.
 
 ## Surface Constructor Matrix
 
