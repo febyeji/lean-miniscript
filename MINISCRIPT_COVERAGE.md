@@ -660,11 +660,13 @@ projections. The theorem preserves the source-order list relation needed by
 arithmetic-invalid branch has no usable candidate. It proves support for
 selected witnesses, rather than candidate existence or the public acceptance
 targets below. `GeneratedContract.cleanStackResult` closes a selected top-level
-B contract to the clean one-item execution predicate. Consequently,
-`satisfactionCorrectnessCore` and `dissatisfactionCorrectnessCore` prove the
-resource-free core `Accepts` and `Dissatisfies` targets under the modeled
-version/flags and sound material/encoding premises. They do not establish
-runtime resource limits or correctness of the cryptographic implementations.
+B contract to the clean one-item execution predicate. Consequently, the Core
+and Surface `satisfactionCorrectness*` and `dissatisfactionCorrectness*`
+theorems prove the resource-free `Accepts` and `Dissatisfies` targets under the
+modeled version/flags and sound material/encoding premises. The Surface
+theorems transport the Core results through desugaring and `compileSurface`.
+These results do not establish runtime resource limits or correctness of the
+cryptographic implementations.
 
 ## Surface Constructor Matrix
 
@@ -698,14 +700,11 @@ proof status is:
 
 - `TypeSoundnessCore` and `TypeSoundnessSurface` require context validity,
   relational typing, and an explicitly supported non-vacuous semantic case;
-- `SatisfactionCorrectnessCore` is proved by `satisfactionCorrectnessCore`;
-  `SatisfactionCorrectnessSurface` has the same material, encoding, flag, and
-  execution-version premises and remains a definitional desugaring corollary
-  for the next proof;
-- `DissatisfactionCorrectnessCore` is proved by
-  `dissatisfactionCorrectnessCore`; its surface counterpart now has the same
-  `SatEnv.EncodingSound` premise and remains a definitional desugaring
-  corollary for the next proof.
+- `SatisfactionCorrectnessCore` and `SatisfactionCorrectnessSurface` are proved
+  by `satisfactionCorrectnessCore` and `satisfactionCorrectnessSurface`;
+- `DissatisfactionCorrectnessCore` and `DissatisfactionCorrectnessSurface` are
+  proved by `dissatisfactionCorrectnessCore` and
+  `dissatisfactionCorrectnessSurface`.
 
 `ResourceBoundsSound` is now proved by `resourceBoundsSound` in
 `Properties/ResourceBoundsProofs.lean`, exported through `LeanMiniscript.Proofs`.
