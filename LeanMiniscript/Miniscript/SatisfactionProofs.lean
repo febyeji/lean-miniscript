@@ -1264,6 +1264,215 @@ theorem BExecution.threshOutcome
     firstExec.thresh tailExec, ?_⟩
   exact (castToBool_boolToElement _).trans comparison
 
+/-! ## Legacy multisignature execution -/
+
+/-- Legacy multisignature count literals up to the consensus public-key limit
+    decode to their corresponding nonnegative integers under either
+    minimal-data setting. -/
+theorem decodeScriptNum_scriptNat_multi_count
+    (count : Nat) (flags : ScriptFlags)
+    (bounded : count ≤ maxPubKeysPerMultiSig) :
+    decodeScriptNum (scriptNat count) flags.minimalData
+      maxArithmeticScriptNumBytes = .ok (Int.ofNat count) := by
+  have bounded' : count ≤ 20 := by
+    simpa [maxPubKeysPerMultiSig] using bounded
+  have options : count = 0 ∨ count = 1 ∨ count = 2 ∨ count = 3 ∨
+      count = 4 ∨ count = 5 ∨ count = 6 ∨ count = 7 ∨ count = 8 ∨
+      count = 9 ∨ count = 10 ∨ count = 11 ∨ count = 12 ∨ count = 13 ∨
+      count = 14 ∨ count = 15 ∨ count = 16 ∨ count = 17 ∨
+      count = 18 ∨ count = 19 ∨ count = 20 := by
+    omega
+  rcases options with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    cases flags.minimalData <;> rfl
+
+/-- Pushing the source-order key list leaves the decoder's top-first reversed
+    public-key frame while preserving every surrounding stack suffix. -/
+theorem compileKeyPushes_execution (keys : List PubKey) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    ExecutesStackFrame (compileKeyPushes keys) []
+      ((keys.map (fun key => key.bytes)).reverse) flags ctx := by
+  induction keys with
+  | nil =>
+      intro rest altStack
+      exact Eval.done
+  | cons key keys ih =>
+      intro rest altStack
+      apply Eval.pushData
+      simpa [List.map_append, List.append_assoc] using
+        ih (key.bytes :: rest) altStack
+
+private theorem exceptOkBind {ε α β} (value : α)
+    (next : α → Except ε β) :
+    (do let result ← Except.ok value; next result) = next value := by
+  rfl
+
+/-- Decode the exact canonical stack frame produced by the legacy `multi`
+    compiler and its selected top-first signature arguments. -/
+theorem decodeCheckMultiSigOperandsFor_multi
+    {threshold : Nat} {keys : List PubKey} {signatures rest : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (version : ctx.sigVersion ≠ .tapscript)
+    (keyBound : keys.length ≤ maxPubKeysPerMultiSig)
+    (thresholdBound : threshold ≤ keys.length)
+    (signatureCount : signatures.length = threshold) :
+    decodeCheckMultiSigOperandsFor flags ctx
+      (scriptNat keys.length ::
+        (keys.map (fun key => key.bytes)).reverse ++
+        scriptNat threshold :: signatures ++ falseElement :: rest) =
+      .ok {
+        pubkeys := (keys.map (fun key => key.bytes)).reverse
+        signatures := signatures
+        dummy := some falseElement
+        rest := rest } := by
+  have decodeKeys := decodeScriptNum_scriptNat_multi_count keys.length flags
+    keyBound
+  have decodeThreshold := decodeScriptNum_scriptNat_multi_count threshold flags
+    (Nat.le_trans thresholdBound keyBound)
+  unfold decodeCheckMultiSigOperandsFor
+  simp only [if_neg version]
+  simp [decodeCheckMultiSigOperands]
+  rw [exceptOkBind]
+  rw [decodeKeys]
+  rw [exceptOkBind]
+  simp only [Int.ofNat_eq_natCast] at *
+  simp [maxPubKeysPerMultiSig] at keyBound
+  have keyNonnegative : ¬ ((keys.length : Int) < 0) := by omega
+  have keyWithinLimit : ¬ ((20 : Int) < (keys.length : Int)) := by omega
+  have thresholdNonnegative : ¬ ((threshold : Int) < 0) := by omega
+  have thresholdWithinKeys : ¬ (keys.length < threshold) := by omega
+  have enoughSignatures :
+      ¬ ((threshold : Int) + (rest.length + 1) < threshold) := by omega
+  simp [decodeThreshold, exceptOkBind, maxPubKeysPerMultiSig, signatureCount,
+    keyNonnegative, keyWithinLimit, thresholdNonnegative, thresholdWithinKeys,
+    enoughSignatures]
+
+/-- A legacy `multi` consumes the selected signatures followed by the
+    canonical historical dummy. Signature and public-key lists are both in
+    the top-first order used by the evaluator. Failed checks require NULLFAIL;
+    the canonical dummy discharges NULLDUMMY internally. -/
+theorem BExecution.multi
+    {threshold : Nat} {keys : List PubKey} {signatures : Stack}
+    {result : Bool} {flags : ScriptFlags} {ctx : TxContext}
+    (version : ctx.sigVersion ≠ .tapscript)
+    (keyBound : keys.length ≤ maxPubKeysPerMultiSig)
+    (thresholdBound : threshold ≤ keys.length)
+    (signatureCount : signatures.length = threshold)
+    (checked : checkMultiSigFor checkSig flags ctx signatures
+      ((keys.map (fun key => key.bytes)).reverse) = .ok result)
+    (allowed : result = true ∨ nullFailSatisfied flags signatures) :
+    BExecution (.multi threshold keys) (signatures ++ [falseElement])
+      (boolToElement result) flags ctx := by
+  intro rest altStack
+  let operands : CheckMultiSigOperands := {
+    pubkeys := (keys.map (fun key => key.bytes)).reverse
+    signatures := signatures
+    dummy := some falseElement
+    rest := rest }
+  have decoded : decodeCheckMultiSigOperandsFor flags ctx
+      (scriptNat keys.length ::
+        (keys.map (fun key => key.bytes)).reverse ++
+        scriptNat threshold :: signatures ++ falseElement :: rest) =
+      .ok operands := by
+    exact decodeCheckMultiSigOperandsFor_multi version keyBound thresholdBound
+      signatureCount
+  have dummyOk : checkMultiSigDummy flags (some falseElement) = .ok () := by
+    simp [checkMultiSigDummy, nullDummySatisfied, stackElementEq, falseElement]
+  have checked' : checkMultiSigFor checkSig flags ctx operands.signatures
+      operands.pubkeys = .ok result := checked
+  have checkExec : Eval [.op .OP_CHECKMULTISIG]
+      (scriptNat keys.length ::
+        (keys.map (fun key => key.bytes)).reverse ++
+        scriptNat threshold :: signatures ++ falseElement :: rest)
+      altStack flags ctx
+      (.success (boolToElement result :: rest) altStack) := by
+    cases result with
+    | false =>
+        have nullFail : nullFailSatisfied flags signatures := by
+          rcases allowed with impossible | satisfied
+          · simp at impossible
+          · exact satisfied
+        simpa [operands, boolToElement] using
+          (Eval.checkmultisig_failure
+            (scriptNat keys.length ::
+              (keys.map (fun key => key.bytes)).reverse ++
+              scriptNat threshold :: signatures ++ falseElement :: rest)
+            operands [] altStack flags ctx
+            (.success (falseElement :: rest) altStack)
+            decoded checked' nullFail dummyOk Eval.done)
+    | true =>
+        simpa [operands, boolToElement] using
+          (Eval.checkmultisig_success
+            (scriptNat keys.length ::
+              (keys.map (fun key => key.bytes)).reverse ++
+              scriptNat threshold :: signatures ++ falseElement :: rest)
+            operands [] altStack flags ctx
+            (.success (trueElement :: rest) altStack)
+            decoded checked' dummyOk Eval.done)
+  have keyExec := compileKeyPushes_execution keys flags ctx
+    (scriptNat threshold :: signatures ++ falseElement :: rest) altStack
+  have tailExec : Eval
+      (compileKeyPushes keys ++ [.pushNum keys.length, .op .OP_CHECKMULTISIG])
+      (scriptNat threshold :: signatures ++ falseElement :: rest)
+      altStack flags ctx
+      (.success (boolToElement result :: rest) altStack) := by
+    have pushedCount : Eval [.pushNum keys.length, .op .OP_CHECKMULTISIG]
+        ((keys.map (fun key => key.bytes)).reverse ++
+          (scriptNat threshold :: signatures ++ falseElement :: rest))
+        altStack flags ctx
+        (.success (boolToElement result :: rest) altStack) := by
+      simpa [List.append_assoc] using
+        (Eval.pushNum keys.length [.op .OP_CHECKMULTISIG]
+          ((keys.map (fun key => key.bytes)).reverse ++
+            scriptNat threshold :: signatures ++ falseElement :: rest)
+          altStack flags ctx _ checkExec)
+    exact Eval.append keyExec pushedCount
+  simpa [BExecution, ExecutesStackFrame, compile, compileWithKeyHash,
+    List.append_assoc] using
+    (Eval.pushNum threshold
+      (compileKeyPushes keys ++ [.pushNum keys.length, .op .OP_CHECKMULTISIG])
+      (signatures ++ falseElement :: rest) altStack flags ctx _ tailExec)
+
+/-- The false branch of legacy `multi` exposes the NULLFAIL premise directly. -/
+theorem BExecution.multiFalse
+    {threshold : Nat} {keys : List PubKey} {signatures : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (version : ctx.sigVersion ≠ .tapscript)
+    (keyBound : keys.length ≤ maxPubKeysPerMultiSig)
+    (thresholdBound : threshold ≤ keys.length)
+    (signatureCount : signatures.length = threshold)
+    (checked : checkMultiSigFor checkSig flags ctx signatures
+      ((keys.map (fun key => key.bytes)).reverse) = .ok false)
+    (nullFail : nullFailSatisfied flags signatures) :
+    BExecution (.multi threshold keys) (signatures ++ [falseElement])
+      falseElement flags ctx := by
+  simpa [boolToElement] using BExecution.multi version keyBound thresholdBound
+    signatureCount checked (Or.inr nullFail)
+
+/-- The canonical legacy `multi` dissatisfaction uses only empty signatures,
+    so its failed check always satisfies NULLFAIL. -/
+theorem multi_dissatisfaction_execution
+    {threshold : Nat} {keys : List PubKey}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (version : ctx.sigVersion ≠ .tapscript)
+    (keyBound : keys.length ≤ maxPubKeysPerMultiSig)
+    (thresholdBound : threshold ≤ keys.length)
+    (checked : checkMultiSigFor checkSig flags ctx
+      (List.replicate threshold falseElement)
+      ((keys.map (fun key => key.bytes)).reverse) = .ok false) :
+    BExecution (.multi threshold keys)
+      (List.replicate threshold falseElement ++ [falseElement])
+      falseElement flags ctx := by
+  have nullFail : nullFailSatisfied flags
+      (List.replicate threshold falseElement) := by
+    right
+    intro signature member
+    have equal : signature = falseElement := List.eq_of_mem_replicate member
+    subst signature
+    rfl
+  exact BExecution.multiFalse version keyBound thresholdBound
+    (by simp) checked nullFail
+
 /-! ## Primitive execution contracts -/
 
 /-- `1` needs no arguments and leaves the canonical true element. -/

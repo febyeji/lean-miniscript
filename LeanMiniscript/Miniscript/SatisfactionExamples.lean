@@ -1256,6 +1256,196 @@ example {firstNonPreimage secondNonPreimage thirdNonPreimage : StackElement}
       hash_dissatisfaction_execution firstMismatches)
     tail (by native_decide)
 
+/-! ## Legacy multisignature candidates and execution -/
+
+private def multiKeyA : PubKey :=
+  PubKey.ofBytes ⟨#[0x02] ++ (List.replicate 32 0xa1).toArray⟩
+private def multiKeyB : PubKey :=
+  PubKey.ofBytes ⟨#[0x03] ++ (List.replicate 32 0xb2).toArray⟩
+private def multiKeyC : PubKey :=
+  PubKey.ofBytes ⟨#[0x02] ++ (List.replicate 32 0xc3).toArray⟩
+
+private def multiSigA : StackElement := ⟨#[0x31]⟩
+private def multiSigB : StackElement := ⟨#[0x32]⟩
+private def multiSigC : StackElement := ⟨#[0x33]⟩
+private def costlyMultiSigA : StackElement := ⟨#[0x31, 0x32, 0x33]⟩
+
+private def multiKeys : List PubKey := [multiKeyA, multiKeyB, multiKeyC]
+private def twoOfThreeMulti : CoreFragment := .multi 2 multiKeys
+
+private def multiACEnv : SatEnv where
+  signatureFor := fun selectedKey =>
+    if selectedKey.bytes == multiKeyA.bytes then some multiSigA
+    else if selectedKey.bytes == multiKeyC.bytes then some multiSigC
+    else none
+  preimageFor := fun _ => none
+  nonPreimageFor := fun _ => nonPreimage32
+  txCtx := unavailableEnv.txCtx
+
+private def multiAllEqualEnv : SatEnv where
+  signatureFor := fun selectedKey =>
+    if selectedKey.bytes == multiKeyA.bytes then some multiSigA
+    else if selectedKey.bytes == multiKeyB.bytes then some multiSigB
+    else if selectedKey.bytes == multiKeyC.bytes then some multiSigC
+    else none
+  preimageFor := fun _ => none
+  nonPreimageFor := fun _ => nonPreimage32
+  txCtx := unavailableEnv.txCtx
+
+private def multiCostEnv : SatEnv where
+  signatureFor := fun selectedKey =>
+    if selectedKey.bytes == multiKeyA.bytes then some costlyMultiSigA
+    else if selectedKey.bytes == multiKeyB.bytes then some multiSigB
+    else if selectedKey.bytes == multiKeyC.bytes then some multiSigC
+    else none
+  preimageFor := fun _ => none
+  nonPreimageFor := fun _ => nonPreimage32
+  txCtx := unavailableEnv.txCtx
+
+private def multiAOnlyEnv : SatEnv where
+  signatureFor := fun selectedKey =>
+    if selectedKey.bytes == multiKeyA.bytes then some multiSigA else none
+  preimageFor := fun _ => none
+  nonPreimageFor := fun _ => nonPreimage32
+  txCtx := unavailableEnv.txCtx
+
+/-- Exact-count selection runs in source key order, then legacy finalization
+    prepends the CHECKMULTISIG dummy and writes selected signatures in source
+    order. Runtime conversion puts signatures in decoder order above the dummy. -/
+example :
+    (satisfactionCandidates twoOfThreeMulti multiACEnv).sat =
+        .usable [falseElement, multiSigA, multiSigC] true ∧
+      satisfy twoOfThreeMulti multiACEnv =
+        some [falseElement, multiSigA, multiSigC] ∧
+      Witness.toInitialStack [falseElement, multiSigA, multiSigC] =
+        [multiSigC, multiSigA, falseElement] := by
+  exact ⟨rfl, rfl, rfl⟩
+
+/-- Equal-cost alternatives retain the earlier source keys. -/
+example : (satisfactionCandidates twoOfThreeMulti multiAllEqualEnv).sat =
+    .usable [falseElement, multiSigA, multiSigB] true := by
+  rfl
+
+/-- Candidate cost selects the two shorter signatures when all three keys are
+    available, while the common dummy contributes equally to every path. -/
+example : (satisfactionCandidates twoOfThreeMulti multiCostEnv).sat =
+    .usable [falseElement, multiSigB, multiSigC] true := by
+  rfl
+
+/-- Fewer than `k` available signatures makes satisfaction impossible. The
+    canonical dissatisfaction always supplies `k` empty signatures and the
+    historical dummy. -/
+example :
+    (satisfactionCandidates twoOfThreeMulti multiAOnlyEnv).sat = .impossible ∧
+      (satisfactionCandidates twoOfThreeMulti multiAOnlyEnv).dsat =
+        .usable [falseElement, falseElement, falseElement] false ∧
+      dissatisfy twoOfThreeMulti multiAOnlyEnv =
+        some [falseElement, falseElement, falseElement] := by
+  exact ⟨rfl, rfl, rfl⟩
+
+/-- Raw invalid legacy multisig forms expose no candidate on either side. -/
+example :
+    satisfactionCandidates (.multi 0 multiKeys) multiAllEqualEnv = {} ∧
+      satisfactionCandidates (.multi 4 multiKeys) multiAllEqualEnv = {} ∧
+      satisfactionCandidates
+        (.multi 1 (List.replicate 21 multiKeyA)) multiAllEqualEnv = {} := by
+  exact ⟨rfl, rfl, rfl⟩
+
+/-- Legacy multisig is structurally valid with compressed P2WSH keys and is
+    rejected at the Tapscript well-formedness boundary. -/
+example :
+    twoOfThreeMulti.WellFormed .p2wsh ∧
+      ¬ twoOfThreeMulti.WellFormed .tapscript := by
+  native_decide
+
+private def multiFlags : ScriptFlags where
+  strictEncoding := false
+
+private def multiFalseFlags : ScriptFlags where
+  strictEncoding := false
+  nullFail := false
+
+private def multiCtx : TxContext where
+  version := 2
+  locktime := 0
+  sequence := 0
+  sigHash := ⟨#[]⟩
+  sigVersion := .witnessV0
+
+/-- The exact decoder helper fixes public keys, signatures, dummy, and the
+    untouched suffix in their top-first runtime order. -/
+example :
+    decodeCheckMultiSigOperandsFor multiFlags multiCtx
+      (scriptNat 3 :: [multiKeyC.bytes, multiKeyB.bytes, multiKeyA.bytes] ++
+        scriptNat 2 :: [multiSigC, multiSigA, falseElement, countItemA]) =
+      .ok {
+        pubkeys := [multiKeyC.bytes, multiKeyB.bytes, multiKeyA.bytes]
+        signatures := [multiSigC, multiSigA]
+        dummy := some falseElement
+        rest := [countItemA] } := by
+  simpa [multiKeys] using
+    (decodeCheckMultiSigOperandsFor_multi
+      (threshold := 2) (keys := multiKeys)
+      (signatures := [multiSigC, multiSigA]) (rest := [countItemA])
+      (flags := multiFlags) (ctx := multiCtx)
+      (by decide) (by decide) (by decide) rfl)
+
+/-- Successful local execution uses the decoder's top-first signature order.
+    Cryptographic verification remains an explicit premise. -/
+example
+    (verified : checkMultiSigFor checkSig multiFlags multiCtx
+      [multiSigC, multiSigA]
+      [multiKeyC.bytes, multiKeyB.bytes, multiKeyA.bytes] = .ok true) :
+    BExecution twoOfThreeMulti
+      [multiSigC, multiSigA, falseElement] trueElement multiFlags multiCtx := by
+  simpa [twoOfThreeMulti, multiKeys, boolToElement] using
+    BExecution.multi (threshold := 2) (keys := multiKeys)
+      (signatures := [multiSigC, multiSigA]) (by decide) (by decide)
+      (by decide) rfl verified (Or.inl rfl)
+
+/-- With NULLFAIL disabled, a modeled failed check returns canonical false
+    while preserving the same exact stack frame. -/
+example
+    (rejected : checkMultiSigFor checkSig multiFalseFlags multiCtx
+      [multiSigC, multiSigA]
+      [multiKeyC.bytes, multiKeyB.bytes, multiKeyA.bytes] = .ok false) :
+    BExecution twoOfThreeMulti
+      [multiSigC, multiSigA, falseElement] falseElement
+      multiFalseFlags multiCtx := by
+  apply BExecution.multiFalse (threshold := 2) (keys := multiKeys)
+    (signatures := [multiSigC, multiSigA]) (by decide) (by decide)
+    (by decide) rfl
+  · simpa [multiKeys] using rejected
+  · simp [nullFailSatisfied, multiFalseFlags]
+
+/-- The canonical all-empty dissatisfaction discharges NULLFAIL even when the
+    flag is active. -/
+example
+    (rejected : checkMultiSigFor checkSig multiFlags multiCtx
+      [falseElement, falseElement]
+      [multiKeyC.bytes, multiKeyB.bytes, multiKeyA.bytes] = .ok false) :
+    BExecution twoOfThreeMulti
+      [falseElement, falseElement, falseElement] falseElement
+      multiFlags multiCtx := by
+  apply multi_dissatisfaction_execution (threshold := 2) (keys := multiKeys)
+    (by decide) (by decide) (by decide)
+  simpa [multiKeys] using rejected
+
+/-- Nonempty failed signatures violate NULLFAIL when enabled, and a nonempty
+    historical dummy violates NULLDUMMY. -/
+example :
+    ¬ nullFailSatisfied multiFlags [multiSigC, multiSigA] ∧
+      checkMultiSigDummy multiFlags (some trueElement) = .error .nullDummy := by
+  constructor
+  · intro satisfied
+    rcases satisfied with disabled | empty
+    · simp [multiFlags] at disabled
+    · have zero := empty multiSigC (by simp)
+      have nonzero : multiSigC.size ≠ 0 := by native_decide
+      exact nonzero zero
+  · simp [checkMultiSigDummy, nullDummySatisfied, multiFlags, stackElementEq,
+      trueElement, falseElement]
+
 /-- Truthiness alone does not discharge a child-produced selector's MINIMALIF
     premise when the flag is active. -/
 example :
