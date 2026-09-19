@@ -138,15 +138,17 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   canonical count-zero row.
   Proof-only Script-number bridges show that every canonical nonnegative value
   below `2^31` decodes under either minimal-data mode, remains valid when the
-  byte limit grows, and is truthy when positive. The typed generated-execution
-  carrier uses those facts to cover `0`, `1`, both key leaves, `older`, `after`,
-  all four hash leaves, and wrapper `c`; K witnesses retain the exact separation
-  between child arguments and the pending signature. Context-valid keys under
-  modeled flags and execution versions also discharge the empty-signature
-  encoding premise used by generated key dissatisfaction.
-  Recursive generated-witness soundness for these wrappers, connectives, and
-  thresholds, and the connection from selected multisignature candidates to
-  cryptographic key/signature matching remain unfinished.
+  byte limit grows, and is truthy when positive. The stable typed
+  generated-execution carrier covers `0`, `1`, both key leaves, `older`,
+  `after`, all four hash leaves, and wrapper `c`; K witnesses retain the exact
+  separation between child arguments and the pending signature. A stronger
+  proof-only contract adds per-item witness bounds, modifier input shapes, and
+  exact numeric B/W results. Under modeled key assumptions it composes those
+  leaves through `c`, `v`, `a`, `s`, `d`, `n`, and `j`, including both W stack
+  orders and the bounded `j` size decode. Recursive generated-witness soundness
+  for connectives and thresholds, and the connection from selected
+  multisignature candidates to cryptographic key/signature matching remain
+  unfinished.
 - General soundness, full satisfaction coverage, non-malleability, small-step
   semantics, cryptographic correctness proofs, executable ECDSA verification,
   unsupported Core failure classes,

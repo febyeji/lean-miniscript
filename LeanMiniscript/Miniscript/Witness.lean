@@ -20,6 +20,10 @@ abbrev Witness := List StackElement
 
 namespace Witness
 
+/-- Every serialized witness item respects the Script element-size limit. -/
+def ItemsBounded (witness : Witness) : Prop :=
+  ∀ item ∈ witness, item.size ≤ maxScriptElementSize
+
 /-- Convert serialized witness order to the top-first stack representation used
     by the operational semantics. -/
 def toInitialStack (witness : Witness) : Stack :=
@@ -95,6 +99,57 @@ theorem combine_assoc (first second third : Witness) :
 theorem two_items_toInitialStack (bottom top : StackElement) :
     toInitialStack [bottom, top] = [top, bottom] := by
   rfl
+
+namespace ItemsBounded
+
+@[simp] theorem nil : ItemsBounded [] := by
+  simp [ItemsBounded]
+
+@[simp] theorem singleton {item : StackElement} :
+    ItemsBounded [item] ↔ item.size ≤ maxScriptElementSize := by
+  simp [ItemsBounded]
+
+@[simp] theorem append {left right : Witness} :
+    ItemsBounded (left ++ right) ↔ ItemsBounded left ∧ ItemsBounded right := by
+  constructor
+  · intro bounded
+    constructor
+    · intro item member
+      exact bounded item (List.mem_append.mpr (Or.inl member))
+    · intro item member
+      exact bounded item (List.mem_append.mpr (Or.inr member))
+  · rintro ⟨leftBounded, rightBounded⟩ item member
+    rcases List.mem_append.mp member with inLeft | inRight
+    · exact leftBounded item inLeft
+    · exact rightBounded item inRight
+
+theorem combine {first second : Witness}
+    (firstBounded : ItemsBounded first)
+    (secondBounded : ItemsBounded second) :
+    ItemsBounded (Witness.combine first second) := by
+  simpa [Witness.combine] using
+    (append.mpr ⟨secondBounded, firstBounded⟩)
+
+theorem withSelector {witness : Witness} {selector : StackElement}
+    (bounded : ItemsBounded witness)
+    (selectorBounded : selector.size ≤ maxScriptElementSize) :
+    ItemsBounded (Witness.withSelector witness selector) := by
+  simpa [Witness.withSelector] using
+    (append.mpr ⟨bounded, singleton.mpr selectorBounded⟩)
+
+/-- A runtime-top item inherits the bound from its serialized witness. -/
+theorem runtimeTop {witness : Witness} {top : StackElement} {rest : Stack}
+    (bounded : ItemsBounded witness)
+    (shape : witness.toInitialStack = top :: rest) :
+    top.size ≤ maxScriptElementSize := by
+  have runtimeMember : top ∈ witness.toInitialStack := by
+    rw [shape]
+    simp
+  have wireMember : top ∈ witness := by
+    simpa [Witness.toInitialStack] using runtimeMember
+  exact bounded top wireMember
+
+end ItemsBounded
 
 end Witness
 

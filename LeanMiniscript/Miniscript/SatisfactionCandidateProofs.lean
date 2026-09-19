@@ -141,6 +141,26 @@ theorem Supports.select {left right : CandidateResult}
   · exact leftSupported witness fromLeft
   · exact rightSupported witness fromRight
 
+/-- When the canonical empty `j` dissatisfaction is the left selection input,
+    every usable selected witness is that exact singleton. A no-HASSIG right
+    alternative either loses to it or makes the two-no-HASSIG row DONTUSE. -/
+theorem usable_false_select_witness {other : CandidateResult}
+    {witness : Witness}
+    (selected : CandidateResult.usableWitness?
+      ((CandidateResult.usable [falseElement] false).select other) =
+        some witness) :
+    witness = [falseElement] := by
+  cases other with
+  | impossible =>
+      have equal : [falseElement] = witness := by simpa using selected
+      exact equal.symm
+  | candidate other =>
+      rcases other with ⟨otherWitness, otherHasSig, otherStatus, otherOrigin⟩
+      cases otherHasSig <;> cases otherStatus <;>
+        simp [CandidateResult.usable, CandidateResult.select,
+          CandidateResult.usableWitness?, SatisfactionCandidate.select] at selected
+      all_goals exact selected.symm
+
 /-- A usable combined witness decomposes into usable component witnesses in
     fragment execution order. -/
 theorem combine_usableWitness_iff {left right : CandidateResult}
