@@ -661,6 +661,26 @@ def legacyMultiCandidates (threshold : Nat) (keys : List PubKey)
         (CandidatePair.selectExactly threshold choices)
       dsat := .usable (List.replicate (threshold + 1) falseElement) false }
 
+/-- Shared candidate-level guard for threshold literals used by arithmetic
+    compilation. It combines the BIP arity relation with the exact four-byte
+    Script-number decoding evidence needed by later execution proofs. -/
+def candidateThresholdValid (threshold arity : Nat) : Prop :=
+  threshold ≠ 0 ∧ threshold ≤ arity ∧ ArithmeticScriptNatSafe threshold
+
+instance (threshold arity : Nat) :
+    Decidable (candidateThresholdValid threshold arity) := by
+  unfold candidateThresholdValid
+  infer_instance
+
+/-- Recover the exact threshold decode from the shared candidate guard. -/
+theorem CandidateThresholdValid.decode
+    {threshold arity : Nat}
+    (valid : candidateThresholdValid threshold arity)
+    (minimalData : Bool) :
+    decodeScriptNum (scriptNat threshold) minimalData
+      maxArithmeticScriptNumBytes = .ok (Int.ofNat threshold) :=
+  valid.2.2.decode minimalData
+
 /-- One Tapscript `multi_a` key contributes its signature when available and
     the canonical empty signature otherwise. Source-order exact-count
     composition directly produces the CHECKSIG/CHECKSIGADD wire order. -/
@@ -671,14 +691,16 @@ def multiAKeyChoice (key : PubKey) (env : SatEnv) : CandidatePair where
   dsat := .usable [falseElement] false
 
 /-- Construct BIP 379 `multi_a` candidates. Unlike legacy `multi`, Tapscript
-    has no 20-key consensus bound; only the threshold relation is checked. -/
+    has no 20-key consensus bound; the shared arity and arithmetic threshold
+    guard is the only candidate-level restriction. -/
 def multiACandidates (threshold : Nat) (keys : List PubKey)
     (env : SatEnv) : CandidatePair :=
-  if threshold = 0 ∨ keys.length < threshold then {}
-  else
+  if candidateThresholdValid threshold keys.length then
     let choices := keys.map (fun key => multiAKeyChoice key env)
     { sat := CandidatePair.selectExactly threshold choices
       dsat := .usable (List.replicate keys.length falseElement) false }
+  else
+    {}
 
 mutual
 /-- Compute the candidate pair for the supported leaf, wrapper, and connective
@@ -749,12 +771,13 @@ mutual
         dsat := (firstCandidates.dsat.combine thirdCandidates.dsat).select
           ((firstCandidates.sat.combine secondCandidates.dsat).markNonCanonical) }
   | .thresh threshold fragments, env =>
-      if threshold = 0 ∨ fragments.length < threshold then {}
-      else
+      if candidateThresholdValid threshold fragments.length then
         let children := satisfactionCandidatesList fragments env
         let states := CandidatePair.countCandidates children
         { sat := CandidatePair.selectExactly threshold children
           dsat := CandidatePair.thresholdDissatisfaction threshold states }
+      else
+        {}
   | .multi threshold keys, env => legacyMultiCandidates threshold keys env
   | .multi_a threshold keys, env => multiACandidates threshold keys env
   | .c fragment, env => satisfactionCandidates fragment env
@@ -1394,11 +1417,11 @@ theorem satisfactionCandidates_dsat_witness
           |>.markNonCanonical)).usableWitness? := by
   rfl
 
-/-- Invalid raw threshold arities have no satisfaction or dissatisfaction.
-    Well-typed thresholds rule these cases out with `1 ≤ k ≤ n`. -/
+/-- Invalid raw threshold arities or arithmetic literals have no satisfaction
+    or dissatisfaction. -/
 @[simp] theorem satisfactionCandidates_thresh_invalid
     (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
-    (invalid : threshold = 0 ∨ fragments.length < threshold) :
+    (invalid : ¬ candidateThresholdValid threshold fragments.length) :
     satisfactionCandidates (.thresh threshold fragments) env = {} := by
   simp [satisfactionCandidates, invalid]
 
@@ -1406,18 +1429,18 @@ theorem satisfactionCandidates_dsat_witness
     and the canonical/overcomplete count selection for dissatisfaction. -/
 @[simp] theorem satisfactionCandidates_thresh_valid
     (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
-    (valid : threshold ≠ 0 ∧ ¬ fragments.length < threshold) :
+    (valid : candidateThresholdValid threshold fragments.length) :
     satisfactionCandidates (.thresh threshold fragments) env =
       let children := fragments.map (fun fragment =>
         satisfactionCandidates fragment env)
       let states := CandidatePair.countCandidates children
       { sat := CandidatePair.selectExactly threshold children
         dsat := CandidatePair.thresholdDissatisfaction threshold states } := by
-  simp [satisfactionCandidates, valid.1, valid.2]
+  simp [satisfactionCandidates, valid]
 
 @[simp] theorem satisfactionCandidates_thresh_sat
     (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
-    (valid : threshold ≠ 0 ∧ ¬ fragments.length < threshold) :
+    (valid : candidateThresholdValid threshold fragments.length) :
     (satisfactionCandidates (.thresh threshold fragments) env).sat =
       CandidatePair.selectExactly threshold
         (fragments.map (fun fragment => satisfactionCandidates fragment env)) := by
@@ -1425,7 +1448,7 @@ theorem satisfactionCandidates_dsat_witness
 
 @[simp] theorem satisfactionCandidates_thresh_dsat
     (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
-    (valid : threshold ≠ 0 ∧ ¬ fragments.length < threshold) :
+    (valid : candidateThresholdValid threshold fragments.length) :
     (satisfactionCandidates (.thresh threshold fragments) env).dsat =
       CandidatePair.thresholdDissatisfaction threshold
         (CandidatePair.countCandidates
@@ -1435,19 +1458,19 @@ theorem satisfactionCandidates_dsat_witness
 
 @[simp] theorem satisfy_thresh_invalid
     (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
-    (invalid : threshold = 0 ∨ fragments.length < threshold) :
+    (invalid : ¬ candidateThresholdValid threshold fragments.length) :
     satisfy (.thresh threshold fragments) env = none := by
   simp [satisfy, invalid]
 
 @[simp] theorem dissatisfy_thresh_invalid
     (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
-    (invalid : threshold = 0 ∨ fragments.length < threshold) :
+    (invalid : ¬ candidateThresholdValid threshold fragments.length) :
     dissatisfy (.thresh threshold fragments) env = none := by
   simp [dissatisfy, invalid]
 
 @[simp] theorem satisfy_thresh_valid
     (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
-    (valid : threshold ≠ 0 ∧ ¬ fragments.length < threshold) :
+    (valid : candidateThresholdValid threshold fragments.length) :
     satisfy (.thresh threshold fragments) env =
       (CandidatePair.selectExactly threshold
         (fragments.map (fun fragment =>
@@ -1457,7 +1480,7 @@ theorem satisfactionCandidates_dsat_witness
 
 @[simp] theorem dissatisfy_thresh_valid
     (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
-    (valid : threshold ≠ 0 ∧ ¬ fragments.length < threshold) :
+    (valid : candidateThresholdValid threshold fragments.length) :
     dissatisfy (.thresh threshold fragments) env =
       (CandidatePair.thresholdDissatisfaction threshold
         (CandidatePair.countCandidates

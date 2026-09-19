@@ -241,8 +241,10 @@ and the ordinary HASSIG/DONTUSE/cost selection rules apply within each state.
 Valid `thresh(k, ...)` satisfaction selects state `k`. Dissatisfaction starts
 with the canonical all-dissatisfied state zero, skips state `k`, and considers
 every other positive state only after marking it DONTUSE and non-canonical as
-an overcomplete row. Raw `k = 0`, empty, and `k > n` forms have no candidates;
-the type system already excludes them.
+an overcomplete row. A shared candidate guard requires `1 ≤ k ≤ n` and carries
+exact four-byte Script-number decode evidence for `k` under both minimal-data
+modes. Raw `k = 0`, empty, `k > n`, and arithmetic-unsafe `k ≥ 2^31` forms
+have no candidates; the type system already excludes the arity failures.
 
 The local threshold execution contract covers a nonempty B child followed by
 W children and `OP_ADD`. It supports both saved-first and result-first W stack
@@ -250,7 +252,11 @@ orders, and requires an explicit successful `decodeBinaryScriptNums` premise
 for every addition. The accumulator is carried as canonical Script-number
 bytes; the final literal `k` and `OP_EQUAL` proof uses byte equality directly.
 It does not infer four-byte arithmetic decodability from typing and does not
-claim recursive soundness for generated child witnesses.
+claim recursive soundness for generated child witnesses. The candidate guard
+now supplies the expected count's arithmetic bound and decode evidence, while
+the compiled threshold still performs final byte equality. Accumulator and
+child-result decode premises remain explicit until that recursive connection
+is proved.
 
 Legacy `multi(k, keys)` candidates use the same exact-count table over keys in
 source order. Each available signature is a HASSIG satisfaction choice and an
@@ -278,8 +284,9 @@ an empty signature contributes the canonical dissatisfaction. The selected
 wire blocks are already in reverse source order, so no legacy finalizer or
 dummy is added; reversing the complete witness at runtime restores source key
 order for CHECKSIG followed by CHECKSIGADD. The canonical dissatisfaction has
-one empty item per key. Raw `k = 0` and `k > n` forms have no candidates. There
-is deliberately no 20-key guard for this Tapscript form.
+one empty item per key. The same shared guard rejects `k = 0`, `k > n`, and
+arithmetic-unsafe `k ≥ 2^31`. There is deliberately no 20-key guard for this
+Tapscript form.
 
 `CheckSigAddTailExecution` relates source-order keys and signatures to an exact
 `Int` accumulator. Each step retains the exact `decodeCheckSigAddCount` result
@@ -545,13 +552,16 @@ their `c` wrappers, timelocks, all four hashlocks, linear wrapper propagation
 through `a`, `s`, `v`, and `n`, guarded wrappers `d` and `j`, and straight-line
 connectives `and_v`, `and_b`, and `or_b`, plus conditional connectives `or_c`,
 `or_d`, `or_i`, and `andor`, thresholds, legacy `multi`, and Tapscript
-`multi_a`. Paired
-candidates retain HASSIG, DONTUSE, canonical origin, and additive witness cost
+`multi_a`. Paired candidates retain HASSIG, DONTUSE, canonical origin, and
+additive witness cost
 metadata while the public projection returns only usable witnesses. Signature
 and key material use serialized witness order, and timelock availability reuses
-the exact `TxContext` predicates from Script execution. Hash preimages and
-nonpreimages are required to be exactly 32 bytes; canonical hash
-dissatisfactions remain available to recursive proofs as DONTUSE candidates,
+the exact `TxContext` predicates from Script execution. `thresh` and `multi_a`
+share a proof-carrying arithmetic threshold guard that records the signed
+four-byte bound and exact relaxed and minimal decode facts. Boundary fixtures
+accept `2^31 - 1`; `2^31` and above expose no candidate or public projection.
+Hash preimages and nonpreimages are required to be exactly 32 bytes; canonical
+hash dissatisfactions remain available to recursive proofs as DONTUSE candidates,
 including through `a`, `s`, and `n`. For `j`, the hash dissatisfaction's
 DONTUSE influence propagates to the selected canonical-zero result, while the
 original nonpreimage representative is not retained.
