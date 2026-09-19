@@ -102,13 +102,16 @@ oracles, not logical premises of Lean proofs.
   proof is still missing.
 - **Example**: only a concrete local proof exists; there is no constructor-wide
   theorem.
+- **Impossible**: the Miniscript row intentionally has no candidate on this
+  satisfaction or dissatisfaction side.
 - **Missing**: no implementation that can support the planned claim exists.
 
 Compilation entries below include constructor-complete assembly/byte fixtures
 and the relational BIP 379 conformance theorem. Evaluation is marked partial
 for every row because exact Bitcoin Core failure coverage, production
-signature verification, final acceptance results, and differential validation
-are not yet complete. Within the modeled opcode subset, `Eval.exists_result`
+signature verification, full production/Bitcoin Core acceptance integration,
+and differential validation are not yet complete. Within the modeled opcode
+subset, `Eval.exists_result`
 and `Eval.result_unique` prove that the relational semantics has exactly one
 result for every fixed initial state. The total `evaluate` function covers the
 same cases, and `evaluate_model_iff` proves equivalence for the model oracle.
@@ -126,12 +129,12 @@ path-sensitive peak analysis remains unfinished.
 
 | Constructor | Validation | Correctness typing | Malleability typing | Compilation | Evaluation | Satisfy | Dissatisfy | Resources | Semantic proof |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `zero` | Done | Done | Done | Done | Partial | Missing | Basic | Partial | Basic dissatisfaction |
-| `one` | Done | Done | Done | Done | Partial | Basic | Missing | Partial | Basic satisfaction |
+| `zero` | Done | Done | Done | Done | Partial | Impossible | Basic | Partial | Basic dissatisfaction |
+| `one` | Done | Done | Done | Done | Partial | Basic | Impossible | Partial | Basic satisfaction |
 | `pk_k` | Done | Done | Done | Done | Partial | Leaf candidate | Leaf candidate | Partial | K frame; `c` soundness |
 | `pk_h` | Done | Done | Done | Done | Partial | Leaf candidate | Leaf candidate | Partial | K frame; `c` soundness |
-| `older` | Done | Done | Done | Done | Partial | Basic | Missing | Partial | Basic satisfaction |
-| `after` | Done | Done | Done | Done | Partial | Basic | Missing | Partial | Basic satisfaction |
+| `older` | Done | Done | Done | Done | Partial | Basic | Impossible | Partial | Basic satisfaction |
+| `after` | Done | Done | Done | Done | Partial | Basic | Impossible | Partial | Basic satisfaction |
 | `sha256` | Done | Done | Done | Done | Partial | Basic | DONTUSE candidate | Partial | Exact sat/dsat frames |
 | `hash256` | Done | Done | Done | Done | Partial | Basic | DONTUSE candidate | Partial | Exact sat/dsat frames |
 | `ripemd160` | Done | Done | Done | Done | Partial | Basic | DONTUSE candidate | Partial | Exact sat/dsat frames |
@@ -189,8 +192,9 @@ The corresponding arbitrary-stack lemmas remain local execution contracts:
 `d` requires a zero-argument V child for its true branch and also proves the
 canonical false branch; `j` requires exact B execution on `top :: args`,
 `top.size ≠ 0`, and successful four-byte decoding of `scriptNat top.size`, and
-also proves its canonical empty branch. These lemmas do not yet establish
-recursive soundness for witnesses produced by the candidate algorithm.
+also proves its canonical empty branch. The strong wrapper combinators derive
+these premises from generated input/result facts, and the recursive theorem
+assembles them for witnesses selected by the candidate algorithm.
 
 The straight-line connectives `and_v`, `and_b`, and `or_b` now implement all
 their BIP 379 candidate rows. Sequential candidate composition stores the
@@ -207,8 +211,9 @@ and require `decodeBinaryScriptNums` to succeed for the physical top-first
 operand order before `OP_BOOLAND` or `OP_BOOLOR` executes. Result-first W
 frames use Boolean commutativity to expose one canonical source-child result
 order. These contracts preserve arbitrary main-stack suffixes and the complete
-alternate stack. They do not yet prove recursive soundness for witnesses
-selected by the candidate algorithm.
+alternate stack. Strong candidate-pair combinators derive their decoder and
+input premises from both child contracts, and the recursive theorem assembles
+them for selected witnesses.
 
 The conditional connectives `or_c`, `or_d`, `or_i`, and `andor` now implement
 their BIP 379 candidate rows. `or_c` and `or_d` select between direct X
@@ -229,8 +234,9 @@ stack. Local connector contracts cover `or_c` B-to-V paths, `or_d` B paths,
 and `or_i` and `andor` B/K/V paths. Selectors produced by a child retain
 separate `minimalIfSatisfied` and `castToBool` premises; `or_i` discharges
 MINIMALIF internally for its canonical selectors. No numeric decoding premise
-is used for these branch selectors. These local contracts do not yet prove
-recursive soundness for witnesses selected by the candidate algorithm.
+is used for these branch selectors. Strong candidate-pair combinators supply
+the selector facts, and the recursive theorem assembles them for selected
+witnesses.
 
 Threshold candidates use a shared exact-count dynamic-programming table. State
 `j` holds the selected witness with exactly `j` satisfied children; each step
@@ -309,9 +315,11 @@ Tapscript form.
 and version-aware `checkSigWithEncoding` result. The nonempty compiler frame
 handles the first CHECKSIG separately, and `BExecution.multiA` requires an
 explicit Tapscript execution version plus the final `decodeBinaryScriptNums`
-result for NUMEQUAL. Empty-signature helpers prove the canonical false path,
-but no theorem derives the accumulator decode bounds from `WellFormed` or ties
-the candidate table's selected signatures to cryptographic verification.
+result for NUMEQUAL. Empty-signature helpers prove the canonical false path.
+On the valid candidate-guard branch, the strong generated theorem connects the
+exact-count choice trace to cryptographically checked signature slots and
+derives every accumulator decode bound. When that guard fails, the candidate
+pair is empty and both support obligations are vacuous.
 
 `HasType ctx` covers all rows, and `inferType ctx` has soundness, completeness,
 uniqueness, and success/reflection theorems. A constructor-exhaustive fixture
@@ -672,13 +680,13 @@ cryptographic implementations.
 
 | Constructor | Validation via core | Typing via core | Desugaring/compilation | Parser/pretty-printer | Evaluation | Satisfy/dissatisfy | Surface theorem |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `core` | Done | Done | Done | Done | Partial | Missing | Done |
-| `pk` | Done | Done | Done | Done | Partial | Missing | Done |
-| `pkh` | Done | Done | Done | Done | Partial | Missing | Done |
-| `and_n` | Done | Done | Done | Done | Partial | Missing | Done |
-| `t` | Done | Done | Done | Done | Partial | Missing | Done |
-| `l` | Done | Done | Done | Done | Partial | Missing | Done |
-| `u` | Done | Done | Done | Done | Partial | Missing | Done |
+| `core` | Done | Done | Done | Done | Partial | Via desugar | Done |
+| `pk` | Done | Done | Done | Done | Partial | Via desugar | Done |
+| `pkh` | Done | Done | Done | Done | Partial | Via desugar | Done |
+| `and_n` | Done | Done | Done | Done | Partial | Via desugar | Done |
+| `t` | Done | Done | Done | Done | Partial | Via desugar | Done |
+| `l` | Done | Done | Done | Done | Partial | Via desugar | Done |
+| `u` | Done | Done | Done | Done | Partial | Via desugar | Done |
 
 `SurfaceFragment` is currently a thin recursive sugar layer around embedded
 core fragments, not a source-preserving concrete-syntax tree. The executable
