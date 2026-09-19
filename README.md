@@ -131,7 +131,11 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   true-or-NULLFAIL condition used by Script execution. The Tapscript
   multisignature contract keeps its execution version explicit, records every
   CHECKSIG/CHECKSIGADD result and accumulator decode, and retains the final
-  NUMEQUAL decode premise.
+  NUMEQUAL decode premise. A proof-only provenance layer recovers the selected
+  source witness through candidate selection, combination, and transforms. Its
+  exact-count trace records one source-order child witness for each usable
+  exact-count result, and usable threshold dissatisfaction is traced to the
+  canonical count-zero row.
   Recursive generated-witness soundness for these wrappers, connectives, and
   thresholds, and the connection from selected multisignature candidates to
   cryptographic key/signature matching remain unfinished.
