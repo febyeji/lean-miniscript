@@ -1,0 +1,53 @@
+import LeanMiniscript.Miniscript.Soundness
+import LeanMiniscript.Miniscript.SatisfactionGeneratedRecursiveProofs
+
+namespace LeanMiniscript.Miniscript
+
+open LeanMiniscript.Script
+
+/-!
+# Core satisfaction and dissatisfaction correctness
+
+The recursive generated contract already supplies exact B execution for every
+usable top-level candidate. This module closes the public clean-stack targets.
+-/
+
+namespace GeneratedContract
+
+/-- A top-level B contract yields the clean one-item result used by public
+    acceptance and dissatisfaction. -/
+theorem cleanStackResult
+    {fragment : CoreFragment} {witness : Witness} {expected : Bool}
+    {flags : ScriptFlags} {txCtx : TxContext} {mods : CorrectnessModifiers}
+    (contract : GeneratedContract fragment witness expected flags txCtx
+      ⟨.B, mods⟩) :
+    CleanStackResult (compile fragment) witness flags txCtx expected := by
+  cases contract with
+  | b input facts executed =>
+      exact BExecutionOutcome.cleanStackResult ⟨_, executed, facts.truth⟩
+
+end GeneratedContract
+
+/-- Every usable satisfaction generated for a valid core Miniscript is
+    accepted by the resource-free modeled execution predicate. -/
+theorem satisfactionCorrectnessCore : SatisfactionCorrectnessCore := by
+  intro ctx fragment env witness flags valid sound encodings version modeled
+    generated
+  rcases valid with ⟨mods, wellFormed, typed⟩
+  have supported := supportsGeneratedContract_of_wellFormed_hasType
+    version modeled sound encodings typed wellFormed
+  exact ⟨modeled, version,
+    (supported.satisfyContract generated).cleanStackResult⟩
+
+/-- Every usable dissatisfaction generated for a valid dissatisfiable core
+    Miniscript executes successfully to a clean false result. -/
+theorem dissatisfactionCorrectnessCore : DissatisfactionCorrectnessCore := by
+  intro ctx fragment env witness flags valid sound encodings version modeled
+    generated
+  rcases valid with ⟨mods, ⟨wellFormed, typed⟩, dissatisfiable⟩
+  have supported := supportsGeneratedContract_of_wellFormed_hasType
+    version modeled sound encodings typed wellFormed
+  exact ⟨modeled, version,
+    (supported.dissatisfyContract generated).cleanStackResult⟩
+
+end LeanMiniscript.Miniscript

@@ -583,13 +583,14 @@ DONTUSE influence propagates to the selected canonical-zero result, while the
 original nonpreimage representative is not retained.
 
 Arbitrary-stack soundness lemmas connect returned B witnesses to `Accepts` or
-`Dissatisfies`; timelock lemmas expose the numeric well-formedness premises that
-the eventual validity theorem must discharge. `SatEnv.Sound` records signature,
+`Dissatisfies`; the recursive validity theorem discharges the timelock numeric
+premises from well-formedness. `SatEnv.Sound` records signature,
 preimage, and nonpreimage obligations at the cryptographic boundary. Basic key
 satisfaction additionally requires `SatEnv.EncodingSound`, and key
-dissatisfaction requires the empty-signature/key pair to pass the selected
-version-specific byte checks. Guarded wrappers `d` and `j` and the supported
-straight-line and conditional connectives have both local arbitrary-stack
+dissatisfaction derives the selected version's empty-signature/key byte checks
+from context-valid keys and modeled version/flags. Guarded wrappers `d` and
+`j` and the supported straight-line and conditional connectives have both local
+arbitrary-stack
 contracts and strong generated-candidate closure. Thresholds connect their
 selected exact-count table entry to source-order child execution. Legacy
 `multi` connects selected exact-count signatures and canonical empty
@@ -658,7 +659,12 @@ projections. The theorem preserves the source-order list relation needed by
 `thresh`; its arithmetic-valid branch uses the exact-count contract, while its
 arithmetic-invalid branch has no usable candidate. It proves support for
 selected witnesses, rather than candidate existence or the public acceptance
-targets below.
+targets below. `GeneratedContract.cleanStackResult` closes a selected top-level
+B contract to the clean one-item execution predicate. Consequently,
+`satisfactionCorrectnessCore` and `dissatisfactionCorrectnessCore` prove the
+resource-free core `Accepts` and `Dissatisfies` targets under the modeled
+version/flags and sound material/encoding premises. They do not establish
+runtime resource limits or correctness of the cryptographic implementations.
 
 ## Surface Constructor Matrix
 
@@ -687,17 +693,19 @@ context-valid input.
 
 ## Checked Contract Targets
 
-The following declarations type-check without `sorry`, `admit`, or a new axiom,
-but are propositions to be proved rather than completed theorems:
+The target propositions remain the shared public specifications. Their current
+proof status is:
 
 - `TypeSoundnessCore` and `TypeSoundnessSurface` require context validity,
   relational typing, and an explicitly supported non-vacuous semantic case;
-- `SatisfactionCorrectnessCore` and `SatisfactionCorrectnessSurface` require a
-  cryptographically sound material environment and encoding soundness under
-  the selected flags and execution version, and conclude `Accepts`;
-- `DissatisfactionCorrectnessCore` and its surface counterpart require the `d`
-  modifier and version-specific empty-signature/key encoding for the supported signature fragment, and
-  conclude `Dissatisfies`.
+- `SatisfactionCorrectnessCore` is proved by `satisfactionCorrectnessCore`;
+  `SatisfactionCorrectnessSurface` has the same material, encoding, flag, and
+  execution-version premises and remains a definitional desugaring corollary
+  for the next proof;
+- `DissatisfactionCorrectnessCore` is proved by
+  `dissatisfactionCorrectnessCore`; its surface counterpart now has the same
+  `SatEnv.EncodingSound` premise and remains a definitional desugaring
+  corollary for the next proof.
 
 `ResourceBoundsSound` is now proved by `resourceBoundsSound` in
 `Properties/ResourceBoundsProofs.lean`, exported through `LeanMiniscript.Proofs`.
