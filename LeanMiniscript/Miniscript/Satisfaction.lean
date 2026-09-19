@@ -485,8 +485,9 @@ def hashCandidates (lock : HashLock) (env : SatEnv) : CandidatePair where
     | some preimage => .usable [preimage] false
   dsat := .dontUse [env.nonPreimageFor lock] false .canonical
 
-/-- Compute the candidate pair for the supported leaf and wrapper rows.
-    Unsupported rows are explicitly impossible on both sides. -/
+/-- Compute the candidate pair for the supported leaf, wrapper, and
+    straight-line connective rows. Unsupported rows are explicitly impossible
+    on both sides. -/
 @[simp] def satisfactionCandidates : CoreFragment → SatEnv → CandidatePair
   | .zero, _ => { dsat := .usable [] false }
   | .one, _ => { sat := .usable [] false }
@@ -502,6 +503,30 @@ def hashCandidates (lock : HashLock) (env : SatEnv) : CandidatePair where
   | .hash256 hash, env => hashCandidates (.hash256 hash) env
   | .ripemd160 hash, env => hashCandidates (.ripemd160 hash) env
   | .hash160 hash, env => hashCandidates (.hash160 hash) env
+  | .and_v first second, env =>
+      let firstCandidates := satisfactionCandidates first env
+      let secondCandidates := satisfactionCandidates second env
+      { sat := firstCandidates.sat.combine secondCandidates.sat
+        dsat := (firstCandidates.sat.combine secondCandidates.dsat).markNonCanonical }
+  | .and_b first second, env =>
+      let firstCandidates := satisfactionCandidates first env
+      let secondCandidates := satisfactionCandidates second env
+      let canonical := firstCandidates.dsat.combine secondCandidates.dsat
+      let firstOvercomplete :=
+        (firstCandidates.dsat.combine secondCandidates.sat).markOvercomplete
+      let secondOvercomplete :=
+        (firstCandidates.sat.combine secondCandidates.dsat).markOvercomplete
+      { sat := firstCandidates.sat.combine secondCandidates.sat
+        dsat := (canonical.select firstOvercomplete).select secondOvercomplete }
+  | .or_b first second, env =>
+      let firstCandidates := satisfactionCandidates first env
+      let secondCandidates := satisfactionCandidates second env
+      let firstSatisfaction := firstCandidates.sat.combine secondCandidates.dsat
+      let secondSatisfaction := firstCandidates.dsat.combine secondCandidates.sat
+      let overcomplete :=
+        (firstCandidates.sat.combine secondCandidates.sat).markOvercomplete
+      { sat := (firstSatisfaction.select secondSatisfaction).select overcomplete
+        dsat := firstCandidates.dsat.combine secondCandidates.dsat }
   | .c fragment, env => satisfactionCandidates fragment env
   | .a fragment, env => satisfactionCandidates fragment env
   | .s fragment, env => satisfactionCandidates fragment env
@@ -641,6 +666,152 @@ theorem satisfactionCandidates_dsat_witness
 
 @[simp] theorem dissatisfy_hash160 (hash : Hash160) (env : SatEnv) :
     dissatisfy (.hash160 hash) env = none := by
+  rfl
+
+/-! ## Straight-line connective candidates -/
+
+/-- `and_v` executes its V child before its result-producing child. Its only
+    Script-valid dissatisfaction is the non-canonical `sat(first) dsat(second)`
+    row retained by BIP 379. -/
+@[simp] theorem satisfactionCandidates_and_v
+    (first second : CoreFragment) (env : SatEnv) :
+    satisfactionCandidates (.and_v first second) env = {
+      sat := (satisfactionCandidates first env).sat.combine
+        (satisfactionCandidates second env).sat
+      dsat := ((satisfactionCandidates first env).sat.combine
+        (satisfactionCandidates second env).dsat).markNonCanonical } := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_and_v_sat
+    (first second : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.and_v first second) env).sat =
+      (satisfactionCandidates first env).sat.combine
+        (satisfactionCandidates second env).sat := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_and_v_dsat
+    (first second : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.and_v first second) env).dsat =
+      ((satisfactionCandidates first env).sat.combine
+        (satisfactionCandidates second env).dsat).markNonCanonical := by
+  rfl
+
+@[simp] theorem satisfy_and_v
+    (first second : CoreFragment) (env : SatEnv) :
+    satisfy (.and_v first second) env =
+      ((satisfactionCandidates first env).sat.combine
+        (satisfactionCandidates second env).sat).usableWitness? := by
+  rfl
+
+@[simp] theorem dissatisfy_and_v
+    (first second : CoreFragment) (env : SatEnv) :
+    dissatisfy (.and_v first second) env =
+      (((satisfactionCandidates first env).sat.combine
+        (satisfactionCandidates second env).dsat).markNonCanonical).usableWitness? := by
+  rfl
+
+/-- `and_b` retains its canonical double dissatisfaction and both non-canonical
+    overcomplete alternatives. The two binary selections are deliberately a
+    left fold because candidate selection has observable left-biased ties. -/
+@[simp] theorem satisfactionCandidates_and_b
+    (first second : CoreFragment) (env : SatEnv) :
+    satisfactionCandidates (.and_b first second) env = {
+      sat := (satisfactionCandidates first env).sat.combine
+        (satisfactionCandidates second env).sat
+      dsat := (((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates second env).dsat).select
+        (((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates second env).sat).markOvercomplete)).select
+        (((satisfactionCandidates first env).sat.combine
+          (satisfactionCandidates second env).dsat).markOvercomplete) } := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_and_b_sat
+    (first second : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.and_b first second) env).sat =
+      (satisfactionCandidates first env).sat.combine
+        (satisfactionCandidates second env).sat := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_and_b_dsat
+    (first second : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.and_b first second) env).dsat =
+      (((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates second env).dsat).select
+        (((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates second env).sat).markOvercomplete)).select
+        (((satisfactionCandidates first env).sat.combine
+          (satisfactionCandidates second env).dsat).markOvercomplete) := by
+  rfl
+
+@[simp] theorem satisfy_and_b
+    (first second : CoreFragment) (env : SatEnv) :
+    satisfy (.and_b first second) env =
+      ((satisfactionCandidates first env).sat.combine
+        (satisfactionCandidates second env).sat).usableWitness? := by
+  rfl
+
+@[simp] theorem dissatisfy_and_b
+    (first second : CoreFragment) (env : SatEnv) :
+    dissatisfy (.and_b first second) env =
+      ((((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates second env).dsat).select
+        (((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates second env).sat).markOvercomplete)).select
+        (((satisfactionCandidates first env).sat.combine
+          (satisfactionCandidates second env).dsat).markOvercomplete)).usableWitness? := by
+  rfl
+
+/-- `or_b` chooses between its two canonical one-true paths and the
+    non-canonical overcomplete double-satisfaction path, again in fixed left-fold
+    order. Its only dissatisfaction is the double dissatisfaction. -/
+@[simp] theorem satisfactionCandidates_or_b
+    (first second : CoreFragment) (env : SatEnv) :
+    satisfactionCandidates (.or_b first second) env = {
+      sat := (((satisfactionCandidates first env).sat.combine
+          (satisfactionCandidates second env).dsat).select
+        ((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates second env).sat)).select
+        (((satisfactionCandidates first env).sat.combine
+          (satisfactionCandidates second env).sat).markOvercomplete)
+      dsat := (satisfactionCandidates first env).dsat.combine
+        (satisfactionCandidates second env).dsat } := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_or_b_sat
+    (first second : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.or_b first second) env).sat =
+      (((satisfactionCandidates first env).sat.combine
+          (satisfactionCandidates second env).dsat).select
+        ((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates second env).sat)).select
+        (((satisfactionCandidates first env).sat.combine
+          (satisfactionCandidates second env).sat).markOvercomplete) := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_or_b_dsat
+    (first second : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.or_b first second) env).dsat =
+      (satisfactionCandidates first env).dsat.combine
+        (satisfactionCandidates second env).dsat := by
+  rfl
+
+@[simp] theorem satisfy_or_b
+    (first second : CoreFragment) (env : SatEnv) :
+    satisfy (.or_b first second) env =
+      ((((satisfactionCandidates first env).sat.combine
+          (satisfactionCandidates second env).dsat).select
+        ((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates second env).sat)).select
+        (((satisfactionCandidates first env).sat.combine
+          (satisfactionCandidates second env).sat).markOvercomplete)).usableWitness? := by
+  rfl
+
+@[simp] theorem dissatisfy_or_b
+    (first second : CoreFragment) (env : SatEnv) :
+    dissatisfy (.or_b first second) env =
+      ((satisfactionCandidates first env).dsat.combine
+        (satisfactionCandidates second env).dsat).usableWitness? := by
   rfl
 
 @[simp] theorem satisfactionCandidates_c (fragment : CoreFragment) (env : SatEnv) :
