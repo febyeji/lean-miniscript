@@ -152,7 +152,7 @@ path-sensitive peak analysis remains unfinished.
 | `n` | Done | Done | Done | Done | Partial | Pass-through | Pass-through | Partial | ScriptNum-normalized B frame |
 | `thresh` | Done | Done | Done | Done | Partial | Exact-count candidate | Canonical/overcomplete choice | Partial | Generated exact-count frame |
 | `multi` | Done | Done | Done | Done | Partial | Exact-count signatures | Canonical empty signatures | Partial | Local CHECKMULTISIG frame |
-| `multi_a` | Done | Done | Done | Done | Partial | Exact-count signatures | Canonical empty signatures | Partial | Local CHECKSIGADD frame |
+| `multi_a` | Done | Done | Done | Done | Partial | Exact-count signatures | Canonical empty signatures | Partial | Generated exact-count CHECKSIGADD frame |
 
 Key-leaf candidates follow the BIP 379 serialized witness rows: `pk_k` uses
 `sig`/`0`, while `pk_h` uses `sig key`/`0 key`. Wrapper `c` preserves the
@@ -587,16 +587,14 @@ preimage, and nonpreimage obligations at the cryptographic boundary. Basic key
 satisfaction additionally requires `SatEnv.EncodingSound`, and key
 dissatisfaction requires the empty-signature/key pair to pass the selected
 version-specific byte checks. Guarded wrappers `d` and `j` and the supported
-straight-line and conditional connectives have the local arbitrary-stack
-contracts described above, without a recursive theorem tying every generated
-candidate to child execution. Thresholds have the local accumulator contract
-described above, without a recursive theorem connecting their selected table
-entry to every child execution. Legacy `multi` has the local canonical decoder
+straight-line and conditional connectives have both local arbitrary-stack
+contracts and strong generated-candidate closure. Thresholds connect their
+selected exact-count table entry to source-order child execution. Legacy
+`multi` has the local canonical decoder
 and CHECKMULTISIG execution contract described above, without a theorem tying
 the selected candidate to an accepted signature/key subsequence. Tapscript
-`multi_a` has the local CHECKSIG/CHECKSIGADD accumulator contract described
-above, without a theorem tying its selected candidate to those explicit
-signature-check and numeric-decode premises.
+`multi_a` additionally connects selected exact-count slots to the local
+CHECKSIG/CHECKSIGADD accumulator contract under well-formed modeled contexts.
 
 The proof-only Script-number layer proves canonical nonnegative round-trip and
 minimality for every value below `2^31`, monotonicity when a successful decode's
@@ -640,8 +638,13 @@ non-canonical satisfaction-selector dissatisfaction as a real execution path.
 Candidate selection proofs preserve the executable left-to-right tie order.
 `thresh` aligns exact-count source choices with a Bdu head and Wdu tail,
 reconstructs the selected witness frame and modifiers, and closes usable
-count-`k` satisfaction plus canonical all-false dissatisfaction. `multi` and
-`multi_a` closure remains unfinished.
+count-`k` satisfaction plus canonical all-false dissatisfaction. `multi_a`
+uses the same source-order choice trace to build bounded checked
+signature slots, keeps the first CHECKSIG separate from the CHECKSIGADD tail,
+and closes exact-count satisfaction plus canonical all-empty dissatisfaction.
+The executable arithmetic guard remains explicit because well-formedness alone
+does not imply a four-byte accumulator. Legacy `multi` closure remains
+unfinished.
 
 ## Surface Constructor Matrix
 

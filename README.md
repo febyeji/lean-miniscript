@@ -152,9 +152,12 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   `thresh`, exact-count provenance now aligns every selected child contract,
   rebuilds bounded z/o input shapes, discharges every accumulator decode from
   the final count bound, and proves both the selected `k`-satisfaction and the
-  canonical all-false dissatisfaction. The connection from selected
-  multisignature candidates to cryptographic key/signature matching remains
-  unfinished.
+  canonical all-false dissatisfaction. Tapscript `multi_a` converts the same
+  source-order trace into checked signature slots, executes its first key with
+  CHECKSIG and the remainder with CHECKSIGADD, and closes both exact-count and
+  canonical all-empty candidates under well-formed modeled contexts. The
+  connection from selected legacy `multi` candidates to CHECKMULTISIG's
+  signature/key subsequence matching remains unfinished.
 - General soundness, full satisfaction coverage, non-malleability, small-step
   semantics, cryptographic correctness proofs, executable ECDSA verification,
   unsupported Core failure classes,

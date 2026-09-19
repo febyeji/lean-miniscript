@@ -281,4 +281,31 @@ example (env : SatEnv) :
     satisfactionCandidates (.thresh 0 [.one]) env = {} := by
   rfl
 
+/-! Tapscript `multi_a` reuses the exact-count trace without reversing keys or
+    signature slots: the first source key executes CHECKSIG and the two tail
+    keys execute CHECKSIGADD. -/
+
+/-- A well-formed two-of-three `multi_a` exposes the strong candidate-wide
+    contract. The selected wire witness below reverses once into source-key
+    runtime order. -/
+example {firstKey secondKey thirdKey : PubKey}
+    {firstSignature thirdSignature : ByteArray}
+    {env : SatEnv} {flags : ScriptFlags}
+    (wellFormed : CoreFragment.WellFormed .tapscript
+      (.multi_a 2 [firstKey, secondKey, thirdKey]))
+    (version : ModeledContextVersion .tapscript env.txCtx)
+    (modeled : ModeledContextFlags .tapscript flags)
+    (sound : env.Sound) (encodings : env.EncodingSound flags)
+    (selected : satisfy (.multi_a 2 [firstKey, secondKey, thirdKey]) env =
+      some [thirdSignature, falseElement, firstSignature]) :
+    GeneratedContract (.multi_a 2 [firstKey, secondKey, thirdKey])
+        [thirdSignature, falseElement, firstSignature] true flags env.txCtx
+        ⟨.B, { d := true, u := true }⟩ ∧
+      Witness.toInitialStack
+          [thirdSignature, falseElement, firstSignature] =
+        [firstSignature, falseElement, thirdSignature] := by
+  have supported := generatedContract_multiA_of_wellFormed wellFormed version
+    modeled sound encodings
+  exact ⟨supported.satisfyContract selected, rfl⟩
+
 end LeanMiniscript.Miniscript
