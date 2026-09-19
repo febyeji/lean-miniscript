@@ -630,6 +630,37 @@ def hashCandidates (lock : HashLock) (env : SatEnv) : CandidatePair where
     | some preimage => .usable [preimage] false
   dsat := .dontUse [env.nonPreimageFor lock] false .canonical
 
+/-- One legacy multisignature key contributes either its available signature
+    or an empty dissatisfaction block. Choices stay in source key order so
+    equal-cost exact-count selection prefers earlier keys. -/
+def legacyMultiKeyChoice (key : PubKey) (env : SatEnv) : CandidatePair where
+  sat := match env.signatureFor key with
+    | none => .impossible
+    | some signature => .usable [signature] true
+  dsat := .usable [] false
+
+/-- Convert the exact-count DP witness into legacy CHECKMULTISIG wire order.
+    The DP combines source-order choices into reverse order, so signatures are
+    reversed once and the canonical historical dummy is prepended. Selection
+    metadata is preserved and the common dummy contributes to final cost. -/
+def finalizeLegacyMulti : CandidateResult → CandidateResult
+  | .impossible => .impossible
+  | .candidate candidate => .candidate {
+      candidate with
+      witness := falseElement :: candidate.witness.reverse }
+
+/-- Construct BIP 379 legacy `multi` candidates. Raw invalid thresholds and
+    key lists above the consensus limit have no candidates. -/
+def legacyMultiCandidates (threshold : Nat) (keys : List PubKey)
+    (env : SatEnv) : CandidatePair :=
+  if threshold = 0 ∨ keys.length < threshold ∨
+      maxPubKeysPerMultiSig < keys.length then {}
+  else
+    let choices := keys.map (fun key => legacyMultiKeyChoice key env)
+    { sat := finalizeLegacyMulti
+        (CandidatePair.selectExactly threshold choices)
+      dsat := .usable (List.replicate (threshold + 1) falseElement) false }
+
 mutual
 /-- Compute the candidate pair for the supported leaf, wrapper, and connective
     rows. Unsupported rows are explicitly impossible on both sides. -/
@@ -705,6 +736,7 @@ mutual
         let states := CandidatePair.countCandidates children
         { sat := CandidatePair.selectExactly threshold children
           dsat := CandidatePair.thresholdDissatisfaction threshold states }
+  | .multi threshold keys, env => legacyMultiCandidates threshold keys env
   | .c fragment, env => satisfactionCandidates fragment env
   | .a fragment, env => satisfactionCandidates fragment env
   | .s fragment, env => satisfactionCandidates fragment env
@@ -1415,8 +1447,27 @@ theorem satisfactionCandidates_dsat_witness
   unfold dissatisfy
   rw [satisfactionCandidates_thresh_dsat threshold fragments env valid]
 
--- TODO(theorem): Extend satisfaction and dissatisfaction correctness through
--- thresholds, `multi`, and `multi_a`.
+@[simp] theorem satisfactionCandidates_multi
+    (threshold : Nat) (keys : List PubKey) (env : SatEnv) :
+    satisfactionCandidates (.multi threshold keys) env =
+      legacyMultiCandidates threshold keys env := by
+  rfl
+
+@[simp] theorem satisfy_multi
+    (threshold : Nat) (keys : List PubKey) (env : SatEnv) :
+    satisfy (.multi threshold keys) env =
+      (legacyMultiCandidates threshold keys env).sat.usableWitness? := by
+  rfl
+
+@[simp] theorem dissatisfy_multi
+    (threshold : Nat) (keys : List PubKey) (env : SatEnv) :
+    dissatisfy (.multi threshold keys) env =
+      (legacyMultiCandidates threshold keys env).dsat.usableWitness? := by
+  rfl
+
+-- TODO(theorem): Connect generated threshold and `multi` witnesses to their
+-- recursive execution contracts, and add candidates plus correctness for
+-- `multi_a`.
 -- TODO: Analyze non-malleable satisfaction (unique canonical witness)
 
 end LeanMiniscript.Miniscript

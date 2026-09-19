@@ -108,11 +108,11 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   `c` wrappers, timelocks, all four 32-byte hashlocks, and linear propagation
   through `a`, `s`, `v`, and `n`, the guarded `d` and `j` rows, and the
   straight-line `and_v`, `and_b`, and `or_b` connectives, plus conditional
-  `or_c`, `or_d`, `or_i`, and `andor`, and exact-count `thresh` selection. Paired
-  candidates track HASSIG, DONTUSE, canonical origin, and additive witness
-  cost. Key leaves have exact K-frame lemmas; B leaves and well-typed `c`
-  wrappers have arbitrary-stack lemmas leading to clean acceptance or
-  dissatisfaction. Wrapper lemmas additionally prove the two exact W stack
+  `or_c`, `or_d`, `or_i`, and `andor`, exact-count `thresh` selection, and
+  legacy `multi`. Paired candidates track HASSIG, DONTUSE, canonical origin,
+  and additive witness cost. Key leaves have exact K-frame lemmas; B leaves and
+  well-typed `c` wrappers have arbitrary-stack lemmas leading to clean
+  acceptance or dissatisfaction. Wrapper lemmas additionally prove the two exact W stack
   orders, truthy B-to-V conversion, `n`'s explicit Script-number normalization
   boundary, local guarded execution contracts for `d` and `j`, B/K/V
   composition through `and_v`, and both exact W stack orders plus numeric decode
@@ -121,9 +121,13 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   child-produced selectors keep explicit truth and MINIMALIF premises, while
   canonical `or_i` selectors discharge MINIMALIF internally. Threshold
   accumulator lemmas support both W stack orders and retain an explicit numeric
-  decode premise for every `OP_ADD`; final `OP_EQUAL` uses byte equality.
+  decode premise for every `OP_ADD`; final `OP_EQUAL` uses byte equality. The
+  legacy multisignature contract proves the compiled key-push and canonical
+  count frame, then requires the explicit `checkMultiSigFor` result and the
+  true-or-NULLFAIL condition used by Script execution.
   Recursive generated-witness soundness for these wrappers, connectives, and
-  thresholds remains unfinished.
+  thresholds, and the connection from selected legacy multisignature candidates
+  to cryptographic key/signature matching remain unfinished.
 - General soundness, full satisfaction coverage, non-malleability, small-step
   semantics, cryptographic correctness proofs, executable ECDSA verification,
   unsupported Core failure classes,

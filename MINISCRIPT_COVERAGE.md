@@ -151,7 +151,7 @@ path-sensitive peak analysis remains unfinished.
 | `j` | Done | Done | Done | Done | Partial | Pass-through | Guarded choice | Partial | Nonempty child / canonical zero frames |
 | `n` | Done | Done | Done | Done | Partial | Pass-through | Pass-through | Partial | ScriptNum-normalized B frame |
 | `thresh` | Done | Done | Done | Done | Partial | Exact-count candidate | Canonical/overcomplete choice | Partial | Local accumulator frame |
-| `multi` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
+| `multi` | Done | Done | Done | Done | Partial | Exact-count signatures | Canonical empty signatures | Partial | Local CHECKMULTISIG frame |
 | `multi_a` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 
 Key-leaf candidates follow the BIP 379 serialized witness rows: `pk_k` uses
@@ -251,6 +251,26 @@ for every addition. The accumulator is carried as canonical Script-number
 bytes; the final literal `k` and `OP_EQUAL` proof uses byte equality directly.
 It does not infer four-byte arithmetic decodability from typing and does not
 claim recursive soundness for generated child witnesses.
+
+Legacy `multi(k, keys)` candidates use the same exact-count table over keys in
+source order. Each available signature is a HASSIG satisfaction choice and an
+empty block is its dissatisfaction choice. Source-order processing makes an
+equal-cost tie retain earlier keys. Finalization prepends the historical empty
+dummy and reverses the selected one-item signature blocks, producing wire order
+`0 sig...` in source key order and top-first runtime order with signatures above
+the dummy. The canonical dissatisfaction contains `k + 1` empty items. Raw
+`k = 0`, `k > n`, and `n > 20` forms have no candidates on either side.
+
+The local legacy multisignature execution contract proves the exact
+`compileKeyPushes` frame and decoder result, including canonical count
+encodings, reversed top-first public keys, selected top-first signatures, the
+empty dummy, and the untouched stack suffix. Its public premises retain the
+non-Tapscript version, 20-key and threshold bounds, exact signature count,
+`checkMultiSigFor` result, and the true-or-NULLFAIL condition. NULLDUMMY is
+discharged by the canonical empty dummy; the all-empty dissatisfaction also
+discharges NULLFAIL. This does not prove that the candidate table's chosen
+signatures form the key subsequence accepted by the caller-supplied ECDSA
+oracle, and it does not provide recursive generated-witness soundness.
 
 `HasType ctx` covers all rows, and `inferType ctx` has soundness, completeness,
 uniqueness, and success/reflection theorems. A constructor-exhaustive fixture
@@ -506,7 +526,7 @@ Satisfaction now has executable candidate rows for constants, `pk_k`, `pk_h`,
 their `c` wrappers, timelocks, all four hashlocks, linear wrapper propagation
 through `a`, `s`, `v`, and `n`, guarded wrappers `d` and `j`, and straight-line
 connectives `and_v`, `and_b`, and `or_b`, plus conditional connectives `or_c`,
-`or_d`, `or_i`, and `andor`, and thresholds. Paired
+`or_d`, `or_i`, and `andor`, thresholds, and legacy `multi`. Paired
 candidates retain HASSIG, DONTUSE, canonical origin, and additive witness cost
 metadata while the public projection returns only usable witnesses. Signature
 and key material use serialized witness order, and timelock availability reuses
@@ -528,8 +548,10 @@ straight-line and conditional connectives have the local arbitrary-stack
 contracts described above, without a recursive theorem tying every generated
 candidate to child execution. Thresholds have the local accumulator contract
 described above, without a recursive theorem connecting their selected table
-entry to every child execution. `multi` and `multi_a` candidate selection
-remain unsupported and return `none`.
+entry to every child execution. Legacy `multi` has the local canonical decoder
+and CHECKMULTISIG execution contract described above, without a theorem tying
+the selected candidate to an accepted signature/key subsequence. `multi_a`
+candidate selection remains unsupported and returns `none`.
 
 ## Surface Constructor Matrix
 
