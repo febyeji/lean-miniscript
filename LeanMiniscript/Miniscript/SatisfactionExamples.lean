@@ -199,8 +199,77 @@ example : satisfy (.older 60) unavailableEnv = none := by native_decide
 example : satisfy (.after 90) unavailableEnv = some [] := by native_decide
 example : satisfy (.after 110) unavailableEnv = none := by native_decide
 
-/-- Basic scope does not silently claim support for wrappers or connectives. -/
-example : satisfy (.n .one) unavailableEnv = none := by rfl
+/-- Linear wrappers preserve the child's serialized witness and complete
+    satisfaction candidate metadata. -/
+example :
+    satisfactionCandidates (.a (.sha256 hashTarget)) preimageEnv =
+        satisfactionCandidates (.sha256 hashTarget) preimageEnv ∧
+      satisfactionCandidates (.s (.sha256 hashTarget)) preimageEnv =
+        satisfactionCandidates (.sha256 hashTarget) preimageEnv ∧
+      satisfactionCandidates (.n (.sha256 hashTarget)) preimageEnv =
+        satisfactionCandidates (.sha256 hashTarget) preimageEnv := by
+  exact ⟨rfl, rfl, rfl⟩
+
+/-- Raw hash dissatisfaction remains canonical DONTUSE through `a`, `s`, and
+    `n`, while their public dissatisfaction projections remain unavailable. -/
+example :
+    (satisfactionCandidates (.a (.sha256 hashTarget)) unavailableEnv).dsat =
+        CandidateResult.dontUse [nonPreimage32] false .canonical ∧
+      (satisfactionCandidates (.s (.sha256 hashTarget)) unavailableEnv).dsat =
+        CandidateResult.dontUse [nonPreimage32] false .canonical ∧
+      (satisfactionCandidates (.n (.sha256 hashTarget)) unavailableEnv).dsat =
+        CandidateResult.dontUse [nonPreimage32] false .canonical ∧
+      dissatisfy (.a (.sha256 hashTarget)) unavailableEnv = none ∧
+      dissatisfy (.s (.sha256 hashTarget)) unavailableEnv = none ∧
+      dissatisfy (.n (.sha256 hashTarget)) unavailableEnv = none := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- Wrapper `v` retains only satisfaction; a child's raw dissatisfaction is
+    discarded instead of leaking through either projection. -/
+example :
+    (satisfactionCandidates (.v (.sha256 hashTarget)) preimageEnv).sat =
+        (satisfactionCandidates (.sha256 hashTarget) preimageEnv).sat ∧
+      (satisfactionCandidates (.v (.sha256 hashTarget)) unavailableEnv).dsat =
+        .impossible ∧
+      dissatisfy (.v (.sha256 hashTarget)) unavailableEnv = none := by
+  exact ⟨rfl, rfl, rfl⟩
+
+/-- Wrapper `a` restores the protected element above a hash result. -/
+example {preimage : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (matching : (HashLock.sha256 hashTarget).Matches preimage) :
+    WExecution (.a (.sha256 hashTarget)) [preimage] trueElement
+      .savedFirst flags ctx := by
+  simpa [HashLock.fragment] using
+    (BExecution.a (hash_satisfaction_execution matching))
+
+/-- Wrapper `s` requires one child argument and leaves its result above the
+    protected element. -/
+example {preimage : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (matching : (HashLock.sha256 hashTarget).Matches preimage) :
+    WExecution (.s (.sha256 hashTarget)) [preimage] trueElement
+      .resultFirst flags ctx := by
+  simpa [HashLock.fragment] using
+    (BExecution.s (hash_satisfaction_execution matching))
+
+/-- Wrapper `v` consumes the truthy result and leaves the arbitrary suffix
+    unchanged. -/
+example {flags : ScriptFlags} {ctx : TxContext} :
+    VExecution (.v .one) [] flags ctx := by
+  exact BExecution.v (one_execution flags ctx) (by native_decide)
+
+/-- Wrapper `n` needs an explicit Script-number decode even when the child
+    result's truth value is already known. -/
+example :
+    BExecutionOutcome (.n .one) [] true ({} : ScriptFlags)
+      unavailableEnv.txCtx := by
+  apply BExecution.nOutcome (one_execution {} unavailableEnv.txCtx)
+      (value := 1)
+  · rfl
+  · decide
+
+/-- Conditional wrappers and connectives remain outside this slice. -/
+example : satisfy (.d (.v .one)) unavailableEnv = none := by rfl
+example : satisfy (.j (.sha256 hashTarget)) unavailableEnv = none := by rfl
 example : dissatisfy (.or_i .zero .one) unavailableEnv = none := by rfl
 
 end LeanMiniscript.Miniscript

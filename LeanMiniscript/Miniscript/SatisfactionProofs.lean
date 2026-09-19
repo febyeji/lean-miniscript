@@ -79,6 +79,14 @@ def WExecution (fragment : CoreFragment) (args : Stack) (result : StackElement)
     ExecutesStackFrame (compile fragment) (saved :: args)
       (order.outputs saved result) flags ctx
 
+/-- A W-type execution together with the truth value of its B child result.
+    The protected stack element is kept separate from that truth value. -/
+def WExecutionOutcome (fragment : CoreFragment) (args : Stack)
+    (expected : Bool) (order : WStackOrder) (flags : ScriptFlags)
+    (ctx : TxContext) : Prop :=
+  ∃ result, WExecution fragment args result order flags ctx ∧
+    castToBool result = expected
+
 /-- A B-type execution together with the truth value required by satisfaction
     or dissatisfaction. -/
 def BExecutionOutcome (fragment : CoreFragment) (args : Stack) (expected : Bool)
@@ -145,6 +153,16 @@ theorem BExecution.v
   simpa [BExecution, VExecution, ExecutesStackFrame, compile,
     compileWithKeyHash] using Eval.append fragmentExec verifyExec
 
+/-- A satisfying B outcome lifts through `v`; there is intentionally no false
+    counterpart because a V fragment aborts instead of dissatisfying. -/
+theorem BExecutionOutcome.v
+    {fragment : CoreFragment} {args : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : BExecutionOutcome fragment args true flags ctx) :
+    VExecution (.v fragment) args flags ctx := by
+  obtain ⟨result, frame, truth⟩ := executed
+  exact frame.v truth
+
 /-- Wrapper `a` protects one main-stack item on the alternate stack while its
     B child executes, then restores that item above the child's result. -/
 theorem BExecution.a
@@ -162,6 +180,81 @@ theorem BExecution.a
   have bodyExec := Eval.append fragmentExec restoreExec
   simpa [BExecution, WExecution, WStackOrder.outputs, ExecutesStackFrame,
     compile, compileWithKeyHash] using Eval.toAltStackNext bodyExec
+
+/-- Satisfaction and dissatisfaction truth values pass through `a` while its
+    protected element is restored above the result. -/
+theorem BExecutionOutcome.a
+    {fragment : CoreFragment} {args : Stack} {expected : Bool}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : BExecutionOutcome fragment args expected flags ctx) :
+    WExecutionOutcome (.a fragment) args expected .savedFirst flags ctx := by
+  obtain ⟨result, frame, truth⟩ := executed
+  exact ⟨result, frame.a, truth⟩
+
+/-- Wrapper `s` swaps one protected element with its child's single argument.
+    The singleton input is the semantic content of the wrapper's `o` typing
+    premise; raw candidate propagation alone does not establish this shape. -/
+theorem BExecution.s
+    {fragment : CoreFragment} {argument result : StackElement}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : BExecution fragment [argument] result flags ctx) :
+    WExecution (.s fragment) [argument] result .resultFirst flags ctx := by
+  intro saved rest altStack
+  have childExec := executed (saved :: rest) altStack
+  simpa [BExecution, WExecution, WStackOrder.outputs, ExecutesStackFrame,
+    compile, compileWithKeyHash] using
+    (Eval.swap saved argument rest altStack (compile fragment) flags ctx
+      (.success (result :: saved :: rest) altStack) childExec)
+
+/-- A singleton-argument B outcome passes through `s`, with the result above
+    the protected element. -/
+theorem BExecutionOutcome.s
+    {fragment : CoreFragment} {argument : StackElement} {expected : Bool}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : BExecutionOutcome fragment [argument] expected flags ctx) :
+    WExecutionOutcome (.s fragment) [argument] expected .resultFirst flags ctx := by
+  obtain ⟨result, frame, truth⟩ := executed
+  exact ⟨result, frame.s, truth⟩
+
+/-- Canonical boolean stack elements round-trip through Script truthiness. -/
+@[simp] theorem castToBool_boolToElement (value : Bool) :
+    castToBool (boolToElement value) = value := by
+  cases value <;> native_decide
+
+/-- Wrapper `n` executes `OP_0NOTEQUAL` on the child's exact result. The
+    explicit four-byte decode premise is required because B truthiness alone
+    does not imply that Script-number decoding succeeds. -/
+theorem BExecution.n
+    {fragment : CoreFragment} {args : Stack} {operand : StackElement}
+    {value : Int} {flags : ScriptFlags} {ctx : TxContext}
+    (executed : BExecution fragment args operand flags ctx)
+    (decoded : decodeScriptNum operand flags.minimalData
+      maxArithmeticScriptNumBytes = .ok value) :
+    BExecution (.n fragment) args (boolToElement (value != 0)) flags ctx := by
+  intro rest altStack
+  have childExec := executed rest altStack
+  have normalizeExec :
+      Eval [.op .OP_0NOTEQUAL] (operand :: rest) altStack flags ctx
+        (.success (boolToElement (value != 0) :: rest) altStack) :=
+    Eval.zeroNotEqual operand value rest altStack [] flags ctx
+      (.success (boolToElement (value != 0) :: rest) altStack) decoded
+      (Eval.done (stack := boolToElement (value != 0) :: rest)
+        (altStack := altStack))
+  simpa [BExecution, ExecutesStackFrame, compile, compileWithKeyHash] using
+    Eval.append childExec normalizeExec
+
+/-- The normalized `n` result has the requested truth value when the decoded
+    integer's zero test agrees with that value. -/
+theorem BExecution.nOutcome
+    {fragment : CoreFragment} {args : Stack} {operand : StackElement}
+    {value : Int} {expected : Bool} {flags : ScriptFlags} {ctx : TxContext}
+    (executed : BExecution fragment args operand flags ctx)
+    (decoded : decodeScriptNum operand flags.minimalData
+      maxArithmeticScriptNumBytes = .ok value)
+    (truth : (value != 0) = expected) :
+    BExecutionOutcome (.n fragment) args expected flags ctx := by
+  refine ⟨boolToElement (value != 0), executed.n decoded, ?_⟩
+  exact (castToBool_boolToElement (value != 0)).trans truth
 
 /-! ## Primitive execution contracts -/
 
