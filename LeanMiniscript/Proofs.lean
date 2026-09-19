@@ -5,6 +5,7 @@ import LeanMiniscript.Miniscript.MalleabilityInferenceProofs
 import LeanMiniscript.Miniscript.Conformance
 import LeanMiniscript.Miniscript.Structural
 import LeanMiniscript.Miniscript.CompileConcreteProofs
+import LeanMiniscript.Miniscript.SatisfactionCandidateProofs
 import LeanMiniscript.Miniscript.SatisfactionProofs
 import LeanMiniscript.Miniscript.SurfaceTextProofs
 import LeanMiniscript.Properties.ResourceBoundsProofs

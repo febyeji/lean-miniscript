@@ -10,6 +10,7 @@ import LeanMiniscript.Extraction.SignatureEncodingCoreExamples
 import LeanMiniscript.Miniscript.CompileExamples
 import LeanMiniscript.Miniscript.ContextSafetyExamples
 import LeanMiniscript.Miniscript.MalleabilityExamples
+import LeanMiniscript.Miniscript.SatisfactionCandidateProofExamples
 import LeanMiniscript.Miniscript.SatisfactionExamples
 import LeanMiniscript.Miniscript.SurfaceTextExamples
 import LeanMiniscript.Miniscript.SurfaceTextRoundTripExamples

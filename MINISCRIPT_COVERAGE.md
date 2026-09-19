@@ -246,6 +246,17 @@ exact four-byte Script-number decode evidence for `k` under both minimal-data
 modes. Raw `k = 0`, empty, `k > n`, and arithmetic-unsafe `k ≥ 2^31` forms
 have no candidates; the type system already excludes the arity failures.
 
+The proof-only candidate provenance layer shows that a usable `select` output
+came unchanged from one input, a usable `combine` output decomposes into both
+usable child witnesses, and selector, non-canonical, runtime-top, and legacy
+multisignature-finalizer transforms preserve their exact witness relation. Its
+`ChoiceTrace` theorem recovers one source-order child witness for each usable
+exact-count output and proves that reversing the combined serialized witness
+produces the flattened source-order runtime frames. A usable threshold
+dissatisfaction is traced only to the canonical zero-satisfaction head; no
+converse is claimed for retained DONTUSE or overcomplete rows. This is
+candidate provenance, not a recursive child-execution soundness theorem.
+
 The local threshold execution contract covers a nonempty B child followed by
 W children and `OP_ADD`. It supports both saved-first and result-first W stack
 orders, and requires an explicit successful `decodeBinaryScriptNums` premise
