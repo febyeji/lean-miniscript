@@ -151,7 +151,7 @@ path-sensitive peak analysis remains unfinished.
 | `j` | Done | Done | Done | Done | Partial | Pass-through | Guarded choice | Partial | Nonempty child / canonical zero frames |
 | `n` | Done | Done | Done | Done | Partial | Pass-through | Pass-through | Partial | ScriptNum-normalized B frame |
 | `thresh` | Done | Done | Done | Done | Partial | Exact-count candidate | Canonical/overcomplete choice | Partial | Generated exact-count frame |
-| `multi` | Done | Done | Done | Done | Partial | Exact-count signatures | Canonical empty signatures | Partial | Local CHECKMULTISIG frame |
+| `multi` | Done | Done | Done | Done | Partial | Exact-count signatures | Canonical empty signatures | Partial | Generated exact-count CHECKMULTISIG frame |
 | `multi_a` | Done | Done | Done | Done | Partial | Exact-count signatures | Canonical empty signatures | Partial | Generated exact-count CHECKSIGADD frame |
 
 Key-leaf candidates follow the BIP 379 serialized witness rows: `pk_k` uses
@@ -288,9 +288,11 @@ empty dummy, and the untouched stack suffix. Its public premises retain the
 non-Tapscript version, 20-key and threshold bounds, exact signature count,
 `checkMultiSigFor` result, and the true-or-NULLFAIL condition. NULLDUMMY is
 discharged by the canonical empty dummy; the all-empty dissatisfaction also
-discharges NULLFAIL. This does not prove that the candidate table's chosen
-signatures form the key subsequence accepted by the caller-supplied ECDSA
-oracle, and it does not provide recursive generated-witness soundness.
+discharges NULLFAIL. The strong generated contract turns the exact-count trace
+into an ordered embedding against the reversed runtime keys. Its greedy proof
+handles both rejection of skipped keys and acceptance against an earlier key,
+then connects selected satisfaction and canonical all-empty dissatisfaction to
+the local execution contract under well-formed modeled P2WSH assumptions.
 
 Tapscript `multi_a(k, keys)` uses the exact-count table directly in source key
 order. An available signature contributes a one-item HASSIG satisfaction and
@@ -590,10 +592,9 @@ version-specific byte checks. Guarded wrappers `d` and `j` and the supported
 straight-line and conditional connectives have both local arbitrary-stack
 contracts and strong generated-candidate closure. Thresholds connect their
 selected exact-count table entry to source-order child execution. Legacy
-`multi` has the local canonical decoder
-and CHECKMULTISIG execution contract described above, without a theorem tying
-the selected candidate to an accepted signature/key subsequence. Tapscript
-`multi_a` additionally connects selected exact-count slots to the local
+`multi` connects selected exact-count signatures and canonical empty
+dissatisfaction to its CHECKMULTISIG contract under well-formed modeled P2WSH
+contexts. Tapscript `multi_a` connects selected exact-count slots to the local
 CHECKSIG/CHECKSIGADD accumulator contract under well-formed modeled contexts.
 
 The proof-only Script-number layer proves canonical nonnegative round-trip and
@@ -638,13 +639,15 @@ non-canonical satisfaction-selector dissatisfaction as a real execution path.
 Candidate selection proofs preserve the executable left-to-right tie order.
 `thresh` aligns exact-count source choices with a Bdu head and Wdu tail,
 reconstructs the selected witness frame and modifiers, and closes usable
-count-`k` satisfaction plus canonical all-false dissatisfaction. `multi_a`
+count-`k` satisfaction plus canonical all-false dissatisfaction. Legacy
+`multi` aligns selected signatures with reversed CHECKMULTISIG keys, retains
+the Bndu nonempty-input fact, and closes canonical all-empty dissatisfaction.
+`multi_a`
 uses the same source-order choice trace to build bounded checked
 signature slots, keeps the first CHECKSIG separate from the CHECKSIGADD tail,
 and closes exact-count satisfaction plus canonical all-empty dissatisfaction.
 The executable arithmetic guard remains explicit because well-formedness alone
-does not imply a four-byte accumulator. Legacy `multi` closure remains
-unfinished.
+does not imply a four-byte accumulator.
 
 ## Surface Constructor Matrix
 
