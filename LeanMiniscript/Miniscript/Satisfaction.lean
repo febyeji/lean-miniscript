@@ -464,6 +464,136 @@ def select (left right : CandidatePair) : CandidatePair where
     (select left right).dsat = left.dsat.select right.dsat := by
   rfl
 
+/-- Extend an exact-count candidate table by one child. Entry `j` records the
+    best candidate that satisfies exactly `j` children processed so far. The
+    dissatisfaction transition keeps the count, while the satisfaction
+    transition increments it. `CandidateResult.select` applies the BIP 379
+    non-malleability rules independently within each count state.
+
+    `previous.combine child` preserves fragment execution order: earlier
+    children execute first, while the resulting witness remains in serialized
+    (reverse runtime) order. -/
+def extendCounts (states : List CandidateResult)
+    (child : CandidatePair) : List CandidateResult :=
+  List.zipWith CandidateResult.select
+    (states.map (fun previous => previous.combine child.dsat) ++ [.impossible])
+    (.impossible :: states.map (fun previous => previous.combine child.sat))
+
+/-- Dynamic-programming table whose entry `j` is the selected candidate for
+    satisfying exactly `j` children. The empty prefix has one possible state:
+    zero satisfactions with the empty witness. -/
+def countCandidates (children : List CandidatePair) : List CandidateResult :=
+  children.foldl extendCounts [.usable [] false]
+
+/-- Select the candidate satisfying exactly `count` children. An index beyond
+    the table is impossible. -/
+def selectExactly (count : Nat)
+    (children : List CandidatePair) : CandidateResult :=
+  (countCandidates children).getD count .impossible
+
+@[simp] theorem extendCounts_length
+    (states : List CandidateResult) (child : CandidatePair) :
+    (extendCounts states child).length = states.length + 1 := by
+  simp [extendCounts]
+
+@[simp] theorem countCandidates_nil :
+    countCandidates [] = [.usable [] false] := by
+  rfl
+
+@[simp] theorem countCandidates_append
+    (children : List CandidatePair) (child : CandidatePair) :
+    countCandidates (children ++ [child]) =
+      extendCounts (countCandidates children) child := by
+  simp [countCandidates, List.foldl_append]
+
+@[simp] theorem countCandidates_length (children : List CandidatePair) :
+    (countCandidates children).length = children.length + 1 := by
+  unfold countCandidates
+  have foldLength : ∀ (remaining : List CandidatePair)
+      (states : List CandidateResult),
+      (remaining.foldl extendCounts states).length =
+        states.length + remaining.length := by
+    intro remaining
+    induction remaining with
+    | nil => intro states; simp
+    | cons child remaining ih =>
+        intro states
+        simp only [List.foldl_cons]
+        rw [ih, extendCounts_length]
+        simp [Nat.add_comm, Nat.add_left_comm]
+  simpa [Nat.add_comm] using foldLength children [.usable [] false]
+
+@[simp] theorem selectExactly_eq_getD
+    (count : Nat) (children : List CandidatePair) :
+    selectExactly count children =
+      (countCandidates children).getD count .impossible := by
+  rfl
+
+/-- Within the table bounds, exact-count selection is ordinary indexed
+    retrieval. -/
+theorem selectExactly_eq_getElem
+    (count : Nat) (children : List CandidatePair)
+    (inBounds : count < (countCandidates children).length) :
+    selectExactly count children = (countCandidates children)[count] := by
+  rw [selectExactly, List.getD_eq_getElem?_getD,
+    List.getElem?_eq_getElem inBounds]
+  rfl
+
+/-- More requested satisfactions than children is an impossible state. -/
+theorem selectExactly_eq_impossible_of_lt
+    (count : Nat) (children : List CandidatePair)
+    (tooLarge : children.length < count) :
+    selectExactly count children = .impossible := by
+  rw [selectExactly, List.getD_eq_getElem?_getD,
+    List.getElem?_eq_none]
+  · rfl
+  · rw [countCandidates_length]
+    omega
+
+/-- Appending one child performs exactly one table transition before indexed
+    retrieval. -/
+@[simp] theorem selectExactly_append
+    (count : Nat) (children : List CandidatePair) (child : CandidatePair) :
+    selectExactly count (children ++ [child]) =
+      (extendCounts (countCandidates children) child).getD count .impossible := by
+  simp [selectExactly]
+
+@[simp] theorem selectExactly_nil_zero :
+    selectExactly 0 [] = .usable [] false := by
+  rfl
+
+@[simp] theorem selectExactly_nil_succ (count : Nat) :
+    selectExactly (count + 1) [] = .impossible := by
+  simp [selectExactly]
+
+@[simp] theorem selectExactly_one_zero (child : CandidatePair) :
+    selectExactly 0 [child] = child.dsat := by
+  cases child with
+  | mk sat dsat =>
+      cases dsat with
+      | impossible => rfl
+      | candidate value =>
+          cases value with
+          | mk witness hasSig status origin =>
+              cases status <;> cases origin <;> simp [selectExactly,
+                countCandidates, extendCounts, CandidateResult.combine,
+                CandidateResult.usable, SatisfactionCandidate.combine,
+                CandidateStatus.combine, CandidateOrigin.combine]
+
+@[simp] theorem selectExactly_one_one (child : CandidatePair) :
+    selectExactly 1 [child] = child.sat := by
+  cases child with
+  | mk sat dsat =>
+      cases sat with
+      | impossible => rfl
+      | candidate value =>
+          cases value with
+          | mk witness hasSig status origin =>
+              cases status <;> cases origin <;> simp [selectExactly,
+                countCandidates, extendCounts, CandidateResult.combine,
+                CandidateResult.usable, SatisfactionCandidate.combine,
+                CandidateStatus.combine, CandidateOrigin.combine]
+
 end CandidatePair
 
 /-- Construct the BIP 379 key row. `keyTail` is empty for `pk_k` and contains
