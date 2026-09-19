@@ -300,14 +300,14 @@ def SatisfactionCorrectnessSurface : Prop :=
 
 /-- Target contract for core dissatisfaction. The returned witness must execute
     successfully to a clean false result rather than aborting. The key premise
-    covers the signature fragment currently supported by `dissatisfy`.
+    covers both key leaves currently propagated through wrapper `c`.
     TODO(theorem): extend encoding premises alongside composite dissatisfaction. -/
 def DissatisfactionCorrectnessCore : Prop :=
   ∀ {ctx : ScriptContext} {m : CoreFragment} {env : SatEnv}
       {witness : Witness} {flags : ScriptFlags},
     ValidDissatisfiableMiniscript ctx m →
     env.Sound →
-    (∀ key, m = .c (.pk_k key) →
+    (∀ key, (m = .c (.pk_k key) ∨ m = .c (.pk_h key)) →
       checkSigEncodingFor flags env.txCtx.sigVersion falseElement key.bytes = .ok ()) →
     ModeledContextVersion ctx env.txCtx →
     ModeledContextFlags ctx flags →
@@ -320,7 +320,8 @@ def DissatisfactionCorrectnessSurface : Prop :=
       {witness : Witness} {flags : ScriptFlags},
     ValidDissatisfiableSurfaceMiniscript ctx m →
     env.Sound →
-    (∀ key, desugar m = .c (.pk_k key) →
+    (∀ key,
+      (desugar m = .c (.pk_k key) ∨ desugar m = .c (.pk_h key)) →
       checkSigEncodingFor flags env.txCtx.sigVersion falseElement key.bytes = .ok ()) →
     ModeledContextVersion ctx env.txCtx →
     ModeledContextFlags ctx flags →

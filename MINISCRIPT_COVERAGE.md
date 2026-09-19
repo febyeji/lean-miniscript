@@ -128,14 +128,14 @@ path-sensitive peak analysis remains unfinished.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `zero` | Done | Done | Done | Done | Partial | Missing | Basic | Partial | Basic dissatisfaction |
 | `one` | Done | Done | Done | Done | Partial | Basic | Missing | Partial | Basic satisfaction |
-| `pk_k` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Example |
-| `pk_h` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
+| `pk_k` | Done | Done | Done | Done | Partial | Leaf candidate | Leaf candidate | Partial | K frame; `c` soundness |
+| `pk_h` | Done | Done | Done | Done | Partial | Leaf candidate | Leaf candidate | Partial | K frame; `c` soundness |
 | `older` | Done | Done | Done | Done | Partial | Basic | Missing | Partial | Basic satisfaction |
 | `after` | Done | Done | Done | Done | Partial | Basic | Missing | Partial | Basic satisfaction |
-| `sha256` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
-| `hash256` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
-| `ripemd160` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
-| `hash160` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
+| `sha256` | Done | Done | Done | Done | Partial | Basic | DONTUSE candidate | Partial | Exact sat/dsat frames |
+| `hash256` | Done | Done | Done | Done | Partial | Basic | DONTUSE candidate | Partial | Exact sat/dsat frames |
+| `ripemd160` | Done | Done | Done | Done | Partial | Basic | DONTUSE candidate | Partial | Exact sat/dsat frames |
+| `hash160` | Done | Done | Done | Done | Partial | Basic | DONTUSE candidate | Partial | Exact sat/dsat frames |
 | `and_v` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `and_b` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `or_b` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
@@ -145,7 +145,7 @@ path-sensitive peak analysis remains unfinished.
 | `andor` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `a` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Example chain only |
 | `s` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
-| `c` | Done | Done | Done | Done | Partial | Basic (`c(pk_k)`) | Basic (`c(pk_k)`) | Partial | Basic soundness |
+| `c` | Done | Done | Done | Done | Partial | Basic (key leaves) | Basic (key leaves) | Partial | Basic soundness |
 | `d` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `v` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Example chain only |
 | `j` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
@@ -153,6 +153,19 @@ path-sensitive peak analysis remains unfinished.
 | `thresh` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `multi` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `multi_a` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
+
+Key-leaf candidates follow the BIP 379 serialized witness rows: `pk_k` uses
+`sig`/`0`, while `pk_h` uses `sig key`/`0 key`. Wrapper `c` preserves the
+child pair and supplies the pending signature to the K execution frame. Hash
+preimages must be exactly 32 bytes. Their canonical 32-byte nonpreimage
+dissatisfactions have an exact false execution proof but remain DONTUSE, so
+they are retained by the raw candidate API and omitted by the public usable
+witness projection.
+
+Candidate generation is total over the raw AST, so structural `c` propagation
+also computes for ill-typed terms. Semantic correctness claims require the
+existing context-valid typing boundary and prove `c` execution only for K
+children.
 
 `HasType ctx` covers all rows, and `inferType ctx` has soundness, completeness,
 uniqueness, and success/reflection theorems. A constructor-exhaustive fixture
@@ -404,20 +417,23 @@ an active runtime failure takes precedence, while successful execution through
 EOF becomes `UNBALANCED_CONDITIONAL`. Relational, executable, and fixture-level
 regressions cover active, inactive, and repeated-`ELSE` cases.
 
-Satisfaction now has an executable first slice for `one`, `c(pk_k)`, `older`,
-and `after`; dissatisfaction covers `zero` and `c(pk_k)`. Signature generation
-uses serialized witness order, and timelock availability reuses the exact
-`TxContext` predicates from Script execution. Soundness lemmas connect returned
-witnesses to `Accepts` or `Dissatisfies`; timelock lemmas expose the numeric
-well-formedness premises that the eventual validity theorem must discharge.
-`SatEnv.Sound` explicitly records that the canonical empty signature fails.
-Basic satisfaction soundness additionally requires `SatEnv.EncodingSound` for
-supplied signatures and keys under the chosen flags; basic dissatisfaction
-soundness requires the fragment's empty-signature/key pair to pass its selected
-version-specific byte checks. Both contracts require execution-version agreement
-with the Miniscript context; `SatEnv.Sound` uses version-aware verifier dispatch.
-Hashlocks, other wrappers, connectives, thresholds, and multisignature
-candidate selection remain unsupported and return `none`.
+Satisfaction now has executable candidate rows for constants, `pk_k`, `pk_h`,
+their `c` wrappers, timelocks, and all four hashlocks. Paired candidates retain
+HASSIG, DONTUSE, canonical origin, and additive witness cost metadata while the
+public projection returns only usable witnesses. Signature and key material use
+serialized witness order, and timelock availability reuses the exact `TxContext`
+predicates from Script execution. Hash preimages and nonpreimages are required
+to be exactly 32 bytes; canonical hash dissatisfactions remain available to
+recursive proofs as DONTUSE candidates.
+
+Arbitrary-stack soundness lemmas connect returned B witnesses to `Accepts` or
+`Dissatisfies`; timelock lemmas expose the numeric well-formedness premises that
+the eventual validity theorem must discharge. `SatEnv.Sound` records signature,
+preimage, and nonpreimage obligations at the cryptographic boundary. Basic key
+satisfaction additionally requires `SatEnv.EncodingSound`, and key
+dissatisfaction requires the empty-signature/key pair to pass the selected
+version-specific byte checks. Other wrappers, connectives, thresholds, and
+multisignature candidate selection remain unsupported and return `none`.
 
 ## Surface Constructor Matrix
 
