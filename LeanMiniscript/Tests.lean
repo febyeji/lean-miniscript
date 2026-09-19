@@ -12,6 +12,7 @@ import LeanMiniscript.Miniscript.ContextSafetyExamples
 import LeanMiniscript.Miniscript.MalleabilityExamples
 import LeanMiniscript.Miniscript.SatisfactionCandidateProofExamples
 import LeanMiniscript.Miniscript.SatisfactionGeneratedExamples
+import LeanMiniscript.Miniscript.SatisfactionGeneratedRecursiveExamples
 import LeanMiniscript.Miniscript.SatisfactionExamples
 import LeanMiniscript.Miniscript.SurfaceTextExamples
 import LeanMiniscript.Miniscript.SurfaceTextRoundTripExamples

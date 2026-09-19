@@ -649,6 +649,17 @@ and closes exact-count satisfaction plus canonical all-empty dissatisfaction.
 The executable arithmetic guard remains explicit because well-formedness alone
 does not imply a four-byte accumulator.
 
+`supportsGeneratedContract_of_wellFormed_hasType` and its mutually recursive
+list counterpart now assemble those local results across every `CoreFragment`
+typing constructor. Given well-formedness, `HasType`, modeled execution
+version/flags, and sound material/encoding environments, each usable witness
+selected by `satisfactionCandidates` satisfies `GeneratedContract` on both
+projections. The theorem preserves the source-order list relation needed by
+`thresh`; its arithmetic-valid branch uses the exact-count contract, while its
+arithmetic-invalid branch has no usable candidate. It proves support for
+selected witnesses, rather than candidate existence or the public acceptance
+targets below.
+
 ## Surface Constructor Matrix
 
 | Constructor | Validation via core | Typing via core | Desugaring/compilation | Parser/pretty-printer | Evaluation | Satisfy/dissatisfy | Surface theorem |
