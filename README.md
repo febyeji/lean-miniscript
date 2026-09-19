@@ -106,12 +106,14 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   documented subset rather than a complete Bitcoin Core interpreter.
 - Basic candidate generation is executable for constants, key leaves and their
   `c` wrappers, timelocks, all four 32-byte hashlocks, and linear propagation
-  through `a`, `s`, `v`, and `n`. Paired candidates track HASSIG, DONTUSE,
-  canonical origin, and additive witness cost. Key leaves have exact K-frame
-  lemmas; B leaves and well-typed `c` wrappers have arbitrary-stack lemmas
-  leading to clean acceptance or dissatisfaction. Wrapper lemmas additionally
-  prove the two exact W stack orders, truthy B-to-V conversion, and `n`'s
-  explicit Script-number normalization boundary.
+  through `a`, `s`, `v`, and `n`, plus the guarded `d` and `j` rows. Paired
+  candidates track HASSIG, DONTUSE, canonical origin, and additive witness
+  cost. Key leaves have exact K-frame lemmas; B leaves and well-typed `c`
+  wrappers have arbitrary-stack lemmas leading to clean acceptance or
+  dissatisfaction. Wrapper lemmas additionally prove the two exact W stack
+  orders, truthy B-to-V conversion, `n`'s explicit Script-number normalization
+  boundary, and local guarded execution contracts for `d` and `j`. Recursive
+  generated-witness soundness for these guarded wrappers remains unfinished.
 - General soundness, full satisfaction coverage, non-malleability, small-step
   semantics, cryptographic correctness proofs, executable ECDSA verification,
   unsupported Core failure classes,

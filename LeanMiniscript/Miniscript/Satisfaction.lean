@@ -485,9 +485,7 @@ def hashCandidates (lock : HashLock) (env : SatEnv) : CandidatePair where
     | some preimage => .usable [preimage] false
   dsat := .dontUse [env.nonPreimageFor lock] false .canonical
 
-/-- Compute the candidate pair for the supported leaf rows. Wrapper `c` and
-    the linear wrappers `a`, `s`, and `n` preserve the complete child pair;
-    `v` preserves only satisfaction because V fragments cannot dissatisfy.
+/-- Compute the candidate pair for the supported leaf and wrapper rows.
     Unsupported rows are explicitly impossible on both sides. -/
 @[simp] def satisfactionCandidates : CoreFragment → SatEnv → CandidatePair
   | .zero, _ => { dsat := .usable [] false }
@@ -509,6 +507,15 @@ def hashCandidates (lock : HashLock) (env : SatEnv) : CandidatePair where
   | .s fragment, env => satisfactionCandidates fragment env
   | .v fragment, env => { sat := (satisfactionCandidates fragment env).sat }
   | .n fragment, env => satisfactionCandidates fragment env
+  | .d fragment, env =>
+      { sat := (satisfactionCandidates fragment env).sat.withSelector trueElement
+        dsat := .usable [falseElement] false }
+  | .j fragment, env =>
+      { sat := (satisfactionCandidates fragment env).sat
+        dsat := (CandidateResult.usable [falseElement] false).select
+          ((satisfactionCandidates fragment env).dsat
+            |>.requireNonemptyRuntimeTop
+            |>.markNonCanonical) }
   | _, _ => {}
 
 /-- Project the usable satisfaction candidate. This is the leaf/composition
@@ -714,8 +721,87 @@ theorem satisfactionCandidates_dsat_witness
     dissatisfy (.n fragment) env = dissatisfy fragment env := by
   rfl
 
+/-- Wrapper `d` appends its canonical true branch selector to every possible
+    child satisfaction and has one canonical false dissatisfaction. -/
+@[simp] theorem satisfactionCandidates_d
+    (fragment : CoreFragment) (env : SatEnv) :
+    satisfactionCandidates (.d fragment) env =
+      { sat := (satisfactionCandidates fragment env).sat.withSelector trueElement
+        dsat := .usable [falseElement] false } := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_d_sat
+    (fragment : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.d fragment) env).sat =
+      (satisfactionCandidates fragment env).sat.withSelector trueElement := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_d_dsat
+    (fragment : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.d fragment) env).dsat =
+      .usable [falseElement] false := by
+  rfl
+
+@[simp] theorem satisfy_d (fragment : CoreFragment) (env : SatEnv) :
+    satisfy (.d fragment) env =
+      (satisfy fragment env).map (Witness.withSelector · trueElement) := by
+  cases selected : (satisfactionCandidates fragment env).sat with
+  | impossible =>
+      simp [satisfy, selected, CandidateResult.withSelector,
+        CandidateResult.usableWitness?]
+  | candidate value =>
+      cases value with
+      | mk witness hasSig status origin =>
+          cases status <;>
+            simp [satisfy, selected, CandidateResult.withSelector,
+              CandidateResult.usableWitness?, SatisfactionCandidate.withSelector]
+
+@[simp] theorem dissatisfy_d (fragment : CoreFragment) (env : SatEnv) :
+    dissatisfy (.d fragment) env = some [falseElement] := by
+  rfl
+
+/-- Wrapper `j` preserves child satisfaction. Its canonical empty
+    dissatisfaction competes with the non-canonical child dissatisfaction only
+    after that child witness is shown to have a nonempty runtime top item. -/
+@[simp] theorem satisfactionCandidates_j
+    (fragment : CoreFragment) (env : SatEnv) :
+    satisfactionCandidates (.j fragment) env =
+      { sat := (satisfactionCandidates fragment env).sat
+        dsat := (CandidateResult.usable [falseElement] false).select
+          ((satisfactionCandidates fragment env).dsat
+            |>.requireNonemptyRuntimeTop
+            |>.markNonCanonical) } := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_j_sat
+    (fragment : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.j fragment) env).sat =
+      (satisfactionCandidates fragment env).sat := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_j_dsat
+    (fragment : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.j fragment) env).dsat =
+      (CandidateResult.usable [falseElement] false).select
+        ((satisfactionCandidates fragment env).dsat
+          |>.requireNonemptyRuntimeTop
+          |>.markNonCanonical) := by
+  rfl
+
+@[simp] theorem satisfy_j (fragment : CoreFragment) (env : SatEnv) :
+    satisfy (.j fragment) env = satisfy fragment env := by
+  rfl
+
+@[simp] theorem dissatisfy_j (fragment : CoreFragment) (env : SatEnv) :
+    dissatisfy (.j fragment) env =
+      ((CandidateResult.usable [falseElement] false).select
+        ((satisfactionCandidates fragment env).dsat
+          |>.requireNonemptyRuntimeTop
+          |>.markNonCanonical)).usableWitness? := by
+  rfl
+
 -- TODO(theorem): Extend satisfaction and dissatisfaction correctness through
--- wrappers `d`/`j`, connectives, thresholds, `multi`, and `multi_a`.
+-- connectives, thresholds, `multi`, and `multi_a`.
 -- TODO: Analyze non-malleable satisfaction (unique canonical witness)
 
 end LeanMiniscript.Miniscript

@@ -146,9 +146,9 @@ path-sensitive peak analysis remains unfinished.
 | `a` | Done | Done | Done | Done | Partial | Pass-through | Pass-through | Partial | Saved-first W frame |
 | `s` | Done | Done | Done | Done | Partial | Pass-through | Pass-through | Partial | Singleton/result-first W frame |
 | `c` | Done | Done | Done | Done | Partial | Basic (key leaves) | Basic (key leaves) | Partial | Basic soundness |
-| `d` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
+| `d` | Done | Done | Done | Done | Partial | Guarded candidate | Canonical false | Partial | Vz true / canonical false frames |
 | `v` | Done | Done | Done | Done | Partial | Pass-through | Impossible | Partial | Truthy B-to-V frame |
-| `j` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
+| `j` | Done | Done | Done | Done | Partial | Pass-through | Guarded choice | Partial | Nonempty child / canonical zero frames |
 | `n` | Done | Done | Done | Done | Partial | Pass-through | Pass-through | Partial | ScriptNum-normalized B frame |
 | `thresh` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
 | `multi` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
@@ -176,6 +176,21 @@ single argument and leaves its result above the protected element, `v` requires
 a truthy B result, and `n` requires the exact child result to decode as a
 four-byte Script number. Raw-AST propagation therefore does not by itself
 establish that a wrapper is well typed.
+
+Guarded wrappers now have their local BIP 379 candidate rows. Wrapper `d`
+appends a canonical true selector to child satisfaction and supplies the
+canonical false dissatisfaction. Wrapper `j` preserves child satisfaction and
+selects between its canonical empty dissatisfaction and a non-canonical child
+dissatisfaction whose first runtime item has nonzero byte length. This guard
+tests byte length, not Script truthiness, and preserves the child's HASSIG and
+DONTUSE metadata before selection.
+
+The corresponding arbitrary-stack lemmas remain local execution contracts:
+`d` requires a zero-argument V child for its true branch and also proves the
+canonical false branch; `j` requires exact B execution on `top :: args`,
+`top.size ≠ 0`, and successful four-byte decoding of `scriptNat top.size`, and
+also proves its canonical empty branch. These lemmas do not yet establish
+recursive soundness for witnesses produced by the candidate algorithm.
 
 `HasType ctx` covers all rows, and `inferType ctx` has soundness, completeness,
 uniqueness, and success/reflection theorems. A constructor-exhaustive fixture
@@ -428,14 +443,17 @@ EOF becomes `UNBALANCED_CONDITIONAL`. Relational, executable, and fixture-level
 regressions cover active, inactive, and repeated-`ELSE` cases.
 
 Satisfaction now has executable candidate rows for constants, `pk_k`, `pk_h`,
-their `c` wrappers, timelocks, all four hashlocks, and linear wrapper
-propagation through `a`, `s`, `v`, and `n`. Paired candidates retain HASSIG,
-DONTUSE, canonical origin, and additive witness cost metadata while the public
-projection returns only usable witnesses. Signature and key material use
-serialized witness order, and timelock availability reuses the exact `TxContext`
-predicates from Script execution. Hash preimages and nonpreimages are required
-to be exactly 32 bytes; canonical hash dissatisfactions remain available to
-recursive proofs as DONTUSE candidates, including through `a`, `s`, and `n`.
+their `c` wrappers, timelocks, all four hashlocks, linear wrapper propagation
+through `a`, `s`, `v`, and `n`, and guarded wrappers `d` and `j`. Paired
+candidates retain HASSIG, DONTUSE, canonical origin, and additive witness cost
+metadata while the public projection returns only usable witnesses. Signature
+and key material use serialized witness order, and timelock availability reuses
+the exact `TxContext` predicates from Script execution. Hash preimages and
+nonpreimages are required to be exactly 32 bytes; canonical hash
+dissatisfactions remain available to recursive proofs as DONTUSE candidates,
+including through `a`, `s`, and `n`. For `j`, the hash dissatisfaction's
+DONTUSE influence propagates to the selected canonical-zero result, while the
+original nonpreimage representative is not retained.
 
 Arbitrary-stack soundness lemmas connect returned B witnesses to `Accepts` or
 `Dissatisfies`; timelock lemmas expose the numeric well-formedness premises that
@@ -443,9 +461,10 @@ the eventual validity theorem must discharge. `SatEnv.Sound` records signature,
 preimage, and nonpreimage obligations at the cryptographic boundary. Basic key
 satisfaction additionally requires `SatEnv.EncodingSound`, and key
 dissatisfaction requires the empty-signature/key pair to pass the selected
-version-specific byte checks. Conditional wrappers `d` and `j`, connectives,
-thresholds, and multisignature candidate selection remain unsupported and
-return `none`.
+version-specific byte checks. Guarded wrappers `d` and `j` have the local
+arbitrary-stack contracts described above, without a recursive theorem tying
+every generated candidate to child execution. Connectives, thresholds, and
+multisignature candidate selection remain unsupported and return `none`.
 
 ## Surface Constructor Matrix
 
