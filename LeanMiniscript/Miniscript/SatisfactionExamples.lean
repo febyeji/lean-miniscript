@@ -1558,8 +1558,9 @@ example :
         .usable [falseElement, falseElement, falseElement] false := by
   exact ⟨rfl, rfl, rfl, rfl⟩
 
-/-- Only the threshold relation is rejected. A 21-key raw `multi_a` remains
-    candidate-valid because Tapscript has no legacy 20-key limit. -/
+/-- The shared threshold and arithmetic guard rejects invalid counts. A 21-key
+    raw `multi_a` remains candidate-valid because Tapscript has no legacy
+    20-key limit. -/
 example :
     satisfactionCandidates (.multi_a 0 tapMultiKeys) tapMultiAllEqualEnv = {} ∧
       satisfactionCandidates (.multi_a 4 tapMultiKeys) tapMultiAllEqualEnv = {} ∧
