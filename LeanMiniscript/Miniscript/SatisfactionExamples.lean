@@ -458,6 +458,90 @@ example :
         CandidateResult.dontUse [preimage32, signature] true .nonCanonical := by
   exact ⟨rfl, rfl, rfl⟩
 
+/-! ## Conditional connective candidates -/
+
+/-- Canonical selectors have distinct serialized costs. When both `or_i`
+    branches satisfy without HASSIG, selection keeps the cheaper false branch
+    and marks it DONTUSE. -/
+example :
+    Witness.candidateCost [trueElement] = 2 ∧
+      Witness.candidateCost [falseElement] = 1 ∧
+      (satisfactionCandidates (.or_i .one .one) unavailableEnv).sat =
+        CandidateResult.dontUse [falseElement] false .canonical ∧
+      satisfy (.or_i .one .one) unavailableEnv = none := by
+  exact ⟨rfl, rfl, rfl, rfl⟩
+
+/-- `or_i` appends its selector in wire order, so runtime conversion puts the
+    selector above the selected branch arguments. -/
+example :
+    satisfactionCandidates (.or_i .one .zero) unavailableEnv = {
+      sat := CandidateResult.usable [trueElement] false
+      dsat := CandidateResult.usable [falseElement] false } ∧
+      Witness.toInitialStack [trueElement] = [trueElement] ∧
+      satisfy (.or_i .one .zero) unavailableEnv = some [trueElement] ∧
+      dissatisfy (.or_i .one .zero) unavailableEnv = some [falseElement] := by
+  exact ⟨rfl, rfl, rfl, rfl⟩
+
+/-- `or_c` chooses either the direct signature path or a false first-child
+    selector followed by the V child. The latter wire witness reverses to put
+    the selector above the hash preimage at runtime. -/
+example :
+    satisfy
+        (.or_c (.c (.pk_k key)) (.v (.sha256 hashTarget))) signingEnv =
+        some [signature] ∧
+      satisfy
+        (.or_c (.c (.pk_k key)) (.v (.sha256 hashTarget))) preimageEnv =
+        some [preimage32, falseElement] ∧
+      Witness.toInitialStack [preimage32, falseElement] =
+        [falseElement, preimage32] := by
+  exact ⟨rfl, rfl, rfl⟩
+
+/-- A canonical hash DONTUSE candidate remains available through `or_c`
+    selection but is removed by the public projection. -/
+example :
+    (satisfactionCandidates
+      (.or_c (.sha256 hashTarget) (.v .one)) unavailableEnv).sat =
+        CandidateResult.dontUse [nonPreimage32] false .canonical ∧
+      satisfy (.or_c (.sha256 hashTarget) (.v .one)) unavailableEnv = none := by
+  exact ⟨rfl, rfl⟩
+
+/-- `or_d` has a direct satisfying path, an alternate satisfying path whose
+    arguments precede the false selector on the wire, and a composed canonical
+    dissatisfaction. -/
+example :
+    satisfy (.or_d (.c (.pk_k key)) .zero) signingEnv =
+        some [signature] ∧
+      satisfy
+        (.or_d (.c (.pk_k key)) (.sha256 hashTarget)) preimageEnv =
+        some [preimage32, falseElement] ∧
+      dissatisfy
+        (.or_d (.c (.pk_k key)) (.c (.pk_k key))) unavailableEnv =
+        some [falseElement, falseElement] := by
+  exact ⟨rfl, rfl, rfl⟩
+
+/-- `andor` stores the selected child before the guard on the wire. The
+    alternate dissatisfaction is non-canonical but keeps its inherited usable
+    status rather than being marked overcomplete. -/
+example :
+    satisfy
+        (.andor (.c (.pk_k key)) (.sha256 hashTarget) .zero) completeEnv =
+        some [preimage32, signature] ∧
+      Witness.toInitialStack [preimage32, signature] =
+        [signature, preimage32] ∧
+      satisfy
+        (.andor .zero .zero (.sha256 hashTarget)) preimageEnv =
+        some [preimage32] ∧
+      (satisfactionCandidates
+        (.andor (.c (.pk_k key)) (.c (.pk_k key)) .one) signingEnv).dsat =
+        .candidate {
+          witness := [falseElement, signature]
+          hasSig := true
+          origin := .nonCanonical } ∧
+      dissatisfy
+        (.andor (.c (.pk_k key)) (.c (.pk_k key)) .one) signingEnv =
+        some [falseElement, signature] := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+
 /-- Wrapper `a` restores the protected element above a hash result. -/
 example {preimage : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (matching : (HashLock.sha256 hashTarget).Matches preimage) :
@@ -736,7 +820,147 @@ example {preimage nonPreimage : StackElement}
     (BExecution.s (hash_dissatisfaction_execution mismatches))
     (firstValue := 1) (secondValue := 0) (by rfl) rfl
 
-/-- Conditional connectives remain outside this slice. -/
-example : dissatisfy (.or_i .zero .one) unavailableEnv = none := by rfl
+/-! ## Conditional connective execution -/
+
+/-- A well-typed `or_c` uses a Bd hash guard and a V child. Its truthy path
+    skips the child, while its false path executes and consumes the child. -/
+example {preimage nonPreimage : StackElement} {flags : ScriptFlags}
+    {ctx : TxContext}
+    (matching : (HashLock.sha256 hashTarget).Matches preimage)
+    (mismatches : (HashLock.sha256 hashTarget).Mismatches nonPreimage) :
+    VExecution
+        (.or_c (HashLock.sha256 hashTarget).fragment (.v .one))
+        [preimage] flags ctx ∧
+      VExecution
+        (.or_c (HashLock.sha256 hashTarget).fragment (.v .one))
+        [nonPreimage] flags ctx := by
+  constructor
+  · exact (hash_satisfaction_execution matching).or_c_left
+      (Or.inr trueElement_minimalIfArg) (by native_decide)
+  · exact (hash_dissatisfaction_execution mismatches).or_c_right
+      (Or.inr falseElement_minimalIfArg) (by native_decide)
+      (BExecution.v (one_execution flags ctx) (by native_decide))
+
+/-- A well-typed `or_d` preserves its truthy Bd selector directly and returns
+    the B child's result after a false guard. -/
+example {preimage nonPreimage : StackElement} {flags : ScriptFlags}
+    {ctx : TxContext}
+    (matching : (HashLock.sha256 hashTarget).Matches preimage)
+    (mismatches : (HashLock.sha256 hashTarget).Mismatches nonPreimage) :
+    BExecution
+        (.or_d (HashLock.sha256 hashTarget).fragment .zero)
+        [preimage] trueElement flags ctx ∧
+      BExecution
+        (.or_d (HashLock.sha256 hashTarget).fragment .one)
+        [nonPreimage] trueElement flags ctx := by
+  constructor
+  · exact (hash_satisfaction_execution matching).or_d_left
+      (Or.inr trueElement_minimalIfArg) (by native_decide)
+  · exact (hash_dissatisfaction_execution mismatches).or_d_right
+      (Or.inr falseElement_minimalIfArg) (by native_decide)
+      (one_execution flags ctx)
+
+/-- Canonical `or_i` selectors support each result base with the same exact
+    selector-above-arguments runtime order. -/
+example {flags : ScriptFlags} {ctx : TxContext} :
+    BExecution (.or_i .one .zero) [trueElement] trueElement flags ctx ∧
+      BExecution (.or_i .one .zero) [falseElement] falseElement flags ctx ∧
+      KExecution (.or_i (.pk_k key) (.pk_k key))
+        [trueElement] key.bytes flags ctx ∧
+      KExecution (.or_i (.pk_k key) (.pk_k key))
+        [falseElement] key.bytes flags ctx ∧
+      VExecution (.or_i (.v .one) (.v .one)) [trueElement] flags ctx ∧
+      VExecution (.or_i (.v .one) (.v .one)) [falseElement] flags ctx := by
+  constructor
+  · exact BExecution.or_i_left (one_execution flags ctx)
+  constructor
+  · exact BExecution.or_i_right (zero_execution flags ctx)
+  constructor
+  · exact KExecution.or_i_left (pk_k_execution key flags ctx)
+  constructor
+  · exact KExecution.or_i_right (pk_k_execution key flags ctx)
+  constructor
+  · exact VExecution.or_i_left
+      (BExecution.v (one_execution flags ctx) (by native_decide))
+  · exact VExecution.or_i_right
+      (BExecution.v (one_execution flags ctx) (by native_decide))
+
+/-- The K-frame contract preserves an arbitrary downstream signature suffix
+    after the canonical `or_i` selector has chosen a branch. -/
+example :
+    Eval (compile (.or_i (.pk_k key) (.pk_k key)))
+      [trueElement, signature] [] ({} : ScriptFlags) unavailableEnv.txCtx
+      (.success [key.bytes, signature] []) := by
+  exact (KExecution.or_i_left
+    (pk_k_execution key ({} : ScriptFlags) unavailableEnv.txCtx)) [signature] []
+
+/-- A Bd hash guard selects well-typed B branches of `andor`: truth executes Y
+    and false executes Z. -/
+example {preimage nonPreimage : StackElement} {flags : ScriptFlags}
+    {ctx : TxContext}
+    (matching : (HashLock.sha256 hashTarget).Matches preimage)
+    (mismatches : (HashLock.sha256 hashTarget).Mismatches nonPreimage) :
+    BExecution
+        (.andor (HashLock.sha256 hashTarget).fragment .one .zero)
+        [preimage] trueElement flags ctx ∧
+      BExecution
+        (.andor (HashLock.sha256 hashTarget).fragment .one .zero)
+        [nonPreimage] falseElement flags ctx := by
+  constructor
+  · exact (hash_satisfaction_execution matching).andor_true
+      (Or.inr trueElement_minimalIfArg) (by native_decide)
+      (one_execution flags ctx)
+  · exact (hash_dissatisfaction_execution mismatches).andor_false
+      (Or.inr falseElement_minimalIfArg) (by native_decide)
+      (zero_execution flags ctx)
+
+/-- The same `andor` branch map preserves K outputs on both guard paths. -/
+example {preimage nonPreimage : StackElement} {flags : ScriptFlags}
+    {ctx : TxContext}
+    (matching : (HashLock.sha256 hashTarget).Matches preimage)
+    (mismatches : (HashLock.sha256 hashTarget).Mismatches nonPreimage) :
+    KExecution
+        (.andor (HashLock.sha256 hashTarget).fragment
+          (.pk_k key) (.pk_k key))
+        [preimage] key.bytes flags ctx ∧
+      KExecution
+        (.andor (HashLock.sha256 hashTarget).fragment
+          (.pk_k key) (.pk_k key))
+        [nonPreimage] key.bytes flags ctx := by
+  constructor
+  · exact (hash_satisfaction_execution matching).andor_true
+      (Or.inr trueElement_minimalIfArg) (by native_decide)
+      (pk_k_execution key flags ctx)
+  · exact (hash_dissatisfaction_execution mismatches).andor_false
+      (Or.inr falseElement_minimalIfArg) (by native_decide)
+      (pk_k_execution key flags ctx)
+
+/-- The same `andor` branch map consumes well-typed V branches on both guard
+    paths. -/
+example {preimage nonPreimage : StackElement} {flags : ScriptFlags}
+    {ctx : TxContext}
+    (matching : (HashLock.sha256 hashTarget).Matches preimage)
+    (mismatches : (HashLock.sha256 hashTarget).Mismatches nonPreimage) :
+    VExecution
+        (.andor (HashLock.sha256 hashTarget).fragment (.v .one) (.v .one))
+        [preimage] flags ctx ∧
+      VExecution
+        (.andor (HashLock.sha256 hashTarget).fragment (.v .one) (.v .one))
+        [nonPreimage] flags ctx := by
+  constructor
+  · exact VExecution.andor_true (hash_satisfaction_execution matching)
+      (Or.inr trueElement_minimalIfArg) (by native_decide)
+      (BExecution.v (one_execution flags ctx) (by native_decide))
+  · exact VExecution.andor_false (hash_dissatisfaction_execution mismatches)
+      (Or.inr falseElement_minimalIfArg) (by native_decide)
+      (BExecution.v (one_execution flags ctx) (by native_decide))
+
+/-- Truthiness alone does not discharge a child-produced selector's MINIMALIF
+    premise when the flag is active. -/
+example :
+    castToBool nonMinimalTruthyElement = true ∧
+      ¬ minimalIfSatisfied ({ minimalIf := true } : ScriptFlags)
+        nonMinimalTruthyElement := by
+  exact ⟨nonMinimalTruthyElement_truthy, by native_decide⟩
 
 end LeanMiniscript.Miniscript
