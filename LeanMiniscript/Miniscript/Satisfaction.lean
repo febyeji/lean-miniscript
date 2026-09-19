@@ -703,8 +703,9 @@ def multiACandidates (threshold : Nat) (keys : List PubKey)
     {}
 
 mutual
-/-- Compute the candidate pair for the supported leaf, wrapper, and connective
-    rows. Unsupported rows are explicitly impossible on both sides. -/
+/-- Compute the candidate pair for every Core fragment row. Semantically
+    unavailable sides and failed threshold/multisignature candidate guards are
+    represented explicitly as impossible. -/
 @[simp] def satisfactionCandidates : CoreFragment → SatEnv → CandidatePair
   | .zero, _ => { dsat := .usable [] false }
   | .one, _ => { sat := .usable [] false }
