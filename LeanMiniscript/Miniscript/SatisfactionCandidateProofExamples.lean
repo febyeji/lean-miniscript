@@ -19,6 +19,17 @@ example : ∃ frames,
   apply CandidatePair.selectExactly_choiceTrace
   rfl
 
+/-- The same trace exposes the source-order satisfaction bits, whose sum is
+    the selected exact count. -/
+example : ∃ truths frames,
+    CandidatePair.ChoiceFrames [firstChoice, secondChoice] truths frames ∧
+      (truths.map Bool.toNat).sum = 1 := by
+  obtain ⟨frames, trace⟩ := CandidatePair.selectExactly_choiceTrace
+    (children := [firstChoice, secondChoice]) (count := 1)
+    (witness := [falseElement, trueElement]) (by rfl)
+  obtain ⟨truths, choices, countEq⟩ := trace.toChoiceFrames
+  exact ⟨truths, frames, choices, countEq⟩
+
 /-- A retained overcomplete threshold row remains inspectable through `witness?`
     but cannot cross the public usable-witness boundary. -/
 example :
