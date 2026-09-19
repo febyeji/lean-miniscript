@@ -6,10 +6,11 @@ namespace LeanMiniscript.Miniscript
 open LeanMiniscript.Script
 
 /-!
-# Core satisfaction and dissatisfaction correctness
+# Core and surface satisfaction and dissatisfaction correctness
 
 The recursive generated contract already supplies exact B execution for every
-usable top-level candidate. This module closes the public clean-stack targets.
+usable top-level candidate. This module closes the public core clean-stack
+targets and transports them across the surface desugaring boundary.
 -/
 
 namespace GeneratedContract
@@ -49,5 +50,24 @@ theorem dissatisfactionCorrectnessCore : DissatisfactionCorrectnessCore := by
     version modeled sound encodings typed wellFormed
   exact ⟨modeled, version,
     (supported.dissatisfyContract generated).cleanStackResult⟩
+
+/-- Surface satisfaction inherits core correctness because surface compilation
+    is compilation of the desugared core fragment. -/
+theorem satisfactionCorrectnessSurface : SatisfactionCorrectnessSurface := by
+  intro ctx fragment env witness flags valid sound encodings version modeled
+    generated
+  simpa [compileSurface, compileSurfaceWithKeyHash, compile] using
+    satisfactionCorrectnessCore valid sound encodings version modeled
+      generated
+
+/-- Surface dissatisfaction is the corresponding desugaring corollary of core
+    dissatisfaction correctness. -/
+theorem dissatisfactionCorrectnessSurface :
+    DissatisfactionCorrectnessSurface := by
+  intro ctx fragment env witness flags valid sound encodings version modeled
+    generated
+  simpa [compileSurface, compileSurfaceWithKeyHash, compile] using
+    dissatisfactionCorrectnessCore valid sound encodings version modeled
+      generated
 
 end LeanMiniscript.Miniscript

@@ -314,8 +314,7 @@ def DissatisfactionCorrectnessCore : Prop :=
     Dissatisfies ctx (compile m) witness flags env.txCtx
 
 /-- Surface dissatisfaction is the core contract after desugaring. Its
-    encoding premise matches the proved core target so the surface proof can
-    follow as a separate corollary. -/
+    encoding premise matches the core target exactly. -/
 def DissatisfactionCorrectnessSurface : Prop :=
   ∀ {ctx : ScriptContext} {m : SurfaceFragment} {env : SatEnv}
       {witness : Witness} {flags : ScriptFlags},
