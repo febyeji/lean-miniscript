@@ -39,4 +39,28 @@ example {scriptCtx : ScriptContext} {hash : Hash256} {env : SatEnv}
       flags env.txCtx :=
   generated_hash (lock := .sha256 hash) sound
 
+/-- Well-formed timelocks no longer need caller-supplied codec premises at the
+    generated-candidate boundary. -/
+example (scriptCtx : ScriptContext) (env : SatEnv) (flags : ScriptFlags) :
+    (satisfactionCandidates (.older 10) env).SupportsGenerated scriptCtx
+      (.older 10) ⟨.B, { z := true }⟩ flags env.txCtx :=
+  generated_older ⟨by omega, by change 10 < 2147483648; omega⟩
+
+example (scriptCtx : ScriptContext) (env : SatEnv) (flags : ScriptFlags) :
+    (satisfactionCandidates (.after 500000000) env).SupportsGenerated scriptCtx
+      (.after 500000000) ⟨.B, { z := true }⟩ flags env.txCtx :=
+  generated_after ⟨by omega, by change 500000000 < 2147483648; omega⟩
+
+/-- Context validity and modeled execution settings discharge the empty-signature
+    encoding premise while retaining the original explicit theorem. -/
+example {scriptCtx : ScriptContext} {key : PubKey} {env : SatEnv}
+    {flags : ScriptFlags} (valid : validResolvedPubKey scriptCtx key)
+    (version : ModeledContextVersion scriptCtx env.txCtx)
+    (modeled : ModeledContextFlags scriptCtx flags)
+    (sound : env.Sound) (encodings : env.EncodingSound flags) :
+    (satisfactionCandidates (.pk_k key) env).SupportsGenerated scriptCtx
+      (.pk_k key) ⟨.K, { o := true, n := true, d := true, u := true }⟩
+      flags env.txCtx :=
+  generated_pk_k_of_modeled valid version modeled sound encodings
+
 end LeanMiniscript.Miniscript

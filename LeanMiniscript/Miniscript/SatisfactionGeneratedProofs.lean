@@ -1,9 +1,79 @@
 import LeanMiniscript.Miniscript.SatisfactionCandidateProofs
 import LeanMiniscript.Miniscript.SatisfactionProofs
+import LeanMiniscript.Script.ScriptNumProofs
 
 namespace LeanMiniscript.Miniscript
 
 open LeanMiniscript.Script
+
+/-! ## Numeric and encoding bridges -/
+
+/-- The two codec facts needed to execute a well-formed timelock literal. -/
+structure TimelockExecutionFacts (n : Nat) (flags : ScriptFlags) : Prop where
+  decoded : decodeScriptNum (scriptNat n) flags.minimalData
+    maxTimelockScriptNumBytes = .ok (Int.ofNat n)
+  positive : castToBool (scriptNat n) = true
+
+namespace TimelockExecutionFacts
+
+/-- BIP 379's positive, below-bit-31 timelock bound supplies both the extended
+    five-byte decoder result and the truthiness of the canonical operand. -/
+theorem of_validTimelockArg {n : Nat} {flags : ScriptFlags}
+    (valid : validTimelockArg n) : TimelockExecutionFacts n flags := by
+  rcases valid with ⟨positive, bound⟩
+  constructor
+  · apply decodeScriptNum_mono (small := maxArithmeticScriptNumBytes)
+    · native_decide
+    · apply decodeScriptNum_scriptNat_of_lt
+      simpa [validTimelockArg, MAX_BIP_LOCK_VALUE,
+        maxArithmeticScriptNatExclusive] using bound
+  · apply castToBool_scriptNat_of_pos_of_lt
+    · omega
+    · simpa [validTimelockArg, MAX_BIP_LOCK_VALUE,
+        maxArithmeticScriptNatExclusive] using bound
+
+end TimelockExecutionFacts
+
+/-- A context-valid key accepts the canonical empty signature under the flags
+    and signature version required by that Miniscript context. -/
+theorem checkSigEncodingFor_empty_of_modeled
+    {scriptCtx : ScriptContext} {key : PubKey} {flags : ScriptFlags}
+    {txCtx : TxContext} (wellFormed : validResolvedPubKey scriptCtx key)
+    (version : ModeledContextVersion scriptCtx txCtx)
+    (modeled : ModeledContextFlags scriptCtx flags) :
+    checkSigEncodingFor flags txCtx.sigVersion falseElement key.bytes =
+      .ok () := by
+  cases scriptCtx with
+  | p2wsh =>
+      rcases wellFormed with ⟨keySize, keyPrefix⟩
+      rcases modeled with ⟨_, _, _, _, strict⟩
+      simp only [ModeledContextVersion] at version
+      have h0 : 0 < key.bytes.size := by omega
+      have dataH0 : 0 < key.bytes.data.size := by
+        simpa [ByteArray.size_data] using h0
+      have indexEq : key.bytes[0]! = key.bytes.get! 0 := by
+        rw [getElem!_pos key.bytes 0 h0]
+        change key.bytes.data[0] = key.bytes.data[0]!
+        rw [getElem!_pos key.bytes.data 0 dataH0]
+      have compressed : isCompressedPubKey key.bytes = true := by
+        unfold isCompressedPubKey
+        rw [indexEq]
+        simp [keySize, keyPrefix]
+      have ordinary : isCompressedOrUncompressedPubKey key.bytes = true := by
+        unfold isCompressedOrUncompressedPubKey
+        rw [indexEq]
+        simp [keySize, keyPrefix]
+      simp [checkSigEncodingFor, version, checkECDSAEncoding,
+        checkPubKeyEncoding, strict, compressed, ordinary]
+      rfl
+  | tapscript =>
+      simp only [validResolvedPubKey] at wellFormed
+      simp only [ModeledContextVersion] at version
+      have keySize : key.bytes.size = 32 := wellFormed
+      have falseEq : falseElement = ByteArray.empty := by
+        simp [falseElement, ByteArray.ext_iff]
+      simp [checkSigEncodingFor, version, keySize, falseEq]
+      rfl
 
 /-!
 # Typed execution of generated witnesses
@@ -14,10 +84,9 @@ typing derivation together with the exact execution contract selected by its
 base type. In particular, a K execution separates the K fragment's own
 arguments from the pending signature consumed by wrapper `c`.
 
-The first layer covers `0`, `1`, both key leaves, all four hash leaves, and the
-`c` lift. Timelocks still need a generic ScriptNum round-trip theorem derived
-from their `WellFormed` bound. The other wrappers need inductively maintained
-input-shape or numeric-result invariants, so they remain outside this layer.
+The first layer covers `0`, `1`, both key leaves, both timelocks, all four hash
+leaves, and the `c` lift. The other wrappers need inductively maintained input
+shape or numeric-result invariants, so they remain outside this layer.
 -/
 
 /-- Exact execution contract selected by the fragment's base type. K
@@ -102,6 +171,42 @@ theorem generated_one (scriptCtx : ScriptContext) (env : SatEnv)
   exact .b ⟨trueElement, by simpa using one_execution flags env.txCtx,
     by native_decide⟩
 
+/-- A well-formed relative timelock has a generated satisfaction exactly when
+    the environment transaction satisfies its sequence predicate. -/
+theorem generated_older
+    {scriptCtx : ScriptContext} {n : Nat} {env : SatEnv}
+    {flags : ScriptFlags} (valid : validTimelockArg n) :
+    (satisfactionCandidates (.older n) env).SupportsGenerated scriptCtx
+      (.older n) ⟨.B, { z := true }⟩ flags env.txCtx := by
+  refine ⟨.older n, ?_, CandidateResult.supports_impossible _⟩
+  have facts := TimelockExecutionFacts.of_validTimelockArg
+    (flags := flags) valid
+  by_cases satisfied : sequenceSatisfied n env.txCtx
+  · rw [show (satisfactionCandidates (.older n) env).sat =
+      .usable [] false by simp [satisfactionCandidates, satisfied]]
+    apply CandidateResult.supports_usable
+    exact .b ⟨scriptNat n, by simpa [scriptNat] using
+      (older_execution facts.decoded satisfied), facts.positive⟩
+  · simp [satisfactionCandidates, satisfied, CandidateResult.Supports]
+
+/-- A well-formed absolute timelock has the matching generated-execution
+    contract under its transaction locktime predicate. -/
+theorem generated_after
+    {scriptCtx : ScriptContext} {n : Nat} {env : SatEnv}
+    {flags : ScriptFlags} (valid : validTimelockArg n) :
+    (satisfactionCandidates (.after n) env).SupportsGenerated scriptCtx
+      (.after n) ⟨.B, { z := true }⟩ flags env.txCtx := by
+  refine ⟨.after n, ?_, CandidateResult.supports_impossible _⟩
+  have facts := TimelockExecutionFacts.of_validTimelockArg
+    (flags := flags) valid
+  by_cases satisfied : locktimeSatisfied n env.txCtx
+  · rw [show (satisfactionCandidates (.after n) env).sat =
+      .usable [] false by simp [satisfactionCandidates, satisfied]]
+    apply CandidateResult.supports_usable
+    exact .b ⟨scriptNat n, by simpa [scriptNat] using
+      (after_execution facts.decoded satisfied), facts.positive⟩
+  · simp [satisfactionCandidates, satisfied, CandidateResult.Supports]
+
 /-- Generated `pk_k` candidates carry the pending signature below the empty K
     argument frame, including the canonical empty dissatisfaction. -/
 theorem generated_pk_k
@@ -169,6 +274,34 @@ theorem generated_pk_h
     exact checkSigWithEncoding_empty
       emptyEncoding
       (sound.emptySignatureInvalid key)
+
+/-- Modeled context assumptions discharge the empty-signature encoding
+    premise of `generated_pk_k` for a context-valid key. -/
+theorem generated_pk_k_of_modeled
+    {scriptCtx : ScriptContext} {key : PubKey} {env : SatEnv}
+    {flags : ScriptFlags} (valid : validResolvedPubKey scriptCtx key)
+    (version : ModeledContextVersion scriptCtx env.txCtx)
+    (modeled : ModeledContextFlags scriptCtx flags)
+    (sound : env.Sound) (encodings : env.EncodingSound flags) :
+    (satisfactionCandidates (.pk_k key) env).SupportsGenerated scriptCtx
+      (.pk_k key) ⟨.K, { o := true, n := true, d := true, u := true }⟩
+      flags env.txCtx :=
+  generated_pk_k sound encodings
+    (checkSigEncodingFor_empty_of_modeled valid version modeled)
+
+/-- Modeled context assumptions likewise discharge the exact empty-signature
+    boundary for `pk_h`. -/
+theorem generated_pk_h_of_modeled
+    {scriptCtx : ScriptContext} {key : PubKey} {env : SatEnv}
+    {flags : ScriptFlags} (valid : validResolvedPubKey scriptCtx key)
+    (version : ModeledContextVersion scriptCtx env.txCtx)
+    (modeled : ModeledContextFlags scriptCtx flags)
+    (sound : env.Sound) (encodings : env.EncodingSound flags) :
+    (satisfactionCandidates (.pk_h key) env).SupportsGenerated scriptCtx
+      (.pk_h key) ⟨.K, { n := true, d := true, u := true }⟩
+      flags env.txCtx :=
+  generated_pk_h sound encodings
+    (checkSigEncodingFor_empty_of_modeled valid version modeled)
 
 private theorem generated_hash_sat
     {lock : HashLock} {env : SatEnv} {flags : ScriptFlags}

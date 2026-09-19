@@ -595,16 +595,23 @@ the selected candidate to an accepted signature/key subsequence. Tapscript
 above, without a theorem tying its selected candidate to those explicit
 signature-check and numeric-decode premises.
 
-The proof-only generated-execution layer packages one global `HasType`
-derivation with `CandidateResult.Supports` contracts for both projected sides
-of a candidate pair. It covers `0`, `1`, `pk_k`, `pk_h`, all four hash leaves,
+The proof-only Script-number layer proves canonical nonnegative round-trip and
+minimality for every value below `2^31`, monotonicity when a successful decode's
+byte limit grows, positive canonical truthiness, and exact arithmetic decoding
+for every size up to the 520-byte Script element limit. These facts derive the
+five-byte timelock decode and truth contract directly from `validTimelockArg`.
+
+The generated-execution layer packages one global `HasType` derivation with
+`CandidateResult.Supports` contracts for both projected sides of a candidate
+pair. It covers `0`, `1`, `pk_k`, `pk_h`, `older`, `after`, all four hash leaves,
 and the `c` lift. The K carrier keeps the child's own argument frame separate
 from the pending signature, matching the runtime order used by `OP_CHECKSIG`.
+Modeled context flags and execution versions plus a context-valid key now imply
+that its canonical empty signature passes the version-specific encoding check.
 Hash dissatisfaction support is intentionally vacuous at this public boundary
 because that canonical row is DONTUSE; its raw false execution remains covered
-by `hash_dsat_candidate_execution`. Timelocks await a generic ScriptNum
-round-trip theorem from their well-formed bound. Further wrapper closure awaits
-inductively maintained input-shape and numeric-result invariants.
+by `hash_dsat_candidate_execution`. Further wrapper closure awaits inductively
+maintained input-shape and numeric-result invariants.
 
 ## Surface Constructor Matrix
 
