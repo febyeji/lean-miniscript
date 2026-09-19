@@ -595,6 +595,17 @@ the selected candidate to an accepted signature/key subsequence. Tapscript
 above, without a theorem tying its selected candidate to those explicit
 signature-check and numeric-decode premises.
 
+The proof-only generated-execution layer packages one global `HasType`
+derivation with `CandidateResult.Supports` contracts for both projected sides
+of a candidate pair. It covers `0`, `1`, `pk_k`, `pk_h`, all four hash leaves,
+and the `c` lift. The K carrier keeps the child's own argument frame separate
+from the pending signature, matching the runtime order used by `OP_CHECKSIG`.
+Hash dissatisfaction support is intentionally vacuous at this public boundary
+because that canonical row is DONTUSE; its raw false execution remains covered
+by `hash_dsat_candidate_execution`. Timelocks await a generic ScriptNum
+round-trip theorem from their well-formed bound. Further wrapper closure awaits
+inductively maintained input-shape and numeric-result invariants.
+
 ## Surface Constructor Matrix
 
 | Constructor | Validation via core | Typing via core | Desugaring/compilation | Parser/pretty-printer | Evaluation | Satisfy/dissatisfy | Surface theorem |
