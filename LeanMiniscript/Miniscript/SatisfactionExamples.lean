@@ -6,15 +6,29 @@ open LeanMiniscript.Script
 
 private def key : PubKey := ⟨⟨#[2, 3]⟩⟩
 private def signature : StackElement := ⟨#[48, 1]⟩
+private def preimage32 : StackElement :=
+  ⟨(List.replicate 32 0x11).toArray⟩
+private def nonPreimage32 : StackElement :=
+  ⟨(List.replicate 32 0x22).toArray⟩
+private def hashTarget : Hash256 :=
+  ⟨⟨(List.replicate 32 0xaa).toArray⟩⟩
 
 private def unavailableEnv : SatEnv where
   signatureFor := fun _ => none
   preimageFor := fun _ => none
+  nonPreimageFor := fun _ => nonPreimage32
   txCtx := { version := 2, locktime := 100, sequence := 50, sigHash := ⟨#[]⟩ }
 
 private def signingEnv : SatEnv where
   signatureFor := fun _ => some signature
   preimageFor := fun _ => none
+  nonPreimageFor := fun _ => nonPreimage32
+  txCtx := unavailableEnv.txCtx
+
+private def preimageEnv : SatEnv where
+  signatureFor := fun _ => none
+  preimageFor := fun _ => some preimage32
+  nonPreimageFor := fun _ => nonPreimage32
   txCtx := unavailableEnv.txCtx
 
 private def firstWitness : Witness := [⟨#[0x01]⟩, ⟨#[0x02]⟩]
@@ -114,11 +128,71 @@ example : dissatisfy .one unavailableEnv = none := by rfl
 /-- A signature is emitted as one serialized-order witness item. -/
 example : satisfy (.c (.pk_k key)) signingEnv = some [signature] := by rfl
 
+example : satisfy (.pk_k key) signingEnv = some [signature] := by rfl
+
+example : (satisfactionCandidates (.pk_k key) signingEnv).sat =
+    CandidateResult.usable [signature] true := by
+  rfl
+
 example : satisfy (.c (.pk_k key)) unavailableEnv = none := by rfl
 
 /-- The canonical empty signature is selected without consulting availability. -/
 example : dissatisfy (.c (.pk_k key)) unavailableEnv = some [falseElement] := by
   rfl
+
+/-- `pk_h` reveals the key after the signature in serialized witness order,
+    which puts the key above the signature on the runtime stack. -/
+example : satisfy (.pk_h key) signingEnv = some [signature, key.bytes] := by
+  rfl
+
+example :
+    Witness.toInitialStack [signature, key.bytes] = [key.bytes, signature] := by
+  rfl
+
+example : dissatisfy (.pk_h key) unavailableEnv =
+    some [falseElement, key.bytes] := by
+  rfl
+
+example : (satisfactionCandidates (.pk_h key) signingEnv).sat =
+      CandidateResult.usable [signature, key.bytes] true ∧
+    (satisfactionCandidates (.pk_h key) signingEnv).dsat =
+      CandidateResult.usable [falseElement, key.bytes] false := by
+  constructor <;> rfl
+
+/-- Wrapper `c` preserves the complete child candidate pair, including its
+    HASSIG, DONTUSE, and origin metadata. -/
+example : satisfactionCandidates (.c (.pk_h key)) signingEnv =
+    satisfactionCandidates (.pk_h key) signingEnv := by
+  rfl
+
+/-- Available hash preimages are ordinary selectable candidates. -/
+example : satisfy (.sha256 hashTarget) preimageEnv = some [preimage32] := by
+  rfl
+
+example : satisfy (.sha256 hashTarget) unavailableEnv = none := by
+  rfl
+
+/-- Hash dissatisfactions are canonical table rows retained as raw witnesses,
+    but DONTUSE prevents their public projection. -/
+example :
+    (satisfactionCandidates (.sha256 hashTarget) unavailableEnv).dsat =
+      CandidateResult.dontUse [nonPreimage32] false .canonical := by
+  rfl
+
+example :
+    (satisfactionCandidates (.sha256 hashTarget) unavailableEnv).dsat.witness? =
+        some [nonPreimage32] ∧
+      (satisfactionCandidates (.sha256 hashTarget)
+        unavailableEnv).dsat.usableWitness? = none ∧
+      dissatisfy (.sha256 hashTarget) unavailableEnv = none := by
+  decide
+
+/-- The semantic relation exposes the same 32-byte premise enforced by the
+    compiled hashlock prefix. -/
+example {preimage : StackElement}
+    (matching : (HashLock.sha256 hashTarget).Matches preimage) :
+    preimage.size = 32 :=
+  matching.1
 
 example : satisfy (.older 40) unavailableEnv = some [] := by native_decide
 example : satisfy (.older 60) unavailableEnv = none := by native_decide

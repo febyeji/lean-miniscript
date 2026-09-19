@@ -16,17 +16,34 @@ inductive HashLock where
 
 namespace HashLock
 
-/-- The cryptographic relation required of a supplied preimage. Hash functions
+/-- Apply the hash operation selected by a typed hashlock. Hash functions
     remain opaque at the formal boundary. -/
-def Matches : HashLock → StackElement → Prop
-  | .sha256 expected, preimage =>
-      LeanMiniscript.Script.sha256 preimage = expected.bytes
-  | .hash256 expected, preimage =>
-      LeanMiniscript.Script.hash256 preimage = expected.bytes
-  | .ripemd160 expected, preimage =>
-      LeanMiniscript.Script.ripemd160 preimage = expected.bytes
-  | .hash160 expected, preimage =>
-      LeanMiniscript.Script.hash160 preimage = expected.bytes
+def digest : HashLock → StackElement → StackElement
+  | .sha256 _, preimage => LeanMiniscript.Script.sha256 preimage
+  | .hash256 _, preimage => LeanMiniscript.Script.hash256 preimage
+  | .ripemd160 _, preimage => LeanMiniscript.Script.ripemd160 preimage
+  | .hash160 _, preimage => LeanMiniscript.Script.hash160 preimage
+
+/-- The digest committed to by a typed hashlock. -/
+def expected : HashLock → StackElement
+  | .sha256 hash | .hash256 hash => hash.bytes
+  | .ripemd160 hash | .hash160 hash => hash.bytes
+
+/-- The core fragment represented by a typed hashlock. -/
+def fragment : HashLock → CoreFragment
+  | .sha256 hash => .sha256 hash
+  | .hash256 hash => .hash256 hash
+  | .ripemd160 hash => .ripemd160 hash
+  | .hash160 hash => .hash160 hash
+
+/-- The complete BIP 379 preimage relation, including the mandatory 32-byte
+    input length enforced by the compiled `SIZE 32 EQUALVERIFY` prefix. -/
+def Matches (lock : HashLock) (preimage : StackElement) : Prop :=
+  preimage.size = 32 ∧ lock.digest preimage = lock.expected
+
+/-- A 32-byte value which executes a hashlock to false rather than aborting. -/
+def Mismatches (lock : HashLock) (nonPreimage : StackElement) : Prop :=
+  nonPreimage.size = 32 ∧ lock.digest nonPreimage ≠ lock.expected
 
 end HashLock
 
@@ -37,6 +54,10 @@ structure SatEnv where
   signatureFor : PubKey → Option StackElement
   /-- Return the exact preimage stack element for a typed hashlock. -/
   preimageFor : HashLock → Option StackElement
+  /-- Return a 32-byte nonpreimage used for the hashlock's unconditional
+      semantic dissatisfaction. The soundness predicate records its relation
+      to each target. -/
+  nonPreimageFor : HashLock → StackElement
   /-- Transaction data used by signature and timelock checks. -/
   txCtx : TxContext
 
@@ -52,7 +73,36 @@ def Sound (env : SatEnv) : Prop :=
       verifySigFor checkSig checkSchnorrSig env.txCtx falseElement key.bytes = false) ∧
   (∀ lock preimage,
       env.preimageFor lock = some preimage →
-      lock.Matches preimage)
+      lock.Matches preimage) ∧
+  (∀ lock : HashLock, lock.Mismatches (env.nonPreimageFor lock))
+
+/-- A returned signature verifies under the environment transaction. -/
+theorem Sound.signatureValid {env : SatEnv} (sound : env.Sound)
+    {key : PubKey} {signature : StackElement}
+    (selected : env.signatureFor key = some signature) :
+    verifySigFor checkSig checkSchnorrSig env.txCtx signature key.bytes = true :=
+  sound.1 key signature selected
+
+/-- The canonical empty signature is rejected for every key. -/
+theorem Sound.emptySignatureInvalid {env : SatEnv} (sound : env.Sound)
+    (key : PubKey) :
+    verifySigFor checkSig checkSchnorrSig env.txCtx falseElement key.bytes = false :=
+  sound.2.1 key
+
+/-- Every returned hash preimage has the exact size and digest required by its
+    target. -/
+theorem Sound.preimageMatches {env : SatEnv} (sound : env.Sound)
+    {lock : HashLock} {preimage : StackElement}
+    (selected : env.preimageFor lock = some preimage) :
+    lock.Matches preimage :=
+  sound.2.2.1 lock preimage selected
+
+/-- Every hash dissatisfaction supplied by the environment is a 32-byte
+    nonpreimage. -/
+theorem Sound.nonPreimageMismatches {env : SatEnv} (sound : env.Sound)
+    (lock : HashLock) :
+    lock.Mismatches (env.nonPreimageFor lock) :=
+  sound.2.2.2 lock
 
 /-- Supplied signatures and their keys pass the version-specific byte checks selected by
     the execution flags. Cryptographic soundness alone does not imply this. -/
@@ -234,69 +284,70 @@ structure CandidatePair where
   dsat : CandidateResult := .impossible
   deriving Repr
 
-/-- Compute the candidate pair for the currently supported basic B-type
-    fragments. Unsupported rows are explicitly impossible on both sides. -/
+/-- Construct the BIP 379 key row. `keyTail` is empty for `pk_k` and contains
+    the revealed key for `pk_h`; the signature remains first in serialized
+    witness order so it lies below the K fragment's own arguments at runtime. -/
+def keyCandidates (key : PubKey) (keyTail : Witness)
+    (env : SatEnv) : CandidatePair where
+  sat := match env.signatureFor key with
+    | none => .impossible
+    | some signature => .usable (signature :: keyTail) true
+  dsat := .usable (falseElement :: keyTail) false
+
+/-- Construct a hashlock row. A matching preimage is selectable when
+    available. The canonical nonpreimage dissatisfaction remains available
+    for recursive semantics but is always marked DONTUSE by BIP 379. -/
+def hashCandidates (lock : HashLock) (env : SatEnv) : CandidatePair where
+  sat := match env.preimageFor lock with
+    | none => .impossible
+    | some preimage => .usable [preimage] false
+  dsat := .dontUse [env.nonPreimageFor lock] false .canonical
+
+/-- Compute the candidate pair for the supported leaf rows and propagate K
+    candidates through wrapper `c`. Unsupported rows are explicitly
+    impossible on both sides. -/
 @[simp] def satisfactionCandidates : CoreFragment → SatEnv → CandidatePair
   | .zero, _ => { dsat := .usable [] false }
   | .one, _ => { sat := .usable [] false }
-  | .c (.pk_k key), env =>
-      { sat := match env.signatureFor key with
-          | none => .impossible
-          | some signature => .usable [signature] true
-        dsat := .usable [falseElement] false }
+  | .pk_k key, env => keyCandidates key [] env
+  | .pk_h key, env => keyCandidates key [key.bytes] env
   | .older n, env =>
       { sat := if sequenceSatisfied n env.txCtx then .usable [] false
           else .impossible }
   | .after n, env =>
       { sat := if locktimeSatisfied n env.txCtx then .usable [] false
           else .impossible }
+  | .sha256 hash, env => hashCandidates (.sha256 hash) env
+  | .hash256 hash, env => hashCandidates (.hash256 hash) env
+  | .ripemd160 hash, env => hashCandidates (.ripemd160 hash) env
+  | .hash160 hash, env => hashCandidates (.hash160 hash) env
+  | .c fragment, env => satisfactionCandidates fragment env
   | _, _ => {}
 
-/-- Compute a satisfaction witness for the currently supported basic B-type
-    fragments. Timelocks consult the same transaction predicates as `Eval`, and
-    signatures are returned in serialized witness order. Composite fragments
-    and hashlocks remain unsupported until their candidate-selection rules are
-    represented explicitly. -/
-def satisfy : CoreFragment → SatEnv → Option Witness
-  | .one, _ => some []
-  | .c (.pk_k key), env => List.singleton <$> env.signatureFor key
-  | .older n, env => if sequenceSatisfied n env.txCtx then some [] else none
-  | .after n, env => if locktimeSatisfied n env.txCtx then some [] else none
-  | _, _ => none
+/-- Project the usable satisfaction candidate. This is the leaf/composition
+    projection only; final timelock/HASSIG policy remains a later step. -/
+def satisfy (fragment : CoreFragment) (env : SatEnv) : Option Witness :=
+  (satisfactionCandidates fragment env).sat.usableWitness?
 
-/-- Compute a clean dissatisfaction witness for the currently supported basic
-    B-type fragments. `0` needs no witness; `c(pk_k)` uses the canonical empty
-    signature whose failure is part of `SatEnv.Sound`. -/
-def dissatisfy : CoreFragment → SatEnv → Option Witness
-  | .zero, _ => some []
-  | .c (.pk_k _), _ => some [falseElement]
-  | _, _ => none
+/-- Project the usable dissatisfaction candidate. Canonical hash
+    dissatisfactions are deliberately absent here because their raw candidates
+    are DONTUSE. -/
+def dissatisfy (fragment : CoreFragment) (env : SatEnv) : Option Witness :=
+  (satisfactionCandidates fragment env).dsat.usableWitness?
 
-/-- The paired candidate API preserves the existing public satisfaction
-    algorithm on every currently supported and unsupported constructor. -/
+/-- The paired candidate API is the single source for public satisfaction. -/
 theorem satisfactionCandidates_sat_witness
     (fragment : CoreFragment) (env : SatEnv) :
     (satisfactionCandidates fragment env).sat.usableWitness? =
       satisfy fragment env := by
-  cases fragment <;> simp [satisfy]
-  case older n =>
-    by_cases available : sequenceSatisfied n env.txCtx <;> simp [available]
-  case after n =>
-    by_cases available : locktimeSatisfied n env.txCtx <;> simp [available]
-  case c fragment =>
-    cases fragment <;> try rfl
-    case pk_k key =>
-      cases selected : env.signatureFor key <;>
-        simp [selected, List.singleton]
+  rfl
 
-/-- The paired candidate API preserves the existing public dissatisfaction
-    algorithm on every currently supported and unsupported constructor. -/
+/-- The paired candidate API is the single source for public dissatisfaction. -/
 theorem satisfactionCandidates_dsat_witness
     (fragment : CoreFragment) (env : SatEnv) :
     (satisfactionCandidates fragment env).dsat.usableWitness? =
       dissatisfy fragment env := by
-  cases fragment <;> simp [dissatisfy]
-  case c fragment => cases fragment <;> rfl
+  rfl
 
 /- These equations preserve the original public API while the implementation
    moves to paired candidates. They also keep existing proof scripts independent
@@ -306,10 +357,25 @@ theorem satisfactionCandidates_dsat_witness
     satisfy .one env = some [] := by
   rfl
 
+@[simp] theorem satisfy_pk_k (key : PubKey) (env : SatEnv) :
+    satisfy (.pk_k key) env = List.singleton <$> env.signatureFor key := by
+  cases selected : env.signatureFor key <;>
+    simp [satisfy, keyCandidates, selected, List.singleton]
+
+@[simp] theorem satisfy_pk_h (key : PubKey) (env : SatEnv) :
+    satisfy (.pk_h key) env =
+      (fun signature => [signature, key.bytes]) <$> env.signatureFor key := by
+  cases selected : env.signatureFor key <;>
+    simp [satisfy, keyCandidates, selected]
+
 @[simp] theorem satisfy_c_pk_k (key : PubKey) (env : SatEnv) :
     satisfy (.c (.pk_k key)) env = List.singleton <$> env.signatureFor key := by
-  cases selected : env.signatureFor key <;>
-    simp [satisfy, selected, List.singleton]
+  simpa [satisfy] using satisfy_pk_k key env
+
+@[simp] theorem satisfy_c_pk_h (key : PubKey) (env : SatEnv) :
+    satisfy (.c (.pk_h key)) env =
+      (fun signature => [signature, key.bytes]) <$> env.signatureFor key := by
+  simpa [satisfy] using satisfy_pk_h key env
 
 @[simp] theorem satisfy_older (n : Nat) (env : SatEnv) :
     satisfy (.older n) env =
@@ -323,16 +389,81 @@ theorem satisfactionCandidates_dsat_witness
   by_cases available : locktimeSatisfied n env.txCtx <;>
     simp [satisfy, available]
 
+@[simp] theorem satisfy_sha256 (hash : Hash256) (env : SatEnv) :
+    satisfy (.sha256 hash) env =
+      List.singleton <$> env.preimageFor (.sha256 hash) := by
+  cases selected : env.preimageFor (.sha256 hash) <;>
+    simp [satisfy, hashCandidates, selected, List.singleton]
+
+@[simp] theorem satisfy_hash256 (hash : Hash256) (env : SatEnv) :
+    satisfy (.hash256 hash) env =
+      List.singleton <$> env.preimageFor (.hash256 hash) := by
+  cases selected : env.preimageFor (.hash256 hash) <;>
+    simp [satisfy, hashCandidates, selected, List.singleton]
+
+@[simp] theorem satisfy_ripemd160 (hash : Hash160) (env : SatEnv) :
+    satisfy (.ripemd160 hash) env =
+      List.singleton <$> env.preimageFor (.ripemd160 hash) := by
+  cases selected : env.preimageFor (.ripemd160 hash) <;>
+    simp [satisfy, hashCandidates, selected, List.singleton]
+
+@[simp] theorem satisfy_hash160 (hash : Hash160) (env : SatEnv) :
+    satisfy (.hash160 hash) env =
+      List.singleton <$> env.preimageFor (.hash160 hash) := by
+  cases selected : env.preimageFor (.hash160 hash) <;>
+    simp [satisfy, hashCandidates, selected, List.singleton]
+
 @[simp] theorem dissatisfy_zero (env : SatEnv) :
     dissatisfy .zero env = some [] := by
+  rfl
+
+@[simp] theorem dissatisfy_pk_k (key : PubKey) (env : SatEnv) :
+    dissatisfy (.pk_k key) env = some [falseElement] := by
+  rfl
+
+@[simp] theorem dissatisfy_pk_h (key : PubKey) (env : SatEnv) :
+    dissatisfy (.pk_h key) env = some [falseElement, key.bytes] := by
   rfl
 
 @[simp] theorem dissatisfy_c_pk_k (key : PubKey) (env : SatEnv) :
     dissatisfy (.c (.pk_k key)) env = some [falseElement] := by
   rfl
 
+@[simp] theorem dissatisfy_c_pk_h (key : PubKey) (env : SatEnv) :
+    dissatisfy (.c (.pk_h key)) env = some [falseElement, key.bytes] := by
+  rfl
+
+@[simp] theorem dissatisfy_sha256 (hash : Hash256) (env : SatEnv) :
+    dissatisfy (.sha256 hash) env = none := by
+  rfl
+
+@[simp] theorem dissatisfy_hash256 (hash : Hash256) (env : SatEnv) :
+    dissatisfy (.hash256 hash) env = none := by
+  rfl
+
+@[simp] theorem dissatisfy_ripemd160 (hash : Hash160) (env : SatEnv) :
+    dissatisfy (.ripemd160 hash) env = none := by
+  rfl
+
+@[simp] theorem dissatisfy_hash160 (hash : Hash160) (env : SatEnv) :
+    dissatisfy (.hash160 hash) env = none := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_c (fragment : CoreFragment) (env : SatEnv) :
+    satisfactionCandidates (.c fragment) env =
+      satisfactionCandidates fragment env := by
+  rfl
+
+@[simp] theorem satisfy_c (fragment : CoreFragment) (env : SatEnv) :
+    satisfy (.c fragment) env = satisfy fragment env := by
+  rfl
+
+@[simp] theorem dissatisfy_c (fragment : CoreFragment) (env : SatEnv) :
+    dissatisfy (.c fragment) env = dissatisfy fragment env := by
+  rfl
+
 -- TODO(theorem): Extend satisfaction and dissatisfaction correctness through
--- hashlocks, wrappers, connectives, thresholds, `multi`, and `multi_a`.
+-- the remaining wrappers, connectives, thresholds, `multi`, and `multi_a`.
 -- TODO: Analyze non-malleable satisfaction (unique canonical witness)
 
 end LeanMiniscript.Miniscript

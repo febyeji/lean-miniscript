@@ -104,8 +104,11 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   [Bitcoin Core v31.1](https://github.com/bitcoin/bitcoin/tree/9be056a8a72b624dae9623b2f7bded92c2a21c91)
   at the pinned commit recorded in the coverage baseline; `Eval` remains a
   documented subset rather than a complete Bitcoin Core interpreter.
-- Basic satisfaction is executable for constants, `c(pk_k)`, and timelocks,
-  with local acceptance and dissatisfaction soundness lemmas.
+- Basic candidate generation is executable for constants, key leaves and their
+  `c` wrappers, timelocks, and all four 32-byte hashlocks. Paired candidates
+  track HASSIG, DONTUSE, canonical origin, and additive witness cost. Key leaves
+  have exact K-frame lemmas; B leaves and well-typed `c` wrappers have
+  arbitrary-stack lemmas leading to clean acceptance or dissatisfaction.
 - General soundness, full satisfaction coverage, non-malleability, small-step
   semantics, cryptographic correctness proofs, executable ECDSA verification,
   unsupported Core failure classes,
