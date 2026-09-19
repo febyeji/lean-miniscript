@@ -34,6 +34,7 @@ private def preimageEnv : SatEnv where
 private def firstWitness : Witness := [⟨#[0x01]⟩, ⟨#[0x02]⟩]
 private def secondWitness : Witness := [⟨#[0x03]⟩]
 private def alternateTruthy : StackElement := ⟨#[0x02]⟩
+private def nonemptyFalsey : StackElement := ⟨#[0x80]⟩
 
 /-- Sequential composition puts the first fragment's arguments on top of the
     runtime stack while retaining Bitcoin's bottom-first wire order. -/
@@ -417,9 +418,117 @@ example :
   · rfl
   · decide
 
-/-- Conditional wrappers and connectives remain outside this slice. -/
-example : satisfy (.d (.v .one)) unavailableEnv = none := by rfl
-example : satisfy (.j (.sha256 hashTarget)) unavailableEnv = none := by rfl
+/-- Wrapper `d` appends a canonical true selector to satisfaction and provides
+    its canonical false dissatisfaction. -/
+example :
+    satisfactionCandidates (.d (.v .one)) unavailableEnv =
+        { sat := CandidateResult.usable [trueElement] false
+          dsat := CandidateResult.usable [falseElement] false } ∧
+      satisfy (.d (.v .one)) unavailableEnv = some [trueElement] ∧
+      dissatisfy (.d (.v .one)) unavailableEnv = some [falseElement] := by
+  exact ⟨rfl, rfl, rfl⟩
+
+/-- The `d(v(1))` satisfaction executes over every surrounding stack. -/
+example {flags : ScriptFlags} {ctx : TxContext} :
+    BExecution (.d (.v .one)) [trueElement] trueElement flags ctx := by
+  exact (BExecution.v (one_execution flags ctx) (by native_decide)).d
+
+example {flags : ScriptFlags} {ctx : TxContext} :
+    BExecution (.d (.v .one)) [falseElement] falseElement flags ctx := by
+  exact d_dissatisfaction_execution (.v .one) flags ctx
+
+/-- Adding `d`'s selector preserves metadata and charges its serialized item
+    to candidate cost. -/
+example :
+    let candidate : SatisfactionCandidate := {
+      witness := [signature]
+      hasSig := true
+      status := .dontUse
+      origin := .nonCanonical }
+    let selected := candidate.withSelector trueElement
+    selected.witness = [signature, trueElement] ∧
+      selected.hasSig = true ∧ selected.status = .dontUse ∧
+      selected.origin = .nonCanonical ∧ selected.cost = 5 := by
+  native_decide
+
+/-- Wrapper `j` preserves child satisfaction unchanged. -/
+example : satisfy (.j (.sha256 hashTarget)) preimageEnv =
+    some [preimage32] := by
+  rfl
+
+/-- A matching nonempty hash preimage passes through `j`; the exact size
+    decoder premise remains visible at the opcode boundary. -/
+example {preimage : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (matching : (HashLock.sha256 hashTarget).Matches preimage)
+    (decoded : decodeScriptNum (scriptNat preimage.size) flags.minimalData
+      maxArithmeticScriptNumBytes = .ok (Int.ofNat preimage.size)) :
+    BExecutionOutcome (.j (.sha256 hashTarget)) [preimage] true flags ctx := by
+  apply BExecutionOutcome.j
+  · exact ⟨trueElement, hash_satisfaction_execution matching, by native_decide⟩
+  · rw [matching.1]
+    decide
+  · exact decoded
+
+/-- The child's empty runtime-top dissatisfaction alternative is filtered, so
+    `j` selects its canonical zero item. -/
+example :
+    (satisfactionCandidates (.j (.c (.pk_k key))) unavailableEnv).dsat =
+        CandidateResult.usable [falseElement] false ∧
+      dissatisfy (.j (.c (.pk_k key))) unavailableEnv =
+        some [falseElement] := by
+  constructor <;> rfl
+
+example {flags : ScriptFlags} {ctx : TxContext} :
+    BExecution (.j (.c (.pk_k key))) [falseElement] falseElement flags ctx := by
+  exact j_dissatisfaction_execution (.c (.pk_k key)) flags ctx
+
+/-- A nonempty no-HASSIG child alternative makes `j`'s selected
+    dissatisfaction DONTUSE, even when the cheaper canonical witness wins. -/
+example :
+    (satisfactionCandidates (.j (.sha256 hashTarget)) unavailableEnv).dsat =
+      CandidateResult.dontUse [falseElement] false .canonical := by
+  rfl
+
+/-- A nonempty HASSIG alternative loses to the unique canonical no-HASSIG
+    candidate without changing that candidate's metadata. -/
+example :
+    (CandidateResult.usable [falseElement] false).select
+        ((CandidateResult.usable [signature] true)
+          |>.requireNonemptyRuntimeTop
+          |>.markNonCanonical) =
+      CandidateResult.usable [falseElement] false := by
+  rfl
+
+/-- The filter observes runtime order, so an empty final serialized item makes
+    the child alternative impossible. -/
+example :
+    ((CandidateResult.usable [signature, falseElement] true)
+      |>.requireNonemptyRuntimeTop
+      |>.markNonCanonical) = CandidateResult.impossible := by
+  rfl
+
+/-- Runtime-top filtering checks byte length rather than Script truthiness. -/
+example :
+    castToBool nonemptyFalsey = false ∧
+      (CandidateResult.usable [nonemptyFalsey] false
+        |>.requireNonemptyRuntimeTop) =
+        CandidateResult.usable [nonemptyFalsey] false := by
+  constructor
+  · native_decide
+  · rfl
+
+/-- `j` retains a raw DONTUSE witness for composition, while the public
+    dissatisfaction projection removes it. -/
+example :
+    (satisfactionCandidates (.j (.sha256 hashTarget))
+      unavailableEnv).dsat.witness? =
+        some [falseElement] ∧
+      (satisfactionCandidates (.j (.sha256 hashTarget))
+        unavailableEnv).dsat.usableWitness? = none ∧
+      dissatisfy (.j (.sha256 hashTarget)) unavailableEnv = none := by
+  exact ⟨rfl, rfl, rfl⟩
+
+/-- Connectives remain outside this slice. -/
 example : dissatisfy (.or_i .zero .one) unavailableEnv = none := by rfl
 
 end LeanMiniscript.Miniscript
