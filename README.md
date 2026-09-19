@@ -159,7 +159,13 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   `multi` converts its trace into a reversed-key signature embedding, proves
   greedy CHECKMULTISIG success even when a signature verifies against an
   earlier skipped key, and closes both selected and canonical all-empty
-  candidates under well-formed modeled P2WSH contexts.
+  candidates under well-formed modeled P2WSH contexts. A mutual structural
+  theorem over `HasType` and `HasTypeList` now assembles these local contracts
+  for every well-formed, well-typed core constructor. Under the modeled
+  version/flag and sound environment premises, every publicly usable generated
+  satisfaction or dissatisfaction carries the strong contract; this does not
+  assert that either projection exists. Arithmetic-unsafe typed thresholds are
+  covered by their empty candidate pair.
 - General soundness, full satisfaction coverage, non-malleability, small-step
   semantics, cryptographic correctness proofs, executable ECDSA verification,
   unsupported Core failure classes,
