@@ -38,6 +38,174 @@ theorem ExecutesStackFrame.append
   intro rest altStack
   exact Eval.append (leftExec rest altStack) (rightExec rest altStack)
 
+/-- Extend both sides of an exact frame by the same protected main-stack
+    suffix. This makes sequential child argument frames explicit. -/
+theorem ExecutesStackFrame.withSuffix
+    {script : Script} {inputs outputs suffix : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : ExecutesStackFrame script inputs outputs flags ctx) :
+    ExecutesStackFrame script (inputs ++ suffix) (outputs ++ suffix) flags ctx := by
+  intro rest altStack
+  simpa [List.append_assoc] using executed (suffix ++ rest) altStack
+
+/-! ### Exact balanced conditional frames -/
+
+/-- A truthy selector executes the sole balanced `OP_IF` branch. -/
+theorem ExecutesStackFrame.ifThen_execute
+    {body : Script} {selector : StackElement} {inputs outputs : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (balanced : BalancedControlFlow body)
+    (minimal : minimalIfSatisfied flags selector)
+    (truth : castToBool selector = true)
+    (bodyExec : ExecutesStackFrame body inputs outputs flags ctx) :
+    ExecutesStackFrame (.op .OP_IF :: body ++ [.op .OP_ENDIF])
+      (selector :: inputs) outputs flags ctx := by
+  intro rest altStack
+  apply Eval.if_execute (frame := { branches := [body], after := [] })
+  · simpa using splitConditional_balanced_ifThen balanced (suffix := [])
+  · exact minimal
+  · simpa [ConditionalFrame.select, selectConditionalBranches, truth] using
+      bodyExec rest altStack
+
+/-- A false selector skips the sole balanced `OP_IF` branch. -/
+theorem ExecutesStackFrame.ifThen_skip
+    {body : Script} {selector : StackElement} {inputs : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (balanced : BalancedControlFlow body)
+    (minimal : minimalIfSatisfied flags selector)
+    (falsy : castToBool selector = false) :
+    ExecutesStackFrame (.op .OP_IF :: body ++ [.op .OP_ENDIF])
+      (selector :: inputs) inputs flags ctx := by
+  intro rest altStack
+  apply Eval.if_execute (frame := { branches := [body], after := [] })
+  · simpa using splitConditional_balanced_ifThen balanced (suffix := [])
+  · exact minimal
+  · simpa [ConditionalFrame.select, selectConditionalBranches, falsy] using
+      (Eval.done (stack := inputs ++ rest) (altStack := altStack))
+
+/-- A false selector executes the sole balanced `OP_NOTIF` branch. -/
+theorem ExecutesStackFrame.notifThen_execute
+    {body : Script} {selector : StackElement} {inputs outputs : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (balanced : BalancedControlFlow body)
+    (minimal : minimalIfSatisfied flags selector)
+    (falsy : castToBool selector = false)
+    (bodyExec : ExecutesStackFrame body inputs outputs flags ctx) :
+    ExecutesStackFrame (.op .OP_NOTIF :: body ++ [.op .OP_ENDIF])
+      (selector :: inputs) outputs flags ctx := by
+  intro rest altStack
+  apply Eval.notif_execute (frame := { branches := [body], after := [] })
+  · simpa using splitConditional_balanced_ifThen balanced (suffix := [])
+  · exact minimal
+  · simpa [ConditionalFrame.select, selectConditionalBranches, falsy] using
+      bodyExec rest altStack
+
+/-- A truthy selector skips the sole balanced `OP_NOTIF` branch. -/
+theorem ExecutesStackFrame.notifThen_skip
+    {body : Script} {selector : StackElement} {inputs : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (balanced : BalancedControlFlow body)
+    (minimal : minimalIfSatisfied flags selector)
+    (truth : castToBool selector = true) :
+    ExecutesStackFrame (.op .OP_NOTIF :: body ++ [.op .OP_ENDIF])
+      (selector :: inputs) inputs flags ctx := by
+  intro rest altStack
+  apply Eval.notif_execute (frame := { branches := [body], after := [] })
+  · simpa using splitConditional_balanced_ifThen balanced (suffix := [])
+  · exact minimal
+  · simpa [ConditionalFrame.select, selectConditionalBranches, truth] using
+      (Eval.done (stack := inputs ++ rest) (altStack := altStack))
+
+/-- A truthy selector executes the first branch of a balanced `OP_IF`/`OP_ELSE`. -/
+theorem ExecutesStackFrame.ifElse_first
+    {firstBody secondBody : Script} {selector : StackElement}
+    {inputs outputs : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    (firstBalanced : BalancedControlFlow firstBody)
+    (secondBalanced : BalancedControlFlow secondBody)
+    (minimal : minimalIfSatisfied flags selector)
+    (truth : castToBool selector = true)
+    (bodyExec : ExecutesStackFrame firstBody inputs outputs flags ctx) :
+    ExecutesStackFrame
+      (.op .OP_IF :: firstBody ++ [.op .OP_ELSE] ++ secondBody ++
+        [.op .OP_ENDIF])
+      (selector :: inputs) outputs flags ctx := by
+  intro rest altStack
+  apply Eval.if_execute (frame :=
+    { branches := [firstBody, secondBody], after := [] })
+  · simpa using splitConditional_balanced_ifElse firstBalanced secondBalanced
+      (suffix := [])
+  · exact minimal
+  · simpa [ConditionalFrame.select, selectConditionalBranches, truth] using
+      bodyExec rest altStack
+
+/-- A false selector executes the second branch of a balanced `OP_IF`/`OP_ELSE`. -/
+theorem ExecutesStackFrame.ifElse_second
+    {firstBody secondBody : Script} {selector : StackElement}
+    {inputs outputs : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    (firstBalanced : BalancedControlFlow firstBody)
+    (secondBalanced : BalancedControlFlow secondBody)
+    (minimal : minimalIfSatisfied flags selector)
+    (falsy : castToBool selector = false)
+    (bodyExec : ExecutesStackFrame secondBody inputs outputs flags ctx) :
+    ExecutesStackFrame
+      (.op .OP_IF :: firstBody ++ [.op .OP_ELSE] ++ secondBody ++
+        [.op .OP_ENDIF])
+      (selector :: inputs) outputs flags ctx := by
+  intro rest altStack
+  apply Eval.if_execute (frame :=
+    { branches := [firstBody, secondBody], after := [] })
+  · simpa using splitConditional_balanced_ifElse firstBalanced secondBalanced
+      (suffix := [])
+  · exact minimal
+  · simpa [ConditionalFrame.select, selectConditionalBranches, falsy] using
+      bodyExec rest altStack
+
+/-- A false selector executes the first branch of balanced
+    `OP_NOTIF`/`OP_ELSE`. -/
+theorem ExecutesStackFrame.notifElse_first
+    {firstBody secondBody : Script} {selector : StackElement}
+    {inputs outputs : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    (firstBalanced : BalancedControlFlow firstBody)
+    (secondBalanced : BalancedControlFlow secondBody)
+    (minimal : minimalIfSatisfied flags selector)
+    (falsy : castToBool selector = false)
+    (bodyExec : ExecutesStackFrame firstBody inputs outputs flags ctx) :
+    ExecutesStackFrame
+      (.op .OP_NOTIF :: firstBody ++ [.op .OP_ELSE] ++ secondBody ++
+        [.op .OP_ENDIF])
+      (selector :: inputs) outputs flags ctx := by
+  intro rest altStack
+  apply Eval.notif_execute (frame :=
+    { branches := [firstBody, secondBody], after := [] })
+  · simpa using splitConditional_balanced_ifElse firstBalanced secondBalanced
+      (suffix := [])
+  · exact minimal
+  · simpa [ConditionalFrame.select, selectConditionalBranches, falsy] using
+      bodyExec rest altStack
+
+/-- A truthy selector executes the second branch of balanced
+    `OP_NOTIF`/`OP_ELSE`. -/
+theorem ExecutesStackFrame.notifElse_second
+    {firstBody secondBody : Script} {selector : StackElement}
+    {inputs outputs : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    (firstBalanced : BalancedControlFlow firstBody)
+    (secondBalanced : BalancedControlFlow secondBody)
+    (minimal : minimalIfSatisfied flags selector)
+    (truth : castToBool selector = true)
+    (bodyExec : ExecutesStackFrame secondBody inputs outputs flags ctx) :
+    ExecutesStackFrame
+      (.op .OP_NOTIF :: firstBody ++ [.op .OP_ELSE] ++ secondBody ++
+        [.op .OP_ENDIF])
+      (selector :: inputs) outputs flags ctx := by
+  intro rest altStack
+  apply Eval.notif_execute (frame :=
+    { branches := [firstBody, secondBody], after := [] })
+  · simpa using splitConditional_balanced_ifElse firstBalanced secondBalanced
+      (suffix := [])
+  · exact minimal
+  · simpa [ConditionalFrame.select, selectConditionalBranches, truth] using
+      bodyExec rest altStack
+
 /-- A selected B-type execution consumes `args` and leaves one exact result. -/
 def BExecution (fragment : CoreFragment) (args : Stack) (result : StackElement)
     (flags : ScriptFlags) (ctx : TxContext) : Prop :=
@@ -467,6 +635,311 @@ theorem BExecution.or_bOutcome
   refine ⟨boolToElement ((firstValue != 0) || (secondValue != 0)),
     firstExec.or_b secondExec decoded, ?_⟩
   exact (castToBool_boolToElement _).trans truth
+
+/-! ## Conditional connective composition -/
+
+/-- A satisfying first child makes `or_c` skip its V child. The child-produced
+    selector keeps its explicit MINIMALIF and truthiness premises. -/
+theorem BExecution.or_c_left
+    {first second : CoreFragment} {firstArgs : Stack}
+    {selector : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags selector)
+    (truth : castToBool selector = true) :
+    VExecution (.or_c first second) firstArgs flags ctx := by
+  have tail := ExecutesStackFrame.notifThen_skip
+    (body := compile second) (inputs := []) (ctx := ctx)
+    (compile_balancedControlFlow second) minimal truth
+  simpa [BExecution, VExecution, compile, compileWithKeyHash,
+    List.append_assoc] using ExecutesStackFrame.append firstExec tail
+
+/-- A dissatisfied first child makes `or_c` execute its V child. -/
+theorem BExecution.or_c_right
+    {first second : CoreFragment} {firstArgs secondArgs : Stack}
+    {selector : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags selector)
+    (falsy : castToBool selector = false)
+    (secondExec : VExecution second secondArgs flags ctx) :
+    VExecution (.or_c first second) (firstArgs ++ secondArgs) flags ctx := by
+  have firstFrame := firstExec.withSuffix (suffix := secondArgs)
+  have tail := ExecutesStackFrame.notifThen_execute
+    (compile_balancedControlFlow second) minimal falsy secondExec
+  simpa [BExecution, VExecution, compile, compileWithKeyHash,
+    List.append_assoc] using ExecutesStackFrame.append firstFrame tail
+
+/-- On the direct `or_d` path, `OP_IFDUP` preserves the satisfying first-child
+    selector as the connector's exact B result. -/
+theorem BExecution.or_d_left
+    {first second : CoreFragment} {firstArgs : Stack}
+    {selector : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags selector)
+    (truth : castToBool selector = true) :
+    BExecution (.or_d first second) firstArgs selector flags ctx := by
+  intro rest altStack
+  have firstRun := firstExec rest altStack
+  have conditionalFrame := ExecutesStackFrame.notifThen_skip
+    (body := compile second) (inputs := [selector]) (ctx := ctx)
+    (compile_balancedControlFlow second) minimal truth
+  have tailRun :
+      Eval (.op .OP_IFDUP :: .op .OP_NOTIF ::
+          compile second ++ [.op .OP_ENDIF])
+        (selector :: rest) altStack flags ctx
+        (.success (selector :: rest) altStack) := by
+    exact Eval.ifdup_true selector rest altStack _ flags ctx _ truth
+      (conditionalFrame rest altStack)
+  simpa [BExecution, ExecutesStackFrame, compile, compileWithKeyHash,
+    List.append_assoc] using Eval.append firstRun tailRun
+
+/-- On the alternate `or_d` path, a false first result is consumed and the
+    second child's exact B result becomes the connector result. -/
+theorem BExecution.or_d_right
+    {first second : CoreFragment} {firstArgs secondArgs : Stack}
+    {selector result : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags selector)
+    (falsy : castToBool selector = false)
+    (secondExec : BExecution second secondArgs result flags ctx) :
+    BExecution (.or_d first second) (firstArgs ++ secondArgs) result flags ctx := by
+  intro rest altStack
+  have firstRun := firstExec (secondArgs ++ rest) altStack
+  have conditionalFrame := ExecutesStackFrame.notifThen_execute
+    (compile_balancedControlFlow second) minimal falsy secondExec
+  have tailRun :
+      Eval (.op .OP_IFDUP :: .op .OP_NOTIF ::
+          compile second ++ [.op .OP_ENDIF])
+        (selector :: secondArgs ++ rest) altStack flags ctx
+        (.success (result :: rest) altStack) := by
+    exact Eval.ifdup_false selector (secondArgs ++ rest) altStack _ flags ctx _
+      falsy (conditionalFrame rest altStack)
+  simpa [BExecution, ExecutesStackFrame, compile, compileWithKeyHash,
+    List.append_assoc] using Eval.append firstRun tailRun
+
+theorem BExecutionOutcome.or_d_left
+    {first second : CoreFragment} {firstArgs : Stack}
+    {selector : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags selector)
+    (truth : castToBool selector = true) :
+    BExecutionOutcome (.or_d first second) firstArgs true flags ctx :=
+  ⟨selector, firstExec.or_d_left minimal truth, truth⟩
+
+theorem BExecutionOutcome.or_d_right
+    {first second : CoreFragment} {firstArgs secondArgs : Stack}
+    {selector : StackElement} {expected : Bool}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags selector)
+    (falsy : castToBool selector = false)
+    (secondExec : BExecutionOutcome second secondArgs expected flags ctx) :
+    BExecutionOutcome (.or_d first second) (firstArgs ++ secondArgs)
+      expected flags ctx := by
+  obtain ⟨result, frame, truth⟩ := secondExec
+  exact ⟨result, firstExec.or_d_right minimal falsy frame, truth⟩
+
+/-- The canonical true selector chooses the first B branch of `or_i` and
+    satisfies MINIMALIF for every flag set. -/
+theorem BExecution.or_i_left
+    {first second : CoreFragment} {args : Stack} {result : StackElement}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : BExecution first args result flags ctx) :
+    BExecution (.or_i first second) (trueElement :: args) result flags ctx := by
+  simpa [BExecution, compile, compileWithKeyHash, List.append_assoc] using
+    ExecutesStackFrame.ifElse_first
+      (compile_balancedControlFlow first) (compile_balancedControlFlow second)
+      (Or.inr trueElement_minimalIfArg) (by native_decide) executed
+
+/-- The canonical false selector chooses the second B branch of `or_i`. -/
+theorem BExecution.or_i_right
+    {first second : CoreFragment} {args : Stack} {result : StackElement}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : BExecution second args result flags ctx) :
+    BExecution (.or_i first second) (falseElement :: args) result flags ctx := by
+  simpa [BExecution, compile, compileWithKeyHash, List.append_assoc] using
+    ExecutesStackFrame.ifElse_second
+      (compile_balancedControlFlow first) (compile_balancedControlFlow second)
+      (Or.inr falseElement_minimalIfArg) (by native_decide) executed
+
+theorem KExecution.or_i_left
+    {first second : CoreFragment} {args : Stack} {key : StackElement}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : KExecution first args key flags ctx) :
+    KExecution (.or_i first second) (trueElement :: args) key flags ctx := by
+  simpa [KExecution, compile, compileWithKeyHash, List.append_assoc] using
+    ExecutesStackFrame.ifElse_first
+      (compile_balancedControlFlow first) (compile_balancedControlFlow second)
+      (Or.inr trueElement_minimalIfArg) (by native_decide) executed
+
+theorem KExecution.or_i_right
+    {first second : CoreFragment} {args : Stack} {key : StackElement}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : KExecution second args key flags ctx) :
+    KExecution (.or_i first second) (falseElement :: args) key flags ctx := by
+  simpa [KExecution, compile, compileWithKeyHash, List.append_assoc] using
+    ExecutesStackFrame.ifElse_second
+      (compile_balancedControlFlow first) (compile_balancedControlFlow second)
+      (Or.inr falseElement_minimalIfArg) (by native_decide) executed
+
+theorem VExecution.or_i_left
+    {first second : CoreFragment} {args : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : VExecution first args flags ctx) :
+    VExecution (.or_i first second) (trueElement :: args) flags ctx := by
+  simpa [VExecution, compile, compileWithKeyHash, List.append_assoc] using
+    ExecutesStackFrame.ifElse_first
+      (compile_balancedControlFlow first) (compile_balancedControlFlow second)
+      (Or.inr trueElement_minimalIfArg) (by native_decide) executed
+
+theorem VExecution.or_i_right
+    {first second : CoreFragment} {args : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : VExecution second args flags ctx) :
+    VExecution (.or_i first second) (falseElement :: args) flags ctx := by
+  simpa [VExecution, compile, compileWithKeyHash, List.append_assoc] using
+    ExecutesStackFrame.ifElse_second
+      (compile_balancedControlFlow first) (compile_balancedControlFlow second)
+      (Or.inr falseElement_minimalIfArg) (by native_decide) executed
+
+theorem BExecutionOutcome.or_i_left
+    {first second : CoreFragment} {args : Stack} {expected : Bool}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : BExecutionOutcome first args expected flags ctx) :
+    BExecutionOutcome (.or_i first second) (trueElement :: args)
+      expected flags ctx := by
+  obtain ⟨result, frame, truth⟩ := executed
+  exact ⟨result, frame.or_i_left, truth⟩
+
+theorem BExecutionOutcome.or_i_right
+    {first second : CoreFragment} {args : Stack} {expected : Bool}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : BExecutionOutcome second args expected flags ctx) :
+    BExecutionOutcome (.or_i first second) (falseElement :: args)
+      expected flags ctx := by
+  obtain ⟨result, frame, truth⟩ := executed
+  exact ⟨result, frame.or_i_right, truth⟩
+
+/-- A truthy first child selects Y, the second source child of `andor`. -/
+theorem BExecution.andor_true
+    {first second third : CoreFragment} {firstArgs secondArgs : Stack}
+    {selector result : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags selector)
+    (truth : castToBool selector = true)
+    (secondExec : BExecution second secondArgs result flags ctx) :
+    BExecution (.andor first second third) (firstArgs ++ secondArgs)
+      result flags ctx := by
+  have firstFrame := firstExec.withSuffix (suffix := secondArgs)
+  have tail := ExecutesStackFrame.notifElse_second
+    (compile_balancedControlFlow third) (compile_balancedControlFlow second)
+    minimal truth secondExec
+  simpa [BExecution, compile, compileWithKeyHash, List.append_assoc] using
+    ExecutesStackFrame.append firstFrame tail
+
+/-- A false first child selects Z, the third source child of `andor`. -/
+theorem BExecution.andor_false
+    {first second third : CoreFragment} {firstArgs thirdArgs : Stack}
+    {selector result : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags selector)
+    (falsy : castToBool selector = false)
+    (thirdExec : BExecution third thirdArgs result flags ctx) :
+    BExecution (.andor first second third) (firstArgs ++ thirdArgs)
+      result flags ctx := by
+  have firstFrame := firstExec.withSuffix (suffix := thirdArgs)
+  have tail := ExecutesStackFrame.notifElse_first
+    (compile_balancedControlFlow third) (compile_balancedControlFlow second)
+    minimal falsy thirdExec
+  simpa [BExecution, compile, compileWithKeyHash, List.append_assoc] using
+    ExecutesStackFrame.append firstFrame tail
+
+theorem KExecution.andor_true
+    {first second third : CoreFragment} {firstArgs secondArgs : Stack}
+    {selector key : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags selector)
+    (truth : castToBool selector = true)
+    (secondExec : KExecution second secondArgs key flags ctx) :
+    KExecution (.andor first second third) (firstArgs ++ secondArgs)
+      key flags ctx := by
+  have firstFrame := firstExec.withSuffix (suffix := secondArgs)
+  have tail := ExecutesStackFrame.notifElse_second
+    (compile_balancedControlFlow third) (compile_balancedControlFlow second)
+    minimal truth secondExec
+  simpa [BExecution, KExecution, compile, compileWithKeyHash,
+    List.append_assoc] using ExecutesStackFrame.append firstFrame tail
+
+theorem KExecution.andor_false
+    {first second third : CoreFragment} {firstArgs thirdArgs : Stack}
+    {selector key : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags selector)
+    (falsy : castToBool selector = false)
+    (thirdExec : KExecution third thirdArgs key flags ctx) :
+    KExecution (.andor first second third) (firstArgs ++ thirdArgs)
+      key flags ctx := by
+  have firstFrame := firstExec.withSuffix (suffix := thirdArgs)
+  have tail := ExecutesStackFrame.notifElse_first
+    (compile_balancedControlFlow third) (compile_balancedControlFlow second)
+    minimal falsy thirdExec
+  simpa [BExecution, KExecution, compile, compileWithKeyHash,
+    List.append_assoc] using ExecutesStackFrame.append firstFrame tail
+
+theorem VExecution.andor_true
+    {first second third : CoreFragment} {firstArgs secondArgs : Stack}
+    {selector : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags selector)
+    (truth : castToBool selector = true)
+    (secondExec : VExecution second secondArgs flags ctx) :
+    VExecution (.andor first second third) (firstArgs ++ secondArgs) flags ctx := by
+  have firstFrame := firstExec.withSuffix (suffix := secondArgs)
+  have tail := ExecutesStackFrame.notifElse_second
+    (compile_balancedControlFlow third) (compile_balancedControlFlow second)
+    minimal truth secondExec
+  simpa [BExecution, VExecution, compile, compileWithKeyHash,
+    List.append_assoc] using ExecutesStackFrame.append firstFrame tail
+
+theorem VExecution.andor_false
+    {first second third : CoreFragment} {firstArgs thirdArgs : Stack}
+    {selector : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags selector)
+    (falsy : castToBool selector = false)
+    (thirdExec : VExecution third thirdArgs flags ctx) :
+    VExecution (.andor first second third) (firstArgs ++ thirdArgs) flags ctx := by
+  have firstFrame := firstExec.withSuffix (suffix := thirdArgs)
+  have tail := ExecutesStackFrame.notifElse_first
+    (compile_balancedControlFlow third) (compile_balancedControlFlow second)
+    minimal falsy thirdExec
+  simpa [BExecution, VExecution, compile, compileWithKeyHash,
+    List.append_assoc] using ExecutesStackFrame.append firstFrame tail
+
+theorem BExecutionOutcome.andor_true
+    {first second third : CoreFragment} {firstArgs secondArgs : Stack}
+    {selector : StackElement} {expected : Bool}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags selector)
+    (truth : castToBool selector = true)
+    (secondExec : BExecutionOutcome second secondArgs expected flags ctx) :
+    BExecutionOutcome (.andor first second third) (firstArgs ++ secondArgs)
+      expected flags ctx := by
+  obtain ⟨result, frame, resultTruth⟩ := secondExec
+  exact ⟨result, firstExec.andor_true minimal truth frame, resultTruth⟩
+
+theorem BExecutionOutcome.andor_false
+    {first second third : CoreFragment} {firstArgs thirdArgs : Stack}
+    {selector : StackElement} {expected : Bool}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags selector)
+    (falsy : castToBool selector = false)
+    (thirdExec : BExecutionOutcome third thirdArgs expected flags ctx) :
+    BExecutionOutcome (.andor first second third) (firstArgs ++ thirdArgs)
+      expected flags ctx := by
+  obtain ⟨result, frame, resultTruth⟩ := thirdExec
+  exact ⟨result, firstExec.andor_false minimal falsy frame, resultTruth⟩
 
 /-! ## Guarded wrapper composition -/
 

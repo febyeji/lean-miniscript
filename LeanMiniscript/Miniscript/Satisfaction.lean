@@ -485,9 +485,8 @@ def hashCandidates (lock : HashLock) (env : SatEnv) : CandidatePair where
     | some preimage => .usable [preimage] false
   dsat := .dontUse [env.nonPreimageFor lock] false .canonical
 
-/-- Compute the candidate pair for the supported leaf, wrapper, and
-    straight-line connective rows. Unsupported rows are explicitly impossible
-    on both sides. -/
+/-- Compute the candidate pair for the supported leaf, wrapper, and connective
+    rows. Unsupported rows are explicitly impossible on both sides. -/
 @[simp] def satisfactionCandidates : CoreFragment → SatEnv → CandidatePair
   | .zero, _ => { dsat := .usable [] false }
   | .one, _ => { sat := .usable [] false }
@@ -527,6 +526,32 @@ def hashCandidates (lock : HashLock) (env : SatEnv) : CandidatePair where
         (firstCandidates.sat.combine secondCandidates.sat).markOvercomplete
       { sat := (firstSatisfaction.select secondSatisfaction).select overcomplete
         dsat := firstCandidates.dsat.combine secondCandidates.dsat }
+  | .or_c first second, env =>
+      let firstCandidates := satisfactionCandidates first env
+      let secondCandidates := satisfactionCandidates second env
+      { sat := firstCandidates.sat.select
+          (firstCandidates.dsat.combine secondCandidates.sat) }
+  | .or_d first second, env =>
+      let firstCandidates := satisfactionCandidates first env
+      let secondCandidates := satisfactionCandidates second env
+      { sat := firstCandidates.sat.select
+          (firstCandidates.dsat.combine secondCandidates.sat)
+        dsat := firstCandidates.dsat.combine secondCandidates.dsat }
+  | .or_i first second, env =>
+      let firstCandidates := satisfactionCandidates first env
+      let secondCandidates := satisfactionCandidates second env
+      { sat := (firstCandidates.sat.withSelector trueElement).select
+          (secondCandidates.sat.withSelector falseElement)
+        dsat := (firstCandidates.dsat.withSelector trueElement).select
+          (secondCandidates.dsat.withSelector falseElement) }
+  | .andor first second third, env =>
+      let firstCandidates := satisfactionCandidates first env
+      let secondCandidates := satisfactionCandidates second env
+      let thirdCandidates := satisfactionCandidates third env
+      { sat := (firstCandidates.sat.combine secondCandidates.sat).select
+          (firstCandidates.dsat.combine thirdCandidates.sat)
+        dsat := (firstCandidates.dsat.combine thirdCandidates.dsat).select
+          ((firstCandidates.sat.combine secondCandidates.dsat).markNonCanonical) }
   | .c fragment, env => satisfactionCandidates fragment env
   | .a fragment, env => satisfactionCandidates fragment env
   | .s fragment, env => satisfactionCandidates fragment env
@@ -812,6 +837,182 @@ theorem satisfactionCandidates_dsat_witness
     dissatisfy (.or_b first second) env =
       ((satisfactionCandidates first env).dsat.combine
         (satisfactionCandidates second env).dsat).usableWitness? := by
+  rfl
+
+/-! ## Conditional connective candidates -/
+
+/-- `or_c` either satisfies its first child and skips the V child, or
+    dissatisfies the first child and satisfies the V child. A V result has no
+    dissatisfaction. -/
+@[simp] theorem satisfactionCandidates_or_c
+    (first second : CoreFragment) (env : SatEnv) :
+    satisfactionCandidates (.or_c first second) env = {
+      sat := (satisfactionCandidates first env).sat.select
+        ((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates second env).sat) } := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_or_c_sat
+    (first second : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.or_c first second) env).sat =
+      (satisfactionCandidates first env).sat.select
+        ((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates second env).sat) := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_or_c_dsat
+    (first second : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.or_c first second) env).dsat = .impossible := by
+  rfl
+
+@[simp] theorem satisfy_or_c
+    (first second : CoreFragment) (env : SatEnv) :
+    satisfy (.or_c first second) env =
+      ((satisfactionCandidates first env).sat.select
+        ((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates second env).sat)).usableWitness? := by
+  rfl
+
+@[simp] theorem dissatisfy_or_c
+    (first second : CoreFragment) (env : SatEnv) :
+    dissatisfy (.or_c first second) env = none := by
+  rfl
+
+/-- `or_d` has the same two satisfaction paths as `or_c`, while its exact
+    dissatisfaction combines both child dissatisfactions. -/
+@[simp] theorem satisfactionCandidates_or_d
+    (first second : CoreFragment) (env : SatEnv) :
+    satisfactionCandidates (.or_d first second) env = {
+      sat := (satisfactionCandidates first env).sat.select
+        ((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates second env).sat)
+      dsat := (satisfactionCandidates first env).dsat.combine
+        (satisfactionCandidates second env).dsat } := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_or_d_sat
+    (first second : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.or_d first second) env).sat =
+      (satisfactionCandidates first env).sat.select
+        ((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates second env).sat) := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_or_d_dsat
+    (first second : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.or_d first second) env).dsat =
+      (satisfactionCandidates first env).dsat.combine
+        (satisfactionCandidates second env).dsat := by
+  rfl
+
+@[simp] theorem satisfy_or_d
+    (first second : CoreFragment) (env : SatEnv) :
+    satisfy (.or_d first second) env =
+      ((satisfactionCandidates first env).sat.select
+        ((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates second env).sat)).usableWitness? := by
+  rfl
+
+@[simp] theorem dissatisfy_or_d
+    (first second : CoreFragment) (env : SatEnv) :
+    dissatisfy (.or_d first second) env =
+      ((satisfactionCandidates first env).dsat.combine
+        (satisfactionCandidates second env).dsat).usableWitness? := by
+  rfl
+
+/-- `or_i` appends the canonical selector corresponding to each branch before
+    choosing between otherwise complete child candidates. -/
+@[simp] theorem satisfactionCandidates_or_i
+    (first second : CoreFragment) (env : SatEnv) :
+    satisfactionCandidates (.or_i first second) env = {
+      sat := ((satisfactionCandidates first env).sat.withSelector
+          trueElement).select
+        ((satisfactionCandidates second env).sat.withSelector falseElement)
+      dsat := ((satisfactionCandidates first env).dsat.withSelector
+          trueElement).select
+        ((satisfactionCandidates second env).dsat.withSelector falseElement) } := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_or_i_sat
+    (first second : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.or_i first second) env).sat =
+      ((satisfactionCandidates first env).sat.withSelector trueElement).select
+        ((satisfactionCandidates second env).sat.withSelector falseElement) := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_or_i_dsat
+    (first second : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.or_i first second) env).dsat =
+      ((satisfactionCandidates first env).dsat.withSelector trueElement).select
+        ((satisfactionCandidates second env).dsat.withSelector falseElement) := by
+  rfl
+
+@[simp] theorem satisfy_or_i
+    (first second : CoreFragment) (env : SatEnv) :
+    satisfy (.or_i first second) env =
+      (((satisfactionCandidates first env).sat.withSelector trueElement).select
+        ((satisfactionCandidates second env).sat.withSelector
+          falseElement)).usableWitness? := by
+  rfl
+
+@[simp] theorem dissatisfy_or_i
+    (first second : CoreFragment) (env : SatEnv) :
+    dissatisfy (.or_i first second) env =
+      (((satisfactionCandidates first env).dsat.withSelector trueElement).select
+        ((satisfactionCandidates second env).dsat.withSelector
+          falseElement)).usableWitness? := by
+  rfl
+
+/-- `andor` selects Y after a satisfying X and Z after a dissatisfying X. Its
+    alternate `sat(X) dsat(Y)` dissatisfaction is valid but non-canonical; it is
+    not an overcomplete row and therefore keeps its inherited usability. -/
+@[simp] theorem satisfactionCandidates_andor
+    (first second third : CoreFragment) (env : SatEnv) :
+    satisfactionCandidates (.andor first second third) env = {
+      sat := ((satisfactionCandidates first env).sat.combine
+          (satisfactionCandidates second env).sat).select
+        ((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates third env).sat)
+      dsat := ((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates third env).dsat).select
+        (((satisfactionCandidates first env).sat.combine
+          (satisfactionCandidates second env).dsat).markNonCanonical) } := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_andor_sat
+    (first second third : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.andor first second third) env).sat =
+      ((satisfactionCandidates first env).sat.combine
+          (satisfactionCandidates second env).sat).select
+        ((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates third env).sat) := by
+  rfl
+
+@[simp] theorem satisfactionCandidates_andor_dsat
+    (first second third : CoreFragment) (env : SatEnv) :
+    (satisfactionCandidates (.andor first second third) env).dsat =
+      ((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates third env).dsat).select
+        (((satisfactionCandidates first env).sat.combine
+          (satisfactionCandidates second env).dsat).markNonCanonical) := by
+  rfl
+
+@[simp] theorem satisfy_andor
+    (first second third : CoreFragment) (env : SatEnv) :
+    satisfy (.andor first second third) env =
+      (((satisfactionCandidates first env).sat.combine
+          (satisfactionCandidates second env).sat).select
+        ((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates third env).sat)).usableWitness? := by
+  rfl
+
+@[simp] theorem dissatisfy_andor
+    (first second third : CoreFragment) (env : SatEnv) :
+    dissatisfy (.andor first second third) env =
+      (((satisfactionCandidates first env).dsat.combine
+          (satisfactionCandidates third env).dsat).select
+        (((satisfactionCandidates first env).sat.combine
+          (satisfactionCandidates second env).dsat).markNonCanonical)).usableWitness? := by
   rfl
 
 @[simp] theorem satisfactionCandidates_c (fragment : CoreFragment) (env : SatEnv) :

@@ -107,7 +107,8 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
 - Basic candidate generation is executable for constants, key leaves and their
   `c` wrappers, timelocks, all four 32-byte hashlocks, and linear propagation
   through `a`, `s`, `v`, and `n`, the guarded `d` and `j` rows, and the
-  straight-line `and_v`, `and_b`, and `or_b` connectives. Paired
+  straight-line `and_v`, `and_b`, and `or_b` connectives, plus conditional
+  `or_c`, `or_d`, `or_i`, and `andor`. Paired
   candidates track HASSIG, DONTUSE, canonical origin, and additive witness
   cost. Key leaves have exact K-frame lemmas; B leaves and well-typed `c`
   wrappers have arbitrary-stack lemmas leading to clean acceptance or
@@ -115,9 +116,12 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   orders, truthy B-to-V conversion, `n`'s explicit Script-number normalization
   boundary, local guarded execution contracts for `d` and `j`, B/K/V
   composition through `and_v`, and both exact W stack orders plus numeric decode
-  premises for `and_b`/`or_b`. Recursive generated-witness soundness for these
-  wrappers and connectives remains unfinished. Conditional connectives remain
-  unsupported by candidate generation.
+  premises for `and_b`/`or_b`. Balanced IF/NOTIF frame lemmas additionally
+  prove the `or_c` B-to-V paths, `or_d` B paths, and `or_i`/`andor` B/K/V paths;
+  child-produced selectors keep explicit truth and MINIMALIF premises, while
+  canonical `or_i` selectors discharge MINIMALIF internally. Recursive
+  generated-witness soundness for these wrappers and connectives remains
+  unfinished.
 - General soundness, full satisfaction coverage, non-malleability, small-step
   semantics, cryptographic correctness proofs, executable ECDSA verification,
   unsupported Core failure classes,

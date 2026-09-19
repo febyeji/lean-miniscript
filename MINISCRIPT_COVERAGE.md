@@ -139,10 +139,10 @@ path-sensitive peak analysis remains unfinished.
 | `and_v` | Done | Done | Done | Done | Partial | Composed candidate | Non-canonical candidate | Partial | B/K/V frame composition |
 | `and_b` | Done | Done | Done | Done | Partial | Composed candidate | Selected candidate | Partial | B/W BOOLAND frame |
 | `or_b` | Done | Done | Done | Done | Partial | Selected candidate | Composed candidate | Partial | B/W BOOLOR frame |
-| `or_c` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
-| `or_d` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
-| `or_i` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
-| `andor` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
+| `or_c` | Done | Done | Done | Done | Partial | Selected candidate | Impossible | Partial | B-to-V conditional frames |
+| `or_d` | Done | Done | Done | Done | Partial | Selected candidate | Composed candidate | Partial | IFDUP conditional B frames |
+| `or_i` | Done | Done | Done | Done | Partial | Selected candidate | Selected candidate | Partial | Canonical-selector B/K/V frames |
+| `andor` | Done | Done | Done | Done | Partial | Selected candidate | Selected candidate | Partial | Guarded B/K/V branch frames |
 | `a` | Done | Done | Done | Done | Partial | Pass-through | Pass-through | Partial | Saved-first W frame |
 | `s` | Done | Done | Done | Done | Partial | Pass-through | Pass-through | Partial | Singleton/result-first W frame |
 | `c` | Done | Done | Done | Done | Partial | Basic (key leaves) | Basic (key leaves) | Partial | Basic soundness |
@@ -208,8 +208,29 @@ operand order before `OP_BOOLAND` or `OP_BOOLOR` executes. Result-first W
 frames use Boolean commutativity to expose one canonical source-child result
 order. These contracts preserve arbitrary main-stack suffixes and the complete
 alternate stack. They do not yet prove recursive soundness for witnesses
-selected by the candidate algorithm. Conditional connectives `or_c`, `or_d`,
-`or_i`, and `andor` remain unsupported by candidate generation.
+selected by the candidate algorithm.
+
+The conditional connectives `or_c`, `or_d`, `or_i`, and `andor` now implement
+their BIP 379 candidate rows. `or_c` and `or_d` select between direct X
+satisfaction and composed `dsat(X) sat(Y)`; only `or_d` composes both child
+dissatisfactions. `or_i` appends canonical true and false selectors before
+selecting each satisfaction or dissatisfaction pair, so selector serialization
+cost participates in the shared HASSIG/DONTUSE choice. `andor` selects
+`sat(X) sat(Y)` against `dsat(X) sat(Z)` and selects canonical
+`dsat(X) dsat(Z)` against the non-canonical `sat(X) dsat(Y)`. That alternate
+`andor` dissatisfaction is marked non-canonical without being marked
+overcomplete, so its inherited usability remains intact. All sequential rows
+use `Witness.combine`, retaining second-child-before-first-child wire order and
+first-child-before-second-child runtime order.
+
+Reusable balanced IF/NOTIF frame lemmas prove exact one- and two-branch
+execution while preserving arbitrary main-stack suffixes and the alternate
+stack. Local connector contracts cover `or_c` B-to-V paths, `or_d` B paths,
+and `or_i` and `andor` B/K/V paths. Selectors produced by a child retain
+separate `minimalIfSatisfied` and `castToBool` premises; `or_i` discharges
+MINIMALIF internally for its canonical selectors. No numeric decoding premise
+is used for these branch selectors. These local contracts do not yet prove
+recursive soundness for witnesses selected by the candidate algorithm.
 
 `HasType ctx` covers all rows, and `inferType ctx` has soundness, completeness,
 uniqueness, and success/reflection theorems. A constructor-exhaustive fixture
@@ -464,7 +485,8 @@ regressions cover active, inactive, and repeated-`ELSE` cases.
 Satisfaction now has executable candidate rows for constants, `pk_k`, `pk_h`,
 their `c` wrappers, timelocks, all four hashlocks, linear wrapper propagation
 through `a`, `s`, `v`, and `n`, guarded wrappers `d` and `j`, and straight-line
-connectives `and_v`, `and_b`, and `or_b`. Paired
+connectives `and_v`, `and_b`, and `or_b`, plus conditional connectives `or_c`,
+`or_d`, `or_i`, and `andor`. Paired
 candidates retain HASSIG, DONTUSE, canonical origin, and additive witness cost
 metadata while the public projection returns only usable witnesses. Signature
 and key material use serialized witness order, and timelock availability reuses
@@ -482,10 +504,10 @@ preimage, and nonpreimage obligations at the cryptographic boundary. Basic key
 satisfaction additionally requires `SatEnv.EncodingSound`, and key
 dissatisfaction requires the empty-signature/key pair to pass the selected
 version-specific byte checks. Guarded wrappers `d` and `j` and the supported
-straight-line connectives have the local arbitrary-stack contracts described
-above, without a recursive theorem tying every generated candidate to child
-execution. Conditional connectives, thresholds, and multisignature candidate
-selection remain unsupported and return `none`.
+straight-line and conditional connectives have the local arbitrary-stack
+contracts described above, without a recursive theorem tying every generated
+candidate to child execution. Threshold and multisignature candidate selection
+remain unsupported and return `none`.
 
 ## Surface Constructor Matrix
 
