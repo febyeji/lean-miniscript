@@ -33,6 +33,7 @@ private def preimageEnv : SatEnv where
 
 private def firstWitness : Witness := [⟨#[0x01]⟩, ⟨#[0x02]⟩]
 private def secondWitness : Witness := [⟨#[0x03]⟩]
+private def alternateTruthy : StackElement := ⟨#[0x02]⟩
 
 /-- Sequential composition puts the first fragment's arguments on top of the
     runtime stack while retaining Bitcoin's bottom-first wire order. -/
@@ -113,6 +114,155 @@ example :
       (first.combine second).status = .dontUse ∧
       (first.combine second).origin = .nonCanonical := by
   decide
+
+/-! ## Shared BIP 379 selection algebra -/
+
+/-- Impossibility is an identity on either side of candidate selection. -/
+example :
+    CandidateResult.select .impossible
+        (.usable [falseElement] false) = .usable [falseElement] false ∧
+      CandidateResult.select (.usable [falseElement] false)
+        .impossible = .usable [falseElement] false := by
+  constructor <;> rfl
+
+/-- A unique no-HASSIG candidate wins unchanged, including an existing
+    DONTUSE classification. -/
+example :
+    CandidateResult.select
+        (.dontUse [signature] false .canonical)
+        (.usable [] true) =
+      .dontUse [signature] false .canonical ∧
+    CandidateResult.select
+        (.usable [] true)
+        (.dontUse [signature] false .canonical) =
+      .dontUse [signature] false .canonical := by
+  constructor <;> rfl
+
+/-- Two no-HASSIG alternatives retain the cheaper witness and its origin, but
+    the result becomes DONTUSE. -/
+example :
+    CandidateResult.select
+        (.usable [signature] false)
+        (CandidateResult.markNonCanonical
+          (CandidateResult.usable [falseElement] false)) =
+      .dontUse [falseElement] false .nonCanonical := by
+  rfl
+
+/-- Folding two no-HASSIG alternatives first keeps their cheapest witness
+    DONTUSE when a HASSIG alternative is considered afterward. -/
+example :
+    CandidateResult.select
+        (CandidateResult.select
+          (.usable [signature] false)
+          (.usable [falseElement] false))
+        (.usable [] true) =
+      .dontUse [falseElement] false .canonical := by
+  rfl
+
+/-- An interleaved left fold still recognizes both no-HASSIG alternatives. -/
+example :
+    CandidateResult.select
+        (CandidateResult.select
+          (.usable [signature] false)
+          (.usable [] true))
+        (.usable [falseElement] false) =
+      .dontUse [falseElement] false .canonical := by
+  rfl
+
+/-- One no-HASSIG candidate added after two HASSIG candidates wins unchanged. -/
+example :
+    CandidateResult.select
+        (CandidateResult.select
+          (.dontUse [falseElement] true .canonical)
+          (.usable [signature] true))
+        (.dontUse [alternateTruthy] false .nonCanonical) =
+      .dontUse [alternateTruthy] false .nonCanonical := by
+  rfl
+
+/-- Among three HASSIG candidates, usable beats cheaper DONTUSE and the
+    cheapest usable candidate wins. -/
+example :
+    CandidateResult.select
+        (CandidateResult.select
+          (.dontUse [] true .canonical)
+          (.usable [signature] true))
+        (.usable [falseElement] true) =
+      .usable [falseElement] true := by
+  rfl
+
+/-- Equal-cost no-HASSIG alternatives retain the left witness and origin. -/
+example :
+    CandidateResult.select
+        (.usable [trueElement] false)
+        (CandidateResult.markNonCanonical
+          (CandidateResult.usable [alternateTruthy] false)) =
+      .dontUse [trueElement] false .canonical := by
+  rfl
+
+/-- With two HASSIG alternatives, usability takes precedence over cost. -/
+example :
+    CandidateResult.select
+        (.dontUse [falseElement] true .canonical)
+        (CandidateResult.markNonCanonical
+          (CandidateResult.usable [signature] true)) =
+      CandidateResult.markNonCanonical
+        (CandidateResult.usable [signature] true) := by
+  rfl
+
+/-- Candidates with equal HASSIG/status classification use cost next. -/
+example :
+    CandidateResult.select
+        (.usable [signature] true)
+        (CandidateResult.markNonCanonical
+          (CandidateResult.usable [falseElement] true)) =
+      CandidateResult.markNonCanonical
+        (CandidateResult.usable [falseElement] true) ∧
+    CandidateResult.select
+        (.dontUse [signature] true .canonical)
+        (.dontUse [falseElement] true .nonCanonical) =
+      .dontUse [falseElement] true .nonCanonical := by
+  constructor <;> rfl
+
+/-- Adding a selector preserves HASSIG, DONTUSE, and origin metadata. -/
+example :
+    (CandidateResult.dontUse [falseElement] true .nonCanonical).withSelector
+        trueElement =
+      CandidateResult.dontUse [falseElement, trueElement] true
+        .nonCanonical := by
+  rfl
+
+/-- Runtime-top filtering observes the last serialized witness item. -/
+example :
+    CandidateResult.requireNonemptyRuntimeTop
+        (CandidateResult.usable [falseElement, trueElement] false) =
+      CandidateResult.usable [falseElement, trueElement] false ∧
+    CandidateResult.requireNonemptyRuntimeTop
+        (CandidateResult.usable [trueElement, falseElement] false) =
+      CandidateResult.impossible ∧
+    CandidateResult.requireNonemptyRuntimeTop
+        (CandidateResult.usable [] false) = CandidateResult.impossible := by
+  constructor
+  · rfl
+  · constructor <;> rfl
+
+/-- Non-canonical and overcomplete transformations remain distinct from a
+    canonical DONTUSE such as a hash dissatisfaction. -/
+example :
+    CandidateResult.markNonCanonical
+        (CandidateResult.dontUse [nonPreimage32] false .canonical) =
+      CandidateResult.dontUse [nonPreimage32] false .nonCanonical ∧
+    (CandidateResult.usable [signature] true).markOvercomplete =
+      CandidateResult.dontUse [signature] true .nonCanonical := by
+  constructor <;> rfl
+
+/-- Candidate pairs select their two result classes independently. -/
+example :
+    CandidatePair.select
+        { dsat := CandidateResult.usable [falseElement] false }
+        { sat := CandidateResult.usable [signature] true } =
+      { sat := CandidateResult.usable [signature] true
+        dsat := CandidateResult.usable [falseElement] false } := by
+  rfl
 
 example : (satisfactionCandidates .one unavailableEnv).sat.usableWitness? =
     some [] := by rfl
