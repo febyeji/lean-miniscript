@@ -136,10 +136,14 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   exact-count trace records one source-order child witness for each usable
   exact-count result, and usable threshold dissatisfaction is traced to the
   canonical count-zero row.
-  A typed generated-execution carrier now connects candidate provenance to
-  arbitrary-stack execution for `0`, `1`, both key leaves, all four hash
-  leaves, and wrapper `c`; K witnesses retain the exact separation between
-  child arguments and the pending signature.
+  Proof-only Script-number bridges show that every canonical nonnegative value
+  below `2^31` decodes under either minimal-data mode, remains valid when the
+  byte limit grows, and is truthy when positive. The typed generated-execution
+  carrier uses those facts to cover `0`, `1`, both key leaves, `older`, `after`,
+  all four hash leaves, and wrapper `c`; K witnesses retain the exact separation
+  between child arguments and the pending signature. Context-valid keys under
+  modeled flags and execution versions also discharge the empty-signature
+  encoding premise used by generated key dissatisfaction.
   Recursive generated-witness soundness for these wrappers, connectives, and
   thresholds, and the connection from selected multisignature candidates to
   cryptographic key/signature matching remain unfinished.

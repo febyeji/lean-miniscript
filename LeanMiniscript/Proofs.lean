@@ -1,5 +1,6 @@
 import LeanMiniscript
 import LeanMiniscript.Script.RuntimeErasure
+import LeanMiniscript.Script.ScriptNumProofs
 import LeanMiniscript.Miniscript.TypeInferenceProofs
 import LeanMiniscript.Miniscript.MalleabilityInferenceProofs
 import LeanMiniscript.Miniscript.Conformance

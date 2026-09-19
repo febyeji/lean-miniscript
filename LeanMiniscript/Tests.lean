@@ -23,6 +23,7 @@ import LeanMiniscript.Script.ConditionalExamples
 import LeanMiniscript.Script.EvaluatorExamples
 import LeanMiniscript.Script.NullFailExamples
 import LeanMiniscript.Script.ScriptNumExamples
+import LeanMiniscript.Script.ScriptNumProofExamples
 import LeanMiniscript.Script.SignatureEncodingExamples
 import LeanMiniscript.Script.SighashExecutionExamples
 import LeanMiniscript.Script.SignatureVersionExamples
