@@ -93,6 +93,15 @@ theorem supports_impossible (predicate : Witness → Prop) :
   intro witness selected
   simp at selected
 
+/-- Strengthen or re-express the invariant carried by every usable witness. -/
+theorem Supports.mono {result : CandidateResult}
+    {source target : Witness → Prop}
+    (supported : result.Supports source)
+    (implication : ∀ witness, source witness → target witness) :
+    result.Supports target := by
+  intro witness selected
+  exact implication witness (supported witness selected)
+
 /-- A freshly usable candidate supports a predicate exactly when its witness
     does. -/
 theorem supports_usable {predicate : Witness → Prop} {witness : Witness}
