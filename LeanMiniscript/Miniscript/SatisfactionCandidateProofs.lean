@@ -370,6 +370,76 @@ inductive ChoiceTrace : List CandidatePair → Nat → List Witness → Witness 
       ChoiceTrace (children ++ [child]) count
         (frames ++ [childWitness]) (Witness.combine witness childWitness)
 
+/-- Source-order child choices, separated from the accumulated witness used by
+    `ChoiceTrace`. The Boolean row records whether each child satisfaction or
+    dissatisfaction supplied the corresponding witness frame. -/
+inductive ChoiceFrames : List CandidatePair → List Bool → List Witness → Prop
+  | nil : ChoiceFrames [] [] []
+  | snocSat {children : List CandidatePair} {truths : List Bool}
+      {frames : List Witness} {child : CandidatePair} {childWitness : Witness}
+      (prior : ChoiceFrames children truths frames)
+      (selected : child.sat.usableWitness? = some childWitness) :
+      ChoiceFrames (children ++ [child]) (truths ++ [true])
+        (frames ++ [childWitness])
+  | snocDsat {children : List CandidatePair} {truths : List Bool}
+      {frames : List Witness} {child : CandidatePair} {childWitness : Witness}
+      (prior : ChoiceFrames children truths frames)
+      (selected : child.dsat.usableWitness? = some childWitness) :
+      ChoiceFrames (children ++ [child]) (truths ++ [false])
+        (frames ++ [childWitness])
+
+/-- A source-choice frame list has one truth bit and one witness frame per
+    child. -/
+theorem ChoiceFrames.lengths {children : List CandidatePair}
+    {truths : List Bool} {frames : List Witness}
+    (choices : ChoiceFrames children truths frames) :
+    truths.length = children.length ∧ frames.length = children.length := by
+  induction choices <;> simp_all
+
+/-- Exact-count provenance exposes the individual source choices, and the
+    number of satisfying rows is exactly the DP state index. -/
+theorem ChoiceTrace.toChoiceFrames {children : List CandidatePair} {count : Nat}
+    {frames : List Witness} {witness : Witness}
+    (trace : ChoiceTrace children count frames witness) :
+    ∃ truths, ChoiceFrames children truths frames ∧
+      (truths.map Bool.toNat).sum = count := by
+  induction trace with
+  | nil => exact ⟨[], .nil, rfl⟩
+  | sat trace selected ih =>
+      obtain ⟨truths, choices, countEq⟩ := ih
+      refine ⟨truths ++ [true], .snocSat choices selected, ?_⟩
+      simp [countEq]
+  | dsat trace selected ih =>
+      obtain ⟨truths, choices, countEq⟩ := ih
+      refine ⟨truths ++ [false], .snocDsat choices selected, ?_⟩
+      simp [countEq]
+
+private theorem replicateFalse_snoc (count : Nat) :
+    List.replicate count false ++ [false] =
+      List.replicate (count + 1) false := by
+  induction count with
+  | zero => rfl
+  | succ count ih =>
+      simp only [List.replicate_succ, List.cons_append]
+      exact congrArg (false :: ·) ih
+
+/-- A zero-count source-choice trace consists entirely of dissatisfaction
+    rows. -/
+theorem ChoiceFrames.allFalse_of_sum_eq_zero
+    {children : List CandidatePair} {truths : List Bool}
+    {frames : List Witness} (choices : ChoiceFrames children truths frames)
+    (sumEq : (truths.map Bool.toNat).sum = 0) :
+    truths = List.replicate truths.length false := by
+  induction choices with
+  | nil => rfl
+  | snocSat prior selected ih => simp at sumEq
+  | @snocDsat children truths frames child childWitness prior selected ih =>
+      simp only [List.map_append, List.map_cons, Bool.toNat_false,
+        List.map_nil, List.sum_append, List.sum_cons, List.sum_nil,
+        Nat.add_zero] at sumEq
+      rw [ih sumEq]
+      simpa using replicateFalse_snoc truths.length
+
 /-- A trace has one argument frame for every source child. -/
 theorem ChoiceTrace.frames_length {children : List CandidatePair} {count : Nat}
     {frames : List Witness} {witness : Witness}
@@ -397,6 +467,24 @@ theorem ChoiceTrace.toInitialStack {children : List CandidatePair} {count : Nat}
       simp [Witness.toInitialStack_combine, ih]
   | dsat trace selected ih =>
       simp [Witness.toInitialStack_combine, ih]
+
+/-- Bounded source frames imply that the combined exact-count witness is
+    bounded as well. -/
+theorem ChoiceTrace.itemsBounded {children : List CandidatePair} {count : Nat}
+    {frames : List Witness} {witness : Witness}
+    (trace : ChoiceTrace children count frames witness)
+    (bounded : ∀ frame ∈ frames, frame.ItemsBounded) :
+    witness.ItemsBounded := by
+  induction trace with
+  | nil => exact Witness.ItemsBounded.nil
+  | sat trace selected ih =>
+      apply Witness.ItemsBounded.combine
+      · exact ih (fun frame member => bounded frame (by simp [member]))
+      · exact bounded _ (by simp)
+  | dsat trace selected ih =>
+      apply Witness.ItemsBounded.combine
+      · exact ih (fun frame member => bounded frame (by simp [member]))
+      · exact bounded _ (by simp)
 
 /-! ## Exact-count table provenance -/
 

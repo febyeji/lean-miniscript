@@ -556,6 +556,366 @@ theorem dissatisfyExecution
 
 end CandidatePair.SupportsGenerated
 
+/-! ## Generated child lists -/
+
+/-- Strong generated support aligned with a source-order fragment/type list.
+    The snoc presentation matches the exact-count choice trace without changing
+    the executable list representation. -/
+inductive SupportsGeneratedContractList (scriptCtx : ScriptContext)
+    (flags : ScriptFlags) (txCtx : TxContext) :
+    List CandidatePair → List CoreFragment → List MiniType → Prop where
+  | nil : SupportsGeneratedContractList scriptCtx flags txCtx [] [] []
+  | snoc {pairs : List CandidatePair} {fragments : List CoreFragment}
+      {types : List MiniType} {pair : CandidatePair} {fragment : CoreFragment}
+      {ty : MiniType}
+      (prior : SupportsGeneratedContractList scriptCtx flags txCtx
+        pairs fragments types)
+      (child : pair.SupportsGeneratedContract scriptCtx fragment ty flags txCtx) :
+      SupportsGeneratedContractList scriptCtx flags txCtx
+        (pairs ++ [pair]) (fragments ++ [fragment]) (types ++ [ty])
+
+namespace HasTypeList
+
+/-- Pointwise typing is closed under appending one source child. -/
+theorem snoc {scriptCtx : ScriptContext} {fragments : List CoreFragment}
+    {types : List MiniType} {fragment : CoreFragment} {ty : MiniType}
+    (prior : HasTypeList scriptCtx fragments types)
+    (child : HasType scriptCtx fragment ty) :
+    HasTypeList scriptCtx (fragments ++ [fragment]) (types ++ [ty]) := by
+  apply HasTypeList.recOn
+    (motive_1 := fun _ _ _ => True)
+    (motive_2 := fun fragments types _ =>
+      HasTypeList scriptCtx (fragments ++ [fragment]) (types ++ [ty])) prior
+  all_goals simp_all
+  · exact .cons child .nil
+  · intros
+    apply HasTypeList.cons <;> assumption
+
+end HasTypeList
+
+namespace SupportsGeneratedContractList
+
+private theorem nil_inv {scriptCtx : ScriptContext} {flags : ScriptFlags}
+    {txCtx : TxContext} {fragments : List CoreFragment} {types : List MiniType}
+    (supported : SupportsGeneratedContractList scriptCtx flags txCtx
+      [] fragments types) : fragments = [] ∧ types = [] := by
+  generalize pairsEq : ([] : List CandidatePair) = pairs at supported
+  cases supported with
+  | nil => exact ⟨rfl, rfl⟩
+  | @snoc pairs fragments types pair fragment ty prior child =>
+      simp at pairsEq
+
+private theorem snoc_inv {scriptCtx : ScriptContext} {flags : ScriptFlags}
+    {txCtx : TxContext} {pairs : List CandidatePair} {pair : CandidatePair}
+    {fragments : List CoreFragment} {types : List MiniType}
+    (supported : SupportsGeneratedContractList scriptCtx flags txCtx
+      (pairs ++ [pair]) fragments types) :
+    ∃ priorFragments priorTypes fragment ty,
+      fragments = priorFragments ++ [fragment] ∧
+      types = priorTypes ++ [ty] ∧
+      SupportsGeneratedContractList scriptCtx flags txCtx
+        pairs priorFragments priorTypes ∧
+      pair.SupportsGeneratedContract scriptCtx fragment ty flags txCtx := by
+  generalize pairsEq : pairs ++ [pair] = allPairs at supported
+  cases supported with
+  | nil => simp at pairsEq
+  | @snoc otherPairs otherFragments otherTypes otherPair fragment ty prior child =>
+      have lengths : pairs.length = otherPairs.length := by
+        have := congrArg List.length pairsEq
+        simpa using this
+      obtain ⟨pairsEq, singletonEq⟩ := List.append_inj pairsEq lengths
+      have pairEq : pair = otherPair := by simpa using singletonEq
+      subst otherPairs
+      subst otherPair
+      exact ⟨otherFragments, otherTypes, fragment, ty, rfl, rfl, prior, child⟩
+
+/-- List support retains the pointwise typing evidence needed by the threshold
+    typing constructor. -/
+theorem typed {scriptCtx : ScriptContext} {flags : ScriptFlags}
+    {txCtx : TxContext} {pairs : List CandidatePair}
+    {fragments : List CoreFragment} {types : List MiniType}
+    (supported : SupportsGeneratedContractList scriptCtx flags txCtx
+      pairs fragments types) :
+    HasTypeList scriptCtx fragments types := by
+  induction supported with
+  | nil => exact .nil
+  | snoc prior child ih => exact ih.snoc child.typed
+
+/-- Prepend one strongly supported source child. -/
+theorem cons {scriptCtx : ScriptContext} {flags : ScriptFlags}
+    {txCtx : TxContext} {pairs : List CandidatePair}
+    {fragments : List CoreFragment} {types : List MiniType}
+    {pair : CandidatePair} {fragment : CoreFragment} {ty : MiniType}
+    (child : pair.SupportsGeneratedContract scriptCtx fragment ty flags txCtx)
+    (rest : SupportsGeneratedContractList scriptCtx flags txCtx
+      pairs fragments types) :
+    SupportsGeneratedContractList scriptCtx flags txCtx
+      (pair :: pairs) (fragment :: fragments) (ty :: types) := by
+  induction rest with
+  | nil => exact .snoc .nil child
+  | snoc prior last ih => exact .snoc ih last
+
+end SupportsGeneratedContractList
+
+/-- Executable contracts selected by a source-order Boolean choice row. This
+    relation is head-recursive so threshold execution can consume the first B
+    child followed by its W tail directly. -/
+inductive GeneratedChoiceFrames (flags : ScriptFlags) (txCtx : TxContext) :
+    List CoreFragment → List MiniType → List Bool → List Witness → Prop where
+  | nil : GeneratedChoiceFrames flags txCtx [] [] [] []
+  | cons {fragment : CoreFragment} {ty : MiniType} {truth : Bool}
+      {frame : Witness} {fragments : List CoreFragment} {types : List MiniType}
+      {truths : List Bool} {frames : List Witness}
+      (head : GeneratedContract fragment frame truth flags txCtx ty)
+      (tail : GeneratedChoiceFrames flags txCtx fragments types truths frames) :
+      GeneratedChoiceFrames flags txCtx (fragment :: fragments) (ty :: types)
+        (truth :: truths) (frame :: frames)
+
+namespace GeneratedChoiceFrames
+
+/-- Append one selected child contract while preserving source order. -/
+theorem snoc {flags : ScriptFlags} {txCtx : TxContext}
+    {fragments : List CoreFragment} {types : List MiniType}
+    {truths : List Bool} {frames : List Witness}
+    {fragment : CoreFragment} {ty : MiniType} {truth : Bool} {frame : Witness}
+    (prior : GeneratedChoiceFrames flags txCtx fragments types truths frames)
+    (child : GeneratedContract fragment frame truth flags txCtx ty) :
+    GeneratedChoiceFrames flags txCtx (fragments ++ [fragment]) (types ++ [ty])
+      (truths ++ [truth]) (frames ++ [frame]) := by
+  induction prior with
+  | nil => exact .cons child .nil
+  | cons head tail ih => exact .cons head ih
+
+/-- Every selected child frame inherits the per-item witness bound from its
+    strong generated contract. -/
+theorem framesBounded {flags : ScriptFlags} {txCtx : TxContext}
+    {fragments : List CoreFragment} {types : List MiniType}
+    {truths : List Bool} {frames : List Witness}
+    (generated : GeneratedChoiceFrames flags txCtx fragments types truths frames) :
+    ∀ frame ∈ frames, frame.ItemsBounded := by
+  induction generated with
+  | nil => simp
+  | cons head tail ih =>
+      intro frame member
+      simp only [List.mem_cons] at member
+      rcases member with rfl | member
+      · exact head.input.bounded
+      · exact ih frame member
+
+/-- If every child is zero-argument, the concatenated runtime frame is empty. -/
+theorem allZ {flags : ScriptFlags} {txCtx : TxContext}
+    {fragments : List CoreFragment} {types : List MiniType}
+    {truths : List Bool} {frames : List Witness}
+    (generated : GeneratedChoiceFrames flags txCtx fragments types truths frames)
+    (zero : CorrectnessModifiers.allZ (MiniType.modifiers types) = true) :
+    (frames.map Witness.toInitialStack).flatten = [] := by
+  induction generated with
+  | nil => rfl
+  | @cons fragment ty truth frame fragments types truths frames head tail ih =>
+      cases ty with
+      | mk base mods =>
+          simp only [MiniType.modifiers, CorrectnessModifiers.allZ,
+            Bool.and_eq_true] at zero
+          rw [List.map_cons, List.flatten_cons, head.input.zeroArgs zero.1,
+            ih zero.2]
+          rfl
+
+/-- If exactly one child is one-argument and every other child is zero-argument,
+    the concatenated runtime frame is a singleton. -/
+theorem oneOWithRestZ {flags : ScriptFlags} {txCtx : TxContext}
+    {fragments : List CoreFragment} {types : List MiniType}
+    {truths : List Bool} {frames : List Witness}
+    (generated : GeneratedChoiceFrames flags txCtx fragments types truths frames)
+    (one : CorrectnessModifiers.oneOWithRestZ
+      (MiniType.modifiers types) = true) :
+    ∃ argument, (frames.map Witness.toInitialStack).flatten = [argument] := by
+  induction generated with
+  | nil => simp [MiniType.modifiers, CorrectnessModifiers.oneOWithRestZ] at one
+  | @cons fragment ty truth frame fragments types truths frames head tail ih =>
+      cases ty with
+      | mk base mods =>
+          simp only [MiniType.modifiers, CorrectnessModifiers.oneOWithRestZ,
+            Bool.or_eq_true, Bool.and_eq_true] at one
+          rcases one with headOne | tailOne
+          · obtain ⟨argument, shape⟩ := head.input.oneArg headOne.1
+            refine ⟨argument, ?_⟩
+            rw [List.map_cons, List.flatten_cons, shape, allZ tail headOne.2]
+            rfl
+          · obtain ⟨argument, shape⟩ := ih tailOne.2
+            refine ⟨argument, ?_⟩
+            rw [List.map_cons, List.flatten_cons,
+              head.input.zeroArgs tailOne.1, shape]
+            rfl
+
+end GeneratedChoiceFrames
+
+/-- Source-choice provenance and aligned strong child support recover the exact
+    generated contract selected for every child frame. -/
+theorem CandidatePair.ChoiceFrames.generated
+    {scriptCtx : ScriptContext} {flags : ScriptFlags} {txCtx : TxContext}
+    {pairs : List CandidatePair} {fragments : List CoreFragment}
+    {types : List MiniType} {truths : List Bool} {frames : List Witness}
+    (choices : CandidatePair.ChoiceFrames pairs truths frames)
+    (supported : SupportsGeneratedContractList scriptCtx flags txCtx
+      pairs fragments types) :
+    GeneratedChoiceFrames flags txCtx fragments types truths frames := by
+  induction choices generalizing fragments types with
+  | nil =>
+      obtain ⟨rfl, rfl⟩ := SupportsGeneratedContractList.nil_inv supported
+      exact .nil
+  | snocSat prior selected ih =>
+      obtain ⟨priorFragments, priorTypes, fragment, ty, rfl, rfl,
+        priorSupported, childSupported⟩ :=
+        SupportsGeneratedContractList.snoc_inv supported
+      exact (ih priorSupported).snoc (childSupported.sat _ selected)
+  | snocDsat prior selected ih =>
+      obtain ⟨priorFragments, priorTypes, fragment, ty, rfl, rfl,
+        priorSupported, childSupported⟩ :=
+        SupportsGeneratedContractList.snoc_inv supported
+      exact (ih priorSupported).snoc (childSupported.dsat _ selected)
+
+/-! ## Threshold accumulator bridges -/
+
+/-- A valid positive threshold literal has bytes distinct from canonical zero. -/
+theorem candidateThresholdValid_scriptNat_ne_zero
+    {threshold arity : Nat} (valid : candidateThresholdValid threshold arity) :
+    scriptNat threshold ≠ scriptNat 0 := by
+  intro encodedEq
+  have thresholdDecoded := valid.2.2.decode false
+  have zeroDecoded := decodeScriptNum_scriptNat_of_lt
+    (n := 0) (by native_decide) false
+  rw [encodedEq, zeroDecoded] at thresholdDecoded
+  simp only [Except.ok.injEq] at thresholdDecoded
+  apply valid.1
+  exact Int.ofNat.inj thresholdDecoded.symm
+
+/-- A canonical accumulator and Boolean child satisfy the exact numeric decoder
+    premise for either W result order. -/
+theorem WStackOrder.binaryDecoded_scriptNat_boolToElement
+    {count : Nat} (safe : ArithmeticScriptNatSafe count)
+    (truth : Bool) (flags : ScriptFlags) (order : WStackOrder) :
+    order.BinaryDecoded flags (scriptNat count) (boolToElement truth)
+      (Int.ofNat count) (Int.ofNat truth.toNat) := by
+  have accumulatorDecoded := safe.decode flags.minimalData
+  have childDecoded :=
+    (BooleanResultFacts.canonical truth ({} : CorrectnessModifiers) flags).decoded
+  cases truth <;> cases order <;>
+    simp [WStackOrder.BinaryDecoded, decodeBinaryScriptNums,
+      accumulatorDecoded, childDecoded]
+  all_goals rfl
+
+/-- Arithmetic Script-number safety is downward closed. -/
+theorem arithmeticScriptNatSafe_of_le
+    {small total : Nat} (safe : ArithmeticScriptNatSafe total)
+    (bound : small ≤ total) : ArithmeticScriptNatSafe small := by
+  apply ArithmeticScriptNatSafe.of_lt
+  exact Nat.lt_of_le_of_lt bound safe.1
+
+/-- The current accumulator is bounded by its final count. -/
+theorem threshold_accumulator_safe
+    {count total : Nat} {truths : List Bool}
+    (safe : ArithmeticScriptNatSafe total)
+    (totalEq : count + (truths.map Bool.toNat).sum = total) :
+    ArithmeticScriptNatSafe count := by
+  apply arithmeticScriptNatSafe_of_le safe
+  omega
+
+/-- Consuming one Boolean preserves the exact remaining-sum invariant. -/
+theorem threshold_accumulator_step
+    {count total : Nat} {truth : Bool} {truths : List Bool}
+    (totalEq : count + ((truth :: truths).map Bool.toNat).sum = total) :
+    (count + truth.toNat) + (truths.map Bool.toNat).sum = total := by
+  simp only [List.map_cons, List.sum_cons] at totalEq
+  omega
+
+/-- Execute source-order W child frames as a threshold tail. Final-count safety
+    is enough because every intermediate accumulator is bounded by that total. -/
+theorem GeneratedChoiceFrames.thresholdTail
+    {flags : ScriptFlags} {txCtx : TxContext} {count total : Nat}
+    {fragments : List CoreFragment} {types : List MiniType}
+    {truths : List Bool} {frames : List Witness}
+    (generated : GeneratedChoiceFrames flags txCtx fragments types truths frames)
+    (restTyped : thresholdRestTypes types)
+    (safe : ArithmeticScriptNatSafe total)
+    (totalEq : count + (truths.map Bool.toNat).sum = total) :
+    ThresholdTailExecution flags txCtx count fragments
+      (frames.map Witness.toInitialStack) total := by
+  induction generated generalizing count total with
+  | nil =>
+      simp at totalEq
+      subst total
+      exact .nil count
+  | @cons fragment ty truth frame fragments types truths frames head tail ih =>
+      cases ty with
+      | mk base mods =>
+          simp only [thresholdRestTypes] at restTyped
+          obtain ⟨baseEq, childD, childUnit, restTyped⟩ := restTyped
+          subst base
+          cases head with
+          | w input order facts executed =>
+              have childExec : WExecution fragment frame.toInitialStack
+                  (boolToElement truth) order flags txCtx := by
+                simpa [facts.eq_boolToElement_of_unit childUnit] using executed
+              exact .cons childExec
+                (order.binaryDecoded_scriptNat_boolToElement
+                  (threshold_accumulator_safe safe totalEq) truth flags)
+                (ih restTyped safe (threshold_accumulator_step totalEq))
+
+/-- Execute a nonempty generated threshold frame list. The first child is Bdu,
+    every remaining child is Wdu, and `total` is the exact number of satisfying
+    source choices. -/
+theorem GeneratedChoiceFrames.thresholdExecution
+    {flags : ScriptFlags} {txCtx : TxContext} {threshold total : Nat}
+    {first : CoreFragment} {fragments : List CoreFragment}
+    {firstMods : CorrectnessModifiers} {restTypes : List MiniType}
+    {truths : List Bool} {frames : List Witness} {expected : Bool}
+    (generated : GeneratedChoiceFrames flags txCtx (first :: fragments)
+      (⟨.B, firstMods⟩ :: restTypes) truths frames)
+    (firstUnit : firstMods.u = true)
+    (restTyped : thresholdRestTypes restTypes)
+    (safe : ArithmeticScriptNatSafe total)
+    (sumEq : (truths.map Bool.toNat).sum = total)
+    (comparison : decide (scriptNat threshold = scriptNat total) = expected) :
+    BExecution (.thresh threshold (first :: fragments))
+      (frames.map Witness.toInitialStack).flatten (boolToElement expected)
+      flags txCtx := by
+  cases generated with
+  | @cons _ _ firstTruth firstFrame _ _ tailTruths tailFrames
+      firstContract tail =>
+      cases firstContract with
+      | b firstInput firstFacts firstExec =>
+          have normalizedFirst : BExecution first firstFrame.toInitialStack
+              (boolToElement firstTruth) flags txCtx := by
+            simpa [firstFacts.eq_boolToElement_of_unit firstUnit] using firstExec
+          have totalEq : firstTruth.toNat +
+              (tailTruths.map Bool.toNat).sum = total := by
+            simpa using sumEq
+          have tailExec := tail.thresholdTail restTyped safe totalEq
+          simpa [comparison] using
+            (normalizedFirst.thresh (threshold := threshold) tailExec)
+
+/-- Rebuild the threshold's aggregate input modifiers from the selected child
+    frames and the exact combined witness trace. -/
+theorem GeneratedChoiceFrames.thresholdInput
+    {flags : ScriptFlags} {txCtx : TxContext} {pairs : List CandidatePair}
+    {fragments : List CoreFragment} {types : List MiniType}
+    {count : Nat} {truths : List Bool} {frames : List Witness}
+    {witness : Witness} {expected : Bool}
+    (generated : GeneratedChoiceFrames flags txCtx fragments types truths frames)
+    (trace : CandidatePair.ChoiceTrace pairs count frames witness) :
+    GeneratedInput witness expected {
+      z := CorrectnessModifiers.allZ (MiniType.modifiers types)
+      o := CorrectnessModifiers.oneOWithRestZ (MiniType.modifiers types)
+      d := true
+      u := true } := by
+  refine ⟨trace.itemsBounded generated.framesBounded, ?_, ?_, ?_⟩
+  · intro enabled
+    exact trace.toInitialStack.trans (generated.allZ enabled)
+  · intro enabled
+    obtain ⟨argument, shape⟩ := generated.oneOWithRestZ enabled
+    exact ⟨argument, trace.toInitialStack.trans shape⟩
+  · simp
+
 /-! ## Atomic candidate rows -/
 
 /-- The `0` row has only its canonical empty dissatisfaction. -/
@@ -2386,6 +2746,122 @@ theorem andor
         firstUnit branch)
     exact canonical.select noncanonical
 
+/-! ## Threshold candidate composition -/
+
+/-- Strong generated support for the exact-count threshold candidate formula.
+    The arithmetic premise is the candidate guard's only condition not already
+    carried by the Miniscript typing constructor. -/
+theorem thresh
+    {firstPair : CandidatePair} {restPairs : List CandidatePair}
+    {scriptCtx : ScriptContext} {first : CoreFragment}
+    {fragments : List CoreFragment} {threshold : Nat}
+    {firstMods : CorrectnessModifiers} {restTypes : List MiniType}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstSupported : firstPair.SupportsGeneratedContract scriptCtx first
+      ⟨.B, firstMods⟩ flags txCtx)
+    (firstD : firstMods.d = true) (firstUnit : firstMods.u = true)
+    (restSupported : SupportsGeneratedContractList scriptCtx flags txCtx
+      restPairs fragments restTypes)
+    (restTyped : thresholdRestTypes restTypes)
+    (positive : 1 ≤ threshold)
+    (atMost : threshold ≤ (first :: fragments).length)
+    (safe : ArithmeticScriptNatSafe threshold) :
+    ({ sat := CandidatePair.selectExactly threshold (firstPair :: restPairs)
+       dsat := CandidatePair.thresholdDissatisfaction threshold
+         (CandidatePair.countCandidates (firstPair :: restPairs)) } :
+      CandidatePair).SupportsGeneratedContract scriptCtx
+      (.thresh threshold (first :: fragments))
+      ⟨.B, {
+        z := CorrectnessModifiers.allZ
+          (firstMods :: MiniType.modifiers restTypes)
+        o := CorrectnessModifiers.oneOWithRestZ
+          (firstMods :: MiniType.modifiers restTypes)
+        d := true
+        u := true }⟩ flags txCtx := by
+  have allSupported := restSupported.cons firstSupported
+  have valid : candidateThresholdValid threshold (first :: fragments).length :=
+    ⟨by omega, atMost, safe⟩
+  refine ⟨.thresh firstSupported.typed firstD firstUnit restSupported.typed
+    restTyped positive atMost, ?_, ?_⟩
+  · change (CandidatePair.selectExactly threshold
+      (firstPair :: restPairs)).Supports _
+    intro witness selected
+    obtain ⟨frames, trace⟩ :=
+      CandidatePair.selectExactly_choiceTrace selected
+    obtain ⟨truths, choices, sumEq⟩ := trace.toChoiceFrames
+    have generated := choices.generated allSupported
+    apply GeneratedContract.b
+    · simpa [MiniType.modifiers] using
+        (generated.thresholdInput (expected := true) trace)
+    · exact BooleanResultFacts.canonical true _ flags
+    · rw [trace.toInitialStack]
+      exact generated.thresholdExecution firstUnit restTyped safe sumEq (by simp)
+  · change (CandidatePair.thresholdDissatisfaction threshold
+      (CandidatePair.countCandidates (firstPair :: restPairs))).Supports _
+    intro witness selected
+    obtain ⟨frames, trace⟩ :=
+      CandidatePair.thresholdDissatisfaction_choiceTrace selected
+    obtain ⟨truths, choices, sumEq⟩ := trace.toChoiceFrames
+    have generated := choices.generated allSupported
+    apply GeneratedContract.b
+    · simpa [MiniType.modifiers] using
+        (generated.thresholdInput (expected := false) trace)
+    · exact BooleanResultFacts.canonical false _ flags
+    · rw [trace.toInitialStack]
+      exact generated.thresholdExecution firstUnit restTyped
+        (ArithmeticScriptNatSafe.of_lt (by native_decide)) sumEq
+        (by simp [candidateThresholdValid_scriptNat_ne_zero valid])
+
 end CandidatePair.SupportsGeneratedContract
+
+/-- Recursive-facing threshold theorem for the executable candidate row. Child
+    support is supplied in source order; typing and candidate validity follow
+    from the same premises. -/
+theorem generatedContract_thresh
+    {scriptCtx : ScriptContext} {env : SatEnv} {first : CoreFragment}
+    {fragments : List CoreFragment} {threshold : Nat}
+    {firstMods : CorrectnessModifiers} {restTypes : List MiniType}
+    {flags : ScriptFlags}
+    (firstSupported : (satisfactionCandidates first env).SupportsGeneratedContract
+      scriptCtx first ⟨.B, firstMods⟩ flags env.txCtx)
+    (firstD : firstMods.d = true) (firstUnit : firstMods.u = true)
+    (restSupported : SupportsGeneratedContractList scriptCtx flags env.txCtx
+      (satisfactionCandidatesList fragments env) fragments restTypes)
+    (restTyped : thresholdRestTypes restTypes)
+    (positive : 1 ≤ threshold)
+    (atMost : threshold ≤ (first :: fragments).length)
+    (safe : ArithmeticScriptNatSafe threshold) :
+    CandidatePair.SupportsGeneratedContract
+      (satisfactionCandidates (.thresh threshold (first :: fragments)) env)
+      scriptCtx
+        (.thresh threshold (first :: fragments))
+        ⟨.B, {
+          z := CorrectnessModifiers.allZ
+            (firstMods :: MiniType.modifiers restTypes)
+          o := CorrectnessModifiers.oneOWithRestZ
+            (firstMods :: MiniType.modifiers restTypes)
+          d := true
+          u := true }⟩ flags env.txCtx := by
+  have valid : candidateThresholdValid threshold (first :: fragments).length :=
+    ⟨by omega, atMost, safe⟩
+  rw [satisfactionCandidates_thresh_valid threshold (first :: fragments) env valid]
+  simpa [satisfactionCandidatesList_eq_map] using
+    (CandidatePair.SupportsGeneratedContract.thresh firstSupported firstD
+      firstUnit restSupported restTyped positive atMost safe)
+
+/-- An invalid raw threshold has no projected witness, while an explicit typing
+    derivation still supplies the pair-global type carried by strong support. -/
+theorem generatedContract_thresh_invalid
+    {scriptCtx : ScriptContext} {env : SatEnv} {threshold : Nat}
+    {fragments : List CoreFragment} {ty : MiniType} {flags : ScriptFlags}
+    (typed : HasType scriptCtx (.thresh threshold fragments) ty)
+    (invalid : ¬ candidateThresholdValid threshold fragments.length) :
+    CandidatePair.SupportsGeneratedContract
+      (satisfactionCandidates (.thresh threshold fragments) env)
+      scriptCtx (.thresh threshold fragments) ty
+        flags env.txCtx := by
+  rw [satisfactionCandidates_thresh_invalid threshold fragments env invalid]
+  exact ⟨typed, CandidateResult.supports_impossible _,
+    CandidateResult.supports_impossible _⟩
 
 end LeanMiniscript.Miniscript

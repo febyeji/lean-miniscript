@@ -206,4 +206,79 @@ example (env : SatEnv) (flags : ScriptFlags) :
   simpa [satisfactionCandidates, ScriptContext.dWrapperUnit] using
     guarded.andor rfl rfl one zero (by simp [branchBase])
 
+/-! Exact-count provenance now connects threshold candidates to the same
+    compositional generated contract. -/
+
+/-- A typed two-of-three key threshold supports every usable satisfaction
+    projection and its canonical all-dissatisfied projection. The two W tail
+    rows are aligned in source order with the executable candidate list. -/
+private theorem generatedTwoOfThreeKeyThreshold
+    {scriptCtx : ScriptContext} {key : PubKey} {env : SatEnv}
+    {flags : ScriptFlags} (valid : validResolvedPubKey scriptCtx key)
+    (version : ModeledContextVersion scriptCtx env.txCtx)
+    (modeled : ModeledContextFlags scriptCtx flags)
+    (sound : env.Sound) (encodings : env.EncodingSound flags) :
+    CandidatePair.SupportsGeneratedContract
+      (satisfactionCandidates
+        (.thresh 2 [.c (.pk_k key), .a (.c (.pk_k key)),
+          .a (.c (.pk_k key))]) env)
+      scriptCtx
+      (.thresh 2 [.c (.pk_k key), .a (.c (.pk_k key)),
+        .a (.c (.pk_k key))])
+      ⟨.B, { d := true, u := true }⟩ flags env.txCtx := by
+  have child :=
+    (generatedContract_pk_k_of_modeled valid version modeled sound encodings).c
+  have tailChild := child.a
+  have rest : SupportsGeneratedContractList scriptCtx flags env.txCtx
+      (satisfactionCandidatesList
+        [.a (.c (.pk_k key)), .a (.c (.pk_k key))] env)
+      [.a (.c (.pk_k key)), .a (.c (.pk_k key))]
+      [⟨.W, { d := true, u := true }⟩,
+        ⟨.W, { d := true, u := true }⟩] := by
+    exact .snoc (.snoc .nil tailChild) tailChild
+  simpa [CorrectnessModifiers.allZ, CorrectnessModifiers.oneOWithRestZ,
+    MiniType.modifiers] using
+    generatedContract_thresh (threshold := 2)
+      (first := .c (.pk_k key))
+      (fragments := [.a (.c (.pk_k key)), .a (.c (.pk_k key))])
+      (firstMods := { o := true, n := true, d := true, u := true })
+      (restTypes := [⟨.W, { d := true, u := true }⟩,
+        ⟨.W, { d := true, u := true }⟩])
+      child rfl rfl rest (by simp [thresholdRestTypes])
+      (by omega) (by simp)
+      (ArithmeticScriptNatSafe.of_lt (by native_decide))
+
+/-- Actual usable satisfaction and all-dissatisfied projections inherit the
+    exact strong threshold contract. -/
+example {scriptCtx : ScriptContext} {key : PubKey} {env : SatEnv}
+    {flags : ScriptFlags} {satWitness dsatWitness : Witness}
+    (valid : validResolvedPubKey scriptCtx key)
+    (version : ModeledContextVersion scriptCtx env.txCtx)
+    (modeled : ModeledContextFlags scriptCtx flags)
+    (sound : env.Sound) (encodings : env.EncodingSound flags)
+    (satSelected : satisfy
+      (.thresh 2 [.c (.pk_k key), .a (.c (.pk_k key)),
+        .a (.c (.pk_k key))]) env = some satWitness)
+    (dsatSelected : dissatisfy
+      (.thresh 2 [.c (.pk_k key), .a (.c (.pk_k key)),
+        .a (.c (.pk_k key))]) env = some dsatWitness) :
+    GeneratedContract
+        (.thresh 2 [.c (.pk_k key), .a (.c (.pk_k key)),
+          .a (.c (.pk_k key))]) satWitness true flags env.txCtx
+        ⟨.B, { d := true, u := true }⟩ ∧
+      GeneratedContract
+        (.thresh 2 [.c (.pk_k key), .a (.c (.pk_k key)),
+          .a (.c (.pk_k key))]) dsatWitness false flags env.txCtx
+        ⟨.B, { d := true, u := true }⟩ := by
+  have supported := generatedTwoOfThreeKeyThreshold valid version modeled
+    sound encodings
+  exact ⟨supported.satisfyContract satSelected,
+    supported.dissatisfyContract dsatSelected⟩
+
+/-- The executable guard rejects the raw zero-threshold row before any child
+    candidate can be projected. -/
+example (env : SatEnv) :
+    satisfactionCandidates (.thresh 0 [.one]) env = {} := by
+  rfl
+
 end LeanMiniscript.Miniscript

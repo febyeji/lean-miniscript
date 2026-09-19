@@ -134,8 +134,8 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   NUMEQUAL decode premise. A proof-only provenance layer recovers the selected
   source witness through candidate selection, combination, and transforms. Its
   exact-count trace records one source-order child witness for each usable
-  exact-count result, and usable threshold dissatisfaction is traced to the
-  canonical count-zero row.
+  exact-count result together with its satisfaction bit, and usable threshold
+  dissatisfaction is traced to the canonical count-zero row.
   Proof-only Script-number bridges show that every canonical nonnegative value
   below `2^31` decodes under either minimal-data mode, remains valid when the
   byte limit grows, and is truthy when positive. The stable typed
@@ -148,9 +148,12 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   orders and the bounded `j` size decode. The same contract now closes every
   usable candidate path for `and_v`, `and_b`, `or_b`, `or_c`, `or_d`, `or_i`,
   and `andor`, retaining B/K/V results, canonical boolean operations, branch
-  selectors, and non-canonical but usable `andor` dissatisfaction. Recursive
-  generated-witness soundness for thresholds, and the connection from selected
-  multisignature candidates to cryptographic key/signature matching remain
+  selectors, and non-canonical but usable `andor` dissatisfaction. For
+  `thresh`, exact-count provenance now aligns every selected child contract,
+  rebuilds bounded z/o input shapes, discharges every accumulator decode from
+  the final count bound, and proves both the selected `k`-satisfaction and the
+  canonical all-false dissatisfaction. The connection from selected
+  multisignature candidates to cryptographic key/signature matching remains
   unfinished.
 - General soundness, full satisfaction coverage, non-malleability, small-step
   semantics, cryptographic correctness proofs, executable ECDSA verification,

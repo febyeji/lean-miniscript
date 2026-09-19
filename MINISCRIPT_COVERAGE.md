@@ -150,7 +150,7 @@ path-sensitive peak analysis remains unfinished.
 | `v` | Done | Done | Done | Done | Partial | Pass-through | Impossible | Partial | Truthy B-to-V frame |
 | `j` | Done | Done | Done | Done | Partial | Pass-through | Guarded choice | Partial | Nonempty child / canonical zero frames |
 | `n` | Done | Done | Done | Done | Partial | Pass-through | Pass-through | Partial | ScriptNum-normalized B frame |
-| `thresh` | Done | Done | Done | Done | Partial | Exact-count candidate | Canonical/overcomplete choice | Partial | Local accumulator frame |
+| `thresh` | Done | Done | Done | Done | Partial | Exact-count candidate | Canonical/overcomplete choice | Partial | Generated exact-count frame |
 | `multi` | Done | Done | Done | Done | Partial | Exact-count signatures | Canonical empty signatures | Partial | Local CHECKMULTISIG frame |
 | `multi_a` | Done | Done | Done | Done | Partial | Exact-count signatures | Canonical empty signatures | Partial | Local CHECKSIGADD frame |
 
@@ -252,22 +252,25 @@ usable child witnesses, and selector, non-canonical, runtime-top, and legacy
 multisignature-finalizer transforms preserve their exact witness relation. Its
 `ChoiceTrace` theorem recovers one source-order child witness for each usable
 exact-count output and proves that reversing the combined serialized witness
-produces the flattened source-order runtime frames. A usable threshold
-dissatisfaction is traced only to the canonical zero-satisfaction head; no
-converse is claimed for retained DONTUSE or overcomplete rows. This is
-candidate provenance, not a recursive child-execution soundness theorem.
+produces the flattened source-order runtime frames. `ChoiceFrames` additionally
+records each satisfaction/dissatisfaction choice and proves that its Boolean
+sum is the selected count. A usable threshold dissatisfaction is traced only to
+the canonical zero-satisfaction head; no converse is claimed for retained
+DONTUSE or overcomplete rows.
 
 The local threshold execution contract covers a nonempty B child followed by
 W children and `OP_ADD`. It supports both saved-first and result-first W stack
 orders, and requires an explicit successful `decodeBinaryScriptNums` premise
 for every addition. The accumulator is carried as canonical Script-number
 bytes; the final literal `k` and `OP_EQUAL` proof uses byte equality directly.
-It does not infer four-byte arithmetic decodability from typing and does not
-claim recursive soundness for generated child witnesses. The candidate guard
-now supplies the expected count's arithmetic bound and decode evidence, while
-the compiled threshold still performs final byte equality. Accumulator and
-child-result decode premises remain explicit until that recursive connection
-is proved.
+The strong generated layer aligns source-order child support with
+`ChoiceFrames`, derives each W Boolean result and decoder premise, and observes
+that every partial accumulator is at most the final exact count. The candidate
+guard therefore supplies enough arithmetic safety for a usable count-`k`
+satisfaction. The usable dissatisfaction trace has count zero, so every child
+is false and the positive threshold literal compares unequal to canonical
+zero. Both paths reconstruct bounded witness items and the threshold z/o input
+shape; retained DONTUSE overcomplete rows remain outside the public theorem.
 
 Legacy `multi(k, keys)` candidates use the same exact-count table over keys in
 source order. Each available signature is a HASSIG satisfaction choice and an
@@ -635,7 +638,10 @@ contracts, including the selector in a K fragment's own argument frame.
 `andor` covers both branch directions for B/K/V and retains the usable
 non-canonical satisfaction-selector dissatisfaction as a real execution path.
 Candidate selection proofs preserve the executable left-to-right tie order.
-Threshold, `multi`, and `multi_a` closure remains unfinished.
+`thresh` aligns exact-count source choices with a Bdu head and Wdu tail,
+reconstructs the selected witness frame and modifiers, and closes usable
+count-`k` satisfaction plus canonical all-false dissatisfaction. `multi` and
+`multi_a` closure remains unfinished.
 
 ## Surface Constructor Matrix
 
