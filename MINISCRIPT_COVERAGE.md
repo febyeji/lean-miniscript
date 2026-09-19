@@ -112,12 +112,15 @@ are not yet complete. Within the modeled opcode subset, `Eval.exists_result`
 and `Eval.result_unique` prove that the relational semantics has exactly one
 result for every fixed initial state. The total `evaluate` function covers the
 same cases, and `evaluate_model_iff` proves equivalence for the model oracle.
-Resource coverage means exact serialized size and sigop accounting plus
-provisional structural estimates. `resourceBoundsSound` proves the existing
+Resource coverage means exact serialized size and sigop accounting plus proved
+conservative stack bounds. `resourceBoundsSound` proves the existing
 `ResourceBoundsSound` contract: final main/alt-stack size is at most the initial
 combined size plus compiled instruction count. `RuntimeStackBounds` extends
-this conservative allowance to every reachable prefix before stack-size checks;
-a tighter fragment-specific peak analyzer remains unfinished.
+this guarantee to every reachable prefix before stack-size checks.
+`maxStackGrowth` gives each compiled fragment a static allowance no larger than
+the compiled instruction count, and often lower, by
+counting only pushes and opcodes that may grow the combined stacks. Exact
+path-sensitive peak analysis remains unfinished.
 
 ## Core Constructor Matrix
 
@@ -467,8 +470,7 @@ or repeated-ELSE conditionals. `compile_stackGrowth` and
 `RuntimeEval.stackGrowth` reuses success erasure, and
 `evaluateWithRuntimeLimits_stackGrowth` exposes the executable result under
 explicit oracle agreement. These are final-state bounds, not peak-stack
-analysis, a proof of the provisional `maxStackDepth` estimate, or a guarantee
-that execution avoids resource failures.
+analysis or a guarantee that execution avoids resource failures.
 
 `Script/RuntimeStackBounds.lean`, also exported through `LeanMiniscript.Proofs`,
 adds conservative intermediate-state guarantees. `RuntimePrefix` composes
@@ -488,14 +490,27 @@ are proved from the pre-check instruction function, not from successful
 resource enforcement. `compile_prefix_stackBound` and
 `compileSurface_prefix_stackBound` provide compiler corollaries.
 
+`ScriptElement.stackGrowthAllowance` charges one item only to data and numeric
+pushes, `DUP`, `IFDUP`, `SIZE`, and conservatively `CHECKMULTISIG`; every other
+modeled opcode has zero combined-stack growth allowance.
+`RuntimePrefix.stackGrowth_le_allowance` proves that the sum for the visited source
+prefix bounds every reachable intermediate combined stack. `maxStackGrowth`
+applies that sum to compiled core fragments, and
+`compile_prefix_maxStackGrowth` plus its surface counterpart connect it to the
+runtime relation. The allowance is always at most compiled instruction count.
+It charges inactive branches and does not subtract earlier consumption, so it
+is a sound fragment-specific upper bound rather than an exact peak.
+
 `evaluateRuntime_eq_runRuntimePrefix` proves that under the same allowance the
 production evaluator equals the prefix runner followed by the existing final
 conditional check. This preserves both successful and failing results; it does
-not assume whole-program success. All growth/check-elimination theorems retain
+not assume whole-program success.
+`evaluateRuntime_eq_runRuntimePrefix_of_allowance` proves the same equality
+under the refined static allowance. All growth/check-elimination theorems retain
 explicit oracle agreement (discharged for `CryptoOracle.model`). Push-size,
 signature-weight, opcode, and unbalanced-conditional failures remain possible.
-This is a coarse instruction-count bound, not a proof of `maxStackDepth` or an
-exact peak-stack analysis.
+`maxStackDepth` remains the separate AST-nesting metric and is not presented as
+a runtime bound.
 
 The immediate proof work must extend named semantic predicates before extending
 `SupportedMiniType`. Unsupported modifier combinations do not reduce to `True`.

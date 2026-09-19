@@ -3,6 +3,7 @@ import LeanMiniscript.Miniscript.Compile
 import LeanMiniscript.Miniscript.Metrics
 import LeanMiniscript.Miniscript.Soundness
 import LeanMiniscript.Script.Serialization
+import LeanMiniscript.Script.StackGrowthAllowance
 
 namespace LeanMiniscript.Properties
 
@@ -77,10 +78,22 @@ mutual
     | fragment :: fragments => sigopCount fragment + listSigopCount fragments
 end
 
-/-- Structural bound used until the small-step semantics records exact peak
-    runtime stack usage. -/
+/-- Maximum AST nesting depth. This structural metric is not a runtime stack
+    bound. -/
 def maxStackDepth (fragment : CoreFragment) : Nat :=
   fragment.depth
+
+/-- Conservative increase in combined main/alt-stack size across any
+    source-order execution prefix of the compiled fragment. The initial stack
+    size must be added separately. -/
+def maxStackGrowth (fragment : CoreFragment) : Nat :=
+  stackGrowthAllowance (compile fragment)
+
+example : maxStackGrowth (.after 500) = 1 := by
+  rfl
+
+example : maxStackGrowth (.or_i .one .one) = 2 := by
+  rfl
 
 /-- Contract for the first conservative final-state growth bound, proved by
     `resourceBoundsSound` in `ResourceBoundsProofs`. Counting the main
@@ -98,12 +111,8 @@ def ResourceBoundsSound : Prop :=
     finalStack.length + finalAltStack.length ≤
       initialStack.length + initialAltStack.length + scriptElementCount fragment
 
-/-!
-TODO(theorem): Replace the provisional AST-depth estimate with a tighter
-fragment-specific peak-stack analyzer. `RuntimeStackBounds` proves conservative
-intermediate combined-stack bounds from source instruction counts and rules out
-rejection by the stack-size check under that allowance. It does not validate
-`maxStackDepth` or rule out other execution/resource failures.
--/
+/-! `maxStackGrowth` charges both sides of every conditional and does not
+subtract items consumed by earlier opcodes. It is therefore conservative rather
+than an exact path-sensitive peak. -/
 
 end LeanMiniscript.Properties

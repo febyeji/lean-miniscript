@@ -56,4 +56,35 @@ theorem compileSurface_prefix_stackBound
     after.stack.length + after.altStack.length ≤ maxStackSize :=
   reached.stackBound agreement isPrefix budget
 
+/-- The fragment-specific allowance is never weaker than the earlier compiled
+    instruction-count allowance. -/
+theorem maxStackGrowth_le_scriptElementCount (fragment : CoreFragment) :
+    maxStackGrowth fragment ≤ scriptElementCount fragment :=
+  stackGrowthAllowance_le_length (compile fragment)
+
+/-- The static fragment allowance bounds every reachable compiled prefix. -/
+theorem compile_prefix_maxStackGrowth
+    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
+    {fragment : CoreFragment} {visited : Script} {before after : RuntimeState}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (reached : RuntimePrefix oracle flags ctx visited before after)
+    (isPrefix : visited.IsPrefix (compile fragment))
+    (budget : before.stack.length + before.altStack.length +
+      maxStackGrowth fragment ≤ maxStackSize) :
+    after.stack.length + after.altStack.length ≤ maxStackSize :=
+  reached.stackBoundAllowance agreement isPrefix budget
+
+/-- Surface compilation inherits the fragment-specific allowance through
+    desugaring. -/
+theorem compileSurface_prefix_maxStackGrowth
+    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
+    {fragment : SurfaceFragment} {visited : Script} {before after : RuntimeState}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (reached : RuntimePrefix oracle flags ctx visited before after)
+    (isPrefix : visited.IsPrefix (compileSurface fragment))
+    (budget : before.stack.length + before.altStack.length +
+      maxStackGrowth (desugar fragment) ≤ maxStackSize) :
+    after.stack.length + after.altStack.length ≤ maxStackSize :=
+  reached.stackBoundAllowance agreement isPrefix budget
+
 end LeanMiniscript.Properties

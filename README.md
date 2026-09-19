@@ -28,10 +28,13 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   most the compiled instruction count. The proof applies to every modeled
   Script and has core, surface, and runtime corollaries. `RuntimeStackBounds`
   additionally bounds every reachable prefix before combined-stack checks.
-  When initial combined size plus instruction count is at most 1,000, those
-  checks cannot reject and omitting them preserves the full result, including
-  failures, under explicit oracle agreement. Whole-program success is not a
-  premise. The provisional AST-depth estimate remains unproved.
+  `maxStackGrowth` refines the compiled instruction-count allowance by charging
+  only pushes and opcodes that may grow the combined stacks (with a conservative
+  charge for `CHECKMULTISIG`). When initial combined size plus this allowance is
+  at most 1,000, those checks cannot reject and omitting them preserves the full
+  result, including failures, under explicit oracle agreement. Whole-program
+  success is not a premise. The allowance charges both conditional branches and
+  is not an exact path-sensitive peak.
 - The modeled big-step relation includes depth-aware conditional selection plus
   explicit stack-underflow, Script-number, unbalanced-conditional, and
   variable-frame `CHECKMULTISIG` failures; Core-aligned BIP 65 and
