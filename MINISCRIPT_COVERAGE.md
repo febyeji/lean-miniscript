@@ -610,8 +610,21 @@ Modeled context flags and execution versions plus a context-valid key now imply
 that its canonical empty signature passes the version-specific encoding check.
 Hash dissatisfaction support is intentionally vacuous at this public boundary
 because that canonical row is DONTUSE; its raw false execution remains covered
-by `hash_dsat_candidate_execution`. Further wrapper closure awaits inductively
-maintained input-shape and numeric-result invariants.
+by `hash_dsat_candidate_execution`.
+
+`GeneratedContract` is the compositional refinement of that stable carrier. It
+records that every witness item is at most 520 bytes, enforces `z`/`o` input
+shapes and satisfying-only `n` nonemptiness, and retains exact decoded B/W
+results with truth, canonical false, and unit-success facts. Strong leaf
+contracts cover both constants, both timelocks, all hashlocks, and modeled
+context-valid `pk_k`/`pk_h`; projection recovers the original
+`GeneratedExecution` API. Candidate-pair closure now covers `c`, `v`, `a`, `s`,
+`d`, `n`, and `j`. The W contracts retain saved-first order for `a` and
+result-first order for `s`; `j` derives its size decode from the selected
+witness-item bound and fixes every usable dissatisfaction to the canonical
+empty singleton. This is recursive closure for these wrappers when their child
+already has a strong contract. Connective, threshold, `multi`, and `multi_a`
+closure remains unfinished.
 
 ## Surface Constructor Matrix
 
