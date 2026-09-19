@@ -145,8 +145,11 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   proof-only contract adds per-item witness bounds, modifier input shapes, and
   exact numeric B/W results. Under modeled key assumptions it composes those
   leaves through `c`, `v`, `a`, `s`, `d`, `n`, and `j`, including both W stack
-  orders and the bounded `j` size decode. Recursive generated-witness soundness
-  for connectives and thresholds, and the connection from selected
+  orders and the bounded `j` size decode. The same contract now closes every
+  usable candidate path for `and_v`, `and_b`, `or_b`, `or_c`, `or_d`, `or_i`,
+  and `andor`, retaining B/K/V results, canonical boolean operations, branch
+  selectors, and non-canonical but usable `andor` dissatisfaction. Recursive
+  generated-witness soundness for thresholds, and the connection from selected
   multisignature candidates to cryptographic key/signature matching remain
   unfinished.
 - General soundness, full satisfaction coverage, non-malleability, small-step

@@ -141,4 +141,69 @@ example {scriptCtx : ScriptContext} {key : PubKey} {env : SatEnv}
   simpa [satisfactionCandidates] using
     (generatedContract_pk_k_of_modeled valid version modeled sound encodings).c
 
+/-! Strong generated contracts compose across every currently implemented
+    binary connective without changing the executable candidate tables. -/
+
+example (scriptCtx : ScriptContext) (env : SatEnv) (flags : ScriptFlags) :
+    CandidatePair.SupportsGeneratedContract
+      (satisfactionCandidates (.and_v (.v .one) .one) env)
+      scriptCtx (.and_v (.v .one) .one)
+        ⟨.B, { z := true, u := true }⟩ flags env.txCtx := by
+  have one := generatedContract_one scriptCtx env flags
+  simpa [satisfactionCandidates] using one.v.and_v one (by simp [branchBase])
+
+example (scriptCtx : ScriptContext) (env : SatEnv) (flags : ScriptFlags) :
+    CandidatePair.SupportsGeneratedContract
+      (satisfactionCandidates (.and_b .one (.a .one)) env)
+      scriptCtx (.and_b .one (.a .one))
+        ⟨.B, { u := true }⟩ flags env.txCtx := by
+  have one := generatedContract_one scriptCtx env flags
+  simpa [satisfactionCandidates] using one.and_b one.a
+
+example (scriptCtx : ScriptContext) (env : SatEnv) (flags : ScriptFlags) :
+    CandidatePair.SupportsGeneratedContract
+      (satisfactionCandidates (.or_b .zero (.a .zero)) env)
+      scriptCtx (.or_b .zero (.a .zero))
+        ⟨.B, { d := true, u := true }⟩ flags env.txCtx := by
+  have zero := generatedContract_zero scriptCtx env flags
+  simpa [satisfactionCandidates] using zero.or_b rfl zero.a rfl
+
+example (scriptCtx : ScriptContext) (env : SatEnv) (flags : ScriptFlags) :
+    CandidatePair.SupportsGeneratedContract
+      (satisfactionCandidates (.or_c .zero (.v .one)) env)
+      scriptCtx (.or_c .zero (.v .one))
+        ⟨.V, { z := true }⟩ flags env.txCtx := by
+  have zero := generatedContract_zero scriptCtx env flags
+  have verified := (generatedContract_one scriptCtx env flags).v
+  simpa [satisfactionCandidates] using zero.or_c rfl rfl verified
+
+example (scriptCtx : ScriptContext) (env : SatEnv) (flags : ScriptFlags) :
+    CandidatePair.SupportsGeneratedContract
+      (satisfactionCandidates (.or_d .zero .one) env)
+      scriptCtx (.or_d .zero .one)
+        ⟨.B, { z := true, u := true }⟩ flags env.txCtx := by
+  have zero := generatedContract_zero scriptCtx env flags
+  have one := generatedContract_one scriptCtx env flags
+  simpa [satisfactionCandidates] using zero.or_d rfl rfl one
+
+example (scriptCtx : ScriptContext) (env : SatEnv) (flags : ScriptFlags) :
+    CandidatePair.SupportsGeneratedContract
+      (satisfactionCandidates (.or_i .one .zero) env)
+      scriptCtx (.or_i .one .zero)
+        ⟨.B, { o := true, d := true, u := true }⟩ flags env.txCtx := by
+  have one := generatedContract_one scriptCtx env flags
+  have zero := generatedContract_zero scriptCtx env flags
+  simpa [satisfactionCandidates] using one.or_i zero (by simp [branchBase])
+
+example (env : SatEnv) (flags : ScriptFlags) :
+    (satisfactionCandidates
+      (.andor (.d (.v .one)) .one .zero) env).SupportsGeneratedContract
+      .tapscript (.andor (.d (.v .one)) .one .zero)
+        ⟨.B, { o := true, d := true, u := true }⟩ flags env.txCtx := by
+  have one := generatedContract_one .tapscript env flags
+  have zero := generatedContract_zero .tapscript env flags
+  have guarded := one.v.d rfl
+  simpa [satisfactionCandidates, ScriptContext.dWrapperUnit] using
+    guarded.andor rfl rfl one zero (by simp [branchBase])
+
 end LeanMiniscript.Miniscript

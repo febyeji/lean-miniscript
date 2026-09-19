@@ -623,8 +623,19 @@ context-valid `pk_k`/`pk_h`; projection recovers the original
 result-first order for `s`; `j` derives its size decode from the selected
 witness-item bound and fixes every usable dissatisfaction to the canonical
 empty singleton. This is recursive closure for these wrappers when their child
-already has a strong contract. Connective, threshold, `multi`, and `multi_a`
-closure remains unfinished.
+already has a strong contract.
+
+The strong contract also composes all current binary connectives. `and_v`
+preserves B/K/V results from its second child. `and_b` and `or_b` construct the
+exact `WStackOrder.BinaryDecoded` premise from both child result facts and
+return canonical boolean results; specified overcomplete paths remain vacuous
+at the usable projection. `or_c` and `or_d` derive MINIMALIF from the unit first
+child, while `or_i` inserts canonical selectors and preserves B/K/V branch
+contracts, including the selector in a K fragment's own argument frame.
+`andor` covers both branch directions for B/K/V and retains the usable
+non-canonical satisfaction-selector dissatisfaction as a real execution path.
+Candidate selection proofs preserve the executable left-to-right tie order.
+Threshold, `multi`, and `multi_a` closure remains unfinished.
 
 ## Surface Constructor Matrix
 

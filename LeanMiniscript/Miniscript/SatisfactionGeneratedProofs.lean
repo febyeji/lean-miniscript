@@ -267,6 +267,71 @@ theorem mono {witness : Witness} {expected : Bool}
     fun enabled => input.oneArg (one enabled),
     fun enabled truth => input.nonzeroTop (nonzero enabled) truth⟩
 
+/-- Compose the input invariants of two sequential child witnesses. The
+    logical premises mirror the `z`, `o`, and `n` formulas used by connective
+    typing, while keeping this helper independent of a particular constructor. -/
+theorem combine {firstWitness secondWitness : Witness}
+    {firstExpected secondExpected expected : Bool}
+    {firstMods secondMods targetMods : CorrectnessModifiers}
+    (first : GeneratedInput firstWitness firstExpected firstMods)
+    (second : GeneratedInput secondWitness secondExpected secondMods)
+    (zero : targetMods.z = true →
+      firstMods.z = true ∧ secondMods.z = true)
+    (one : targetMods.o = true →
+      (firstMods.z = true ∧ secondMods.o = true) ∨
+      (firstMods.o = true ∧ secondMods.z = true))
+    (nonzero : targetMods.n = true →
+      (firstMods.n = true ∧ (expected = true → firstExpected = true)) ∨
+      (firstMods.z = true ∧ secondMods.n = true ∧
+        (expected = true → secondExpected = true))) :
+    GeneratedInput (Witness.combine firstWitness secondWitness)
+      expected targetMods := by
+  refine ⟨first.bounded.combine second.bounded, ?_, ?_, ?_⟩
+  · intro enabled
+    obtain ⟨firstZero, secondZero⟩ := zero enabled
+    simp [first.zeroArgs firstZero, second.zeroArgs secondZero]
+  · intro enabled
+    rcases one enabled with left | right
+    · obtain ⟨firstZero, secondOne⟩ := left
+      obtain ⟨argument, secondShape⟩ := second.oneArg secondOne
+      exact ⟨argument, by
+        simp [first.zeroArgs firstZero, secondShape]⟩
+    · obtain ⟨firstOne, secondZero⟩ := right
+      obtain ⟨argument, firstShape⟩ := first.oneArg firstOne
+      exact ⟨argument, by
+        simp [firstShape, second.zeroArgs secondZero]⟩
+  · intro enabled truth
+    rcases nonzero enabled with firstNonzero | secondNonzero
+    · obtain ⟨firstN, firstTruth⟩ := firstNonzero
+      obtain ⟨top, rest, shape, nonempty⟩ :=
+        first.nonzeroTop firstN (firstTruth truth)
+      exact ⟨top, rest ++ secondWitness.toInitialStack, by
+        simp [shape], nonempty⟩
+    · obtain ⟨firstZero, secondN, secondTruth⟩ := secondNonzero
+      obtain ⟨top, rest, shape, nonempty⟩ :=
+        second.nonzeroTop secondN (secondTruth truth)
+      exact ⟨top, rest, by
+        simp [first.zeroArgs firstZero, shape], nonempty⟩
+
+/-- Prefixing a branch selector preserves bounds and can satisfy an outer
+    one-argument condition exactly when the selected child is zero-argument. -/
+theorem withSelector {witness : Witness} {childExpected expected : Bool}
+    {source target : CorrectnessModifiers} {selector : StackElement}
+    (input : GeneratedInput witness childExpected source)
+    (selectorBounded : selector.size ≤ maxScriptElementSize)
+    (zero : target.z = true → False)
+    (one : target.o = true → source.z = true)
+    (nonzero : target.n = true → expected = true → selector.size ≠ 0) :
+    GeneratedInput (witness.withSelector selector) expected target := by
+  refine ⟨input.bounded.withSelector selectorBounded, ?_, ?_, ?_⟩
+  · intro enabled
+    exact (zero enabled).elim
+  · intro enabled
+    exact ⟨selector, by simp [input.zeroArgs (one enabled)]⟩
+  · intro enabled truth
+    exact ⟨selector, witness.toInitialStack, by simp,
+      nonzero enabled truth⟩
+
 end GeneratedInput
 
 /-- Exact numeric and canonical-form facts for a B-like result. Keeping the
@@ -304,6 +369,52 @@ theorem monoUnit {result : StackElement} {value : Int} {expected : Bool}
     BooleanResultFacts result value expected target flags :=
   ⟨facts.decoded, facts.nonzero, facts.truth, facts.falseCanonical,
     fun enabled truth => facts.unitCanonical (unit enabled) truth⟩
+
+/-- Retype exact result facts across a modifier implication. -/
+theorem retype {result : StackElement} {value : Int} {expected : Bool}
+    {source target : CorrectnessModifiers} {flags : ScriptFlags}
+    (facts : BooleanResultFacts result value expected source flags)
+    (unit : target.u = true → source.u = true) :
+    BooleanResultFacts result value expected target flags :=
+  facts.monoUnit unit
+
+/-- A unit B result is the canonical boolean encoding of its truth value. -/
+theorem eq_boolToElement_of_unit
+    {result : StackElement} {value : Int} {expected : Bool}
+    {mods : CorrectnessModifiers} {flags : ScriptFlags}
+    (facts : BooleanResultFacts result value expected mods flags)
+    (unit : mods.u = true) : result = boolToElement expected := by
+  cases expected with
+  | false => simpa [boolToElement] using facts.falseCanonical rfl
+  | true => simpa [boolToElement] using facts.unitCanonical unit rfl
+
+/-- Unit result facts discharge MINIMALIF for child-produced selectors. -/
+theorem minimalIfSatisfied
+    {result : StackElement} {value : Int} {expected : Bool}
+    {mods : CorrectnessModifiers} {flags : ScriptFlags}
+    (facts : BooleanResultFacts result value expected mods flags)
+    (unit : mods.u = true) :
+    LeanMiniscript.Script.minimalIfSatisfied flags result := by
+  rw [facts.eq_boolToElement_of_unit unit]
+  cases expected
+  · exact Or.inr falseElement_minimalIfArg
+  · exact Or.inr trueElement_minimalIfArg
+
+/-- Exact child result decodes assemble the operand-order premise used by a
+    binary opcode after either W stack layout. -/
+theorem binaryDecoded
+    {firstResult secondResult : StackElement} {firstValue secondValue : Int}
+    {firstExpected secondExpected : Bool}
+    {firstMods secondMods : CorrectnessModifiers} {flags : ScriptFlags}
+    (first : BooleanResultFacts firstResult firstValue firstExpected
+      firstMods flags)
+    (second : BooleanResultFacts secondResult secondValue secondExpected
+      secondMods flags) (order : WStackOrder) :
+    order.BinaryDecoded flags firstResult secondResult firstValue secondValue := by
+  cases order <;>
+    simp [WStackOrder.BinaryDecoded, decodeBinaryScriptNums,
+      first.decoded, second.decoded]
+  all_goals rfl
 
 end BooleanResultFacts
 
@@ -1176,6 +1287,1104 @@ theorem j
     · exact BooleanResultFacts.canonical false _ flags
     · simpa [boolToElement, Witness.toInitialStack] using
         j_dissatisfaction_execution fragment flags txCtx
+
+end CandidatePair.SupportsGeneratedContract
+
+/-! ## Compositional connective contracts -/
+
+namespace GeneratedContract
+
+private theorem andVInput
+    {firstWitness secondWitness : Witness} {expected : Bool}
+    {firstMods secondMods : CorrectnessModifiers}
+    (first : GeneratedInput firstWitness true firstMods)
+    (second : GeneratedInput secondWitness expected secondMods) :
+    GeneratedInput (Witness.combine firstWitness secondWitness) expected {
+      z := firstMods.z && secondMods.z
+      o := (firstMods.z && secondMods.o) ||
+        (firstMods.o && secondMods.z)
+      n := firstMods.n || (firstMods.z && secondMods.n)
+      d := false
+      u := secondMods.u
+    } := by
+  apply first.combine second
+  · intro enabled
+    simpa using enabled
+  · intro enabled
+    simpa [Bool.or_eq_true] using enabled
+  · intro enabled
+    simp only [Bool.or_eq_true, Bool.and_eq_true] at enabled
+    rcases enabled with firstN | ⟨firstZero, secondN⟩
+    · exact Or.inl ⟨firstN, fun _ => rfl⟩
+    · exact Or.inr ⟨firstZero, secondN, fun truth => truth⟩
+
+theorem andV_b
+    {first second : CoreFragment} {firstWitness secondWitness : Witness}
+    {expected : Bool} {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstContract : GeneratedContract first firstWitness true flags txCtx
+      ⟨.V, firstMods⟩)
+    (secondContract : GeneratedContract second secondWitness expected flags txCtx
+      ⟨.B, secondMods⟩) :
+    GeneratedContract (.and_v first second)
+      (Witness.combine firstWitness secondWitness) expected flags txCtx
+      ⟨.B, {
+        z := firstMods.z && secondMods.z
+        o := (firstMods.z && secondMods.o) ||
+          (firstMods.o && secondMods.z)
+        n := firstMods.n || (firstMods.z && secondMods.n)
+        u := secondMods.u
+      }⟩ := by
+  cases firstContract with
+  | v firstInput firstTrue firstExec =>
+      cases secondContract with
+      | b secondInput secondFacts secondExec =>
+          exact .b (andVInput firstInput secondInput)
+            (secondFacts.retype (by simp))
+            (by simpa using firstExec.and_v_b secondExec)
+
+theorem andV_k
+    {first second : CoreFragment} {firstWitness secondWitness : Witness}
+    {expected : Bool} {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstContract : GeneratedContract first firstWitness true flags txCtx
+      ⟨.V, firstMods⟩)
+    (secondContract : GeneratedContract second secondWitness expected flags txCtx
+      ⟨.K, secondMods⟩) :
+    GeneratedContract (.and_v first second)
+      (Witness.combine firstWitness secondWitness) expected flags txCtx
+      ⟨.K, {
+        z := firstMods.z && secondMods.z
+        o := (firstMods.z && secondMods.o) ||
+          (firstMods.o && secondMods.z)
+        n := firstMods.n || (firstMods.z && secondMods.n)
+        u := secondMods.u
+      }⟩ := by
+  cases firstContract with
+  | v firstInput firstTrue firstExec =>
+      cases secondContract with
+      | k secondInput ownArgs key signature stackShape secondExec checked =>
+          apply GeneratedContract.k
+            (input := andVInput firstInput secondInput)
+            (ownArgs := firstWitness.toInitialStack ++ ownArgs)
+            (key := key) (signature := signature)
+          · simp [stackShape, List.append_assoc]
+          · exact firstExec.and_v_k secondExec
+          · exact checked
+
+theorem andV_v
+    {first second : CoreFragment} {firstWitness secondWitness : Witness}
+    {expected : Bool} {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstContract : GeneratedContract first firstWitness true flags txCtx
+      ⟨.V, firstMods⟩)
+    (secondContract : GeneratedContract second secondWitness expected flags txCtx
+      ⟨.V, secondMods⟩) :
+    GeneratedContract (.and_v first second)
+      (Witness.combine firstWitness secondWitness) expected flags txCtx
+      ⟨.V, {
+        z := firstMods.z && secondMods.z
+        o := (firstMods.z && secondMods.o) ||
+          (firstMods.o && secondMods.z)
+        n := firstMods.n || (firstMods.z && secondMods.n)
+        u := secondMods.u
+      }⟩ := by
+  cases firstContract with
+  | v firstInput firstTrue firstExec =>
+      cases secondContract with
+      | v secondInput secondTrue secondExec =>
+          exact .v (andVInput firstInput secondInput) secondTrue
+            (by simpa using firstExec.and_v_v secondExec)
+
+private theorem booleanInput
+    {firstWitness secondWitness : Witness}
+    {firstExpected secondExpected expected : Bool}
+    {firstMods secondMods targetMods : CorrectnessModifiers}
+    (first : GeneratedInput firstWitness firstExpected firstMods)
+    (second : GeneratedInput secondWitness secondExpected secondMods)
+    (zero : targetMods.z = true →
+      firstMods.z = true ∧ secondMods.z = true)
+    (one : targetMods.o = true →
+      (firstMods.z = true ∧ secondMods.o = true) ∨
+      (firstMods.o = true ∧ secondMods.z = true))
+    (nonzero : targetMods.n = true →
+      firstMods.n = true ∨
+      (firstMods.z = true ∧ secondMods.n = true))
+    (truth : expected = true →
+      firstExpected = true ∧ secondExpected = true) :
+    GeneratedInput (Witness.combine firstWitness secondWitness)
+      expected targetMods := by
+  apply first.combine second zero one
+  intro enabled
+  rcases nonzero enabled with firstN | ⟨firstZero, secondN⟩
+  · exact Or.inl ⟨firstN, fun expectedTrue => (truth expectedTrue).1⟩
+  · exact Or.inr ⟨firstZero, secondN,
+      fun expectedTrue => (truth expectedTrue).2⟩
+
+theorem andB
+    {first second : CoreFragment} {firstWitness secondWitness : Witness}
+    {firstExpected secondExpected expected : Bool}
+    {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstContract : GeneratedContract first firstWitness firstExpected flags txCtx
+      ⟨.B, firstMods⟩)
+    (secondContract : GeneratedContract second secondWitness secondExpected
+      flags txCtx ⟨.W, secondMods⟩)
+    (expectedEq : (firstExpected && secondExpected) = expected) :
+    GeneratedContract (.and_b first second)
+      (Witness.combine firstWitness secondWitness) expected flags txCtx
+      ⟨.B, {
+        z := firstMods.z && secondMods.z
+        o := (firstMods.z && secondMods.o) ||
+          (firstMods.o && secondMods.z)
+        n := firstMods.n || (firstMods.z && secondMods.n)
+        d := firstMods.d && secondMods.d
+        u := true
+      }⟩ := by
+  cases firstContract with
+  | b firstInput firstFacts firstExec =>
+      cases secondContract with
+      | w secondInput order secondFacts secondExec =>
+          apply GeneratedContract.b
+          · apply booleanInput firstInput secondInput
+            · intro enabled
+              simpa using enabled
+            · intro enabled
+              simpa [Bool.or_eq_true] using enabled
+            · intro enabled
+              simpa [Bool.or_eq_true] using enabled
+            · intro expectedTrue
+              have both : (firstExpected && secondExpected) = true :=
+                expectedEq.trans expectedTrue
+              simpa using both
+          · exact BooleanResultFacts.canonical expected _ flags
+          · have executed := firstExec.and_b secondExec
+              (firstFacts.binaryDecoded secondFacts order)
+            rw [firstFacts.nonzero, secondFacts.nonzero, expectedEq] at executed
+            simpa using executed
+
+theorem orB
+    {first second : CoreFragment} {firstWitness secondWitness : Witness}
+    {firstExpected secondExpected expected : Bool}
+    {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstContract : GeneratedContract first firstWitness firstExpected flags txCtx
+      ⟨.B, firstMods⟩)
+    (secondContract : GeneratedContract second secondWitness secondExpected
+      flags txCtx ⟨.W, secondMods⟩)
+    (expectedEq : (firstExpected || secondExpected) = expected) :
+    GeneratedContract (.or_b first second)
+      (Witness.combine firstWitness secondWitness) expected flags txCtx
+      ⟨.B, {
+        z := firstMods.z && secondMods.z
+        o := (firstMods.z && secondMods.o) ||
+          (firstMods.o && secondMods.z)
+        n := false
+        d := true
+        u := true
+      }⟩ := by
+  cases firstContract with
+  | b firstInput firstFacts firstExec =>
+      cases secondContract with
+      | w secondInput order secondFacts secondExec =>
+          apply GeneratedContract.b
+          · apply firstInput.combine secondInput
+            · intro enabled
+              simpa using enabled
+            · intro enabled
+              simpa [Bool.or_eq_true] using enabled
+            · simp
+          · exact BooleanResultFacts.canonical expected _ flags
+          · have executed := firstExec.or_b secondExec
+              (firstFacts.binaryDecoded secondFacts order)
+            rw [firstFacts.nonzero, secondFacts.nonzero, expectedEq] at executed
+            simpa using executed
+
+theorem orC_left
+    {first second : CoreFragment} {witness : Witness}
+    {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (contract : GeneratedContract first witness true flags txCtx
+      ⟨.B, firstMods⟩) (firstUnit : firstMods.u = true) :
+    GeneratedContract (.or_c first second) witness true flags txCtx
+      ⟨.V, {
+        z := firstMods.z && secondMods.z
+        o := firstMods.o && secondMods.z
+      }⟩ := by
+  cases contract with
+  | b input facts executed =>
+      apply GeneratedContract.v
+        (input := input.mono (by simp_all) (by simp_all) (by simp)) rfl
+      exact executed.or_c_left (facts.minimalIfSatisfied firstUnit) facts.truth
+
+theorem orC_right
+    {first second : CoreFragment} {firstWitness secondWitness : Witness}
+    {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstContract : GeneratedContract first firstWitness false flags txCtx
+      ⟨.B, firstMods⟩) (firstUnit : firstMods.u = true)
+    (secondContract : GeneratedContract second secondWitness true flags txCtx
+      ⟨.V, secondMods⟩) :
+    GeneratedContract (.or_c first second)
+      (Witness.combine firstWitness secondWitness) true flags txCtx
+      ⟨.V, {
+        z := firstMods.z && secondMods.z
+        o := firstMods.o && secondMods.z
+      }⟩ := by
+  cases firstContract with
+  | b firstInput firstFacts firstExec =>
+      cases secondContract with
+      | v secondInput secondTrue secondExec =>
+          apply GeneratedContract.v
+            (input := by
+              apply firstInput.combine secondInput
+              · intro enabled
+                simpa using enabled
+              · intro enabled
+                right
+                simpa using enabled
+              · simp)
+            rfl
+          simpa using firstExec.or_c_right
+            (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth secondExec
+
+theorem orD_left
+    {first second : CoreFragment} {witness : Witness}
+    {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (contract : GeneratedContract first witness true flags txCtx
+      ⟨.B, firstMods⟩) (firstUnit : firstMods.u = true) :
+    GeneratedContract (.or_d first second) witness true flags txCtx
+      ⟨.B, {
+        z := firstMods.z && secondMods.z
+        o := firstMods.o && secondMods.z
+        d := secondMods.d
+        u := secondMods.u
+      }⟩ := by
+  cases contract with
+  | b input facts executed =>
+      exact .b (input.mono (by simp_all) (by simp_all) (by simp))
+        (facts.retype (fun _ => firstUnit))
+        (executed.or_d_left (facts.minimalIfSatisfied firstUnit) facts.truth)
+
+theorem orD_right
+    {first second : CoreFragment} {firstWitness secondWitness : Witness}
+    {expected : Bool} {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstContract : GeneratedContract first firstWitness false flags txCtx
+      ⟨.B, firstMods⟩) (firstUnit : firstMods.u = true)
+    (secondContract : GeneratedContract second secondWitness expected flags txCtx
+      ⟨.B, secondMods⟩) :
+    GeneratedContract (.or_d first second)
+      (Witness.combine firstWitness secondWitness) expected flags txCtx
+      ⟨.B, {
+        z := firstMods.z && secondMods.z
+        o := firstMods.o && secondMods.z
+        d := secondMods.d
+        u := secondMods.u
+      }⟩ := by
+  cases firstContract with
+  | b firstInput firstFacts firstExec =>
+      cases secondContract with
+      | b secondInput secondFacts secondExec =>
+          apply GeneratedContract.b
+          · apply firstInput.combine secondInput
+            · intro enabled
+              simpa using enabled
+            · intro enabled
+              right
+              simpa using enabled
+            · simp
+          · exact secondFacts.retype (by simp)
+          · simpa using firstExec.or_d_right
+              (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth secondExec
+
+private theorem orIInput
+    {witness : Witness} {expected : Bool}
+    {source firstMods secondMods : CorrectnessModifiers}
+    {selector : StackElement}
+    (input : GeneratedInput witness expected source)
+    (selectorBounded : selector.size ≤ maxScriptElementSize)
+    (sourceZero : (firstMods.z && secondMods.z) = true → source.z = true) :
+    GeneratedInput (witness.withSelector selector) expected {
+      o := firstMods.z && secondMods.z
+      d := firstMods.d || secondMods.d
+      u := firstMods.u && secondMods.u
+    } := by
+  apply input.withSelector selectorBounded
+  · simp
+  · exact sourceZero
+  · simp
+
+theorem orILeft_b
+    {first second : CoreFragment} {witness : Witness} {expected : Bool}
+    {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (contract : GeneratedContract first witness expected flags txCtx
+      ⟨.B, firstMods⟩) :
+    GeneratedContract (.or_i first second) (witness.withSelector trueElement)
+      expected flags txCtx ⟨.B, {
+        o := firstMods.z && secondMods.z
+        d := firstMods.d || secondMods.d
+        u := firstMods.u && secondMods.u
+      }⟩ := by
+  cases contract with
+  | b input facts executed =>
+      exact .b (orIInput input trueElement_size_le (by simp_all))
+        (facts.retype (by simp_all)) (by simpa using executed.or_i_left)
+
+theorem orIRight_b
+    {first second : CoreFragment} {witness : Witness} {expected : Bool}
+    {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (contract : GeneratedContract second witness expected flags txCtx
+      ⟨.B, secondMods⟩) :
+    GeneratedContract (.or_i first second) (witness.withSelector falseElement)
+      expected flags txCtx ⟨.B, {
+        o := firstMods.z && secondMods.z
+        d := firstMods.d || secondMods.d
+        u := firstMods.u && secondMods.u
+      }⟩ := by
+  cases contract with
+  | b input facts executed =>
+      exact .b (orIInput input falseElement_size_le (by simp_all))
+        (facts.retype (by simp_all)) (by simpa using executed.or_i_right)
+
+theorem orILeft_k
+    {first second : CoreFragment} {witness : Witness} {expected : Bool}
+    {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (contract : GeneratedContract first witness expected flags txCtx
+      ⟨.K, firstMods⟩) :
+    GeneratedContract (.or_i first second) (witness.withSelector trueElement)
+      expected flags txCtx ⟨.K, {
+        o := firstMods.z && secondMods.z
+        d := firstMods.d || secondMods.d
+        u := firstMods.u && secondMods.u
+      }⟩ := by
+  cases contract with
+  | k input ownArgs key signature stackShape executed checked =>
+      apply GeneratedContract.k
+        (input := orIInput input trueElement_size_le (by simp_all))
+        (ownArgs := trueElement :: ownArgs) (key := key) (signature := signature)
+      · simp [stackShape]
+      · exact executed.or_i_left
+      · exact checked
+
+theorem orIRight_k
+    {first second : CoreFragment} {witness : Witness} {expected : Bool}
+    {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (contract : GeneratedContract second witness expected flags txCtx
+      ⟨.K, secondMods⟩) :
+    GeneratedContract (.or_i first second) (witness.withSelector falseElement)
+      expected flags txCtx ⟨.K, {
+        o := firstMods.z && secondMods.z
+        d := firstMods.d || secondMods.d
+        u := firstMods.u && secondMods.u
+      }⟩ := by
+  cases contract with
+  | k input ownArgs key signature stackShape executed checked =>
+      apply GeneratedContract.k
+        (input := orIInput input falseElement_size_le (by simp_all))
+        (ownArgs := falseElement :: ownArgs) (key := key) (signature := signature)
+      · simp [stackShape]
+      · exact executed.or_i_right
+      · exact checked
+
+theorem orILeft_v
+    {first second : CoreFragment} {witness : Witness} {expected : Bool}
+    {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (contract : GeneratedContract first witness expected flags txCtx
+      ⟨.V, firstMods⟩) :
+    GeneratedContract (.or_i first second) (witness.withSelector trueElement)
+      expected flags txCtx ⟨.V, {
+        o := firstMods.z && secondMods.z
+        d := firstMods.d || secondMods.d
+        u := firstMods.u && secondMods.u
+      }⟩ := by
+  cases contract with
+  | v input expectedTrue executed =>
+      exact .v (orIInput input trueElement_size_le (by simp_all)) expectedTrue
+        (by simpa using executed.or_i_left)
+
+theorem orIRight_v
+    {first second : CoreFragment} {witness : Witness} {expected : Bool}
+    {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (contract : GeneratedContract second witness expected flags txCtx
+      ⟨.V, secondMods⟩) :
+    GeneratedContract (.or_i first second) (witness.withSelector falseElement)
+      expected flags txCtx ⟨.V, {
+        o := firstMods.z && secondMods.z
+        d := firstMods.d || secondMods.d
+        u := firstMods.u && secondMods.u
+      }⟩ := by
+  cases contract with
+  | v input expectedTrue executed =>
+      exact .v (orIInput input falseElement_size_le (by simp_all)) expectedTrue
+        (by simpa using executed.or_i_right)
+
+private theorem andorTrueInput
+    {firstWitness secondWitness : Witness} {expected : Bool}
+    {firstMods secondMods thirdMods : CorrectnessModifiers}
+    (first : GeneratedInput firstWitness true firstMods)
+    (second : GeneratedInput secondWitness expected secondMods) :
+    GeneratedInput (Witness.combine firstWitness secondWitness) expected {
+      z := firstMods.z && secondMods.z && thirdMods.z
+      o := (firstMods.z && secondMods.o && thirdMods.o) ||
+        (firstMods.o && secondMods.z && thirdMods.z)
+      d := thirdMods.d
+      u := secondMods.u && thirdMods.u
+    } := by
+  apply first.combine second
+  · intro enabled
+    simp only [Bool.and_eq_true] at enabled
+    exact ⟨enabled.1.1, enabled.1.2⟩
+  · intro enabled
+    simp only [Bool.or_eq_true, Bool.and_eq_true] at enabled
+    rcases enabled with left | right
+    · exact Or.inl ⟨left.1.1, left.1.2⟩
+    · exact Or.inr ⟨right.1.1, right.1.2⟩
+  · simp
+
+private theorem andorFalseInput
+    {firstWitness thirdWitness : Witness} {expected : Bool}
+    {firstMods secondMods thirdMods : CorrectnessModifiers}
+    (first : GeneratedInput firstWitness false firstMods)
+    (third : GeneratedInput thirdWitness expected thirdMods) :
+    GeneratedInput (Witness.combine firstWitness thirdWitness) expected {
+      z := firstMods.z && secondMods.z && thirdMods.z
+      o := (firstMods.z && secondMods.o && thirdMods.o) ||
+        (firstMods.o && secondMods.z && thirdMods.z)
+      d := thirdMods.d
+      u := secondMods.u && thirdMods.u
+    } := by
+  apply first.combine third
+  · intro enabled
+    simp only [Bool.and_eq_true] at enabled
+    exact ⟨enabled.1.1, enabled.2⟩
+  · intro enabled
+    simp only [Bool.or_eq_true, Bool.and_eq_true] at enabled
+    rcases enabled with left | right
+    · exact Or.inl ⟨left.1.1, left.2⟩
+    · exact Or.inr ⟨right.1.1, right.2⟩
+  · simp
+
+theorem andorTrue_b
+    {first second third : CoreFragment} {firstWitness secondWitness : Witness}
+    {expected : Bool} {firstMods secondMods thirdMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstContract : GeneratedContract first firstWitness true flags txCtx
+      ⟨.B, firstMods⟩) (firstUnit : firstMods.u = true)
+    (secondContract : GeneratedContract second secondWitness expected flags txCtx
+      ⟨.B, secondMods⟩) :
+    GeneratedContract (.andor first second third)
+      (Witness.combine firstWitness secondWitness) expected flags txCtx
+      ⟨.B, {
+        z := firstMods.z && secondMods.z && thirdMods.z
+        o := (firstMods.z && secondMods.o && thirdMods.o) ||
+          (firstMods.o && secondMods.z && thirdMods.z)
+        d := thirdMods.d
+        u := secondMods.u && thirdMods.u
+      }⟩ := by
+  cases firstContract with
+  | b firstInput firstFacts firstExec =>
+      cases secondContract with
+      | b secondInput secondFacts secondExec =>
+          exact .b (andorTrueInput firstInput secondInput)
+            (secondFacts.retype (by simp_all))
+            (by simpa using
+              (BExecution.andor_true firstExec
+                (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
+                secondExec))
+
+theorem andorFalse_b
+    {first second third : CoreFragment} {firstWitness thirdWitness : Witness}
+    {expected : Bool} {firstMods secondMods thirdMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstContract : GeneratedContract first firstWitness false flags txCtx
+      ⟨.B, firstMods⟩) (firstUnit : firstMods.u = true)
+    (thirdContract : GeneratedContract third thirdWitness expected flags txCtx
+      ⟨.B, thirdMods⟩) :
+    GeneratedContract (.andor first second third)
+      (Witness.combine firstWitness thirdWitness) expected flags txCtx
+      ⟨.B, {
+        z := firstMods.z && secondMods.z && thirdMods.z
+        o := (firstMods.z && secondMods.o && thirdMods.o) ||
+          (firstMods.o && secondMods.z && thirdMods.z)
+        d := thirdMods.d
+        u := secondMods.u && thirdMods.u
+      }⟩ := by
+  cases firstContract with
+  | b firstInput firstFacts firstExec =>
+      cases thirdContract with
+      | b thirdInput thirdFacts thirdExec =>
+          exact .b (andorFalseInput firstInput thirdInput)
+            (thirdFacts.retype (by simp_all))
+            (by simpa using
+              (BExecution.andor_false firstExec
+                (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
+                thirdExec))
+
+theorem andorTrue_k
+    {first second third : CoreFragment} {firstWitness secondWitness : Witness}
+    {expected : Bool} {firstMods secondMods thirdMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstContract : GeneratedContract first firstWitness true flags txCtx
+      ⟨.B, firstMods⟩) (firstUnit : firstMods.u = true)
+    (secondContract : GeneratedContract second secondWitness expected flags txCtx
+      ⟨.K, secondMods⟩) :
+    GeneratedContract (.andor first second third)
+      (Witness.combine firstWitness secondWitness) expected flags txCtx
+      ⟨.K, {
+        z := firstMods.z && secondMods.z && thirdMods.z
+        o := (firstMods.z && secondMods.o && thirdMods.o) ||
+          (firstMods.o && secondMods.z && thirdMods.z)
+        d := thirdMods.d
+        u := secondMods.u && thirdMods.u
+      }⟩ := by
+  cases firstContract with
+  | b firstInput firstFacts firstExec =>
+      cases secondContract with
+      | k secondInput ownArgs key signature stackShape secondExec checked =>
+          apply GeneratedContract.k
+            (input := andorTrueInput firstInput secondInput)
+            (ownArgs := firstWitness.toInitialStack ++ ownArgs)
+            (key := key) (signature := signature)
+          · simp [stackShape, List.append_assoc]
+          · exact firstExec.andor_true
+              (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth secondExec
+          · exact checked
+
+theorem andorFalse_k
+    {first second third : CoreFragment} {firstWitness thirdWitness : Witness}
+    {expected : Bool} {firstMods secondMods thirdMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstContract : GeneratedContract first firstWitness false flags txCtx
+      ⟨.B, firstMods⟩) (firstUnit : firstMods.u = true)
+    (thirdContract : GeneratedContract third thirdWitness expected flags txCtx
+      ⟨.K, thirdMods⟩) :
+    GeneratedContract (.andor first second third)
+      (Witness.combine firstWitness thirdWitness) expected flags txCtx
+      ⟨.K, {
+        z := firstMods.z && secondMods.z && thirdMods.z
+        o := (firstMods.z && secondMods.o && thirdMods.o) ||
+          (firstMods.o && secondMods.z && thirdMods.z)
+        d := thirdMods.d
+        u := secondMods.u && thirdMods.u
+      }⟩ := by
+  cases firstContract with
+  | b firstInput firstFacts firstExec =>
+      cases thirdContract with
+      | k thirdInput ownArgs key signature stackShape thirdExec checked =>
+          apply GeneratedContract.k
+            (input := andorFalseInput firstInput thirdInput)
+            (ownArgs := firstWitness.toInitialStack ++ ownArgs)
+            (key := key) (signature := signature)
+          · simp [stackShape, List.append_assoc]
+          · exact firstExec.andor_false
+              (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth thirdExec
+          · exact checked
+
+theorem andorTrue_v
+    {first second third : CoreFragment} {firstWitness secondWitness : Witness}
+    {expected : Bool} {firstMods secondMods thirdMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstContract : GeneratedContract first firstWitness true flags txCtx
+      ⟨.B, firstMods⟩) (firstUnit : firstMods.u = true)
+    (secondContract : GeneratedContract second secondWitness expected flags txCtx
+      ⟨.V, secondMods⟩) :
+    GeneratedContract (.andor first second third)
+      (Witness.combine firstWitness secondWitness) expected flags txCtx
+      ⟨.V, {
+        z := firstMods.z && secondMods.z && thirdMods.z
+        o := (firstMods.z && secondMods.o && thirdMods.o) ||
+          (firstMods.o && secondMods.z && thirdMods.z)
+        d := thirdMods.d
+        u := secondMods.u && thirdMods.u
+      }⟩ := by
+  cases firstContract with
+  | b firstInput firstFacts firstExec =>
+      cases secondContract with
+      | v secondInput expectedTrue secondExec =>
+          exact .v (andorTrueInput firstInput secondInput) expectedTrue
+            (by simpa using
+              (VExecution.andor_true firstExec
+                (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
+                secondExec))
+
+theorem andorFalse_v
+    {first second third : CoreFragment} {firstWitness thirdWitness : Witness}
+    {expected : Bool} {firstMods secondMods thirdMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstContract : GeneratedContract first firstWitness false flags txCtx
+      ⟨.B, firstMods⟩) (firstUnit : firstMods.u = true)
+    (thirdContract : GeneratedContract third thirdWitness expected flags txCtx
+      ⟨.V, thirdMods⟩) :
+    GeneratedContract (.andor first second third)
+      (Witness.combine firstWitness thirdWitness) expected flags txCtx
+      ⟨.V, {
+        z := firstMods.z && secondMods.z && thirdMods.z
+        o := (firstMods.z && secondMods.o && thirdMods.o) ||
+          (firstMods.o && secondMods.z && thirdMods.z)
+        d := thirdMods.d
+        u := secondMods.u && thirdMods.u
+      }⟩ := by
+  cases firstContract with
+  | b firstInput firstFacts firstExec =>
+      cases thirdContract with
+      | v thirdInput expectedTrue thirdExec =>
+          exact .v (andorFalseInput firstInput thirdInput) expectedTrue
+            (by simpa using
+              (VExecution.andor_false firstExec
+                (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
+                thirdExec))
+
+end GeneratedContract
+
+namespace CandidatePair.SupportsGeneratedContract
+
+/-- Generated candidate support for `and_v`, including the usable
+    non-canonical dissatisfaction row. -/
+theorem and_v
+    {firstPair secondPair : CandidatePair} {scriptCtx : ScriptContext}
+    {first second : CoreFragment} {firstMods : CorrectnessModifiers}
+    {secondType : MiniType} {flags : ScriptFlags} {txCtx : TxContext}
+    (firstSupported : firstPair.SupportsGeneratedContract scriptCtx first
+      ⟨.V, firstMods⟩ flags txCtx)
+    (secondSupported : secondPair.SupportsGeneratedContract scriptCtx second
+      secondType flags txCtx)
+    (branch : branchBase secondType.base) :
+    ({ sat := firstPair.sat.combine secondPair.sat
+       dsat := (firstPair.sat.combine secondPair.dsat).markNonCanonical } :
+      CandidatePair).SupportsGeneratedContract scriptCtx (.and_v first second)
+      ⟨secondType.base, {
+        z := firstMods.z && secondType.mods.z
+        o := (firstMods.z && secondType.mods.o) ||
+          (firstMods.o && secondType.mods.z)
+        n := firstMods.n || (firstMods.z && secondType.mods.n)
+        u := secondType.mods.u
+      }⟩ flags txCtx := by
+  refine ⟨.and_v firstSupported.typed secondSupported.typed branch, ?_, ?_⟩
+  · change (firstPair.sat.combine secondPair.sat).Supports _
+    intro witness selected
+    obtain ⟨firstWitness, secondWitness, rfl,
+      firstContract, secondContract⟩ :=
+      (firstSupported.sat.combine secondSupported.sat) witness selected
+    cases secondType with
+    | mk base mods =>
+        cases base with
+        | B => exact firstContract.andV_b secondContract
+        | K => exact firstContract.andV_k secondContract
+        | V => exact firstContract.andV_v secondContract
+        | W => simp [branchBase] at branch
+  · change (firstPair.sat.combine secondPair.dsat).markNonCanonical.Supports _
+    intro witness selected
+    have combined := CandidateResult.markNonCanonical_usableWitness_iff.mp selected
+    obtain ⟨firstWitness, secondWitness, rfl,
+      firstContract, secondContract⟩ :=
+      (firstSupported.sat.combine secondSupported.dsat) witness combined
+    cases secondType with
+    | mk base mods =>
+        cases base with
+        | B => exact firstContract.andV_b secondContract
+        | K => exact firstContract.andV_k secondContract
+        | V => exact firstContract.andV_v secondContract
+        | W => simp [branchBase] at branch
+
+/-- Generated candidate support for `and_b`. Only the all-false
+    dissatisfaction is usable; both mixed rows are overcomplete. -/
+theorem and_b
+    {firstPair secondPair : CandidatePair} {scriptCtx : ScriptContext}
+    {first second : CoreFragment} {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstSupported : firstPair.SupportsGeneratedContract scriptCtx first
+      ⟨.B, firstMods⟩ flags txCtx)
+    (secondSupported : secondPair.SupportsGeneratedContract scriptCtx second
+      ⟨.W, secondMods⟩ flags txCtx) :
+    ({ sat := firstPair.sat.combine secondPair.sat
+       dsat := ((firstPair.dsat.combine secondPair.dsat).select
+         ((firstPair.dsat.combine secondPair.sat).markOvercomplete)).select
+         ((firstPair.sat.combine secondPair.dsat).markOvercomplete) } :
+      CandidatePair).SupportsGeneratedContract scriptCtx (.and_b first second)
+      ⟨.B, {
+        z := firstMods.z && secondMods.z
+        o := (firstMods.z && secondMods.o) ||
+          (firstMods.o && secondMods.z)
+        n := firstMods.n || (firstMods.z && secondMods.n)
+        d := firstMods.d && secondMods.d
+        u := true
+      }⟩ flags txCtx := by
+  refine ⟨.and_b firstSupported.typed secondSupported.typed, ?_, ?_⟩
+  · change (firstPair.sat.combine secondPair.sat).Supports _
+    intro witness selected
+    obtain ⟨firstWitness, secondWitness, rfl,
+      firstContract, secondContract⟩ :=
+      (firstSupported.sat.combine secondSupported.sat) witness selected
+    exact firstContract.andB secondContract (by decide)
+  · change (((firstPair.dsat.combine secondPair.dsat).select
+      ((firstPair.dsat.combine secondPair.sat).markOvercomplete)).select
+      ((firstPair.sat.combine secondPair.dsat).markOvercomplete)).Supports _
+    have canonical : (firstPair.dsat.combine secondPair.dsat).Supports
+        (fun witness => GeneratedContract (.and_b first second) witness false
+          flags txCtx ⟨.B, {
+            z := firstMods.z && secondMods.z
+            o := (firstMods.z && secondMods.o) ||
+              (firstMods.o && secondMods.z)
+            n := firstMods.n || (firstMods.z && secondMods.n)
+            d := firstMods.d && secondMods.d
+            u := true }⟩) := by
+      intro witness selected
+      obtain ⟨firstWitness, secondWitness, rfl,
+        firstContract, secondContract⟩ :=
+        (firstSupported.dsat.combine secondSupported.dsat) witness selected
+      exact firstContract.andB secondContract (by decide)
+    exact (canonical.select
+      (CandidateResult.supports_markOvercomplete _ _)).select
+      (CandidateResult.supports_markOvercomplete _ _)
+
+/-- Generated candidate support for `or_b`, including both usable mixed
+    satisfaction paths and the all-false canonical dissatisfaction. -/
+theorem or_b
+    {firstPair secondPair : CandidatePair} {scriptCtx : ScriptContext}
+    {first second : CoreFragment} {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstSupported : firstPair.SupportsGeneratedContract scriptCtx first
+      ⟨.B, firstMods⟩ flags txCtx) (firstD : firstMods.d = true)
+    (secondSupported : secondPair.SupportsGeneratedContract scriptCtx second
+      ⟨.W, secondMods⟩ flags txCtx) (secondD : secondMods.d = true) :
+    CandidatePair.SupportsGeneratedContract
+      ({ sat := ((firstPair.sat.combine secondPair.dsat).select
+           (firstPair.dsat.combine secondPair.sat)).select
+           ((firstPair.sat.combine secondPair.sat).markOvercomplete)
+         dsat := firstPair.dsat.combine secondPair.dsat } : CandidatePair)
+      scriptCtx (.or_b first second)
+      ⟨.B, {
+        z := firstMods.z && secondMods.z
+        o := (firstMods.z && secondMods.o) ||
+          (firstMods.o && secondMods.z)
+        d := true
+        u := true
+      }⟩ flags txCtx := by
+  refine ⟨.or_b firstSupported.typed firstD secondSupported.typed secondD,
+    ?_, ?_⟩
+  · change (((firstPair.sat.combine secondPair.dsat).select
+      (firstPair.dsat.combine secondPair.sat)).select
+      ((firstPair.sat.combine secondPair.sat).markOvercomplete)).Supports _
+    have left : (firstPair.sat.combine secondPair.dsat).Supports
+        (fun witness => GeneratedContract (.or_b first second) witness true
+          flags txCtx ⟨.B, {
+            z := firstMods.z && secondMods.z
+            o := (firstMods.z && secondMods.o) ||
+              (firstMods.o && secondMods.z)
+            d := true
+            u := true }⟩) := by
+      intro witness selected
+      obtain ⟨firstWitness, secondWitness, rfl,
+        firstContract, secondContract⟩ :=
+        (firstSupported.sat.combine secondSupported.dsat) witness selected
+      exact firstContract.orB secondContract (by decide)
+    have right : (firstPair.dsat.combine secondPair.sat).Supports
+        (fun witness => GeneratedContract (.or_b first second) witness true
+          flags txCtx ⟨.B, {
+            z := firstMods.z && secondMods.z
+            o := (firstMods.z && secondMods.o) ||
+              (firstMods.o && secondMods.z)
+            d := true
+            u := true }⟩) := by
+      intro witness selected
+      obtain ⟨firstWitness, secondWitness, rfl,
+        firstContract, secondContract⟩ :=
+        (firstSupported.dsat.combine secondSupported.sat) witness selected
+      exact firstContract.orB secondContract (by decide)
+    exact (left.select right).select
+      (CandidateResult.supports_markOvercomplete _ _)
+  · change (firstPair.dsat.combine secondPair.dsat).Supports _
+    intro witness selected
+    obtain ⟨firstWitness, secondWitness, rfl,
+      firstContract, secondContract⟩ :=
+      (firstSupported.dsat.combine secondSupported.dsat) witness selected
+    exact firstContract.orB secondContract (by decide)
+
+/-- Generated support for `or_c`: either the satisfying unit selector skips
+    the V child, or the canonical false selector runs it. -/
+theorem or_c
+    {firstPair secondPair : CandidatePair} {scriptCtx : ScriptContext}
+    {first second : CoreFragment} {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstSupported : firstPair.SupportsGeneratedContract scriptCtx first
+      ⟨.B, firstMods⟩ flags txCtx) (firstD : firstMods.d = true)
+    (firstUnit : firstMods.u = true)
+    (secondSupported : secondPair.SupportsGeneratedContract scriptCtx second
+      ⟨.V, secondMods⟩ flags txCtx) :
+    CandidatePair.SupportsGeneratedContract
+      ({ sat := firstPair.sat.select
+           (firstPair.dsat.combine secondPair.sat) } : CandidatePair)
+      scriptCtx (.or_c first second)
+      ⟨.V, {
+        z := firstMods.z && secondMods.z
+        o := firstMods.o && secondMods.z
+      }⟩ flags txCtx := by
+  refine ⟨.or_c firstSupported.typed firstD firstUnit secondSupported.typed,
+    ?_, CandidateResult.supports_impossible _⟩
+  change (firstPair.sat.select
+    (firstPair.dsat.combine secondPair.sat)).Supports _
+  have left : firstPair.sat.Supports
+      (fun witness => GeneratedContract (.or_c first second) witness true
+        flags txCtx ⟨.V, {
+          z := firstMods.z && secondMods.z
+          o := firstMods.o && secondMods.z }⟩) :=
+    firstSupported.sat.mono fun _ contract => contract.orC_left firstUnit
+  have right : (firstPair.dsat.combine secondPair.sat).Supports
+      (fun witness => GeneratedContract (.or_c first second) witness true
+        flags txCtx ⟨.V, {
+          z := firstMods.z && secondMods.z
+          o := firstMods.o && secondMods.z }⟩) := by
+    intro witness selected
+    obtain ⟨firstWitness, secondWitness, rfl,
+      firstContract, secondContract⟩ :=
+      (firstSupported.dsat.combine secondSupported.sat) witness selected
+    exact firstContract.orC_right firstUnit secondContract
+  exact left.select right
+
+/-- Generated support for all direct, alternate, and dissatisfaction paths of
+    `or_d`. -/
+theorem or_d
+    {firstPair secondPair : CandidatePair} {scriptCtx : ScriptContext}
+    {first second : CoreFragment} {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstSupported : firstPair.SupportsGeneratedContract scriptCtx first
+      ⟨.B, firstMods⟩ flags txCtx) (firstD : firstMods.d = true)
+    (firstUnit : firstMods.u = true)
+    (secondSupported : secondPair.SupportsGeneratedContract scriptCtx second
+      ⟨.B, secondMods⟩ flags txCtx) :
+    CandidatePair.SupportsGeneratedContract
+      ({ sat := firstPair.sat.select
+           (firstPair.dsat.combine secondPair.sat)
+         dsat := firstPair.dsat.combine secondPair.dsat } : CandidatePair)
+      scriptCtx (.or_d first second)
+      ⟨.B, {
+        z := firstMods.z && secondMods.z
+        o := firstMods.o && secondMods.z
+        d := secondMods.d
+        u := secondMods.u
+      }⟩ flags txCtx := by
+  refine ⟨.or_d firstSupported.typed firstD firstUnit secondSupported.typed,
+    ?_, ?_⟩
+  · change (firstPair.sat.select
+      (firstPair.dsat.combine secondPair.sat)).Supports _
+    have left : firstPair.sat.Supports
+        (fun witness => GeneratedContract (.or_d first second) witness true
+          flags txCtx ⟨.B, {
+            z := firstMods.z && secondMods.z
+            o := firstMods.o && secondMods.z
+            d := secondMods.d
+            u := secondMods.u }⟩) :=
+      firstSupported.sat.mono fun _ contract => contract.orD_left firstUnit
+    have right : (firstPair.dsat.combine secondPair.sat).Supports
+        (fun witness => GeneratedContract (.or_d first second) witness true
+          flags txCtx ⟨.B, {
+            z := firstMods.z && secondMods.z
+            o := firstMods.o && secondMods.z
+            d := secondMods.d
+            u := secondMods.u }⟩) := by
+      intro witness selected
+      obtain ⟨firstWitness, secondWitness, rfl,
+        firstContract, secondContract⟩ :=
+        (firstSupported.dsat.combine secondSupported.sat) witness selected
+      exact firstContract.orD_right firstUnit secondContract
+    exact left.select right
+  · change (firstPair.dsat.combine secondPair.dsat).Supports _
+    intro witness selected
+    obtain ⟨firstWitness, secondWitness, rfl,
+      firstContract, secondContract⟩ :=
+      (firstSupported.dsat.combine secondSupported.dsat) witness selected
+    exact firstContract.orD_right firstUnit secondContract
+
+private theorem orILeftSupport
+    {result : CandidateResult}
+    {first second : CoreFragment} {base : BaseType}
+    {firstMods secondMods : CorrectnessModifiers}
+    {expected : Bool} {flags : ScriptFlags} {txCtx : TxContext}
+    (supported : result.Supports fun witness =>
+      GeneratedContract first witness expected flags txCtx ⟨base, firstMods⟩)
+    (branch : branchBase base) :
+    (result.withSelector trueElement).Supports fun witness =>
+      GeneratedContract (.or_i first second) witness expected flags txCtx
+        ⟨base, {
+          o := firstMods.z && secondMods.z
+          d := firstMods.d || secondMods.d
+          u := firstMods.u && secondMods.u
+        }⟩ := by
+  intro witness selected
+  obtain ⟨inner, rfl, contract⟩ :=
+    (supported.withSelector trueElement) witness selected
+  cases base with
+  | B => exact contract.orILeft_b
+  | K => exact contract.orILeft_k
+  | V => exact contract.orILeft_v
+  | W => simp [branchBase] at branch
+
+private theorem orIRightSupport
+    {result : CandidateResult}
+    {first second : CoreFragment} {base : BaseType}
+    {firstMods secondMods : CorrectnessModifiers}
+    {expected : Bool} {flags : ScriptFlags} {txCtx : TxContext}
+    (supported : result.Supports fun witness =>
+      GeneratedContract second witness expected flags txCtx ⟨base, secondMods⟩)
+    (branch : branchBase base) :
+    (result.withSelector falseElement).Supports fun witness =>
+      GeneratedContract (.or_i first second) witness expected flags txCtx
+        ⟨base, {
+          o := firstMods.z && secondMods.z
+          d := firstMods.d || secondMods.d
+          u := firstMods.u && secondMods.u
+        }⟩ := by
+  intro witness selected
+  obtain ⟨inner, rfl, contract⟩ :=
+    (supported.withSelector falseElement) witness selected
+  cases base with
+  | B => exact contract.orIRight_b
+  | K => exact contract.orIRight_k
+  | V => exact contract.orIRight_v
+  | W => simp [branchBase] at branch
+
+/-- Generated support for both tagged branches of `or_i`, for each admissible
+    B/K/V branch base and for both satisfaction projections. -/
+theorem or_i
+    {firstPair secondPair : CandidatePair} {scriptCtx : ScriptContext}
+    {first second : CoreFragment} {base : BaseType}
+    {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstSupported : firstPair.SupportsGeneratedContract scriptCtx first
+      ⟨base, firstMods⟩ flags txCtx)
+    (secondSupported : secondPair.SupportsGeneratedContract scriptCtx second
+      ⟨base, secondMods⟩ flags txCtx) (branch : branchBase base) :
+    CandidatePair.SupportsGeneratedContract
+      ({ sat := (firstPair.sat.withSelector trueElement).select
+           (secondPair.sat.withSelector falseElement)
+         dsat := (firstPair.dsat.withSelector trueElement).select
+           (secondPair.dsat.withSelector falseElement) } : CandidatePair)
+      scriptCtx (.or_i first second)
+      ⟨base, {
+        o := firstMods.z && secondMods.z
+        d := firstMods.d || secondMods.d
+        u := firstMods.u && secondMods.u
+      }⟩ flags txCtx := by
+  refine ⟨.or_i firstSupported.typed secondSupported.typed branch rfl, ?_, ?_⟩
+  · change ((firstPair.sat.withSelector trueElement).select
+      (secondPair.sat.withSelector falseElement)).Supports _
+    exact (orILeftSupport firstSupported.sat branch).select
+      (orIRightSupport secondSupported.sat branch)
+  · change ((firstPair.dsat.withSelector trueElement).select
+      (secondPair.dsat.withSelector falseElement)).Supports _
+    exact (orILeftSupport firstSupported.dsat branch).select
+      (orIRightSupport secondSupported.dsat branch)
+
+private theorem andorTrueSupport
+    {firstResult branchResult : CandidateResult}
+    {first second third : CoreFragment} {base : BaseType}
+    {firstMods secondMods thirdMods : CorrectnessModifiers}
+    {expected : Bool} {flags : ScriptFlags} {txCtx : TxContext}
+    (firstSupported : firstResult.Supports fun witness =>
+      GeneratedContract first witness true flags txCtx ⟨.B, firstMods⟩)
+    (branchSupported : branchResult.Supports fun witness =>
+      GeneratedContract second witness expected flags txCtx ⟨base, secondMods⟩)
+    (firstUnit : firstMods.u = true) (branch : branchBase base) :
+    (firstResult.combine branchResult).Supports fun witness =>
+      GeneratedContract (.andor first second third) witness expected flags txCtx
+        ⟨base, {
+          z := firstMods.z && secondMods.z && thirdMods.z
+          o := (firstMods.z && secondMods.o && thirdMods.o) ||
+            (firstMods.o && secondMods.z && thirdMods.z)
+          d := thirdMods.d
+          u := secondMods.u && thirdMods.u
+        }⟩ := by
+  intro witness selected
+  obtain ⟨firstWitness, branchWitness, rfl, firstContract, branchContract⟩ :=
+    (firstSupported.combine branchSupported) witness selected
+  cases base with
+  | B => exact firstContract.andorTrue_b firstUnit branchContract
+  | K => exact firstContract.andorTrue_k firstUnit branchContract
+  | V => exact firstContract.andorTrue_v firstUnit branchContract
+  | W => simp [branchBase] at branch
+
+private theorem andorFalseSupport
+    {firstResult branchResult : CandidateResult}
+    {first second third : CoreFragment} {base : BaseType}
+    {firstMods secondMods thirdMods : CorrectnessModifiers}
+    {expected : Bool} {flags : ScriptFlags} {txCtx : TxContext}
+    (firstSupported : firstResult.Supports fun witness =>
+      GeneratedContract first witness false flags txCtx ⟨.B, firstMods⟩)
+    (branchSupported : branchResult.Supports fun witness =>
+      GeneratedContract third witness expected flags txCtx ⟨base, thirdMods⟩)
+    (firstUnit : firstMods.u = true) (branch : branchBase base) :
+    (firstResult.combine branchResult).Supports fun witness =>
+      GeneratedContract (.andor first second third) witness expected flags txCtx
+        ⟨base, {
+          z := firstMods.z && secondMods.z && thirdMods.z
+          o := (firstMods.z && secondMods.o && thirdMods.o) ||
+            (firstMods.o && secondMods.z && thirdMods.z)
+          d := thirdMods.d
+          u := secondMods.u && thirdMods.u
+        }⟩ := by
+  intro witness selected
+  obtain ⟨firstWitness, branchWitness, rfl, firstContract, branchContract⟩ :=
+    (firstSupported.combine branchSupported) witness selected
+  cases base with
+  | B => exact firstContract.andorFalse_b firstUnit branchContract
+  | K => exact firstContract.andorFalse_k firstUnit branchContract
+  | V => exact firstContract.andorFalse_v firstUnit branchContract
+  | W => simp [branchBase] at branch
+
+/-- Generated support for every usable `andor` path. The non-canonical
+    satisfying-selector dissatisfaction remains a real executable row. -/
+theorem andor
+    {firstPair secondPair thirdPair : CandidatePair}
+    {scriptCtx : ScriptContext} {first second third : CoreFragment}
+    {base : BaseType} {firstMods secondMods thirdMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstSupported : firstPair.SupportsGeneratedContract scriptCtx first
+      ⟨.B, firstMods⟩ flags txCtx) (firstD : firstMods.d = true)
+    (firstUnit : firstMods.u = true)
+    (secondSupported : secondPair.SupportsGeneratedContract scriptCtx second
+      ⟨base, secondMods⟩ flags txCtx)
+    (thirdSupported : thirdPair.SupportsGeneratedContract scriptCtx third
+      ⟨base, thirdMods⟩ flags txCtx) (branch : branchBase base) :
+    CandidatePair.SupportsGeneratedContract
+      ({ sat := (firstPair.sat.combine secondPair.sat).select
+           (firstPair.dsat.combine thirdPair.sat)
+         dsat := (firstPair.dsat.combine thirdPair.dsat).select
+           ((firstPair.sat.combine secondPair.dsat).markNonCanonical) } :
+        CandidatePair)
+      scriptCtx (.andor first second third)
+      ⟨base, {
+        z := firstMods.z && secondMods.z && thirdMods.z
+        o := (firstMods.z && secondMods.o && thirdMods.o) ||
+          (firstMods.o && secondMods.z && thirdMods.z)
+        d := thirdMods.d
+        u := secondMods.u && thirdMods.u
+      }⟩ flags txCtx := by
+  refine ⟨.andor firstSupported.typed firstD firstUnit secondSupported.typed
+    thirdSupported.typed branch rfl, ?_, ?_⟩
+  · change ((firstPair.sat.combine secondPair.sat).select
+      (firstPair.dsat.combine thirdPair.sat)).Supports _
+    exact (andorTrueSupport firstSupported.sat secondSupported.sat
+      firstUnit branch).select
+      (andorFalseSupport firstSupported.dsat thirdSupported.sat
+        firstUnit branch)
+  · change ((firstPair.dsat.combine thirdPair.dsat).select
+      ((firstPair.sat.combine secondPair.dsat).markNonCanonical)).Supports _
+    have canonical := andorFalseSupport (second := second)
+      (secondMods := secondMods) firstSupported.dsat thirdSupported.dsat
+      firstUnit branch
+    have noncanonical := CandidateResult.Supports.markNonCanonical
+      (andorTrueSupport (third := third) (thirdMods := thirdMods)
+        firstSupported.sat secondSupported.dsat
+        firstUnit branch)
+    exact canonical.select noncanonical
 
 end CandidatePair.SupportsGeneratedContract
 
