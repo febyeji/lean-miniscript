@@ -75,6 +75,58 @@ theorem checkSigEncodingFor_empty_of_modeled
       simp [checkSigEncodingFor, version, keySize, falseEq]
       rfl
 
+private theorem isCompressedPubKey_of_validCompressed
+    {bytes : StackElement} (valid : validCompressedPubKeyBytes bytes) :
+    isCompressedPubKey bytes = true := by
+  rcases valid with ⟨size, headByte⟩
+  have positive : 0 < bytes.size := by omega
+  have dataPositive : 0 < bytes.data.size := by
+    simpa [ByteArray.size_data] using positive
+  have indexEq : bytes[0]! = bytes.get! 0 := by
+    rw [getElem!_pos bytes 0 positive]
+    change bytes.data[0] = bytes.data[0]!
+    rw [getElem!_pos bytes.data 0 dataPositive]
+  unfold isCompressedPubKey
+  rw [indexEq]
+  simp [size, headByte]
+
+private theorem isOrdinaryPubKey_of_validCompressed
+    {bytes : StackElement} (valid : validCompressedPubKeyBytes bytes) :
+    isCompressedOrUncompressedPubKey bytes = true := by
+  rcases valid with ⟨size, headByte⟩
+  have positive : 0 < bytes.size := by omega
+  have dataPositive : 0 < bytes.data.size := by
+    simpa [ByteArray.size_data] using positive
+  have indexEq : bytes[0]! = bytes.get! 0 := by
+    rw [getElem!_pos bytes 0 positive]
+    change bytes.data[0] = bytes.data[0]!
+    rw [getElem!_pos bytes.data 0 dataPositive]
+  unfold isCompressedOrUncompressedPubKey
+  rw [indexEq]
+  simp [size, headByte]
+
+/-- In witness-v0, a signature which passes encoding checks against one key
+    passes them against every other context-valid compressed key. The signature
+    encoding check is key-independent; target validity discharges the two
+    possible public-key encoding checks. -/
+theorem checkSigEncodingFor_witnessV0_rekey
+    {flags : ScriptFlags} {signature sourceKey targetKey : StackElement}
+    (targetValid : validCompressedPubKeyBytes targetKey)
+    (encoded : checkSigEncodingFor flags .witnessV0 signature sourceKey = .ok ()) :
+    checkSigEncodingFor flags .witnessV0 signature targetKey = .ok () := by
+  have compressed := isCompressedPubKey_of_validCompressed targetValid
+  have ordinary := isOrdinaryPubKey_of_validCompressed targetValid
+  cases signatureEncoded : checkSignatureEncoding flags signature with
+  | error error =>
+      simp only [checkSigEncodingFor, checkECDSAEncoding] at encoded
+      rw [signatureEncoded] at encoded
+      contradiction
+  | ok value =>
+      cases value
+      simp [checkSigEncodingFor, checkECDSAEncoding, signatureEncoded,
+        checkPubKeyEncoding, compressed, ordinary]
+      rfl
+
 private theorem isValidSignatureEncoding_size_le
     {signature : StackElement}
     (valid : isValidSignatureEncoding signature = true) :
@@ -3265,5 +3317,530 @@ theorem generatedContract_multiA_of_wellFormed
         rw [empty]
         exact ⟨typed, CandidateResult.supports_impossible _,
           CandidateResult.supports_impossible _⟩
+
+/-! ## Legacy multisignature candidate composition -/
+
+/-- Selected legacy signatures embedded in the top-first key order consumed by
+    CHECKMULTISIG. `skip` retains the current signature while advancing a key;
+    `take` records the source key which supplied and consumes that signature. -/
+inductive OrderedMultiSignatures (env : SatEnv) :
+    Stack → List PubKey → Prop where
+  | nil (keys : List PubKey) : OrderedMultiSignatures env [] keys
+  | skip {signature : StackElement} {signatures : Stack}
+      {key : PubKey} {keys : List PubKey}
+      (tail : OrderedMultiSignatures env (signature :: signatures) keys) :
+      OrderedMultiSignatures env (signature :: signatures) (key :: keys)
+  | take {signature : StackElement} {signatures : Stack}
+      {key : PubKey} {keys : List PubKey}
+      (selected : env.signatureFor key = some signature)
+      (tail : OrderedMultiSignatures env signatures keys) :
+      OrderedMultiSignatures env (signature :: signatures) (key :: keys)
+
+namespace OrderedMultiSignatures
+
+/-- An ordered signature embedding never contains more signatures than keys. -/
+theorem length_le {env : SatEnv} {signatures : Stack} {keys : List PubKey}
+    (ordered : OrderedMultiSignatures env signatures keys) :
+    signatures.length ≤ keys.length := by
+  induction ordered with
+  | nil => simp
+  | skip tail ih =>
+      simp only [List.length_cons] at ih ⊢
+      omega
+  | take selected tail ih =>
+      simp only [List.length_cons] at ih ⊢
+      omega
+
+/-- Removing the first required signature preserves an ordered embedding into
+    the same key list. Keys through that signature's designated key become
+    skipped keys for the next required signature. -/
+theorem dropSignature {env : SatEnv} {signature : StackElement}
+    {signatures : Stack} {keys : List PubKey}
+    (ordered : OrderedMultiSignatures env (signature :: signatures) keys) :
+    OrderedMultiSignatures env signatures keys := by
+  have tailOrdered : ∀ {source : Stack} {keyList : List PubKey},
+      OrderedMultiSignatures env source keyList →
+      OrderedMultiSignatures env source.tail keyList := by
+    intro source keyList relation
+    induction relation with
+    | nil keys => exact .nil keys
+    | @skip current rest key keys tail ih =>
+        cases rest with
+        | nil => exact .nil (key :: keys)
+        | cons next rest =>
+            simp only [List.tail_cons]
+            exact .skip ih
+    | @take current rest key keys selected tail ih =>
+        cases rest with
+        | nil => exact .nil (key :: keys)
+        | cons next rest =>
+            simp only [List.tail_cons]
+            exact .skip tail
+  exact tailOrdered ordered
+
+/-- A successful check at the current key consumes the current signature while
+    preserving the order of all remaining signatures. This also covers success
+    at a skipped key before the signature's designated environment key. -/
+theorem consumeCurrent {env : SatEnv} {signature : StackElement}
+    {signatures : Stack} {key : PubKey} {keys : List PubKey}
+    (ordered : OrderedMultiSignatures env (signature :: signatures)
+      (key :: keys)) :
+    OrderedMultiSignatures env signatures keys := by
+  cases ordered with
+  | skip tail => exact tail.dropSignature
+  | take selected tail => exact tail
+
+/-- Add an unmatched key at the front of evaluator order. -/
+theorem prependSkippedKey {env : SatEnv} {signatures : Stack}
+    {keys : List PubKey} (key : PubKey)
+    (ordered : OrderedMultiSignatures env signatures keys) :
+    OrderedMultiSignatures env signatures (key :: keys) := by
+  cases signatures with
+  | nil => exact .nil (key :: keys)
+  | cons signature signatures => exact .skip ordered
+
+/-- The first required signature was selected for some remaining key. -/
+theorem headSelected {env : SatEnv} {signature : StackElement}
+    {signatures : Stack} {keys : List PubKey}
+    (ordered : OrderedMultiSignatures env (signature :: signatures) keys) :
+    ∃ key, key ∈ keys ∧ env.signatureFor key = some signature := by
+  have aux : ∀ {source : Stack} {keyList : List PubKey},
+      OrderedMultiSignatures env source keyList →
+      ∀ {head : StackElement} {tail : Stack}, source = head :: tail →
+        ∃ key, key ∈ keyList ∧ env.signatureFor key = some head := by
+    intro source keyList relation
+    induction relation with
+    | nil keys =>
+        intro head tail equal
+        simp at equal
+    | @skip current rest key keys relation ih =>
+        intro head tail equal
+        obtain ⟨ownKey, member, selected⟩ := ih equal
+        exact ⟨ownKey, by simp [member], selected⟩
+    | @take current rest key keys selected relation ih =>
+        intro head tail equal
+        have currentEq : current = head := (List.cons.inj equal).1
+        subst head
+        exact ⟨key, by simp, selected⟩
+  exact aux ordered rfl
+
+/-- Every selected signature in an ordered embedding satisfies the Script
+    element-size limit under the modeled P2WSH encoding assumptions. -/
+theorem itemsBounded
+    {env : SatEnv} {flags : ScriptFlags} {signatures : Stack}
+    {keys : List PubKey}
+    (ordered : OrderedMultiSignatures env signatures keys)
+    (valid : ∀ key ∈ keys, validResolvedPubKey .p2wsh key)
+    (version : ModeledContextVersion .p2wsh env.txCtx)
+    (modeled : ModeledContextFlags .p2wsh flags)
+    (encodings : env.EncodingSound flags) :
+    Witness.ItemsBounded signatures := by
+  induction ordered with
+  | nil => exact Witness.ItemsBounded.nil
+  | @skip signature signatures key keys tail ih =>
+      exact ih (fun tailKey member => valid tailKey (by simp [member]))
+  | @take signature signatures key keys selected tail ih =>
+      intro item member
+      simp only [List.mem_cons] at member
+      rcases member with rfl | member
+      · exact selectedSignature_size_le (valid key (by simp)) version modeled
+          encodings selected
+      · exact ih (fun tailKey tailMember =>
+          valid tailKey (by simp [tailMember])) item member
+
+end OrderedMultiSignatures
+
+/-- Exact-count provenance for legacy key rows produces the top-first ordered
+    signature embedding used by CHECKMULTISIG. The combined inner witness has
+    exactly one element for every selected satisfaction row. -/
+theorem CandidatePair.ChoiceTrace.toOrderedMultiSignatures
+    {env : SatEnv} {keys : List PubKey} {count : Nat}
+    {frames : List Witness} {witness : Witness}
+    (trace : CandidatePair.ChoiceTrace
+      (keys.map fun key => legacyMultiKeyChoice key env)
+      count frames witness) :
+    OrderedMultiSignatures env witness keys.reverse ∧
+      witness.length = count := by
+  induction keys using listSnocInductionGenerated generalizing count frames witness with
+  | nil =>
+      simp only [List.map_nil] at trace
+      generalize pairsEq : ([] : List CandidatePair) = pairs at trace
+      cases trace
+      · exact ⟨.nil [], rfl⟩
+      · simp at pairsEq
+      · simp at pairsEq
+  | snoc keys key ih =>
+      rw [List.map_append, List.map_singleton] at trace
+      generalize pairsEq :
+        (keys.map fun key => legacyMultiKeyChoice key env) ++
+          [legacyMultiKeyChoice key env] = pairs at trace
+      cases trace with
+      | nil => simp at pairsEq
+      | @sat children priorCount priorFrames priorWitness child childWitness
+          prior selected =>
+          have pairsEq' :
+              (keys.map fun key => legacyMultiKeyChoice key env).concat
+                (legacyMultiKeyChoice key env) = children.concat child := by
+            simpa only [List.concat_eq_append] using pairsEq
+          obtain ⟨childrenEq, childEq⟩ := List.concat_inj.mp pairsEq'
+          subst children
+          subst child
+          cases selectedSig : env.signatureFor key with
+          | none => simp [legacyMultiKeyChoice, selectedSig] at selected
+          | some signature =>
+              have frameEq : childWitness = [signature] := by
+                simpa [legacyMultiKeyChoice, selectedSig] using selected.symm
+              subst childWitness
+              obtain ⟨priorOrdered, priorLength⟩ := ih prior
+              constructor
+              · simpa [Witness.combine] using
+                  (OrderedMultiSignatures.take selectedSig priorOrdered)
+              · simp [Witness.combine, priorLength]
+      | @dsat children priorCount priorFrames priorWitness child childWitness
+          prior selected =>
+          have pairsEq' :
+              (keys.map fun key => legacyMultiKeyChoice key env).concat
+                (legacyMultiKeyChoice key env) = children.concat child := by
+            simpa only [List.concat_eq_append] using pairsEq
+          obtain ⟨childrenEq, childEq⟩ := List.concat_inj.mp pairsEq'
+          subst children
+          subst child
+          have frameEq : childWitness = [] := by
+            simpa [legacyMultiKeyChoice] using selected
+          subst childWitness
+          obtain ⟨priorOrdered, priorLength⟩ := ih prior
+          constructor
+          · simpa [Witness.combine] using priorOrdered.prependSkippedKey key
+          · simpa [Witness.combine] using priorLength
+
+private theorem selectedCheckSig_witnessV0
+    {env : SatEnv} {key : PubKey} {signature : StackElement}
+    (version : env.txCtx.sigVersion = .witnessV0)
+    (sound : env.Sound)
+    (selected : env.signatureFor key = some signature) :
+    checkSig signature key.bytes env.txCtx.sigHash = true := by
+  have verified := sound.signatureValid selected
+  simpa [verifySigFor, checkedVerifySigFor, version] using verified
+
+/-- A failed current signature check cannot be a `take`: a selected signature
+    verifies for its designated key by environment soundness. -/
+theorem OrderedMultiSignatures.advanceRejected
+    {env : SatEnv} {signature : StackElement} {signatures : Stack}
+    {key : PubKey} {keys : List PubKey}
+    (ordered : OrderedMultiSignatures env (signature :: signatures)
+      (key :: keys))
+    (version : env.txCtx.sigVersion = .witnessV0)
+    (sound : env.Sound)
+    (rejected : checkSig signature key.bytes env.txCtx.sigHash = false) :
+    OrderedMultiSignatures env (signature :: signatures) keys := by
+  cases ordered with
+  | skip tail => exact tail
+  | take selected tail =>
+      have accepted := selectedCheckSig_witnessV0 version sound selected
+      rw [rejected] at accepted
+      contradiction
+
+/-- Greedy CHECKMULTISIG succeeds for any ordered selected-signature
+    embedding. A signature that verifies against an earlier skipped key is
+    safely consumed there; the remaining signature order is preserved. -/
+theorem checkMultiSigFor_true_of_ordered
+    {env : SatEnv} {flags : ScriptFlags} {signatures : Stack}
+    {keys : List PubKey}
+    (ordered : OrderedMultiSignatures env signatures keys)
+    (valid : ∀ key ∈ keys, validResolvedPubKey .p2wsh key)
+    (version : env.txCtx.sigVersion = .witnessV0)
+    (sound : env.Sound) (encodings : env.EncodingSound flags) :
+    checkMultiSigFor checkSig flags env.txCtx signatures
+      (keys.map (fun key => key.bytes)) = .ok true := by
+  induction keys generalizing signatures with
+  | nil =>
+      have emptyLength : signatures.length = 0 := by
+        have bound := ordered.length_le
+        simpa only [List.length_nil] using Nat.eq_zero_of_le_zero bound
+      have empty : signatures = [] := List.eq_nil_of_length_eq_zero emptyLength
+      subst signatures
+      simp [checkMultiSigFor]
+  | cons key keys ih =>
+      cases signatures with
+      | nil => simp [checkMultiSigFor]
+      | cons signature signatures =>
+          obtain ⟨ownKey, ownMember, selected⟩ := ordered.headSelected
+          have encodedOwn := encodings ownKey signature selected
+          have currentValid : validCompressedPubKeyBytes key.bytes := by
+            simpa [validResolvedPubKey] using valid key (by simp)
+          have encodedCurrent : checkSigEncodingFor flags .witnessV0
+              signature key.bytes = .ok () :=
+            checkSigEncodingFor_witnessV0_rekey currentValid
+              (by simpa [version] using encodedOwn)
+          have encodedCurrentCtx : checkSigEncodingFor flags
+              env.txCtx.sigVersion signature key.bytes = .ok () := by
+            simpa [version] using encodedCurrent
+          have validTail : ∀ tailKey ∈ keys,
+              validResolvedPubKey .p2wsh tailKey := by
+            intro tailKey member
+            exact valid tailKey (by simp [member])
+          by_cases accepted :
+              checkSig signature key.bytes env.txCtx.sigHash = true
+          · have nextOrdered := ordered.consumeCurrent
+            have enough := nextOrdered.length_le
+            have next := ih nextOrdered validTail
+            rw [List.map_cons, checkMultiSigFor, encodedCurrentCtx, accepted]
+            simp only [List.length_map]
+            change (if signatures.length > keys.length then .ok false
+              else checkMultiSigFor checkSig flags env.txCtx signatures
+                (keys.map fun key => key.bytes)) = .ok true
+            rw [if_neg (by omega)]
+            exact next
+          · have rejected :
+                checkSig signature key.bytes env.txCtx.sigHash = false := by
+              cases checked : checkSig signature key.bytes env.txCtx.sigHash
+              · rfl
+              · exact False.elim (accepted checked)
+            have nextOrdered := ordered.advanceRejected version sound rejected
+            have enough := nextOrdered.length_le
+            have next := ih nextOrdered validTail
+            rw [List.map_cons, checkMultiSigFor, encodedCurrentCtx, rejected]
+            simp only [if_neg Bool.false_ne_true, List.length_map]
+            change (if (signature :: signatures).length > keys.length then
+                .ok false
+              else checkMultiSigFor checkSig flags env.txCtx
+                (signature :: signatures)
+                (keys.map fun key => key.bytes)) = .ok true
+            rw [if_neg (by omega)]
+            exact next
+
+/-- The exact-count legacy candidate yields a successful greedy CHECKMULTISIG
+    result in the reversed key order used by the compiled script. -/
+theorem CandidatePair.legacySelected_checkMultiSigFor
+    {env : SatEnv} {flags : ScriptFlags} {threshold : Nat}
+    {keys : List PubKey} {inner : Witness}
+    (selected : (CandidatePair.selectExactly threshold
+      (keys.map fun key => legacyMultiKeyChoice key env)).usableWitness? =
+        some inner)
+    (valid : ∀ key ∈ keys, validResolvedPubKey .p2wsh key)
+    (version : ModeledContextVersion .p2wsh env.txCtx)
+    (sound : env.Sound) (encodings : env.EncodingSound flags) :
+    checkMultiSigFor checkSig flags env.txCtx inner
+      ((keys.map fun key => key.bytes).reverse) = .ok true := by
+  obtain ⟨frames, trace⟩ :=
+    CandidatePair.selectExactly_choiceTrace selected
+  have ordered := trace.toOrderedMultiSignatures.1
+  have reversedValid : ∀ key ∈ keys.reverse,
+      validResolvedPubKey .p2wsh key := by
+    intro key member
+    exact valid key (by simpa using member)
+  have checked := checkMultiSigFor_true_of_ordered ordered reversedValid
+    version sound encodings
+  simpa using checked
+
+private theorem exceptOkSeqGenerated {ε α : Type} (next : Except ε α) :
+    (do Except.ok (); next) = next := by
+  rfl
+
+/-- Empty signatures are rejected at every P2WSH key. CHECKMULTISIG eventually
+    returns false either recursively or as soon as too few keys remain. -/
+theorem checkMultiSigFor_all_empty_false_topFirst
+    {env : SatEnv} {flags : ScriptFlags} {threshold : Nat}
+    {keys : List PubKey}
+    (positive : 0 < threshold) (atMost : threshold ≤ keys.length)
+    (valid : ∀ key ∈ keys, validResolvedPubKey .p2wsh key)
+    (version : ModeledContextVersion .p2wsh env.txCtx)
+    (modeled : ModeledContextFlags .p2wsh flags)
+    (sound : env.Sound) :
+    checkMultiSigFor checkSig flags env.txCtx
+      (List.replicate threshold falseElement)
+      (keys.map fun key => key.bytes) = .ok false := by
+  induction keys generalizing threshold with
+  | nil => simp only [List.length_nil] at atMost; omega
+  | cons key keys ih =>
+      cases threshold with
+      | zero => simp at positive
+      | succ threshold =>
+          have currentValid : validResolvedPubKey .p2wsh key :=
+            valid key (by simp)
+          have validTail : ∀ tailKey ∈ keys,
+              validResolvedPubKey .p2wsh tailKey := by
+            intro tailKey member
+            exact valid tailKey (by simp [member])
+          have encoded := checkSigEncodingFor_empty_of_modeled
+            currentValid version modeled
+          have versionEq : env.txCtx.sigVersion = .witnessV0 := version
+          have rejected :
+              checkSig falseElement key.bytes env.txCtx.sigHash = false := by
+            have invalid := sound.emptySignatureInvalid key
+            simpa [verifySigFor, checkedVerifySigFor, versionEq] using invalid
+          rw [List.replicate_succ, List.map_cons, checkMultiSigFor,
+            encoded, rejected]
+          simp only [if_neg Bool.false_ne_true, List.length_map]
+          rw [exceptOkSeqGenerated]
+          simp only [List.length_cons, List.length_replicate]
+          by_cases tooMany : threshold + 1 > keys.length
+          · rw [if_pos tooMany]
+            rfl
+          · have tailBound : threshold + 1 ≤ keys.length := by omega
+            have next := ih (by omega) tailBound validTail
+            rw [if_neg tooMany]
+            simpa only [List.replicate_succ] using next
+
+/-- Canonical empty signatures produce false in the reversed key order used by
+    compiled legacy `multi`. -/
+theorem checkMultiSigFor_all_empty_false
+    {env : SatEnv} {flags : ScriptFlags} {threshold : Nat}
+    {keys : List PubKey}
+    (positive : 0 < threshold) (atMost : threshold ≤ keys.length)
+    (valid : ∀ key ∈ keys, validResolvedPubKey .p2wsh key)
+    (version : ModeledContextVersion .p2wsh env.txCtx)
+    (modeled : ModeledContextFlags .p2wsh flags)
+    (sound : env.Sound) :
+    checkMultiSigFor checkSig flags env.txCtx
+      (List.replicate threshold falseElement)
+      ((keys.map fun key => key.bytes).reverse) = .ok false := by
+  have reversedValid : ∀ key ∈ keys.reverse,
+      validResolvedPubKey .p2wsh key := by
+    intro key member
+    exact valid key (by simpa using member)
+  have checked := checkMultiSigFor_all_empty_false_topFirst
+    (env := env) (flags := flags) (keys := keys.reverse)
+    positive (by simpa using atMost) reversedValid version modeled sound
+  simpa using checked
+
+private theorem replicateFalse_snocGenerated (count : Nat) :
+    List.replicate count falseElement ++ [falseElement] =
+      List.replicate (count + 1) falseElement := by
+  induction count with
+  | zero => rfl
+  | succ count ih =>
+      simp only [List.replicate_succ, List.cons_append]
+      exact congrArg (falseElement :: ·) ih
+
+/-- Strong generated contract for a structurally valid legacy `multi` pair.
+    Satisfaction follows the exact-count signature subsequence; dissatisfaction
+    uses the canonical historical dummy and all-empty signature vector. -/
+theorem generatedContract_multi_valid
+    {threshold : Nat} {keys : List PubKey}
+    {env : SatEnv} {flags : ScriptFlags}
+    (thresholdValid : validThreshold threshold keys.length)
+    (keyBound : validLegacyMultiKeyCount keys.length)
+    (validKeys : CoreFragment.allKeysValid .p2wsh keys)
+    (version : ModeledContextVersion .p2wsh env.txCtx)
+    (modeled : ModeledContextFlags .p2wsh flags)
+    (sound : env.Sound) (encodings : env.EncodingSound flags) :
+    CandidatePair.SupportsGeneratedContract
+      (legacyMultiCandidates threshold keys env) .p2wsh
+        (.multi threshold keys)
+        ⟨.B, { n := true, d := true, u := true }⟩ flags env.txCtx := by
+  simp only [validThreshold] at thresholdValid
+  simp only [validLegacyMultiKeyCount] at keyBound
+  obtain ⟨positive, atMost⟩ := thresholdValid
+  have keyBoundMax : keys.length ≤ maxPubKeysPerMultiSig := by
+    simpa [maxPubKeysPerMultiSig] using keyBound
+  have typed : HasType .p2wsh (.multi threshold keys)
+      ⟨.B, { n := true, d := true, u := true }⟩ :=
+    .multi threshold keys positive atMost
+  have guard : ¬ (threshold = 0 ∨ keys.length < threshold ∨
+      maxPubKeysPerMultiSig < keys.length) := by
+    simp only [not_or]
+    constructor
+    · omega
+    constructor
+    · omega
+    · exact Nat.not_lt_of_ge keyBoundMax
+  have valid : ∀ key ∈ keys, validResolvedPubKey .p2wsh key :=
+    fun key member => allKeysValid_of_mem validKeys member
+  have reversedValid : ∀ key ∈ keys.reverse,
+      validResolvedPubKey .p2wsh key := by
+    intro key member
+    exact valid key (by simpa using member)
+  refine ⟨typed, ?_, ?_⟩
+  · rw [show (legacyMultiCandidates threshold keys env).sat =
+      finalizeLegacyMulti (CandidatePair.selectExactly threshold
+        (keys.map fun key => legacyMultiKeyChoice key env)) by
+        simp [legacyMultiCandidates, guard]]
+    intro witness selected
+    rw [CandidateResult.finalizeLegacyMulti_usableWitness_iff] at selected
+    obtain ⟨inner, innerSelected, rfl⟩ := selected
+    obtain ⟨frames, trace⟩ :=
+      CandidatePair.selectExactly_choiceTrace innerSelected
+    obtain ⟨ordered, signatureCount⟩ :=
+      trace.toOrderedMultiSignatures
+    have innerBounded := ordered.itemsBounded reversedValid version modeled
+      encodings
+    have finalBounded :
+        Witness.ItemsBounded (falseElement :: inner.reverse) := by
+      intro item member
+      simp only [List.mem_cons] at member
+      rcases member with rfl | member
+      · exact falseElement_size_le
+      · exact innerBounded item (by simpa using member)
+    apply GeneratedContract.b
+    · refine ⟨finalBounded, ?_, ?_, ?_⟩
+      · simp
+      · simp
+      · intro enabled expectedTrue
+        cases inner with
+        | nil =>
+            simp only [List.length_nil] at signatureCount
+            omega
+        | cons signature signatures =>
+            obtain ⟨key, member, signatureSelected⟩ := ordered.headSelected
+            exact ⟨signature, signatures ++ [falseElement], by
+              simp [Witness.toInitialStack],
+              selectedSignature_size_ne_zero sound signatureSelected⟩
+    · exact BooleanResultFacts.canonical true _ flags
+    · have checked := CandidatePair.legacySelected_checkMultiSigFor
+        innerSelected valid version sound encodings
+      have versionEq : env.txCtx.sigVersion = .witnessV0 := version
+      have versionNe : env.txCtx.sigVersion ≠ .tapscript := by
+        rw [versionEq]
+        decide
+      have executed := BExecution.multi versionNe
+        keyBoundMax atMost signatureCount checked (Or.inl rfl)
+      simpa [Witness.toInitialStack, boolToElement] using executed
+  · rw [show (legacyMultiCandidates threshold keys env).dsat =
+      .usable (List.replicate (threshold + 1) falseElement) false by
+        simp [legacyMultiCandidates, guard]]
+    apply CandidateResult.supports_usable
+    apply GeneratedContract.b
+    · refine ⟨?_, ?_, ?_, ?_⟩
+      · simp [Witness.ItemsBounded, falseElement_size_le]
+      · simp
+      · simp
+      · simp
+    · exact BooleanResultFacts.canonical false _ flags
+    · have versionEq : env.txCtx.sigVersion = .witnessV0 := version
+      have versionNe : env.txCtx.sigVersion ≠ .tapscript := by
+        rw [versionEq]
+        decide
+      have checked := checkMultiSigFor_all_empty_false positive
+        atMost valid version modeled sound
+      have executed := multi_dissatisfaction_execution versionNe
+        keyBoundMax atMost checked
+      simpa [Witness.toInitialStack, List.reverse_replicate,
+        replicateFalse_snocGenerated, boolToElement] using executed
+
+/-- Every well-formed legacy `multi` exposes strong generated support. Its
+    P2WSH context restriction supplies witness-v0 execution; well-formedness
+    supplies the threshold, key-count, and key-validity premises. -/
+theorem generatedContract_multi_of_wellFormed
+    {scriptCtx : ScriptContext} {threshold : Nat} {keys : List PubKey}
+    {env : SatEnv} {flags : ScriptFlags}
+    (wellFormed : CoreFragment.WellFormed scriptCtx (.multi threshold keys))
+    (version : ModeledContextVersion scriptCtx env.txCtx)
+    (modeled : ModeledContextFlags scriptCtx flags)
+    (sound : env.Sound) (encodings : env.EncodingSound flags) :
+    CandidatePair.SupportsGeneratedContract
+      (satisfactionCandidates (.multi threshold keys) env)
+      scriptCtx (.multi threshold keys)
+        ⟨.B, { n := true, d := true, u := true }⟩ flags env.txCtx := by
+  cases scriptCtx with
+  | tapscript =>
+      simp [CoreFragment.WellFormed,
+        ScriptContext.permitsLegacyMulti] at wellFormed
+  | p2wsh =>
+      rcases wellFormed with
+        ⟨permits, thresholdValid, keyBound, validKeys⟩
+      rw [satisfactionCandidates_multi]
+      exact generatedContract_multi_valid thresholdValid keyBound validKeys
+        version modeled sound encodings
 
 end LeanMiniscript.Miniscript

@@ -281,6 +281,32 @@ example (env : SatEnv) :
     satisfactionCandidates (.thresh 0 [.one]) env = {} := by
   rfl
 
+/-! Legacy `multi` reverses both selected source signatures and compiled keys
+at runtime. Its serialized witness keeps the historical dummy first. -/
+
+/-- A selected two-of-three witness with serialized form
+    `[dummy, firstSignature, thirdSignature]` reaches CHECKMULTISIG as
+    `[thirdSignature, firstSignature, dummy]` against reversed keys. -/
+example {firstKey secondKey thirdKey : PubKey}
+    {firstSignature thirdSignature : ByteArray}
+    {env : SatEnv} {flags : ScriptFlags}
+    (wellFormed : CoreFragment.WellFormed .p2wsh
+      (.multi 2 [firstKey, secondKey, thirdKey]))
+    (version : ModeledContextVersion .p2wsh env.txCtx)
+    (modeled : ModeledContextFlags .p2wsh flags)
+    (sound : env.Sound) (encodings : env.EncodingSound flags)
+    (selected : satisfy (.multi 2 [firstKey, secondKey, thirdKey]) env =
+      some [falseElement, firstSignature, thirdSignature]) :
+    GeneratedContract (.multi 2 [firstKey, secondKey, thirdKey])
+        [falseElement, firstSignature, thirdSignature] true flags env.txCtx
+        ⟨.B, { n := true, d := true, u := true }⟩ ∧
+      Witness.toInitialStack
+          [falseElement, firstSignature, thirdSignature] =
+        [thirdSignature, firstSignature, falseElement] := by
+  have supported := generatedContract_multi_of_wellFormed wellFormed version
+    modeled sound encodings
+  exact ⟨supported.satisfyContract selected, rfl⟩
+
 /-! Tapscript `multi_a` reuses the exact-count trace without reversing keys or
     signature slots: the first source key executes CHECKSIG and the two tail
     keys execute CHECKSIGADD. -/

@@ -155,9 +155,11 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   canonical all-false dissatisfaction. Tapscript `multi_a` converts the same
   source-order trace into checked signature slots, executes its first key with
   CHECKSIG and the remainder with CHECKSIGADD, and closes both exact-count and
-  canonical all-empty candidates under well-formed modeled contexts. The
-  connection from selected legacy `multi` candidates to CHECKMULTISIG's
-  signature/key subsequence matching remains unfinished.
+  canonical all-empty candidates under well-formed modeled contexts. Legacy
+  `multi` converts its trace into a reversed-key signature embedding, proves
+  greedy CHECKMULTISIG success even when a signature verifies against an
+  earlier skipped key, and closes both selected and canonical all-empty
+  candidates under well-formed modeled P2WSH contexts.
 - General soundness, full satisfaction coverage, non-malleability, small-step
   semantics, cryptographic correctness proofs, executable ECDSA verification,
   unsupported Core failure classes,

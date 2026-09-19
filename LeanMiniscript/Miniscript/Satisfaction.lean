@@ -1525,8 +1525,6 @@ theorem satisfactionCandidates_dsat_witness
       (multiACandidates threshold keys env).dsat.usableWitness? := by
   rfl
 
--- TODO(theorem): Connect generated legacy `multi` witnesses to their recursive
--- CHECKMULTISIG execution contract.
 -- TODO: Analyze non-malleable satisfaction (unique canonical witness)
 
 end LeanMiniscript.Miniscript
