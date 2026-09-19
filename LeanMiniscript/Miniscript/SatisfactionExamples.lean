@@ -271,6 +271,133 @@ example :
         dsat := CandidateResult.usable [falseElement] false } := by
   rfl
 
+/-! ## Shared exact-count candidate tables -/
+
+private def countItemA : StackElement := ⟨#[0xa1]⟩
+private def countItemB : StackElement := ⟨#[0xb2]⟩
+private def countItemC : StackElement := ⟨#[0xc3]⟩
+
+private def uniqueCountA : CandidatePair where
+  sat := .usable [countItemA] true
+  dsat := .usable [] false
+
+private def uniqueCountB : CandidatePair where
+  sat := .usable [countItemB] true
+  dsat := .usable [] false
+
+private def uniqueCountC : CandidatePair where
+  dsat := .usable [countItemC] false
+
+/-- The seed represents the unique zero-of-zero choice; extending it by one
+    child exposes that child's dissatisfaction and satisfaction in order. -/
+example : CandidatePair.countCandidates [] = [.usable [] false] := by
+  rfl
+
+example : CandidatePair.countCandidates [uniqueCountA] =
+    [uniqueCountA.dsat, uniqueCountA.sat] := by
+  rfl
+
+/-- Only the first two children can be satisfied, so the two-of-three state is
+    their satisfaction followed by the last child's dissatisfaction. -/
+example : CandidatePair.selectExactly 2
+      [uniqueCountA, uniqueCountB, uniqueCountC] =
+    .usable [countItemC, countItemB, countItemA] true := by
+  rfl
+
+private def costlyCountA : CandidatePair where
+  sat := .usable [signature] true
+  dsat := .usable [] false
+
+private def cheapCountB : CandidatePair where
+  sat := .usable [countItemB] true
+  dsat := .usable [] false
+
+private def cheapestCountC : CandidatePair where
+  sat := .usable [falseElement] true
+  dsat := .usable [] false
+
+/-- When every two-of-three path is available, additive candidate cost picks
+    the two cheapest satisfaction witnesses. -/
+example : CandidatePair.selectExactly 2
+      [costlyCountA, cheapCountB, cheapestCountC] =
+    .usable [falseElement, countItemB] true := by
+  rfl
+
+private def tiedCountA : CandidatePair where
+  sat := .usable [countItemA] true
+  dsat := .usable [] false
+
+private def tiedCountB : CandidatePair where
+  sat := .usable [countItemB] true
+  dsat := .usable [] false
+
+private def tiedCountC : CandidatePair where
+  sat := .usable [countItemC] true
+  dsat := .usable [] false
+
+/-- Equal-cost paths retain the existing left state, making the left fold
+    deterministic. -/
+example : CandidatePair.selectExactly 2
+      [tiedCountA, tiedCountB, tiedCountC] =
+    .usable [countItemB, countItemA] true := by
+  rfl
+
+/-- An exact count with too few possible satisfaction choices is impossible. -/
+example : CandidatePair.selectExactly 2 [uniqueCountA, uniqueCountC] =
+    .impossible := by
+  rfl
+
+/-- Counts beyond the table are impossible independently of child
+    availability. -/
+example : CandidatePair.selectExactly 4
+      [tiedCountA, tiedCountB, tiedCountC] = .impossible := by
+  apply CandidatePair.selectExactly_eq_impossible_of_lt
+  decide
+
+private def noSigCountA : CandidatePair where
+  sat := .usable [countItemA] false
+  dsat := .usable [] false
+
+private def noSigCountB : CandidatePair where
+  sat := .usable [countItemB] false
+  dsat := .usable [] false
+
+/-- Competing no-HASSIG paths use the ordinary selection rule within the
+    one-satisfaction state: the equal-cost left path is retained and DONTUSE. -/
+example : CandidatePair.selectExactly 1 [noSigCountA, noSigCountB] =
+    .dontUse [countItemA] false .canonical := by
+  rfl
+
+private def metadataCountA : CandidatePair where
+  sat := .usable [countItemA] true
+
+private def metadataCountB : CandidatePair where
+  sat := .dontUse [countItemB] false .nonCanonical
+
+/-- Exact-count composition propagates a selected child's DONTUSE and origin
+    metadata without changing its witness or HASSIG contribution. -/
+example : CandidatePair.selectExactly 2 [metadataCountA, metadataCountB] =
+    .dontUse [countItemB, countItemA] true .nonCanonical := by
+  rfl
+
+private def orderedCountA : CandidatePair where
+  sat := .usable firstWitness true
+
+private def orderedCountB : CandidatePair where
+  sat := .usable secondWitness true
+
+/-- Child blocks remain in reverse execution order on the wire and become
+    execution order after conversion to the initial runtime stack. -/
+example :
+    (CandidatePair.selectExactly 2
+      [orderedCountA, orderedCountB]).witness? =
+        some (Witness.combine firstWitness secondWitness) ∧
+      (CandidatePair.selectExactly 2
+        [orderedCountA, orderedCountB]).witness?.map Witness.toInitialStack =
+        some (Witness.toInitialStack firstWitness ++
+          Witness.toInitialStack secondWitness) := by
+  constructor <;> rfl
+
 example : (satisfactionCandidates .one unavailableEnv).sat.usableWitness? =
     some [] := by rfl
 
