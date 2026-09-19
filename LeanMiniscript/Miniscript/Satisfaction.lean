@@ -661,6 +661,25 @@ def legacyMultiCandidates (threshold : Nat) (keys : List PubKey)
         (CandidatePair.selectExactly threshold choices)
       dsat := .usable (List.replicate (threshold + 1) falseElement) false }
 
+/-- One Tapscript `multi_a` key contributes its signature when available and
+    the canonical empty signature otherwise. Source-order exact-count
+    composition directly produces the CHECKSIG/CHECKSIGADD wire order. -/
+def multiAKeyChoice (key : PubKey) (env : SatEnv) : CandidatePair where
+  sat := match env.signatureFor key with
+    | none => .impossible
+    | some signature => .usable [signature] true
+  dsat := .usable [falseElement] false
+
+/-- Construct BIP 379 `multi_a` candidates. Unlike legacy `multi`, Tapscript
+    has no 20-key consensus bound; only the threshold relation is checked. -/
+def multiACandidates (threshold : Nat) (keys : List PubKey)
+    (env : SatEnv) : CandidatePair :=
+  if threshold = 0 ∨ keys.length < threshold then {}
+  else
+    let choices := keys.map (fun key => multiAKeyChoice key env)
+    { sat := CandidatePair.selectExactly threshold choices
+      dsat := .usable (List.replicate keys.length falseElement) false }
+
 mutual
 /-- Compute the candidate pair for the supported leaf, wrapper, and connective
     rows. Unsupported rows are explicitly impossible on both sides. -/
@@ -737,6 +756,7 @@ mutual
         { sat := CandidatePair.selectExactly threshold children
           dsat := CandidatePair.thresholdDissatisfaction threshold states }
   | .multi threshold keys, env => legacyMultiCandidates threshold keys env
+  | .multi_a threshold keys, env => multiACandidates threshold keys env
   | .c fragment, env => satisfactionCandidates fragment env
   | .a fragment, env => satisfactionCandidates fragment env
   | .s fragment, env => satisfactionCandidates fragment env
@@ -751,7 +771,6 @@ mutual
           ((satisfactionCandidates fragment env).dsat
             |>.requireNonemptyRuntimeTop
             |>.markNonCanonical) }
-  | _, _ => {}
 
 /-- Compute child candidate pairs without hiding recursive fragment calls
     behind a higher-order list operation. -/
@@ -1465,9 +1484,26 @@ theorem satisfactionCandidates_dsat_witness
       (legacyMultiCandidates threshold keys env).dsat.usableWitness? := by
   rfl
 
--- TODO(theorem): Connect generated threshold and `multi` witnesses to their
--- recursive execution contracts, and add candidates plus correctness for
--- `multi_a`.
+@[simp] theorem satisfactionCandidates_multi_a
+    (threshold : Nat) (keys : List PubKey) (env : SatEnv) :
+    satisfactionCandidates (.multi_a threshold keys) env =
+      multiACandidates threshold keys env := by
+  rfl
+
+@[simp] theorem satisfy_multi_a
+    (threshold : Nat) (keys : List PubKey) (env : SatEnv) :
+    satisfy (.multi_a threshold keys) env =
+      (multiACandidates threshold keys env).sat.usableWitness? := by
+  rfl
+
+@[simp] theorem dissatisfy_multi_a
+    (threshold : Nat) (keys : List PubKey) (env : SatEnv) :
+    dissatisfy (.multi_a threshold keys) env =
+      (multiACandidates threshold keys env).dsat.usableWitness? := by
+  rfl
+
+-- TODO(theorem): Connect generated threshold, `multi`, and `multi_a` witnesses
+-- to their recursive execution contracts.
 -- TODO: Analyze non-malleable satisfaction (unique canonical witness)
 
 end LeanMiniscript.Miniscript

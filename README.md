@@ -109,12 +109,13 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   through `a`, `s`, `v`, and `n`, the guarded `d` and `j` rows, and the
   straight-line `and_v`, `and_b`, and `or_b` connectives, plus conditional
   `or_c`, `or_d`, `or_i`, and `andor`, exact-count `thresh` selection, and
-  legacy `multi`. Paired candidates track HASSIG, DONTUSE, canonical origin,
-  and additive witness cost. Key leaves have exact K-frame lemmas; B leaves and
-  well-typed `c` wrappers have arbitrary-stack lemmas leading to clean
-  acceptance or dissatisfaction. Wrapper lemmas additionally prove the two exact W stack
-  orders, truthy B-to-V conversion, `n`'s explicit Script-number normalization
-  boundary, local guarded execution contracts for `d` and `j`, B/K/V
+  both `multi` encodings. Paired candidates track HASSIG, DONTUSE, canonical
+  origin, and additive witness cost. Key leaves have exact K-frame lemmas; B
+  leaves and well-typed `c` wrappers have arbitrary-stack lemmas leading to
+  clean acceptance or dissatisfaction. Wrapper lemmas additionally prove the
+  two exact W stack orders, truthy B-to-V conversion, `n`'s explicit
+  Script-number normalization boundary, local guarded execution contracts for
+  `d` and `j`, B/K/V
   composition through `and_v`, and both exact W stack orders plus numeric decode
   premises for `and_b`/`or_b`. Balanced IF/NOTIF frame lemmas additionally
   prove the `or_c` B-to-V paths, `or_d` B paths, and `or_i`/`andor` B/K/V paths;
@@ -124,10 +125,13 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   decode premise for every `OP_ADD`; final `OP_EQUAL` uses byte equality. The
   legacy multisignature contract proves the compiled key-push and canonical
   count frame, then requires the explicit `checkMultiSigFor` result and the
-  true-or-NULLFAIL condition used by Script execution.
+  true-or-NULLFAIL condition used by Script execution. The Tapscript
+  multisignature contract keeps its execution version explicit, records every
+  CHECKSIG/CHECKSIGADD result and accumulator decode, and retains the final
+  NUMEQUAL decode premise.
   Recursive generated-witness soundness for these wrappers, connectives, and
-  thresholds, and the connection from selected legacy multisignature candidates
-  to cryptographic key/signature matching remain unfinished.
+  thresholds, and the connection from selected multisignature candidates to
+  cryptographic key/signature matching remain unfinished.
 - General soundness, full satisfaction coverage, non-malleability, small-step
   semantics, cryptographic correctness proofs, executable ECDSA verification,
   unsupported Core failure classes,

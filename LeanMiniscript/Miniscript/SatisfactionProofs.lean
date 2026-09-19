@@ -1473,6 +1473,215 @@ theorem multi_dissatisfaction_execution
   exact BExecution.multiFalse version keyBound thresholdBound
     (by simp) checked nullFail
 
+/-! ## Tapscript multisignature execution -/
+
+/-- Exact execution evidence for the CHECKSIGADD tail of `multi_a`. Keys and
+    signatures are both in source execution order. Every step retains the
+    Tapscript count decoder and version-aware signature-check result as
+    explicit premises, while the accumulator is an `Int`. -/
+inductive CheckSigAddTailExecution (flags : ScriptFlags) (ctx : TxContext) :
+    Int → List PubKey → Stack → Int → Prop where
+  | nil (count : Int) :
+      CheckSigAddTailExecution flags ctx count [] [] count
+  | cons {count total : Int} {key : PubKey} {keys : List PubKey}
+      {signature : StackElement} {signatures : Stack} {truth : Bool}
+      (decoded : decodeCheckSigAddCount flags ctx (scriptNum count) = .ok count)
+      (checked : checkSigWithEncoding checkSig checkSchnorrSig flags ctx
+        signature key.bytes = .ok truth)
+      (tail : CheckSigAddTailExecution flags ctx
+        (count + Int.ofNat truth.toNat) keys signatures total) :
+      CheckSigAddTailExecution flags ctx count (key :: keys)
+        (signature :: signatures) total
+
+/-- A CHECKSIGADD tail consumes source-order signatures below its accumulator
+    and leaves the exact final canonical Script-number while preserving both
+    surrounding stacks. -/
+theorem CheckSigAddTailExecution.executes
+    {flags : ScriptFlags} {ctx : TxContext} {count total : Int}
+    {keys : List PubKey} {signatures : Stack}
+    (executed : CheckSigAddTailExecution flags ctx count keys signatures total) :
+    ExecutesStackFrame (compileCheckSigAddTail keys)
+      (scriptNum count :: signatures) [scriptNum total] flags ctx := by
+  induction executed with
+  | nil count =>
+      intro rest altStack
+      exact Eval.done
+  | @cons count total key keys signature signatures truth decoded checked tail ih =>
+      intro rest altStack
+      apply Eval.pushData
+      cases truth with
+      | false =>
+          apply Eval.checksigadd_failure (count := count)
+          · exact decoded
+          · exact checked
+          · simpa using ih rest altStack
+      | true =>
+          apply Eval.checksigadd_success (count := count)
+          · exact decoded
+          · exact checked
+          · simpa using ih rest altStack
+
+/-- The nonempty CHECKSIG/CHECKSIGADD compiler consumes one source-order
+    signature per source-order key and exposes the tail's exact accumulator. -/
+theorem compileCheckSigAdd_execution
+    {firstKey : PubKey} {keys : List PubKey}
+    {firstSignature : StackElement} {signatures : Stack}
+    {firstTruth : Bool} {total : Int}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (checked : checkSigWithEncoding checkSig checkSchnorrSig flags ctx
+      firstSignature firstKey.bytes = .ok firstTruth)
+    (tail : CheckSigAddTailExecution flags ctx
+      (Int.ofNat firstTruth.toNat) keys signatures total) :
+    ExecutesStackFrame (compileCheckSigAdd (firstKey :: keys))
+      (firstSignature :: signatures) [scriptNum total] flags ctx := by
+  intro rest altStack
+  apply Eval.pushData
+  cases firstTruth with
+  | false =>
+      apply Eval.checksig_failure
+      · exact checked
+      · simpa [compileCheckSigAddTail, List.append_assoc, scriptNum_zero] using
+          tail.executes rest altStack
+  | true =>
+      apply Eval.checksig_success
+      · exact checked
+      · simpa [compileCheckSigAddTail, List.append_assoc, scriptNum_one] using
+          tail.executes rest altStack
+
+/-- A nonempty `multi_a` executes only under the explicit Tapscript boundary,
+    computes the CHECKSIG/CHECKSIGADD accumulator, then compares it numerically
+    with the threshold. Both accumulator and final NUMEQUAL decodes remain
+    explicit rather than being inferred from well-formedness. -/
+theorem BExecution.multiA
+    {threshold : Nat} {firstKey : PubKey} {keys : List PubKey}
+    {firstSignature : StackElement} {signatures : Stack}
+    {firstTruth : Bool} {total : Int}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (_version : ctx.sigVersion = .tapscript)
+    (checked : checkSigWithEncoding checkSig checkSchnorrSig flags ctx
+      firstSignature firstKey.bytes = .ok firstTruth)
+    (tail : CheckSigAddTailExecution flags ctx
+      (Int.ofNat firstTruth.toNat) keys signatures total)
+    (decoded : decodeBinaryScriptNums flags (scriptNat threshold)
+      (scriptNum total) = .ok (Int.ofNat threshold, total)) :
+    BExecution (.multi_a threshold (firstKey :: keys))
+      (firstSignature :: signatures)
+      (boolToElement (Int.ofNat threshold == total)) flags ctx := by
+  have children := compileCheckSigAdd_execution checked tail
+  have comparison : ExecutesStackFrame [.pushNum threshold, .op .OP_NUMEQUAL]
+      [scriptNum total] [boolToElement (Int.ofNat threshold == total)]
+      flags ctx := by
+    intro rest altStack
+    exact Eval.pushNum threshold [.op .OP_NUMEQUAL] (scriptNum total :: rest)
+      altStack flags ctx _
+      (Eval.numequal (scriptNat threshold) (scriptNum total)
+        (Int.ofNat threshold) total rest [] altStack flags ctx _ decoded Eval.done)
+  have complete := ExecutesStackFrame.append children comparison
+  simpa [BExecution, compile, compileWithKeyHash] using complete
+
+/-- Expose the requested Boolean result of the final NUMEQUAL comparison. -/
+theorem BExecution.multiAOutcome
+    {threshold : Nat} {firstKey : PubKey} {keys : List PubKey}
+    {firstSignature : StackElement} {signatures : Stack}
+    {firstTruth expected : Bool} {total : Int}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (version : ctx.sigVersion = .tapscript)
+    (checked : checkSigWithEncoding checkSig checkSchnorrSig flags ctx
+      firstSignature firstKey.bytes = .ok firstTruth)
+    (tail : CheckSigAddTailExecution flags ctx
+      (Int.ofNat firstTruth.toNat) keys signatures total)
+    (decoded : decodeBinaryScriptNums flags (scriptNat threshold)
+      (scriptNum total) = .ok (Int.ofNat threshold, total))
+    (comparison : (Int.ofNat threshold == total) = expected) :
+    BExecutionOutcome (.multi_a threshold (firstKey :: keys))
+      (firstSignature :: signatures) expected flags ctx := by
+  refine ⟨boolToElement (Int.ofNat threshold == total),
+    BExecution.multiA version checked tail decoded, ?_⟩
+  exact (castToBool_boolToElement _).trans comparison
+
+/-- A final equality result gives the exact canonical true B result. -/
+theorem BExecution.multiATrue
+    {threshold : Nat} {firstKey : PubKey} {keys : List PubKey}
+    {firstSignature : StackElement} {signatures : Stack}
+    {firstTruth : Bool} {total : Int}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (version : ctx.sigVersion = .tapscript)
+    (checked : checkSigWithEncoding checkSig checkSchnorrSig flags ctx
+      firstSignature firstKey.bytes = .ok firstTruth)
+    (tail : CheckSigAddTailExecution flags ctx
+      (Int.ofNat firstTruth.toNat) keys signatures total)
+    (decoded : decodeBinaryScriptNums flags (scriptNat threshold)
+      (scriptNum total) = .ok (Int.ofNat threshold, total))
+    (comparison : (Int.ofNat threshold == total) = true) :
+    BExecution (.multi_a threshold (firstKey :: keys))
+      (firstSignature :: signatures) trueElement flags ctx := by
+  have executed := BExecution.multiA version checked tail decoded
+  rw [comparison] at executed
+  exact executed
+
+/-- A failed final numeric equality gives the exact canonical false B result. -/
+theorem BExecution.multiAFalse
+    {threshold : Nat} {firstKey : PubKey} {keys : List PubKey}
+    {firstSignature : StackElement} {signatures : Stack}
+    {firstTruth : Bool} {total : Int}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (version : ctx.sigVersion = .tapscript)
+    (checked : checkSigWithEncoding checkSig checkSchnorrSig flags ctx
+      firstSignature firstKey.bytes = .ok firstTruth)
+    (tail : CheckSigAddTailExecution flags ctx
+      (Int.ofNat firstTruth.toNat) keys signatures total)
+    (decoded : decodeBinaryScriptNums flags (scriptNat threshold)
+      (scriptNum total) = .ok (Int.ofNat threshold, total))
+    (comparison : (Int.ofNat threshold == total) = false) :
+    BExecution (.multi_a threshold (firstKey :: keys))
+      (firstSignature :: signatures) falseElement flags ctx := by
+  have executed := BExecution.multiA version checked tail decoded
+  rw [comparison] at executed
+  exact executed
+
+/-- Empty signatures keep a CHECKSIGADD tail accumulator at zero. The exact
+    empty-signature encoding result stays explicit for every key. -/
+theorem CheckSigAddTailExecution.allFalse
+    {flags : ScriptFlags} {ctx : TxContext} (keys : List PubKey)
+    (version : ctx.sigVersion = .tapscript)
+    (checked : ∀ key ∈ keys,
+      checkSigWithEncoding checkSig checkSchnorrSig flags ctx
+        falseElement key.bytes = .ok false) :
+    CheckSigAddTailExecution flags ctx 0 keys
+      (List.replicate keys.length falseElement) 0 := by
+  induction keys with
+  | nil => exact .nil 0
+  | cons key keys ih =>
+      rw [List.length_cons, List.replicate_succ]
+      apply CheckSigAddTailExecution.cons (truth := false)
+      · simp only [decodeCheckSigAddCount, version, ne_eq,
+          not_true_eq_false, ↓reduceIte, scriptNum_zero]
+        cases flags.minimalData <;> rfl
+      · exact checked key (by simp)
+      · simpa using ih (fun child member => checked child (by simp [member]))
+
+/-- The canonical all-empty `multi_a` dissatisfaction stays at accumulator
+    zero and returns false for every positive threshold. -/
+theorem multiA_dissatisfaction_execution
+    {threshold : Nat} {firstKey : PubKey} {keys : List PubKey}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (version : ctx.sigVersion = .tapscript)
+    (positive : threshold ≠ 0)
+    (firstChecked : checkSigWithEncoding checkSig checkSchnorrSig flags ctx
+      falseElement firstKey.bytes = .ok false)
+    (tailChecked : ∀ key ∈ keys,
+      checkSigWithEncoding checkSig checkSchnorrSig flags ctx
+        falseElement key.bytes = .ok false)
+    (decoded : decodeBinaryScriptNums flags (scriptNat threshold)
+      falseElement = .ok (Int.ofNat threshold, 0)) :
+    BExecution (.multi_a threshold (firstKey :: keys))
+      (List.replicate (firstKey :: keys).length falseElement)
+      falseElement flags ctx := by
+  have tail := CheckSigAddTailExecution.allFalse keys version tailChecked
+  have executed := BExecution.multiA (threshold := threshold) version
+    firstChecked tail decoded
+  simpa [List.replicate_succ, boolToElement, positive] using executed
+
 /-! ## Primitive execution contracts -/
 
 /-- `1` needs no arguments and leaves the canonical true element. -/
