@@ -1,4 +1,5 @@
 import LeanMiniscript.Script.StackGrowth
+import LeanMiniscript.Script.StackGrowthAllowance
 
 namespace LeanMiniscript.Script
 
@@ -20,6 +21,85 @@ theorem executeRuntimeElement_stackGrowth
     simpa using evaluated.stackGrowth
   simp only [executeRuntimeElement, bind, Except.bind, pure, Except.pure] at executed
   repeat' (split at executed <;> try simp only [bind, Except.bind, pure, Except.pure] at executed)
+  all_goals simp_all
+  all_goals subst next
+  all_goals simp_all only
+  all_goals omega
+
+private theorem eval_nil_iff
+    {stack alt : Stack} {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult} :
+    Eval [] stack alt flags ctx result ↔ result = .success stack alt := by
+  constructor
+  · intro evaluated
+    cases evaluated
+    rfl
+  · intro resultEq
+    subst result
+    exact .empty stack alt flags ctx
+
+private theorem finishUnclosedConditional_ne_success
+    (result : ExecResult) (stack alt : Stack) :
+    finishUnclosedConditional result ≠ .success stack alt := by
+  cases result <;> simp [finishUnclosedConditional]
+
+/-- A successful one-element evaluation grows the combined stacks by no more
+    than that element's static allowance. -/
+private theorem evaluate_single_stackGrowthAllowance
+    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
+    {element : ScriptElement} {before altBefore after altAfter : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (success : evaluate oracle [element] before altBefore flags ctx =
+      .success after altAfter) :
+    after.length + altAfter.length ≤
+      before.length + altBefore.length + element.stackGrowthAllowance := by
+  by_cases costOne : element.stackGrowthAllowance = 1
+  · have evaluated := evaluate_sound agreement [element] before altBefore flags ctx
+    rw [success] at evaluated
+    simpa [costOne] using evaluated.stackGrowth
+  have costZero : element.stackGrowthAllowance = 0 := by
+    cases element with
+    | pushData data => simp [ScriptElement.stackGrowthAllowance] at costOne
+    | pushNum value => simp [ScriptElement.stackGrowthAllowance] at costOne
+    | op opcode => cases opcode <;> simp_all [ScriptElement.stackGrowthAllowance]
+  rw [costZero]
+  have evaluated := evaluate_sound agreement [element] before altBefore flags ctx
+  rw [success] at evaluated
+  generalize resultEq : ExecResult.success after altAfter = result at evaluated
+  cases evaluated
+  case if_unbalanced =>
+    exact False.elim
+      (finishUnclosedConditional_ne_success _ _ _ resultEq.symm)
+  case notif_unbalanced =>
+    exact False.elim
+      (finishUnclosedConditional_ne_success _ _ _ resultEq.symm)
+  case if_execute =>
+    have emptySplit : splitConditional [] = none := rfl
+    simp_all
+  case notif_execute =>
+    have emptySplit : splitConditional [] = none := rfl
+    simp_all
+  all_goals cases resultEq
+  all_goals simp_all [ScriptElement.stackGrowthAllowance, eval_nil_iff]
+  all_goals try omega
+
+/-- A successful source-order instruction grows the combined stacks by no more
+    than its static allowance. Inactive instructions have zero actual growth. -/
+theorem executeRuntimeElement_stackGrowthAllowance
+    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
+    {element : ScriptElement} {state next : RuntimeState}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : executeRuntimeElement oracle element state flags ctx = .ok next) :
+    next.stack.length + next.altStack.length ≤
+      state.stack.length + state.altStack.length + element.stackGrowthAllowance := by
+  have opcodeBound (stack alt : Stack)
+      (success : evaluate oracle [element] state.stack state.altStack flags ctx =
+        .success stack alt) :
+      stack.length + alt.length ≤ state.stack.length + state.altStack.length +
+        element.stackGrowthAllowance :=
+    evaluate_single_stackGrowthAllowance agreement success
+  simp only [executeRuntimeElement, bind, Except.bind, pure, Except.pure] at executed
+  repeat' (split at executed <;>
+    try simp only [bind, Except.bind, pure, Except.pure] at executed)
   all_goals simp_all
   all_goals subst next
   all_goals simp_all only
@@ -51,6 +131,22 @@ theorem RuntimePrefix.stackGrowth
       simp only [List.length_cons]
       omega
 
+/-- Every reachable prefix endpoint is bounded by the sum of allowances for
+    the source elements visited so far. -/
+theorem RuntimePrefix.stackGrowth_le_allowance
+    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
+    {flags : ScriptFlags} {ctx : TxContext} {visited : Script} {before after : RuntimeState}
+    (reached : RuntimePrefix oracle flags ctx visited before after) :
+    after.stack.length + after.altStack.length ≤
+      before.stack.length + before.altStack.length +
+        LeanMiniscript.Script.stackGrowthAllowance visited := by
+  induction reached with
+  | nil => simp [LeanMiniscript.Script.stackGrowthAllowance]
+  | cons executed tail ih =>
+      have step := executeRuntimeElement_stackGrowthAllowance agreement executed
+      simp only [LeanMiniscript.Script.stackGrowthAllowance]
+      omega
+
 /-- A static whole-program allowance bounds every reachable prefix endpoint. -/
 theorem RuntimePrefix.stackBound
     {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
@@ -76,6 +172,35 @@ theorem RuntimePrefix.checkStack_ok
     (budget : before.stack.length + before.altStack.length + program.length ≤ maxStackSize) :
     checkRuntimeStack after = .ok after := by
   have bounded := reached.stackBound agreement isPrefix budget
+  simp [checkRuntimeStack, Nat.not_lt_of_le bounded]
+
+/-- The refined whole-program allowance bounds every reachable prefix
+    endpoint. -/
+theorem RuntimePrefix.stackBoundAllowance
+    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
+    {flags : ScriptFlags} {ctx : TxContext} {visited program : Script}
+    {before after : RuntimeState}
+    (reached : RuntimePrefix oracle flags ctx visited before after)
+    (isPrefix : visited.IsPrefix program)
+    (budget : before.stack.length + before.altStack.length +
+      LeanMiniscript.Script.stackGrowthAllowance program ≤ maxStackSize) :
+    after.stack.length + after.altStack.length ≤ maxStackSize := by
+  have growth := reached.stackGrowth_le_allowance agreement
+  have prefixBound := stackGrowthAllowance_le_of_isPrefix isPrefix
+  omega
+
+/-- Under the refined allowance, checking any reachable prefix endpoint cannot
+    reject it for combined-stack size. -/
+theorem RuntimePrefix.checkStack_ok_of_allowance
+    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
+    {flags : ScriptFlags} {ctx : TxContext} {visited program : Script}
+    {before after : RuntimeState}
+    (reached : RuntimePrefix oracle flags ctx visited before after)
+    (isPrefix : visited.IsPrefix program)
+    (budget : before.stack.length + before.altStack.length +
+      LeanMiniscript.Script.stackGrowthAllowance program ≤ maxStackSize) :
+    checkRuntimeStack after = .ok after := by
+  have bounded := reached.stackBoundAllowance agreement isPrefix budget
   simp [checkRuntimeStack, Nat.not_lt_of_le bounded]
 
 /-- Proof-facing execution of a source prefix, omitting only combined-stack
@@ -137,6 +262,35 @@ theorem evaluateRuntime_eq_runRuntimePrefix
             simp only [List.length_cons] at budget
             omega
           have bounded : next.stack.length + next.altStack.length ≤ maxStackSize := by omega
+          simpa [evaluateRuntime, runtimeStep, runRuntimePrefix, step,
+            checkRuntimeStack, Nat.not_lt_of_le bounded, bind, Except.bind] using ih nextBudget
+
+/-- The fragment-specific allowance also makes every combined-stack check
+    redundant. As with the instruction-count theorem, other runtime failures
+    remain observable in their original order. -/
+theorem evaluateRuntime_eq_runRuntimePrefix_of_allowance
+    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
+    {script : Script} {state : RuntimeState} {flags : ScriptFlags} {ctx : TxContext}
+    (budget : state.stack.length + state.altStack.length +
+      LeanMiniscript.Script.stackGrowthAllowance script ≤ maxStackSize) :
+    evaluateRuntime oracle script state flags ctx =
+      match runRuntimePrefix oracle script state flags ctx with
+      | .error error => .failure error
+      | .ok after => finishRuntime after := by
+  induction script generalizing state with
+  | nil => rfl
+  | cons element rest ih =>
+      cases step : executeRuntimeElement oracle element state flags ctx with
+      | error error =>
+          simp [evaluateRuntime, runtimeStep, runRuntimePrefix, step, bind, Except.bind]
+      | ok next =>
+          have growth := executeRuntimeElement_stackGrowthAllowance agreement step
+          have nextBudget : next.stack.length + next.altStack.length +
+              LeanMiniscript.Script.stackGrowthAllowance rest ≤ maxStackSize := by
+            simp only [LeanMiniscript.Script.stackGrowthAllowance] at budget
+            omega
+          have bounded : next.stack.length + next.altStack.length ≤ maxStackSize := by
+            omega
           simpa [evaluateRuntime, runtimeStep, runRuntimePrefix, step,
             checkRuntimeStack, Nat.not_lt_of_le bounded, bind, Except.bind] using ih nextBudget
 
