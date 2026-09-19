@@ -13,6 +13,7 @@
 
 import LeanMiniscript.Script.Syntax
 import LeanMiniscript.Script.SignatureChecks
+import LeanMiniscript.Script.ControlFlow
 
 namespace LeanMiniscript.Script
 
@@ -94,6 +95,89 @@ private def splitConditionalAux (depth : Nat) (currentRev : Script)
     matching `OP_ENDIF`. Returns `none` when that delimiter is missing. -/
 def splitConditional (script : Script) : Option ConditionalFrame :=
   splitConditionalAux 0 [] [] script
+
+/-- Scanning a balanced script prefix cannot close or split the surrounding
+    conditional. It only adds that prefix, in reverse order, to the current
+    branch accumulator. -/
+private theorem splitConditionalAux_balanced_prefix
+    {body : Script} (balanced : BalancedControlFlow body)
+    (depth : Nat) (currentRev : Script) (completedRev : List Script)
+    (suffix : Script) :
+    splitConditionalAux depth currentRev completedRev (body ++ suffix) =
+      splitConditionalAux depth (body.reverse ++ currentRev) completedRev suffix := by
+  induction balanced generalizing depth currentRev completedRev suffix with
+  | nil => rfl
+  | @atom element nonConditional =>
+      cases element with
+      | pushData data => simp [splitConditionalAux]
+      | pushNum value => simp [splitConditionalAux]
+      | op opcode =>
+          cases opcode <;> simp_all [NonConditional, splitConditionalAux]
+  | @append left right _ _ leftIH rightIH =>
+      rw [List.append_assoc, leftIH, rightIH]
+      simp [List.reverse_append, List.append_assoc]
+  | @ifThen nested nestedBalanced nestedIH =>
+      simp only [List.cons_append, List.nil_append, List.append_assoc,
+        splitConditionalAux]
+      rw [nestedIH]
+      simp only [splitConditionalAux]
+      simp [List.reverse_append, List.append_assoc]
+  | @notifThen nested nestedBalanced nestedIH =>
+      simp only [List.cons_append, List.nil_append, List.append_assoc,
+        splitConditionalAux]
+      rw [nestedIH]
+      simp only [splitConditionalAux]
+      simp [List.reverse_append, List.append_assoc]
+  | @ifElse thenBranch elseBranch thenBalanced elseBalanced thenIH elseIH =>
+      simp only [List.cons_append, List.nil_append, List.append_assoc,
+        splitConditionalAux]
+      rw [thenIH]
+      simp only [splitConditionalAux]
+      rw [elseIH]
+      simp only [splitConditionalAux]
+      simp [List.reverse_append, List.append_assoc]
+  | @notifElse thenBranch elseBranch thenBalanced elseBalanced thenIH elseIH =>
+      simp only [List.cons_append, List.nil_append, List.append_assoc,
+        splitConditionalAux]
+      rw [thenIH]
+      simp only [splitConditionalAux]
+      rw [elseIH]
+      simp only [splitConditionalAux]
+      simp [List.reverse_append, List.append_assoc]
+
+/-- A balanced body followed by `OP_ENDIF` is split as one branch, with the
+    remainder returned unchanged as the conditional suffix. -/
+theorem splitConditional_balanced_ifThen
+    {body suffix : Script} (balanced : BalancedControlFlow body) :
+    splitConditional (body ++ [.op .OP_ENDIF] ++ suffix) =
+      some { branches := [body], after := suffix } := by
+  unfold splitConditional
+  simp only [List.append_assoc, List.singleton_append]
+  rw [splitConditionalAux_balanced_prefix balanced]
+  simp [splitConditionalAux]
+
+/-- Two balanced branches separated by `OP_ELSE` and closed by `OP_ENDIF`
+    produce exactly those branches and leave the following suffix untouched. -/
+theorem splitConditional_balanced_ifElse
+    {thenBranch elseBranch suffix : Script}
+    (thenBalanced : BalancedControlFlow thenBranch)
+    (elseBalanced : BalancedControlFlow elseBranch) :
+    splitConditional
+        (thenBranch ++ [.op .OP_ELSE] ++ elseBranch ++
+          [.op .OP_ENDIF] ++ suffix) =
+      some { branches := [thenBranch, elseBranch], after := suffix } := by
+  unfold splitConditional
+  simp only [List.append_assoc, List.singleton_append]
+  rw [splitConditionalAux_balanced_prefix thenBalanced]
+  have splitElse :
+      splitConditionalAux 0 (thenBranch.reverse ++ []) []
+          (.op .OP_ELSE :: elseBranch ++ .op .OP_ENDIF :: suffix) =
+        splitConditionalAux 0 [] [thenBranch]
+          (elseBranch ++ .op .OP_ENDIF :: suffix) := by
+    simp [splitConditionalAux]
+  rw [splitElse]
+  rw [splitConditionalAux_balanced_prefix elseBalanced]
+  simp [splitConditionalAux]
 
 /-- Proof-facing, source-order projection of one open conditional. Nested
     delimiters are retained in selected segments; same-depth ELSE toggles the
