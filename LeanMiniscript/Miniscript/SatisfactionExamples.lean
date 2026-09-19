@@ -1446,6 +1446,208 @@ example :
   · simp [checkMultiSigDummy, nullDummySatisfied, multiFlags, stackElementEq,
       trueElement, falseElement]
 
+/-! ## Tapscript multisignature candidates and execution -/
+
+private def tapMultiKeyA : PubKey :=
+  PubKey.ofBytes ⟨(List.replicate 32 0xa1).toArray⟩
+private def tapMultiKeyB : PubKey :=
+  PubKey.ofBytes ⟨(List.replicate 32 0xb2).toArray⟩
+private def tapMultiKeyC : PubKey :=
+  PubKey.ofBytes ⟨(List.replicate 32 0xc3).toArray⟩
+
+private def tapMultiKeys : List PubKey :=
+  [tapMultiKeyA, tapMultiKeyB, tapMultiKeyC]
+private def twoOfThreeMultiA : CoreFragment := .multi_a 2 tapMultiKeys
+
+private def tapMultiACEnv : SatEnv where
+  signatureFor := fun selectedKey =>
+    if selectedKey.bytes == tapMultiKeyA.bytes then some multiSigA
+    else if selectedKey.bytes == tapMultiKeyC.bytes then some multiSigC
+    else none
+  preimageFor := fun _ => none
+  nonPreimageFor := fun _ => nonPreimage32
+  txCtx := unavailableEnv.txCtx
+
+private def tapMultiAllEqualEnv : SatEnv where
+  signatureFor := fun selectedKey =>
+    if selectedKey.bytes == tapMultiKeyA.bytes then some multiSigA
+    else if selectedKey.bytes == tapMultiKeyB.bytes then some multiSigB
+    else if selectedKey.bytes == tapMultiKeyC.bytes then some multiSigC
+    else none
+  preimageFor := fun _ => none
+  nonPreimageFor := fun _ => nonPreimage32
+  txCtx := unavailableEnv.txCtx
+
+private def tapMultiCostEnv : SatEnv where
+  signatureFor := fun selectedKey =>
+    if selectedKey.bytes == tapMultiKeyA.bytes then some costlyMultiSigA
+    else if selectedKey.bytes == tapMultiKeyB.bytes then some multiSigB
+    else if selectedKey.bytes == tapMultiKeyC.bytes then some multiSigC
+    else none
+  preimageFor := fun _ => none
+  nonPreimageFor := fun _ => nonPreimage32
+  txCtx := unavailableEnv.txCtx
+
+private def tapMultiAOnlyEnv : SatEnv where
+  signatureFor := fun selectedKey =>
+    if selectedKey.bytes == tapMultiKeyA.bytes then some multiSigA else none
+  preimageFor := fun _ => none
+  nonPreimageFor := fun _ => nonPreimage32
+  txCtx := unavailableEnv.txCtx
+
+/-- `multi_a` exact-count blocks need no legacy finalizer. Their reverse wire
+    order becomes source execution order after the single witness reversal. -/
+example :
+    (satisfactionCandidates twoOfThreeMultiA tapMultiACEnv).sat =
+        .usable [multiSigC, falseElement, multiSigA] true ∧
+      satisfy twoOfThreeMultiA tapMultiACEnv =
+        some [multiSigC, falseElement, multiSigA] ∧
+      Witness.toInitialStack [multiSigC, falseElement, multiSigA] =
+        [multiSigA, falseElement, multiSigC] := by
+  exact ⟨rfl, rfl, rfl⟩
+
+/-- Equal-cost exact-count paths prefer earlier source keys. -/
+example : (satisfactionCandidates twoOfThreeMultiA tapMultiAllEqualEnv).sat =
+    .usable [falseElement, multiSigB, multiSigA] true := by
+  rfl
+
+/-- Additive cost selects the shorter second and third signatures. -/
+example : (satisfactionCandidates twoOfThreeMultiA tapMultiCostEnv).sat =
+    .usable [multiSigC, multiSigB, falseElement] true := by
+  rfl
+
+/-- Per-key and aggregate candidates keep the HASSIG distinction explicit;
+    fewer than `k` available signatures makes only satisfaction impossible. -/
+example :
+    (multiAKeyChoice tapMultiKeyA tapMultiACEnv).sat =
+        .usable [multiSigA] true ∧
+      (multiAKeyChoice tapMultiKeyB tapMultiACEnv).dsat =
+        .usable [falseElement] false ∧
+      (satisfactionCandidates twoOfThreeMultiA tapMultiAOnlyEnv).sat =
+        .impossible ∧
+      (satisfactionCandidates twoOfThreeMultiA tapMultiAOnlyEnv).dsat =
+        .usable [falseElement, falseElement, falseElement] false := by
+  exact ⟨rfl, rfl, rfl, rfl⟩
+
+/-- Only the threshold relation is rejected. A 21-key raw `multi_a` remains
+    candidate-valid because Tapscript has no legacy 20-key limit. -/
+example :
+    satisfactionCandidates (.multi_a 0 tapMultiKeys) tapMultiAllEqualEnv = {} ∧
+      satisfactionCandidates (.multi_a 4 tapMultiKeys) tapMultiAllEqualEnv = {} ∧
+      (satisfactionCandidates
+          (.multi_a 1 (List.replicate 21 tapMultiKeyA))
+          tapMultiAllEqualEnv).sat =
+        .usable (List.replicate 20 falseElement ++ [multiSigA]) true ∧
+      (satisfactionCandidates
+          (.multi_a 1 (List.replicate 21 tapMultiKeyA))
+          tapMultiAllEqualEnv).dsat =
+        .usable (List.replicate 21 falseElement) false := by
+  exact ⟨rfl, rfl, rfl, rfl⟩
+
+/-- X-only keys make `multi_a` well formed in Tapscript, while the opcode
+    encoding is rejected at the P2WSH well-formedness boundary. -/
+example :
+    twoOfThreeMultiA.WellFormed .tapscript ∧
+      ¬ twoOfThreeMultiA.WellFormed .p2wsh := by
+  native_decide
+
+private def tapMultiFlags : ScriptFlags := {}
+
+private def tapMultiCtx : TxContext where
+  version := 2
+  locktime := 0
+  sequence := 0
+  sigHash := ⟨#[]⟩
+  sigVersion := .tapscript
+
+/-- Two true checks and one canonical empty signature execute to total two.
+    The B frame quantifies over every main-stack suffix and alternate stack. -/
+example {firstSignature thirdSignature : StackElement}
+    (firstChecked : checkSigWithEncoding checkSig checkSchnorrSig tapMultiFlags
+      tapMultiCtx firstSignature tapMultiKeyA.bytes = .ok true)
+    (thirdChecked : checkSigWithEncoding checkSig checkSchnorrSig tapMultiFlags
+      tapMultiCtx thirdSignature tapMultiKeyC.bytes = .ok true) :
+    BExecution twoOfThreeMultiA
+      [firstSignature, falseElement, thirdSignature]
+      trueElement tapMultiFlags tapMultiCtx := by
+  have tail : CheckSigAddTailExecution tapMultiFlags tapMultiCtx 1
+      [tapMultiKeyB, tapMultiKeyC] [falseElement, thirdSignature] 2 := by
+    refine CheckSigAddTailExecution.cons (truth := false) (by rfl) (by rfl) ?_
+    refine CheckSigAddTailExecution.cons (truth := true) (by rfl)
+      thirdChecked ?_
+    exact CheckSigAddTailExecution.nil 2
+  exact BExecution.multiATrue (threshold := 2) (firstKey := tapMultiKeyA)
+    (keys := [tapMultiKeyB, tapMultiKeyC]) rfl firstChecked tail
+    (by rfl) (by rfl)
+
+/-- One true and two false checks exercise the false final NUMEQUAL branch. -/
+example {firstSignature : StackElement}
+    (firstChecked : checkSigWithEncoding checkSig checkSchnorrSig tapMultiFlags
+      tapMultiCtx firstSignature tapMultiKeyA.bytes = .ok true) :
+    BExecution twoOfThreeMultiA
+      [firstSignature, falseElement, falseElement]
+      falseElement tapMultiFlags tapMultiCtx := by
+  have tail : CheckSigAddTailExecution tapMultiFlags tapMultiCtx 1
+      [tapMultiKeyB, tapMultiKeyC] [falseElement, falseElement] 1 := by
+    refine CheckSigAddTailExecution.cons (truth := false) (by rfl) (by rfl) ?_
+    refine CheckSigAddTailExecution.cons (truth := false) (by rfl) (by rfl) ?_
+    exact CheckSigAddTailExecution.nil 1
+  exact BExecution.multiAFalse (threshold := 2) (firstKey := tapMultiKeyA)
+    (keys := [tapMultiKeyB, tapMultiKeyC]) rfl firstChecked tail
+    (by rfl) (by rfl)
+
+/-- The canonical all-empty dissatisfaction remains at total zero and returns
+    false for the positive threshold. -/
+example :
+    BExecution twoOfThreeMultiA
+      [falseElement, falseElement, falseElement]
+      falseElement tapMultiFlags tapMultiCtx := by
+  apply multiA_dissatisfaction_execution (threshold := 2)
+    (firstKey := tapMultiKeyA) (keys := [tapMultiKeyB, tapMultiKeyC])
+    (flags := tapMultiFlags) (ctx := tapMultiCtx) rfl (by decide) (by rfl)
+  · intro selectedKey member
+    simp at member
+    rcases member with rfl | rfl <;> rfl
+  · rfl
+
+private def nonTapMultiCtx : TxContext where
+  version := 2
+  locktime := 0
+  sequence := 0
+  sigHash := ⟨#[]⟩
+  sigVersion := .witnessV0
+
+private def nonTapMultiFlags : ScriptFlags where
+  strictEncoding := false
+
+/-- Once the first CHECKSIG completes, the first CHECKSIGADD rejects a
+    non-Tapscript execution before inspecting its operands. -/
+example {firstSignature secondSignature : StackElement}
+    (firstChecked : checkSigWithEncoding checkSig checkSchnorrSig
+      nonTapMultiFlags nonTapMultiCtx firstSignature tapMultiKeyA.bytes =
+        .ok false) :
+    Eval (compile (.multi_a 1 [tapMultiKeyA, tapMultiKeyB]))
+      [firstSignature, secondSignature] [] nonTapMultiFlags nonTapMultiCtx
+      (.failure .badOpcode) := by
+  simp only [compile, compileWithKeyHash, compileCheckSigAdd,
+    compileCheckSigAddTail]
+  apply Eval.pushData
+  apply Eval.checksig_failure
+  · exact firstChecked
+  apply Eval.pushData
+  exact Eval.checksigadd_unavailable _ _ _ _ _ (by decide)
+
+private def invalidSchnorrSignature : StackElement := ⟨#[0x01]⟩
+
+/-- Tapscript rejects a malformed nonempty Schnorr signature as an encoding
+    error, while the canonical empty signature is an ordinary false result. -/
+example :
+    checkSigWithEncoding checkSig checkSchnorrSig tapMultiFlags tapMultiCtx
+        invalidSchnorrSignature tapMultiKeyA.bytes = .error .schnorrSigSize ∧
+      checkSigWithEncoding checkSig checkSchnorrSig tapMultiFlags tapMultiCtx
+        falseElement tapMultiKeyA.bytes = .ok false := by
+  constructor <;> rfl
+
 /-- Truthiness alone does not discharge a child-produced selector's MINIMALIF
     premise when the flag is active. -/
 example :

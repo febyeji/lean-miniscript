@@ -152,7 +152,7 @@ path-sensitive peak analysis remains unfinished.
 | `n` | Done | Done | Done | Done | Partial | Pass-through | Pass-through | Partial | ScriptNum-normalized B frame |
 | `thresh` | Done | Done | Done | Done | Partial | Exact-count candidate | Canonical/overcomplete choice | Partial | Local accumulator frame |
 | `multi` | Done | Done | Done | Done | Partial | Exact-count signatures | Canonical empty signatures | Partial | Local CHECKMULTISIG frame |
-| `multi_a` | Done | Done | Done | Done | Partial | Missing | Missing | Partial | Missing |
+| `multi_a` | Done | Done | Done | Done | Partial | Exact-count signatures | Canonical empty signatures | Partial | Local CHECKSIGADD frame |
 
 Key-leaf candidates follow the BIP 379 serialized witness rows: `pk_k` uses
 `sig`/`0`, while `pk_h` uses `sig key`/`0 key`. Wrapper `c` preserves the
@@ -271,6 +271,24 @@ discharged by the canonical empty dummy; the all-empty dissatisfaction also
 discharges NULLFAIL. This does not prove that the candidate table's chosen
 signatures form the key subsequence accepted by the caller-supplied ECDSA
 oracle, and it does not provide recursive generated-witness soundness.
+
+Tapscript `multi_a(k, keys)` uses the exact-count table directly in source key
+order. An available signature contributes a one-item HASSIG satisfaction and
+an empty signature contributes the canonical dissatisfaction. The selected
+wire blocks are already in reverse source order, so no legacy finalizer or
+dummy is added; reversing the complete witness at runtime restores source key
+order for CHECKSIG followed by CHECKSIGADD. The canonical dissatisfaction has
+one empty item per key. Raw `k = 0` and `k > n` forms have no candidates. There
+is deliberately no 20-key guard for this Tapscript form.
+
+`CheckSigAddTailExecution` relates source-order keys and signatures to an exact
+`Int` accumulator. Each step retains the exact `decodeCheckSigAddCount` result
+and version-aware `checkSigWithEncoding` result. The nonempty compiler frame
+handles the first CHECKSIG separately, and `BExecution.multiA` requires an
+explicit Tapscript execution version plus the final `decodeBinaryScriptNums`
+result for NUMEQUAL. Empty-signature helpers prove the canonical false path,
+but no theorem derives the accumulator decode bounds from `WellFormed` or ties
+the candidate table's selected signatures to cryptographic verification.
 
 `HasType ctx` covers all rows, and `inferType ctx` has soundness, completeness,
 uniqueness, and success/reflection theorems. A constructor-exhaustive fixture
@@ -526,7 +544,8 @@ Satisfaction now has executable candidate rows for constants, `pk_k`, `pk_h`,
 their `c` wrappers, timelocks, all four hashlocks, linear wrapper propagation
 through `a`, `s`, `v`, and `n`, guarded wrappers `d` and `j`, and straight-line
 connectives `and_v`, `and_b`, and `or_b`, plus conditional connectives `or_c`,
-`or_d`, `or_i`, and `andor`, thresholds, and legacy `multi`. Paired
+`or_d`, `or_i`, and `andor`, thresholds, legacy `multi`, and Tapscript
+`multi_a`. Paired
 candidates retain HASSIG, DONTUSE, canonical origin, and additive witness cost
 metadata while the public projection returns only usable witnesses. Signature
 and key material use serialized witness order, and timelock availability reuses
@@ -550,8 +569,10 @@ candidate to child execution. Thresholds have the local accumulator contract
 described above, without a recursive theorem connecting their selected table
 entry to every child execution. Legacy `multi` has the local canonical decoder
 and CHECKMULTISIG execution contract described above, without a theorem tying
-the selected candidate to an accepted signature/key subsequence. `multi_a`
-candidate selection remains unsupported and returns `none`.
+the selected candidate to an accepted signature/key subsequence. Tapscript
+`multi_a` has the local CHECKSIG/CHECKSIGADD accumulator contract described
+above, without a theorem tying its selected candidate to those explicit
+signature-check and numeric-decode premises.
 
 ## Surface Constructor Matrix
 
