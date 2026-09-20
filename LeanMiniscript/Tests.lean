@@ -24,6 +24,7 @@ import LeanMiniscript.Miniscript.TimelockMixingExamples
 import LeanMiniscript.Miniscript.TypeInferenceExamples
 import LeanMiniscript.Properties.ResourceBoundsExamples
 import LeanMiniscript.Properties.ResourcePathExamples
+import LeanMiniscript.Properties.ResourceThresholdPathExamples
 import LeanMiniscript.Script.BigStepFailureExamples
 import LeanMiniscript.Script.CheckMultiSigExamples
 import LeanMiniscript.Script.ConditionalExamples
