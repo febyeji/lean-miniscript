@@ -12,8 +12,43 @@ against `rust-miniscript@cb8262253af383a1a5b17363f6a013848f20534b`.
 
 The context parameter records the BIP 379 split between legacy `multi` in
 P2WSH and `multi_a` in Tapscript. Structural validity, correctness typing, and
-timelock compatibility remain separate analyses.
+timelock compatibility remain separate analyses. `HasMalleability` encodes the
+local table rules; interpreting its `nonMalleable` result globally requires
+`CoreFragment.NoDuplicateKeys`, which the public executable inference checks.
 -/
+
+namespace CoreFragment
+
+mutual
+  /-- Public keys referenced by a fragment, preserving source order and
+      repeated occurrences. -/
+  def keys : CoreFragment → List PubKey
+    | .zero | .one | .older _ | .after _ | .sha256 _ | .hash256 _ |
+        .ripemd160 _ | .hash160 _ => []
+    | .pk_k key | .pk_h key => [key]
+    | .and_v x y | .and_b x y | .or_b x y | .or_c x y | .or_d x y |
+        .or_i x y => keys x ++ keys y
+    | .andor x y z => keys x ++ keys y ++ keys z
+    | .a x | .s x | .c x | .d x | .v x | .j x | .n x => keys x
+    | .thresh _ fragments => keysList fragments
+    | .multi _ publicKeys | .multi_a _ publicKeys => publicKeys
+
+  /-- Public keys referenced by a list of threshold children. -/
+  def keysList : List CoreFragment → List PubKey
+    | [] => []
+    | fragment :: fragments => keys fragment ++ keysList fragments
+end
+
+/-- The BIP 379 malleability rules assume that a public key occurs at most once
+    in the complete Miniscript expression. -/
+def NoDuplicateKeys (fragment : CoreFragment) : Prop :=
+  fragment.keys.Nodup
+
+instance (fragment : CoreFragment) : Decidable fragment.NoDuplicateKeys := by
+  unfold NoDuplicateKeys
+  infer_instance
+
+end CoreFragment
 
 /-- The three BIP 379 properties together with the derived guarantee that the
     fragment can always be satisfied non-malleably. -/
@@ -25,9 +60,10 @@ structure MalleabilityModifiers where
   /-- e (expressive): there is a unique unconditional dissatisfaction and any
       conditional dissatisfaction requires a signature. -/
   e : Bool := false
-  /-- The BIP 379 `Requires` column holds recursively for this fragment. This is
-      kept separate from `s`, `f`, and `e` so a malleable fragment still has
-      analyzable modifier properties. -/
+  /-- The BIP 379 `Requires` column holds recursively for this fragment under
+      the global no-duplicate-keys assumption. This is kept separate from `s`,
+      `f`, and `e` so a malleable fragment still has analyzable modifier
+      properties. -/
   nonMalleable : Bool := false
   deriving Repr, DecidableEq, BEq
 
@@ -64,7 +100,8 @@ def fewerThanNonS (k : Nat) (mods : List MalleabilityModifiers) : Bool :=
 end MalleabilityModifiers
 
 mutual
-  /-- Relational BIP 379 malleability judgment for one core fragment. -/
+  /-- Relational BIP 379 local malleability rules for one core fragment.
+      Global use of the result additionally requires `NoDuplicateKeys`. -/
   inductive HasMalleability (ctx : ScriptContext) :
       CoreFragment → MalleabilityModifiers → Prop where
     | zero :
@@ -228,11 +265,12 @@ mutual
         HasMalleabilityList ctx (fragment :: fragments) (mods :: rest)
 end
 
-/-- A fragment is malleability-analyzable when the BIP 379 judgment assigns it
-    a unique modifier set in the requested script context. Failure of the
-    non-malleability requirements is represented by `mods.nonMalleable = false`,
-    not by absence of a derivation. -/
+/-- A fragment is malleability-analyzable when its keys satisfy the BIP 379
+    uniqueness assumption and the judgment assigns it a unique modifier set in
+    the requested script context. Failure of the recursive non-malleability
+    requirements is represented by `mods.nonMalleable = false`; repeated keys
+    make the analysis inapplicable. -/
 def malleabilityAnalyzable (ctx : ScriptContext) (fragment : CoreFragment) : Prop :=
-  ∃ mods, HasMalleability ctx fragment mods
+  fragment.NoDuplicateKeys ∧ ∃ mods, HasMalleability ctx fragment mods
 
 end LeanMiniscript.Miniscript
