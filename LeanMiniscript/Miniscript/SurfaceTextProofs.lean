@@ -1,5 +1,6 @@
 import LeanMiniscript.Miniscript.SurfacePretty
 import LeanMiniscript.Miniscript.SurfaceParser
+import LeanMiniscript.Miniscript.TypeInferenceProofs
 
 namespace LeanMiniscript.Miniscript
 
@@ -31,13 +32,15 @@ theorem prettySurface_normalizeSurface (fragment : SurfaceFragment) :
 def SurfaceTextRoundTrip : Prop :=
   ∀ (context : ScriptContext) (fragment : SurfaceFragment),
     fragment.WellFormed context →
+      wellTyped context (desugar fragment) →
       parseSurfaceHex context (prettySurface fragment) =
         .ok (normalizeSurface fragment)
 
 /-- Canonical hexadecimal surface printing and context-aware parsing satisfy
     `SurfaceTextRoundTrip`. -/
 theorem surfaceTextRoundTrip : SurfaceTextRoundTrip := by
-  intro context fragment hWellFormed
-  exact parseSurfaceHex_prettySurface context fragment hWellFormed
+  rintro context fragment hWellFormed ⟨ty, hTyped⟩
+  exact parseSurfaceHex_prettySurface context fragment hWellFormed (by
+    simp [inferTyped_complete hTyped])
 
 end LeanMiniscript.Miniscript
