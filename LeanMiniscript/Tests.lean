@@ -8,6 +8,7 @@ import LeanMiniscript.Extraction.BitcoinCoreAuditExamples
 import LeanMiniscript.Extraction.BitcoinCoreFixturesExamples
 import LeanMiniscript.Extraction.SignatureEncodingCoreExamples
 import LeanMiniscript.Miniscript.CompileExamples
+import LeanMiniscript.Miniscript.CompileVerifyResourceExamples
 import LeanMiniscript.Miniscript.ContextSafetyExamples
 import LeanMiniscript.Miniscript.MalleabilityExamples
 import LeanMiniscript.Miniscript.SaneExamples
