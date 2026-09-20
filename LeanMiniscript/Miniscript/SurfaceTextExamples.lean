@@ -271,6 +271,13 @@ example :
         (repeatText 201 "n:" ++ nestedOrI 202)) = true := by
   native_decide
 
+/-- Malformed delimiter-heavy input reaches the structured depth error without
+    exhausting the Lean evaluator's recursion limit in tokenization. -/
+example :
+    isMaxRecursionDepthExceeded
+      (parseSurfaceHex .p2wsh (repeatText 10000 "or_i(1,")) = true := by
+  native_decide
+
 private def wideMultiA (keyCount : Nat) : String :=
   "multi_a(1," ++ String.intercalate ","
     (List.replicate keyCount (prettyPubKey tapscriptKey)) ++ ")"

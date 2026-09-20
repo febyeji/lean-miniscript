@@ -111,8 +111,51 @@ private def tokenizeChars (position atomPosition : Nat)
               if reversedAtom.isEmpty then position else atomPosition
             tokenizeChars (position + 1) start (char :: reversedAtom) rest
 
+private def pushTokenizedAtom (position : Nat) (reversedAtom : List Char)
+    (reversedTokens : List SurfaceToken) : List SurfaceToken :=
+  match reversedAtom with
+  | [] => reversedTokens
+  | _ =>
+      ⟨.atom (String.ofList reversedAtom.reverse), position⟩ ::
+        reversedTokens
+
+/-- Tail-recursive implementation of `tokenizeChars`. Keeping the accumulator
+    reversed avoids retaining one call frame for every delimiter in malformed
+    input. -/
+private def tokenizeCharsAcc (position atomPosition : Nat)
+    (reversedAtom : List Char) (reversedTokens : List SurfaceToken) :
+    List Char → List SurfaceToken
+  | [] => (pushTokenizedAtom atomPosition reversedAtom reversedTokens).reverse
+  | char :: rest =>
+      if SurfaceText.isSpace char then
+        tokenizeCharsAcc (position + 1) (position + 1) []
+          (pushTokenizedAtom atomPosition reversedAtom reversedTokens) rest
+      else
+        match char with
+        | '(' =>
+            tokenizeCharsAcc (position + 1) (position + 1) []
+              (⟨.leftParen, position⟩ ::
+                pushTokenizedAtom atomPosition reversedAtom reversedTokens) rest
+        | ')' =>
+            tokenizeCharsAcc (position + 1) (position + 1) []
+              (⟨.rightParen, position⟩ ::
+                pushTokenizedAtom atomPosition reversedAtom reversedTokens) rest
+        | ',' =>
+            tokenizeCharsAcc (position + 1) (position + 1) []
+              (⟨.comma, position⟩ ::
+                pushTokenizedAtom atomPosition reversedAtom reversedTokens) rest
+        | ':' =>
+            tokenizeCharsAcc (position + 1) (position + 1) []
+              (⟨.colon, position⟩ ::
+                pushTokenizedAtom atomPosition reversedAtom reversedTokens) rest
+        | _ =>
+            let start :=
+              if reversedAtom.isEmpty then position else atomPosition
+            tokenizeCharsAcc (position + 1) start (char :: reversedAtom)
+              reversedTokens rest
+
 private def tokenizeSurface (input : String) : List SurfaceToken :=
-  tokenizeChars 0 0 [] input.toList
+  tokenizeCharsAcc 0 0 [] [] input.toList
 
 private def tokenText (token : SurfaceToken) : String :=
   match token.kind with
@@ -179,6 +222,27 @@ private theorem tokenizeChars_toLexemes (position atomPosition : Nat)
       · split <;> cases reversedAtom <;>
           simp [finishTokenizedAtom, finishLexemeAtom,
             SurfaceToken.toLexeme, ih]
+
+private theorem tokenizeCharsAcc_eq (position atomPosition : Nat)
+    (reversedAtom : List Char) (reversedTokens : List SurfaceToken)
+    (chars : List Char) :
+    tokenizeCharsAcc position atomPosition reversedAtom reversedTokens chars =
+      reversedTokens.reverse ++
+        tokenizeChars position atomPosition reversedAtom chars := by
+  induction chars generalizing position atomPosition reversedAtom reversedTokens with
+  | nil =>
+      cases reversedAtom <;>
+        simp [tokenizeCharsAcc, pushTokenizedAtom, tokenizeChars,
+          finishTokenizedAtom]
+  | cons char rest ih =>
+      simp only [tokenizeCharsAcc, tokenizeChars]
+      split
+      · cases reversedAtom <;>
+          simp [pushTokenizedAtom, finishTokenizedAtom, ih,
+            List.append_assoc]
+      · split <;> cases reversedAtom <;>
+          simp [pushTokenizedAtom, finishTokenizedAtom, ih,
+            List.append_assoc]
 
 private theorem tokenizeLexemeChars_safe_prefix
     (chars reversedAtom rest : List Char)
@@ -353,6 +417,8 @@ private theorem tokenizeSurface_renderExpr (expr : SurfaceText.Expr)
     (hSafe : expr.AtomsSafe) :
     (tokenizeSurface expr.render).map SurfaceToken.toLexeme = expr.lexemes := by
   rw [tokenizeSurface, SurfaceText.Expr.render, String.toList_ofList]
+  rw [tokenizeCharsAcc_eq]
+  simp only [List.reverse_nil, List.nil_append]
   rw [tokenizeChars_toLexemes]
   exact tokenizeLexemeChars_renderLexemes expr.lexemes
     (exprLexemesTokenizable expr hSafe)
