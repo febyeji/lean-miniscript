@@ -41,6 +41,7 @@ import LeanMiniscript.Script.SignatureVersionExamples
 import LeanMiniscript.Script.SerializationExamples
 import LeanMiniscript.Script.ValidationWeightExamples
 import LeanMiniscript.Script.TapscriptAcceptanceExamples
+import LeanMiniscript.Script.TapscriptWitnessPolicyExamples
 import LeanMiniscript.Script.RuntimeLimitsExamples
 import LeanMiniscript.Script.TimelockExamples
 

@@ -10,6 +10,7 @@ import LeanMiniscript.Script.State
 import LeanMiniscript.Script.SignatureEncoding
 import LeanMiniscript.Script.SignatureChecks
 import LeanMiniscript.Script.Serialization
+import LeanMiniscript.Script.TapscriptWitnessPolicy
 import LeanMiniscript.Miniscript.KeyExpr
 import LeanMiniscript.Miniscript.Syntax
 import LeanMiniscript.Miniscript.Context
