@@ -26,6 +26,7 @@ import LeanMiniscript.Script.BigStepFailureExamples
 import LeanMiniscript.Script.CheckMultiSigExamples
 import LeanMiniscript.Script.ConditionalExamples
 import LeanMiniscript.Script.EvaluatorExamples
+import LeanMiniscript.Script.ExecutionResourcesExamples
 import LeanMiniscript.Script.NullFailExamples
 import LeanMiniscript.Script.ScriptNumExamples
 import LeanMiniscript.Script.ScriptNumProofExamples
