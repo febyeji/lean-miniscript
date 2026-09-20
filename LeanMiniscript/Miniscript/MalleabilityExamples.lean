@@ -12,6 +12,9 @@ private def compressedKey : PubKey :=
 private def xOnlyKey : PubKey :=
   PubKey.ofBytes ⟨(List.replicate 32 0x22).toArray⟩
 
+private def secondXOnlyKey : PubKey :=
+  PubKey.ofBytes ⟨(List.replicate 32 0x23).toArray⟩
+
 private def hash256Fixture : Hash256 :=
   Hash256.ofBytes ⟨(List.replicate 32 0x33).toArray⟩
 
@@ -148,6 +151,49 @@ example : inferMalleability .tapscript (.multi 1 [xOnlyKey]) = none := by
   native_decide
 
 example : inferMalleability .p2wsh (.multi_a 1 [compressedKey]) = none := by
+  native_decide
+
+/-- BIP 379 malleability analysis assumes that no public key is repeated,
+    including repetitions across separate branches. -/
+private def repeatedBranchKey : CoreFragment :=
+  .or_i (.c (.pk_k xOnlyKey)) (.c (.pk_k xOnlyKey))
+
+example : repeatedBranchKey.WellFormed .tapscript := by
+  native_decide
+
+example : (inferType .tapscript repeatedBranchKey).isSome = true := by
+  native_decide
+
+example : ¬ repeatedBranchKey.NoDuplicateKeys := by
+  native_decide
+
+example : inferMalleability .tapscript repeatedBranchKey = none := by
+  native_decide
+
+example : inferMalleability .tapscript
+    (.multi_a 1 [xOnlyKey, xOnlyKey]) = none := by
+  native_decide
+
+example : inferMalleability .p2wsh
+    (.multi 1 [compressedKey, compressedKey]) = none := by
+  native_decide
+
+example : inferMalleability .p2wsh
+    (.or_i (.c (.pk_k compressedKey)) (.c (.pk_h compressedKey))) = none := by
+  native_decide
+
+example : inferMalleability .p2wsh
+    (.and_v (.v (.multi 1 [compressedKey]))
+      (.c (.pk_k compressedKey))) = none := by
+  native_decide
+
+example : inferMalleability .p2wsh
+    (.thresh 1 [(.c (.pk_k compressedKey)),
+      (.s (.c (.pk_k compressedKey)))]) = none := by
+  native_decide
+
+example : (inferMalleability .tapscript
+    (.multi_a 1 [xOnlyKey, secondXOnlyKey])).isSome = true := by
   native_decide
 
 private def nonExpressiveOr : CoreFragment :=

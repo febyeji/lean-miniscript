@@ -92,9 +92,10 @@ end
 /-- Relational malleability typing is complete for executable inference. -/
 theorem inferMalleability_complete {ctx : ScriptContext}
     {fragment : CoreFragment} {mods : MalleabilityModifiers}
+    (unique : fragment.NoDuplicateKeys)
     (typed : HasMalleability ctx fragment mods) :
     inferMalleability ctx fragment = some mods := by
-  simp [inferMalleability, inferMalleabilityTyped_complete typed]
+  simp [inferMalleability, unique, inferMalleabilityTyped_complete typed]
 
 /-- Malleability typing is deterministic in a fixed script context. -/
 theorem HasMalleability.unique {ctx : ScriptContext} {fragment : CoreFragment}
@@ -102,19 +103,23 @@ theorem HasMalleability.unique {ctx : ScriptContext} {fragment : CoreFragment}
     (leftTyped : HasMalleability ctx fragment left)
     (rightTyped : HasMalleability ctx fragment right) :
     left = right := by
-  have leftInferred := inferMalleability_complete leftTyped
-  have rightInferred := inferMalleability_complete rightTyped
+  have leftInferred := inferMalleabilityTyped_complete leftTyped
+  have rightInferred := inferMalleabilityTyped_complete rightTyped
   rw [leftInferred] at rightInferred
-  exact Option.some.inj rightInferred
+  exact congrArg Subtype.val (Option.some.inj rightInferred)
 
-/-- Inference returns exactly the modifier sets admitted by the judgment. -/
+/-- Public inference returns exactly the locally admitted modifier sets whose
+    fragments also satisfy the global no-duplicate-keys assumption. -/
 theorem hasMalleability_iff_inferMalleability_eq {ctx : ScriptContext}
     {fragment : CoreFragment} {mods : MalleabilityModifiers} :
-    HasMalleability ctx fragment mods ↔
+    HasMalleability ctx fragment mods ∧ fragment.NoDuplicateKeys ↔
       inferMalleability ctx fragment = some mods := by
   constructor
-  · exact inferMalleability_complete
-  · exact inferMalleability_sound
+  · rintro ⟨typed, unique⟩
+    exact inferMalleability_complete unique typed
+  · intro inferred
+    exact ⟨inferMalleability_sound inferred,
+      inferMalleability_noDuplicateKeys inferred⟩
 
 /-- A fragment is analyzable exactly when executable inference succeeds. -/
 theorem malleabilityAnalyzable_iff_inferMalleability_isSome
@@ -122,11 +127,12 @@ theorem malleabilityAnalyzable_iff_inferMalleability_isSome
     malleabilityAnalyzable ctx fragment ↔
       (inferMalleability ctx fragment).isSome = true := by
   constructor
-  · rintro ⟨mods, typed⟩
-    simp [inferMalleability_complete typed]
+  · rintro ⟨unique, mods, typed⟩
+    simp [inferMalleability_complete unique typed]
   · intro inferred
     cases modsEq : inferMalleability ctx fragment with
     | none => simp [modsEq] at inferred
-    | some mods => exact ⟨mods, inferMalleability_sound modsEq⟩
+    | some mods => exact ⟨inferMalleability_noDuplicateKeys modsEq,
+        mods, inferMalleability_sound modsEq⟩
 
 end LeanMiniscript.Miniscript

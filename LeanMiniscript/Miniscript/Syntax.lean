@@ -7,7 +7,7 @@ namespace LeanMiniscript.Miniscript
     and arbitrary stack elements from being used as keys accidentally. -/
 structure PubKey where
   bytes : ByteArray
-  deriving Repr
+  deriving Repr, DecidableEq, BEq
 
 /-- A SHA256/HASH256 digest boundary. Length validity remains an explicit
     `WellFormed` obligation. -/

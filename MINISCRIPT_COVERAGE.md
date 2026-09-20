@@ -333,9 +333,10 @@ obligations at the checked boundary.
 
 `HasMalleability` likewise covers all rows. `inferMalleability` has soundness,
 completeness, uniqueness, and success/reflection theorems, with build-checked
-constructor fixtures; `nonMalleable` records the separate recursive guarantee.
-This is static analysis coverage, not a semantic non-malleability theorem
-against an attacker model.
+constructor fixtures. The public inference checks the BIP 379 global
+no-duplicate-keys assumption before exposing the recursively computed
+`nonMalleable` guarantee. This is static analysis coverage, not a semantic
+non-malleability theorem against an attacker model.
 
 Evaluation coverage remains partial. `Eval` has explicit terminal main-stack
 underflow results for all 23 positive fixed-arity opcodes and alternate-stack

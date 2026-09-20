@@ -5,7 +5,9 @@ namespace LeanMiniscript.Miniscript
 /-! ## Executable BIP 379 malleability inference -/
 
 mutual
-  /-- Infer malleability modifiers and retain the relational derivation. -/
+  /-- Infer the local malleability rules and retain their derivation. This
+      recursive worker does not check global key uniqueness; callers should use
+      `inferMalleability` for the public checked analysis. -/
   def inferMalleabilityTyped (ctx : ScriptContext) (fragment : CoreFragment) :
       Option {mods : MalleabilityModifiers // HasMalleability ctx fragment mods} :=
     match fragment with
@@ -112,11 +114,15 @@ mutual
 end
 
 /-- Executable malleability inference with derivations erased. A successful
-    analysis may return `nonMalleable := false`; `none` is reserved for a
-    context-restricted constructor unavailable in `ctx`. -/
+    analysis may return `nonMalleable := false`. Repeated public keys violate
+    the BIP 379 analysis assumption and return `none`, as do constructors that
+    are unavailable in `ctx`. -/
 def inferMalleability (ctx : ScriptContext) (fragment : CoreFragment) :
     Option MalleabilityModifiers :=
-  (inferMalleabilityTyped ctx fragment).map Subtype.val
+  if _ : fragment.NoDuplicateKeys then
+    (inferMalleabilityTyped ctx fragment).map Subtype.val
+  else
+    none
 
 /-- Every modifier set returned by inference has a relational derivation. -/
 theorem inferMalleability_sound {ctx : ScriptContext} {fragment : CoreFragment}
@@ -124,12 +130,26 @@ theorem inferMalleability_sound {ctx : ScriptContext} {fragment : CoreFragment}
     (inferred : inferMalleability ctx fragment = some mods) :
     HasMalleability ctx fragment mods := by
   unfold inferMalleability at inferred
-  cases typedEq : inferMalleabilityTyped ctx fragment with
-  | none => simp [typedEq] at inferred
-  | some typed =>
-      have valueEq : typed.val = mods := by
-        simpa [typedEq] using inferred
-      subst mods
-      exact typed.property
+  split at inferred
+  next _ =>
+    cases typedEq : inferMalleabilityTyped ctx fragment with
+    | none => simp [typedEq] at inferred
+    | some typed =>
+        have valueEq : typed.val = mods := by
+          simpa [typedEq] using inferred
+        subst mods
+        exact typed.property
+  next _ => simp at inferred
+
+/-- Successful public malleability inference establishes the BIP 379
+    no-duplicate-keys assumption. -/
+theorem inferMalleability_noDuplicateKeys {ctx : ScriptContext}
+    {fragment : CoreFragment} {mods : MalleabilityModifiers}
+    (inferred : inferMalleability ctx fragment = some mods) :
+    fragment.NoDuplicateKeys := by
+  unfold inferMalleability at inferred
+  split at inferred
+  next unique => exact unique
+  next _ => simp at inferred
 
 end LeanMiniscript.Miniscript
