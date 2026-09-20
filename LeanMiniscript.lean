@@ -25,6 +25,7 @@ import LeanMiniscript.Miniscript.Malleability
 import LeanMiniscript.Miniscript.MalleabilityInference
 import LeanMiniscript.Miniscript.Compile
 import LeanMiniscript.Miniscript.Checked
+import LeanMiniscript.Miniscript.SatisfactionAvailability
 import LeanMiniscript.Miniscript.Sane
 import LeanMiniscript.Miniscript.CompileConcrete
 import LeanMiniscript.Miniscript.CompileConcreteChecked

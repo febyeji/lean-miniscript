@@ -1384,9 +1384,9 @@ example : (satisfactionCandidates twoOfThreeMulti multiCostEnv).sat =
     .usable [falseElement, multiSigB, multiSigC] true := by
   rfl
 
-/-- Fewer than `k` available signatures makes satisfaction impossible. The
-    canonical dissatisfaction always supplies `k` empty signatures and the
-    historical dummy. -/
+/-- Fewer than `k` signatures in this environment yields no satisfaction
+    candidate. The canonical dissatisfaction always supplies `k` empty
+    signatures and the historical dummy. -/
 example :
     (satisfactionCandidates twoOfThreeMulti multiAOnlyEnv).sat = .impossible ∧
       (satisfactionCandidates twoOfThreeMulti multiAOnlyEnv).dsat =
