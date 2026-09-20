@@ -246,11 +246,11 @@ theorem Eval.replaceSuccessfulSuffix
 
 @[simp] private theorem castToBool_falseElement :
     castToBool falseElement = false := by
-  native_decide
+  rfl
 
 @[simp] private theorem castToBool_trueElement :
     castToBool trueElement = true := by
-  native_decide
+  rfl
 
 @[simp] private theorem castToBool_boolToElement (value : Bool) :
     castToBool (boolToElement value) = value := by
