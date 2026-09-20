@@ -1,5 +1,6 @@
 import LeanMiniscript
 import LeanMiniscript.Script.RuntimeErasure
+import LeanMiniscript.Script.ExecutionResources
 import LeanMiniscript.Script.ScriptNumProofs
 import LeanMiniscript.Miniscript.TypeInferenceProofs
 import LeanMiniscript.Miniscript.MalleabilityInferenceProofs
@@ -19,6 +20,7 @@ import LeanMiniscript.Properties.ResourceBoundsProofs
 
 This umbrella exports conformance, structural, inference, surface
 normalization, generated-satisfaction contracts, Core/Surface satisfaction and
-dissatisfaction correctness, stack-growth, and runtime prefix-bound guarantees
-without adding their proof graph to the stable executable facade.
+dissatisfaction correctness, stack-growth, active-path Script resource
+observations, and runtime prefix-bound guarantees without adding their proof
+graph to the stable executable facade.
 -/
