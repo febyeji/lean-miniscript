@@ -1,5 +1,6 @@
 import LeanMiniscript.Miniscript.Compile
 import LeanMiniscript.Script.BigStep
+import LeanMiniscript.Script.Evaluator
 
 namespace LeanMiniscript.Script
 
@@ -229,5 +230,52 @@ example : ¬ ∃ main alt,
   have impossible := Eval.checkMultiSigOperandFailure_result
     (decoded := by rfl) evaluated
   cases impossible
+
+/-! `CHECKMULTISIGVERIFY` preserves the legacy frame and error ordering while
+consuming the successful Boolean result. -/
+
+private def acceptingCheckMultiSigOracle : CryptoOracle :=
+  CryptoOracle.pureLeanHashes (fun _ _ _ => true)
+
+private def rejectingCheckMultiSigOracle : CryptoOracle :=
+  CryptoOracle.pureLeanHashes (fun _ _ _ => false)
+
+private def checkMultiSigErrorIs (expected : ScriptError) : ExecResult → Bool
+  | .failure actual => actual == expected
+  | _ => false
+
+private def checkMultiSigSingleSuccess (expected : StackElement) :
+    ExecResult → Bool
+  | .success [actual] [] => stackElementEq actual expected
+  | _ => false
+
+example : checkMultiSigSingleSuccess trueElement
+    (evaluate acceptingCheckMultiSigOracle
+      [.op .OP_CHECKMULTISIGVERIFY, .pushNum 1]
+      [scriptNum 0, scriptNum 0, falseElement] [] checkMultiSigFlags
+      checkMultiSigTx) = true := by
+  native_decide
+
+example : checkMultiSigErrorIs .checkMultiSigVerify
+    (evaluate rejectingCheckMultiSigOracle [.op .OP_CHECKMULTISIGVERIFY]
+      oneOfTwoStack [] nullFailDisabledCheckMultiSigFlags checkMultiSigTx) = true := by
+  native_decide
+
+example : checkMultiSigErrorIs .sigNullFail
+    (evaluate rejectingCheckMultiSigOracle [.op .OP_CHECKMULTISIGVERIFY]
+      oneOfTwoStack [] checkMultiSigFlags checkMultiSigTx) = true := by
+  native_decide
+
+example : checkMultiSigErrorIs .nullDummy
+    (evaluate rejectingCheckMultiSigOracle [.op .OP_CHECKMULTISIGVERIFY]
+      [scriptNum 1, keyA, scriptNum 1, signature, trueElement] []
+      nullFailDisabledCheckMultiSigFlags checkMultiSigTx) = true := by
+  native_decide
+
+example : checkMultiSigErrorIs .tapscriptCheckMultiSig
+    (evaluate acceptingCheckMultiSigOracle [.op .OP_CHECKMULTISIGVERIFY]
+      [] [] checkMultiSigFlags
+      { checkMultiSigTx with sigVersion := .tapscript }) = true := by
+  native_decide
 
 end LeanMiniscript.Script

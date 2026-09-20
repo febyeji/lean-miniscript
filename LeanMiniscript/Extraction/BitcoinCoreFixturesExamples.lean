@@ -27,10 +27,12 @@ private def coreOpcodeNameFixtures : List (String × Opcode) :=
    ("BOOLAND", .OP_BOOLAND), ("BOOLOR", .OP_BOOLOR),
    ("0NOTEQUAL", .OP_0NOTEQUAL), ("EQUAL", .OP_EQUAL),
    ("EQUALVERIFY", .OP_EQUALVERIFY), ("NUMEQUAL", .OP_NUMEQUAL),
+   ("NUMEQUALVERIFY", .OP_NUMEQUALVERIFY),
    ("SHA256", .OP_SHA256), ("HASH256", .OP_HASH256),
    ("RIPEMD160", .OP_RIPEMD160), ("HASH160", .OP_HASH160),
-   ("CHECKSIG", .OP_CHECKSIG), ("CHECKSIGADD", .OP_CHECKSIGADD),
-   ("CHECKMULTISIG", .OP_CHECKMULTISIG),
+   ("CHECKSIG", .OP_CHECKSIG), ("CHECKSIGVERIFY", .OP_CHECKSIGVERIFY),
+   ("CHECKSIGADD", .OP_CHECKSIGADD), ("CHECKMULTISIG", .OP_CHECKMULTISIG),
+   ("CHECKMULTISIGVERIFY", .OP_CHECKMULTISIGVERIFY),
    ("CHECKSEQUENCEVERIFY", .OP_CHECKSEQUENCEVERIFY),
    ("CHECKLOCKTIMEVERIFY", .OP_CHECKLOCKTIMEVERIFY),
    ("VERIFY", .OP_VERIFY), ("SIZE", .OP_SIZE)]
@@ -84,6 +86,9 @@ private def coreErrorTagFixtures : List (ScriptError × String) :=
   (.badOpcode, "BAD_OPCODE"),
   (.tapscriptCheckMultiSig, "TAPSCRIPT_CHECKMULTISIG"),
    (.equalVerify, "EQUALVERIFY"),
+   (.numEqualVerify, "NUMEQUALVERIFY"),
+   (.checkSigVerify, "CHECKSIGVERIFY"),
+   (.checkMultiSigVerify, "CHECKMULTISIGVERIFY"),
    (.verify, "VERIFY"),
    (.checkSequenceVerify, "UNSATISFIED_LOCKTIME"),
    (.checkLockTimeVerify, "UNSATISFIED_LOCKTIME"),
@@ -232,7 +237,7 @@ private def rejectsDrop : Bool :=
   | .error (.unsupportedToken "DROP") => true
   | _ => false
 
-/-- An opcode outside the modeled 28-opcode subset is reported by token. -/
+/-- An opcode outside the modeled subset is reported by token. -/
 example : rejectsDrop = true := by
   native_decide
 

@@ -16,8 +16,9 @@ structure OpcodeArityFixture where
   opcode : Opcode
   expected : Option Nat
 
-/-- Exact fixed main-stack arity for every modeled opcode. `CHECKMULTISIG`
-    remains separate because its input count is encoded in the stack. -/
+/-- Exact fixed main-stack arity for every modeled opcode. The two
+    `CHECKMULTISIG` variants remain separate because their input count is
+    encoded in the stack. -/
 def opcodeArityFixtures : List OpcodeArityFixture := [
   ⟨.OP_NOP, some 0⟩,
   ⟨.OP_IF, some 1⟩,
@@ -36,13 +37,16 @@ def opcodeArityFixtures : List OpcodeArityFixture := [
   ⟨.OP_EQUAL, some 2⟩,
   ⟨.OP_EQUALVERIFY, some 2⟩,
   ⟨.OP_NUMEQUAL, some 2⟩,
+  ⟨.OP_NUMEQUALVERIFY, some 2⟩,
   ⟨.OP_SHA256, some 1⟩,
   ⟨.OP_HASH256, some 1⟩,
   ⟨.OP_RIPEMD160, some 1⟩,
   ⟨.OP_HASH160, some 1⟩,
   ⟨.OP_CHECKSIG, some 2⟩,
+  ⟨.OP_CHECKSIGVERIFY, some 2⟩,
   ⟨.OP_CHECKSIGADD, some 3⟩,
   ⟨.OP_CHECKMULTISIG, none⟩,
+  ⟨.OP_CHECKMULTISIGVERIFY, none⟩,
   ⟨.OP_CHECKSEQUENCEVERIFY, some 1⟩,
   ⟨.OP_CHECKLOCKTIMEVERIFY, some 1⟩,
   ⟨.OP_VERIFY, some 1⟩,

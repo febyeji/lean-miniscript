@@ -45,7 +45,8 @@ def prepareValidationWeight (element : ScriptElement) (stack : Stack)
     Except ScriptError Nat :=
   if ctx.sigVersion ≠ .tapscript then .ok remaining
   else match element, stack with
-    | .op .OP_CHECKSIG, _ :: signature :: _ =>
+    | .op .OP_CHECKSIG, _ :: signature :: _
+    | .op .OP_CHECKSIGVERIFY, _ :: signature :: _ =>
         debitValidationWeight signature remaining
     | .op .OP_CHECKSIGADD, _ :: count :: signature :: _ => do
         let _ ← decodeCheckSigAddCount flags ctx count

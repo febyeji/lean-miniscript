@@ -3,12 +3,14 @@ import LeanMiniscript.Script.Syntax
 namespace LeanMiniscript.Script
 
 /-- Conservative increase in combined main/alt-stack size attributable to one
-    successfully executed source element. `CHECKMULTISIG` is deliberately
-    charged one item here; proving that its decoded frame always shrinks the
-    stack is independent of the useful fragment-level bound. -/
+    successfully executed source element. The `CHECKMULTISIG` variants are
+    deliberately charged one item here; proving that their decoded frame
+    always shrinks the stack is independent of the useful fragment-level
+    bound. -/
 def ScriptElement.stackGrowthAllowance : ScriptElement → Nat
   | .pushData _ | .pushNum _ => 1
-  | .op .OP_IFDUP | .op .OP_DUP | .op .OP_SIZE | .op .OP_CHECKMULTISIG => 1
+  | .op .OP_IFDUP | .op .OP_DUP | .op .OP_SIZE |
+      .op .OP_CHECKMULTISIG | .op .OP_CHECKMULTISIGVERIFY => 1
   | .op _ => 0
 
 /-- Sum of per-element combined-stack growth allowances. This is a static

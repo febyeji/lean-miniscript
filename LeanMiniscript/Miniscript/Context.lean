@@ -67,11 +67,11 @@ def ScriptContext.permitsCheckSigAddMulti : ScriptContext → Prop
 /-- Whether an opcode belongs to the generated Script subset for a context.
 
     The compiler's modeled opcode universe is shared between P2WSH and
-    Tapscript except for the two multisig encodings: legacy
-    `OP_CHECKMULTISIG` is P2WSH-only, while `OP_CHECKSIGADD` is
+    Tapscript except for the multisig encodings: legacy `OP_CHECKMULTISIG` and
+    `OP_CHECKMULTISIGVERIFY` are P2WSH-only, while `OP_CHECKSIGADD` is
     Tapscript-only. -/
 def OpcodeAllowed : ScriptContext → Opcode → Prop
-  | .tapscript, .OP_CHECKMULTISIG => False
+  | .tapscript, .OP_CHECKMULTISIG | .tapscript, .OP_CHECKMULTISIGVERIFY => False
   | .p2wsh, .OP_CHECKSIGADD => False
   | _, _ => True
 

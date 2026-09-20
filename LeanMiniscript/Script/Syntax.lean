@@ -28,6 +28,7 @@ inductive Opcode where
   | OP_EQUAL
   | OP_EQUALVERIFY
   | OP_NUMEQUAL
+  | OP_NUMEQUALVERIFY
   -- Cryptographic hash
   | OP_SHA256
   | OP_HASH256
@@ -35,8 +36,10 @@ inductive Opcode where
   | OP_HASH160
   -- Signature verification
   | OP_CHECKSIG
+  | OP_CHECKSIGVERIFY
   | OP_CHECKSIGADD    -- Tapscript (BIP 342)
   | OP_CHECKMULTISIG  -- Legacy only
+  | OP_CHECKMULTISIGVERIFY -- Legacy only
   -- Timelock
   | OP_CHECKSEQUENCEVERIFY
   | OP_CHECKLOCKTIMEVERIFY

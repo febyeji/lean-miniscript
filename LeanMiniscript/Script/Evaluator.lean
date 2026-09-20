@@ -215,6 +215,17 @@ def evaluate (oracle : CryptoOracle) (script : Script)
               evaluate oracle rest (boolToElement (a == b) :: stackRest)
                 altStack flags ctx
       | _ => .failure .stackUnderflow
+  | .op .OP_NUMEQUALVERIFY :: rest =>
+      match stack with
+      | top :: belowTop :: stackRest =>
+          match decodeBinaryScriptNums flags top belowTop with
+          | .error error => .failure error
+          | .ok (a, b) =>
+              if a = b then
+                evaluate oracle rest stackRest altStack flags ctx
+              else
+                .failure .numEqualVerify
+      | _ => .failure .stackUnderflow
   | .op .OP_SHA256 :: rest =>
       match stack with
       | [] => .failure .stackUnderflow
@@ -243,6 +254,14 @@ def evaluate (oracle : CryptoOracle) (script : Script)
           | .ok checked =>
               evaluate oracle rest (boolToElement checked :: stackRest) altStack flags ctx
       | _ => .failure .stackUnderflow
+  | .op .OP_CHECKSIGVERIFY :: rest =>
+      match stack with
+      | pubkey :: sig :: stackRest =>
+          match checkSigWithEncoding oracle.checkSig oracle.checkSchnorrSig flags ctx sig pubkey with
+          | .error error => .failure error
+          | .ok true => evaluate oracle rest stackRest altStack flags ctx
+          | .ok false => .failure .checkSigVerify
+      | _ => .failure .stackUnderflow
   | .op .OP_CHECKSIGADD :: rest =>
       if ctx.sigVersion ≠ .tapscript then .failure .badOpcode
       else match stack with
@@ -270,6 +289,24 @@ def evaluate (oracle : CryptoOracle) (script : Script)
                 | .ok () =>
                     evaluate oracle rest (boolToElement checked :: operands.rest)
                       altStack flags ctx
+              else
+                .failure .sigNullFail
+  | .op .OP_CHECKMULTISIGVERIFY :: rest =>
+      match decodeCheckMultiSigOperandsFor flags ctx stack with
+      | .error error => .failure error
+      | .ok operands =>
+          match checkMultiSigFor oracle.checkSig flags ctx
+              operands.signatures operands.pubkeys with
+          | .error error => .failure error
+          | .ok checked =>
+              if _allowed : checked = true ∨ nullFailSatisfied flags operands.signatures then
+                match checkMultiSigDummy flags operands.dummy with
+                | .error error => .failure error
+                | .ok () =>
+                    if checked then
+                      evaluate oracle rest operands.rest altStack flags ctx
+                    else
+                      .failure .checkMultiSigVerify
               else
                 .failure .sigNullFail
   | .op .OP_CHECKSEQUENCEVERIFY :: rest =>

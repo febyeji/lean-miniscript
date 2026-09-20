@@ -15,9 +15,11 @@ def opcodeSerializationFixtures : List (Opcode × UInt8) :=
    (.OP_TOALTSTACK, 0x6b), (.OP_FROMALTSTACK, 0x6c),
    (.OP_ADD, 0x93), (.OP_BOOLAND, 0x9a), (.OP_BOOLOR, 0x9b),
    (.OP_0NOTEQUAL, 0x92), (.OP_EQUAL, 0x87), (.OP_EQUALVERIFY, 0x88),
-   (.OP_NUMEQUAL, 0x9c), (.OP_SHA256, 0xa8), (.OP_HASH256, 0xaa),
+   (.OP_NUMEQUAL, 0x9c), (.OP_NUMEQUALVERIFY, 0x9d),
+   (.OP_SHA256, 0xa8), (.OP_HASH256, 0xaa),
    (.OP_RIPEMD160, 0xa6), (.OP_HASH160, 0xa9), (.OP_CHECKSIG, 0xac),
-   (.OP_CHECKSIGADD, 0xba), (.OP_CHECKMULTISIG, 0xae),
+   (.OP_CHECKSIGVERIFY, 0xad), (.OP_CHECKSIGADD, 0xba),
+   (.OP_CHECKMULTISIG, 0xae), (.OP_CHECKMULTISIGVERIFY, 0xaf),
    (.OP_CHECKSEQUENCEVERIFY, 0xb2), (.OP_CHECKLOCKTIMEVERIFY, 0xb1),
    (.OP_VERIFY, 0x69), (.OP_SIZE, 0x82)]
 
