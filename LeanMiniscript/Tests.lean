@@ -8,25 +8,16 @@ import LeanMiniscript.Extraction.BitcoinCoreAuditExamples
 import LeanMiniscript.Extraction.BitcoinCoreFixturesExamples
 import LeanMiniscript.Extraction.SignatureEncodingCoreExamples
 import LeanMiniscript.Miniscript.CompileExamples
-import LeanMiniscript.Miniscript.CompileVerifyResourceExamples
 import LeanMiniscript.Miniscript.ContextSafetyExamples
 import LeanMiniscript.Miniscript.MalleabilityExamples
 import LeanMiniscript.Miniscript.SaneExamples
-import LeanMiniscript.Miniscript.SatisfactionCandidateProofExamples
 import LeanMiniscript.Miniscript.SatisfactionAvailabilityExamples
-import LeanMiniscript.Miniscript.SatisfactionGeneratedExamples
-import LeanMiniscript.Miniscript.SatisfactionGeneratedRecursiveExamples
-import LeanMiniscript.Miniscript.SatisfactionCorrectnessExamples
 import LeanMiniscript.Miniscript.SatisfactionExamples
 import LeanMiniscript.Miniscript.SurfaceTextExamples
 import LeanMiniscript.Miniscript.SurfaceTextRoundTripExamples
 import LeanMiniscript.Miniscript.TimelockMixingExamples
 import LeanMiniscript.Miniscript.TypeInferenceExamples
 import LeanMiniscript.Properties.ResourceBoundsExamples
-import LeanMiniscript.Properties.ResourcePathExamples
-import LeanMiniscript.Properties.ResourceThresholdPathExamples
-import LeanMiniscript.Properties.SaneExecutionResourceExamples
-import LeanMiniscript.Properties.SatisfactionExecutionResourceExamples
 import LeanMiniscript.Script.BigStepFailureExamples
 import LeanMiniscript.Script.CheckMultiSigExamples
 import LeanMiniscript.Script.ConditionalExamples
@@ -34,7 +25,6 @@ import LeanMiniscript.Script.EvaluatorExamples
 import LeanMiniscript.Script.ExecutionResourcesExamples
 import LeanMiniscript.Script.NullFailExamples
 import LeanMiniscript.Script.ScriptNumExamples
-import LeanMiniscript.Script.ScriptNumProofExamples
 import LeanMiniscript.Script.SignatureEncodingExamples
 import LeanMiniscript.Script.SighashExecutionExamples
 import LeanMiniscript.Script.SignatureVersionExamples
@@ -45,4 +35,6 @@ import LeanMiniscript.Script.TapscriptWitnessPolicyExamples
 import LeanMiniscript.Script.RuntimeLimitsExamples
 import LeanMiniscript.Script.TimelockExamples
 
-/-! Build-checked fixtures and regression examples for lean-miniscript. -/
+/-! Build-checked external conformance, executable boundary, and semantic
+regression fixtures. General theorem applications belong in
+`LeanMiniscript.Proofs` and are not duplicated here. -/
