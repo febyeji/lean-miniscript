@@ -3299,7 +3299,7 @@ theorem generatedContract_multiA_of_wellFormed
       simp [CoreFragment.WellFormed,
         ScriptContext.permitsCheckSigAddMulti] at wellFormed
   | tapscript =>
-      rcases wellFormed with ⟨permits, thresholdValid, validKeys⟩
+      rcases wellFormed with ⟨permits, thresholdValid, keyCountValid, validKeys⟩
       have typed : HasType .tapscript (.multi_a threshold keys)
           ⟨.B, { d := true, u := true }⟩ :=
         .multi_a threshold keys thresholdValid.1 thresholdValid.2

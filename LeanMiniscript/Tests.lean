@@ -10,6 +10,7 @@ import LeanMiniscript.Extraction.SignatureEncodingCoreExamples
 import LeanMiniscript.Miniscript.CompileExamples
 import LeanMiniscript.Miniscript.ContextSafetyExamples
 import LeanMiniscript.Miniscript.MalleabilityExamples
+import LeanMiniscript.Miniscript.SaneExamples
 import LeanMiniscript.Miniscript.SatisfactionCandidateProofExamples
 import LeanMiniscript.Miniscript.SatisfactionGeneratedExamples
 import LeanMiniscript.Miniscript.SatisfactionGeneratedRecursiveExamples
@@ -19,6 +20,7 @@ import LeanMiniscript.Miniscript.SurfaceTextExamples
 import LeanMiniscript.Miniscript.SurfaceTextRoundTripExamples
 import LeanMiniscript.Miniscript.TimelockMixingExamples
 import LeanMiniscript.Miniscript.TypeInferenceExamples
+import LeanMiniscript.Properties.ResourceBoundsExamples
 import LeanMiniscript.Script.BigStepFailureExamples
 import LeanMiniscript.Script.CheckMultiSigExamples
 import LeanMiniscript.Script.ConditionalExamples

@@ -29,6 +29,14 @@ def validThreshold (k n : Nat) : Prop :=
 def validLegacyMultiKeyCount (n : Nat) : Prop :=
   n ≤ 20
 
+/-- BIP 379 and Bitcoin Core admit at most 999 public keys in a Tapscript
+    `multi_a` fragment. -/
+def MAX_PUBKEYS_PER_MULTI_A : Nat := 999
+
+/-- Tapscript `multi_a` public-key count bound. -/
+def validCheckSigAddMultiKeyCount (n : Nat) : Prop :=
+  n ≤ MAX_PUBKEYS_PER_MULTI_A
+
 /-- AST-level timelock argument check used by `older` and `after`. -/
 def validTimelockArg (n : Nat) : Prop :=
   1 ≤ n ∧ n < MAX_BIP_LOCK_VALUE
@@ -202,6 +210,7 @@ mutual
     | .multi_a k keys =>
         ctx.permitsCheckSigAddMulti ∧
         validThreshold k keys.length ∧
+        validCheckSigAddMultiKeyCount keys.length ∧
         allKeysValid ctx keys
 end
 

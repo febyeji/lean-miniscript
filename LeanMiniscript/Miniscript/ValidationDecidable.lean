@@ -93,7 +93,8 @@ mutual
         letI := allKeysValidDecidable ctx keys
         simp only [WellFormed, ScriptContext.permitsLegacyMulti,
           ScriptContext.permitsCheckSigAddMulti, validThreshold,
-          validLegacyMultiKeyCount]
+          validLegacyMultiKeyCount, validCheckSigAddMultiKeyCount,
+          MAX_PUBKEYS_PER_MULTI_A]
         cases ctx <;> infer_instance
 end
 
