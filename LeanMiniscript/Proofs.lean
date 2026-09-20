@@ -14,6 +14,7 @@ import LeanMiniscript.Miniscript.SatisfactionGeneratedRecursiveProofs
 import LeanMiniscript.Miniscript.SatisfactionCorrectnessProofs
 import LeanMiniscript.Miniscript.SurfaceTextProofs
 import LeanMiniscript.Properties.ResourceBoundsProofs
+import LeanMiniscript.Properties.ResourcePathProofs
 
 /-!
 # Proof-oriented lean-miniscript modules

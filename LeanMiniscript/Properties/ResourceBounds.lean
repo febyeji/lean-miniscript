@@ -112,10 +112,10 @@ end
 
 P2WSH charges every non-push opcode statically, then charges the public-key
 count of each executed CHECKMULTISIG. Stack limits depend on complete
-satisfaction paths as well. The summaries below mirror Bitcoin Core's `Ops`
-and `SatInfo` analyses: `none` denotes that no canonical non-malleable path of
-the requested kind exists, sequential composition treats it as absorbing, and
-branch choice takes the larger available bound.
+satisfaction paths as well. The summaries below cover every usable generated
+candidate path, including executable non-canonical rows retained by candidate
+selection. `none` represents an empty summarized path set, sequential
+composition treats it as absorbing, and branch choice takes the larger bound.
 -/
 
 /-- Maximum of a set of path costs; `none` represents an empty path set. -/
@@ -136,8 +136,9 @@ def choice : PathMaximum → PathMaximum → PathMaximum
 
 end PathMaximum
 
-/-- Dynamic CHECKMULTISIG key counts for satisfaction and dissatisfaction
-    paths. CHECKSIG and CHECKSIGADD remain part of the static opcode count. -/
+/-- Dynamic CHECKMULTISIG key counts for usable generated satisfaction and
+    dissatisfaction paths. CHECKSIG and CHECKSIGADD remain part of the static
+    opcode count. -/
 structure OpPathBounds where
   sat : PathMaximum
   dsat : PathMaximum
@@ -169,8 +170,8 @@ private def opThresholdFold :
       opThresholdFold (opThresholdStep states child) children
 
 mutual
-  /-- Maximum executed CHECKMULTISIG key counts along canonical
-      non-malleable satisfaction and dissatisfaction paths. -/
+  /-- Maximum executed CHECKMULTISIG key counts along usable generated
+      satisfaction and dissatisfaction paths. -/
   def opPathBounds : CoreFragment → OpPathBounds
     | .zero => ⟨none, some 0⟩
     | .one => ⟨some 0, none⟩
@@ -180,7 +181,8 @@ mutual
     | .and_v x y =>
         let xBounds := opPathBounds x
         let yBounds := opPathBounds y
-        ⟨PathMaximum.sequential xBounds.sat yBounds.sat, none⟩
+        ⟨PathMaximum.sequential xBounds.sat yBounds.sat,
+          PathMaximum.sequential xBounds.sat yBounds.dsat⟩
     | .and_b x y =>
         let xBounds := opPathBounds x
         let yBounds := opPathBounds y
@@ -216,7 +218,9 @@ mutual
         ⟨PathMaximum.choice
             (PathMaximum.sequential xBounds.sat yBounds.sat)
             (PathMaximum.sequential xBounds.dsat zBounds.sat),
-          PathMaximum.sequential xBounds.dsat zBounds.dsat⟩
+          PathMaximum.choice
+            (PathMaximum.sequential xBounds.dsat zBounds.dsat)
+            (PathMaximum.sequential xBounds.sat yBounds.dsat)⟩
     | .a x | .s x | .c x | .n x => opPathBounds x
     | .d x | .j x => ⟨(opPathBounds x).sat, some 0⟩
     | .v x => ⟨(opPathBounds x).sat, none⟩
@@ -286,7 +290,7 @@ def choice : StackTraceSet → StackTraceSet → StackTraceSet
 
 end StackTraceSet
 
-/-- Stack traces for canonical non-malleable satisfaction and dissatisfaction. -/
+/-- Stack traces for usable generated satisfaction and dissatisfaction paths. -/
 structure StackPathBounds where
   sat : StackTraceSet
   dsat : StackTraceSet
@@ -322,8 +326,219 @@ private def stackThresholdFold :
       stackThresholdFold false
         (stackThresholdStep states (appendThresholdAdd first child)) children
 
+/-- One concrete source-order threshold path through the stack-summary table.
+    The integer accumulates the selected summaries' net stack differences;
+    every child after the first is followed by `OP_ADD`. -/
+inductive ThresholdStackPath : List StackPathBounds → Nat → Int → Prop where
+  | nil : ThresholdStackPath [] 0 0
+  | sat {bounds : List StackPathBounds} {count : Nat} {netDiff : Int}
+      {child : StackPathBounds} {childTrace : StackTraceBound}
+      (prior : ThresholdStackPath bounds count netDiff)
+      (selected : child.sat = some childTrace) :
+      ThresholdStackPath (bounds ++ [child]) (count + 1)
+        (netDiff + childTrace.netDiff + if bounds = [] then 0 else 1)
+  | dsat {bounds : List StackPathBounds} {count : Nat} {netDiff : Int}
+      {child : StackPathBounds} {childTrace : StackTraceBound}
+      (prior : ThresholdStackPath bounds count netDiff)
+      (selected : child.dsat = some childTrace) :
+      ThresholdStackPath (bounds ++ [child]) count
+        (netDiff + childTrace.netDiff + if bounds = [] then 0 else 1)
+
+private theorem ThresholdStackPath.nil_inv {count : Nat} {netDiff : Int}
+    (path : ThresholdStackPath [] count netDiff) : count = 0 ∧ netDiff = 0 := by
+  generalize boundsEq : ([] : List StackPathBounds) = bounds at path
+  cases path with
+  | nil => exact ⟨rfl, rfl⟩
+  | sat prior selected => simp at boundsEq
+  | dsat prior selected => simp at boundsEq
+
+private theorem stackThresholdFold_append (first : Bool)
+    (states : List StackTraceSet) (bounds : List StackPathBounds)
+    (child : StackPathBounds) :
+    stackThresholdFold first states (bounds ++ [child]) =
+      stackThresholdStep (stackThresholdFold first states bounds)
+        (appendThresholdAdd (first && bounds.isEmpty) child) := by
+  induction bounds generalizing first states with
+  | nil => simp [stackThresholdFold]
+  | cons bound bounds ih =>
+      simp only [List.cons_append, stackThresholdFold, List.isEmpty_cons,
+        Bool.and_false, appendThresholdAdd]
+      exact ih false (stackThresholdStep states
+        (if first then bound else
+          { sat := StackTraceSet.sequential bound.sat
+              (some StackTraceBound.binary)
+            dsat := StackTraceSet.sequential bound.dsat
+              (some StackTraceBound.binary) }))
+
+private theorem stackThresholdStep_getD_zero
+    (states : List StackTraceSet) (child : StackPathBounds) :
+    (stackThresholdStep states child).getD 0 none =
+      StackTraceSet.sequential (states.getD 0 none) child.dsat := by
+  cases states <;> simp [stackThresholdStep, StackTraceSet.sequential]
+
+private theorem stackThresholdMiddle_getD
+    (child : StackPathBounds) (previous : StackTraceSet)
+    (rest : List StackTraceSet) (count : Nat) :
+    (stackThresholdMiddle child previous rest).getD count none =
+      match count with
+      | 0 =>
+          StackTraceSet.choice
+            (StackTraceSet.sequential (rest.getD 0 none) child.dsat)
+            (StackTraceSet.sequential previous child.sat)
+      | count + 1 =>
+          StackTraceSet.choice
+            (StackTraceSet.sequential (rest.getD (count + 1) none) child.dsat)
+            (StackTraceSet.sequential (rest.getD count none) child.sat) := by
+  induction rest generalizing previous count with
+  | nil =>
+      cases count <;> simp [stackThresholdMiddle, StackTraceSet.sequential,
+        StackTraceSet.choice]
+  | cons current rest ih =>
+      cases count with
+      | zero => simp [stackThresholdMiddle]
+      | succ count =>
+          simp only [stackThresholdMiddle, List.getD_cons_succ]
+          cases count with
+          | zero => simpa using ih current 0
+          | succ count =>
+              simpa [Nat.succ_eq_add_one] using ih current (count + 1)
+
+private theorem stackThresholdStep_getD_succ
+    (states : List StackTraceSet) (child : StackPathBounds) (count : Nat) :
+    (stackThresholdStep states child).getD (count + 1) none =
+      StackTraceSet.choice
+        (StackTraceSet.sequential (states.getD (count + 1) none) child.dsat)
+        (StackTraceSet.sequential (states.getD count none) child.sat) := by
+  cases states with
+  | nil => simp [stackThresholdStep, StackTraceSet.sequential,
+      StackTraceSet.choice]
+  | cons first rest =>
+      simp only [stackThresholdStep, List.getD_cons_succ]
+      rw [stackThresholdMiddle_getD]
+      cases count <;> simp
+
+private def stackNetBound (summary : StackTraceSet) (netDiff : Int) : Prop :=
+  ∃ trace, summary = some trace ∧ netDiff ≤ trace.netDiff
+
+private theorem stackNetBound_sequential
+    {left right : StackTraceSet} {leftNet rightNet : Int}
+    (leftBound : stackNetBound left leftNet)
+    (rightBound : stackNetBound right rightNet) :
+    stackNetBound (StackTraceSet.sequential left right) (leftNet + rightNet) := by
+  obtain ⟨leftTrace, rfl, leftLe⟩ := leftBound
+  obtain ⟨rightTrace, rfl, rightLe⟩ := rightBound
+  exact ⟨leftTrace.sequential rightTrace, rfl, by
+    simp only [StackTraceBound.sequential]
+    omega⟩
+
+private theorem stackNetBound_choiceLeft
+    {left right : StackTraceSet} {netDiff : Int}
+    (bounded : stackNetBound left netDiff) :
+    stackNetBound (StackTraceSet.choice left right) netDiff := by
+  obtain ⟨leftTrace, rfl, bound⟩ := bounded
+  cases right with
+  | none => exact ⟨leftTrace, rfl, bound⟩
+  | some rightTrace =>
+      exact ⟨{
+        netDiff := max leftTrace.netDiff rightTrace.netDiff
+        exec := max leftTrace.exec rightTrace.exec }, rfl,
+        Int.le_trans bound (Int.le_max_left _ _)⟩
+
+private theorem stackNetBound_choiceRight
+    {left right : StackTraceSet} {netDiff : Int}
+    (bounded : stackNetBound right netDiff) :
+    stackNetBound (StackTraceSet.choice left right) netDiff := by
+  obtain ⟨rightTrace, rfl, bound⟩ := bounded
+  cases left with
+  | none => exact ⟨rightTrace, rfl, bound⟩
+  | some leftTrace =>
+      exact ⟨{
+        netDiff := max leftTrace.netDiff rightTrace.netDiff
+        exec := max leftTrace.exec rightTrace.exec }, rfl,
+        Int.le_trans bound (Int.le_max_right _ _)⟩
+
+private theorem stackThresholdFold_bounds_path
+    {bounds : List StackPathBounds} {count : Nat} {netDiff : Int}
+    (path : ThresholdStackPath bounds count netDiff) :
+    stackNetBound
+      ((stackThresholdFold true [some StackTraceBound.empty] bounds).getD
+        count none) netDiff := by
+  induction path with
+  | nil => exact ⟨StackTraceBound.empty, rfl, Int.le_refl 0⟩
+  | @sat bounds count netDiff child childTrace prior selected ih =>
+      rw [stackThresholdFold_append, stackThresholdStep_getD_succ]
+      apply stackNetBound_choiceRight
+      by_cases empty : bounds = []
+      · subst bounds
+        have inv := prior.nil_inv
+        rw [inv.1, inv.2] at ih ⊢
+        simp only [List.isEmpty_nil, Bool.and_true, appendThresholdAdd]
+        simpa using stackNetBound_sequential ih
+          ⟨childTrace, selected, Int.le_refl childTrace.netDiff⟩
+      · have notEmpty : bounds.isEmpty = false := by
+          simpa [List.isEmpty_iff] using empty
+        simp only [notEmpty, Bool.and_false, appendThresholdAdd]
+        rw [selected]
+        have childBound :
+            stackNetBound
+              (StackTraceSet.sequential (some childTrace)
+                (some StackTraceBound.binary)) (childTrace.netDiff + 1) :=
+          stackNetBound_sequential
+            ⟨childTrace, rfl, Int.le_refl childTrace.netDiff⟩
+            ⟨StackTraceBound.binary, rfl, by
+              simp [StackTraceBound.binary]⟩
+        simpa [empty, Int.add_assoc] using
+          stackNetBound_sequential ih childBound
+  | @dsat bounds count netDiff child childTrace prior selected ih =>
+      rw [stackThresholdFold_append]
+      cases count with
+      | zero =>
+        rw [stackThresholdStep_getD_zero]
+        by_cases empty : bounds = []
+        · subst bounds
+          have netZero := (prior.nil_inv).2
+          rw [netZero] at ih ⊢
+          simp only [List.isEmpty_nil, Bool.and_true, appendThresholdAdd]
+          simpa using stackNetBound_sequential ih
+            ⟨childTrace, selected, Int.le_refl childTrace.netDiff⟩
+        · have notEmpty : bounds.isEmpty = false := by
+            simpa [List.isEmpty_iff] using empty
+          simp only [notEmpty, Bool.and_false, appendThresholdAdd]
+          rw [selected]
+          have childBound :
+              stackNetBound
+                (StackTraceSet.sequential (some childTrace)
+                  (some StackTraceBound.binary)) (childTrace.netDiff + 1) :=
+            stackNetBound_sequential
+              ⟨childTrace, rfl, Int.le_refl childTrace.netDiff⟩
+              ⟨StackTraceBound.binary, rfl, by
+                simp [StackTraceBound.binary]⟩
+          simpa [empty, Int.add_assoc] using
+            stackNetBound_sequential ih childBound
+      | succ previous =>
+        rw [stackThresholdStep_getD_succ]
+        apply stackNetBound_choiceLeft
+        by_cases empty : bounds = []
+        · subst bounds
+          obtain ⟨countEq, _⟩ := prior.nil_inv
+          simp at countEq
+        · have notEmpty : bounds.isEmpty = false := by
+            simpa [List.isEmpty_iff] using empty
+          simp only [notEmpty, Bool.and_false, appendThresholdAdd]
+          rw [selected]
+          have childBound :
+              stackNetBound
+                (StackTraceSet.sequential (some childTrace)
+                  (some StackTraceBound.binary)) (childTrace.netDiff + 1) :=
+            stackNetBound_sequential
+              ⟨childTrace, rfl, Int.le_refl childTrace.netDiff⟩
+              ⟨StackTraceBound.binary, rfl, by
+                simp [StackTraceBound.binary]⟩
+          simpa [empty, Int.add_assoc] using
+            stackNetBound_sequential ih childBound
+
 mutual
-  /-- Exact Core-style stack summaries for canonical non-malleable paths. -/
+  /-- Exact Core-style stack summaries for usable generated paths. -/
   def stackPathBounds : CoreFragment → StackPathBounds
     | .zero => ⟨none, some StackTraceBound.push⟩
     | .one => ⟨some StackTraceBound.push, none⟩
@@ -356,12 +571,18 @@ mutual
             (StackTraceSet.sequential
               (StackTraceSet.sequential xBounds.dsat
                 (some StackTraceBound.branch)) zBounds.sat),
-          StackTraceSet.sequential
-            (StackTraceSet.sequential xBounds.dsat
-              (some StackTraceBound.branch)) zBounds.dsat⟩
+          StackTraceSet.choice
+            (StackTraceSet.sequential
+              (StackTraceSet.sequential xBounds.dsat
+                (some StackTraceBound.branch)) zBounds.dsat)
+            (StackTraceSet.sequential
+              (StackTraceSet.sequential xBounds.sat
+                (some StackTraceBound.branch)) yBounds.dsat)⟩
     | .and_v x y =>
         ⟨StackTraceSet.sequential (stackPathBounds x).sat
-            (stackPathBounds y).sat, none⟩
+            (stackPathBounds y).sat,
+          StackTraceSet.sequential (stackPathBounds x).sat
+            (stackPathBounds y).dsat⟩
     | .and_b x y =>
         let xBounds := stackPathBounds x
         let yBounds := stackPathBounds y
@@ -458,9 +679,48 @@ mutual
         stackPathBounds fragment :: stackPathBoundsList fragments
 end
 
-/-- Maximum total P2WSH opcode count for a canonical non-malleable
-    satisfaction. Static non-push opcodes are counted across the complete
-    script; the path summary adds executed CHECKMULTISIG public keys. -/
+/-- A concrete exact-count threshold path is bounded by the public
+    satisfaction summary for that threshold. The internal dynamic-programming
+    table remains an implementation detail. -/
+theorem ThresholdStackPath.bounds_thresh
+    {fragments : List CoreFragment} {count : Nat} {netDiff : Int}
+    (path : ThresholdStackPath (stackPathBoundsList fragments) count netDiff) :
+    ∃ trace,
+      (stackPathBounds (.thresh count fragments)).sat = some trace ∧
+        netDiff ≤ trace.netDiff := by
+  obtain ⟨stateTrace, stateEq, bounded⟩ :=
+    stackThresholdFold_bounds_path path
+  let suffix := StackTraceBound.push.sequential StackTraceBound.equal
+  refine ⟨stateTrace.sequential suffix, ?_, ?_⟩
+  · simp only [stackPathBounds]
+    rw [stateEq]
+    rfl
+  · simp only [StackTraceBound.sequential, suffix, StackTraceBound.push,
+      StackTraceBound.equal]
+    omega
+
+/-- An all-dissatisfaction threshold path is bounded by the public
+    dissatisfaction summary, independently of the threshold literal. -/
+theorem ThresholdStackPath.bounds_thresh_dsat
+    {fragments : List CoreFragment} {threshold : Nat} {netDiff : Int}
+    (path : ThresholdStackPath (stackPathBoundsList fragments) 0 netDiff) :
+    ∃ trace,
+      (stackPathBounds (.thresh threshold fragments)).dsat = some trace ∧
+        netDiff ≤ trace.netDiff := by
+  obtain ⟨stateTrace, stateEq, bounded⟩ :=
+    stackThresholdFold_bounds_path path
+  let suffix := StackTraceBound.push.sequential StackTraceBound.equal
+  refine ⟨stateTrace.sequential suffix, ?_, ?_⟩
+  · simp only [stackPathBounds]
+    rw [stateEq]
+    rfl
+  · simp only [StackTraceBound.sequential, suffix, StackTraceBound.push,
+      StackTraceBound.equal]
+    omega
+
+/-- Maximum total P2WSH opcode count for a usable generated satisfaction.
+    Static non-push opcodes are counted across the complete script; the path
+    summary adds executed CHECKMULTISIG public keys. -/
 def maxSatisfactionOpCount (fragment : CoreFragment) : Option Nat :=
   (opPathBounds fragment).sat.map fun dynamic =>
     nonPushOpCount (compileForResourceAnalysis fragment) + dynamic
