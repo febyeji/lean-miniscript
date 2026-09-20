@@ -60,13 +60,13 @@ example : Eval (.op .OP_IF :: outerTail) [trueElement] []
     fixtureFlags fixtureTxContext (.success [scriptNum 7] []) := by
   apply Eval.if_execute (frame := outerFrame)
   · rfl
-  · exact Or.inr trueElement_minimalIfArg
+  · exact minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg
   · change Eval ([.pushNum 0, .op .OP_NOTIF] ++ innerTail) [] []
       fixtureFlags fixtureTxContext (.success [scriptNum 7] [])
     apply Eval.pushNum
     apply Eval.notif_execute (frame := innerFrame)
     · rfl
-    · exact Or.inr (by simpa [scriptNum_zero] using falseElement_minimalIfArg)
+    · exact minimalIfSatisfied_of_arg _ _ (by simpa [scriptNum_zero] using falseElement_minimalIfArg)
     · change Eval [.pushNum 7] [] [] fixtureFlags fixtureTxContext
         (.success [scriptNum 7] [])
       apply Eval.pushNum
@@ -77,7 +77,7 @@ example : Eval [.op .OP_IF, .pushNum 1] [trueElement] []
     fixtureFlags fixtureTxContext (.failure .unbalancedConditional) := by
   apply Eval.if_unbalanced (selectedResult := .success [scriptNum 1] [])
   · rfl
-  · exact Or.inr trueElement_minimalIfArg
+  · exact minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg
   · apply Eval.pushNum
     exact Eval.empty [scriptNum 1] [] fixtureFlags fixtureTxContext
 
@@ -85,7 +85,7 @@ example : Eval [.op .OP_NOTIF, .pushNum 1] [falseElement] []
     fixtureFlags fixtureTxContext (.failure .unbalancedConditional) := by
   apply Eval.notif_unbalanced (selectedResult := .success [scriptNum 1] [])
   · rfl
-  · exact Or.inr falseElement_minimalIfArg
+  · exact minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg
   · apply Eval.pushNum
     exact Eval.empty [scriptNum 1] [] fixtureFlags fixtureTxContext
 
@@ -96,7 +96,7 @@ example : Eval [.op .OP_IF, .op .OP_VERIFY]
     (.failure .verify) := by
   apply Eval.if_unbalanced (selectedResult := .failure .verify)
   · rfl
-  · exact Or.inr trueElement_minimalIfArg
+  · exact minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg
   · exact Eval.verify_failure falseElement [] [] [] fixtureFlags
       fixtureTxContext rfl
 
@@ -108,7 +108,7 @@ example : Eval [.op .OP_IF, .op .OP_VERIFY]
   apply Eval.if_unbalanced
       (selectedResult := .success [falseElement] [])
   · rfl
-  · exact Or.inr falseElement_minimalIfArg
+  · exact minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg
   · exact Eval.empty [falseElement] [] fixtureFlags fixtureTxContext
 
 /-- Repeated same-depth ELSE segments still alternate before EOF, so an error
@@ -119,7 +119,7 @@ example : Eval
     (.failure .verify) := by
   apply Eval.if_unbalanced (selectedResult := .failure .verify)
   · rfl
-  · exact Or.inr trueElement_minimalIfArg
+  · exact minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg
   · exact Eval.verify_failure falseElement [] [] [] fixtureFlags
       fixtureTxContext rfl
 

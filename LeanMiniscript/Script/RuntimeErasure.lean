@@ -110,11 +110,11 @@ private theorem execute_branch (element : ScriptElement) (branch : element.isBra
         match state.stack with
         | [] => throw .stackUnderflow
         | top :: rest =>
-            if minimalIfSatisfied flags top then
+            if minimalIfSatisfied flags ctx.sigVersion top then
               return { state with
                 stack := rest
                 conditions := element.branchChoice top :: state.conditions }
-            else throw .minimalIf
+            else throw (minimalIfError ctx.sigVersion)
       else return { state with conditions := false :: state.conditions }) := by
   cases element with
   | pushData => contradiction

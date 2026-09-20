@@ -19,7 +19,8 @@ def maxScriptElementSize : Nat := 520
 
 /-- Script verification flags that affect execution semantics. -/
 structure ScriptFlags where
-  /-- BIP 141: Require minimal encoding for IF/NOTIF arguments -/
+  /-- Require minimal IF/NOTIF arguments for witness-v0 execution. Tapscript
+      enforces the same encoding as a consensus rule independently of flags. -/
   minimalIf : Bool := true
   /-- `SCRIPT_VERIFY_MINIMALDATA`: require minimal Script-number operands. -/
   minimalData : Bool := true
@@ -131,6 +132,7 @@ inductive ScriptError where
   | checkSequenceVerify
   | checkLockTimeVerify
   | minimalIf
+  | tapscriptMinimalIf
   | unbalancedConditional
   deriving Repr, DecidableEq, BEq
 
@@ -518,14 +520,35 @@ def stackElementEq (x y : StackElement) : Bool :=
 def minimalIfArg (b : StackElement) : Bool :=
   stackElementEq b falseElement || stackElementEq b trueElement
 
-/-- Whether an IF-like opcode argument satisfies the active script flags. -/
-def minimalIfSatisfied (flags : ScriptFlags) (b : StackElement) : Prop :=
-  flags.minimalIf = false ∨ minimalIfArg b = true
+/-- Whether an IF-like opcode argument satisfies the rules for its signature
+    version. Base Script does not apply MINIMALIF, witness-v0 applies the
+    verification flag, and Tapscript enforces canonical false/true as a
+    flag-independent consensus rule. -/
+def minimalIfSatisfied (flags : ScriptFlags) (version : SignatureVersion)
+    (b : StackElement) : Prop :=
+  match version with
+  | .base => True
+  | .witnessV0 => flags.minimalIf = false ∨ minimalIfArg b = true
+  | .tapscript => minimalIfArg b = true
 
-instance (flags : ScriptFlags) (b : StackElement) :
-    Decidable (minimalIfSatisfied flags b) := by
+instance (flags : ScriptFlags) (version : SignatureVersion) (b : StackElement) :
+    Decidable (minimalIfSatisfied flags version b) := by
   unfold minimalIfSatisfied
-  infer_instance
+  cases version <;> infer_instance
+
+/-- A canonical false or true encoding satisfies MINIMALIF in every signature
+    version and under every flag set. -/
+theorem minimalIfSatisfied_of_arg (flags : ScriptFlags)
+    (version : SignatureVersion) {b : StackElement}
+    (minimal : minimalIfArg b = true) :
+    minimalIfSatisfied flags version b := by
+  cases version <;> simp [minimalIfSatisfied, minimal]
+
+/-- Bitcoin Core distinguishes the witness-v0 policy failure from the
+    Tapscript consensus failure. Base execution never reaches this error. -/
+def minimalIfError : SignatureVersion → ScriptError
+  | .tapscript => .tapscriptMinimalIf
+  | .base | .witnessV0 => .minimalIf
 
 /-- Whether the legacy CHECKMULTISIG dummy argument satisfies NULLDUMMY. -/
 def nullDummySatisfied (flags : ScriptFlags) (dummy : StackElement) : Prop :=

@@ -20,6 +20,12 @@ private def errorIs (expected : ScriptError) : WeightedResult → Bool
 private def run (script : Script) (stack : Stack) (weight : Nat) : WeightedResult :=
   evaluateWithValidationWeight oracle script stack [] flags ctx weight
 
+example : errorIs .tapscriptMinimalIf
+    (evaluateWithValidationWeight oracle
+      [.op .OP_IF, .pushNum 1, .op .OP_ENDIF]
+      [nonMinimalTruthyElement] [] { flags with minimalIf := false } ctx 0) = true := by
+  native_decide
+
 example : Bitcoin.compactSize 252 = [252] := by native_decide
 example : Bitcoin.compactSize 253 = [253, 253, 0] := by native_decide
 example : Bitcoin.compactSize 65535 = [253, 255, 255] := by native_decide
@@ -130,7 +136,7 @@ example : WeightedEval [.op .OP_CHECKSIG] [key, signature] [] flags ctx 49
 example : LeanMiniscript.Miniscript.TapscriptAccepts [.pushNum 1]
     { arguments := [], scriptBytes := ⟨#[0x51]⟩, controlBlock := ⟨Array.replicate 33 0⟩ }
     flags ctx := by
-  refine ⟨⟨rfl, rfl⟩, trueElement, [], 87, ?_, by native_decide⟩
+  refine ⟨rfl, trueElement, [], 87, ?_, by native_decide⟩
   native_decide
 
 end LeanMiniscript.Script

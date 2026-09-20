@@ -446,6 +446,7 @@ def coreScriptErrorTag : ScriptError → String
   | .checkSequenceVerify => "UNSATISFIED_LOCKTIME"
   | .checkLockTimeVerify => "UNSATISFIED_LOCKTIME"
   | .minimalIf => "MINIMALIF"
+  | .tapscriptMinimalIf => "TAPSCRIPT_MINIMALIF"
   | .unbalancedConditional => "UNBALANCED_CONDITIONAL"
 
 private def supportedExpectedError : String → Bool
@@ -454,7 +455,7 @@ private def supportedExpectedError : String → Bool
       "PUBKEY_COUNT" | "SIG_COUNT" | "NEGATIVE_LOCKTIME" |
       "SIG_NULLDUMMY" | "SIG_NULLFAIL" | "SIG_DER" | "SIG_HIGH_S" |
       "SIG_HASHTYPE" | "PUBKEYTYPE" | "EQUALVERIFY" | "VERIFY" |
-      "UNSATISFIED_LOCKTIME" | "MINIMALIF" |
+      "UNSATISFIED_LOCKTIME" | "MINIMALIF" | "TAPSCRIPT_MINIMALIF" |
       "UNBALANCED_CONDITIONAL" => true
   | _ => false
 

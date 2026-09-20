@@ -93,7 +93,7 @@ def evaluate (oracle : CryptoOracle) (script : Script)
       match stack with
       | [] => .failure .stackUnderflow
       | top :: stackRest =>
-          if _minimal : minimalIfSatisfied flags top then
+          if _minimal : minimalIfSatisfied flags ctx.sigVersion top then
             match _split : splitConditional rest with
             | none =>
                 finishUnclosedConditional
@@ -104,12 +104,12 @@ def evaluate (oracle : CryptoOracle) (script : Script)
                 evaluate oracle (frame.select (castToBool top)) stackRest
                   altStack flags ctx
           else
-            .failure .minimalIf
+            .failure (minimalIfError ctx.sigVersion)
   | .op .OP_NOTIF :: rest =>
       match stack with
       | [] => .failure .stackUnderflow
       | top :: stackRest =>
-          if _minimal : minimalIfSatisfied flags top then
+          if _minimal : minimalIfSatisfied flags ctx.sigVersion top then
             match _split : splitConditional rest with
             | none =>
                 finishUnclosedConditional
@@ -120,7 +120,7 @@ def evaluate (oracle : CryptoOracle) (script : Script)
                 evaluate oracle (frame.select (!castToBool top)) stackRest
                   altStack flags ctx
           else
-            .failure .minimalIf
+            .failure (minimalIfError ctx.sigVersion)
   | .op .OP_ELSE :: _ => .failure .unbalancedConditional
   | .op .OP_ENDIF :: _ => .failure .unbalancedConditional
   | .op .OP_IFDUP :: rest =>

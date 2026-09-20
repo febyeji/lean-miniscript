@@ -20,6 +20,9 @@ private def acceptingOracle : CryptoOracle :=
   CryptoOracle.pureLeanHashes
     (fun _sig _pubkey _sigHash => true)
 
+private def conditionalScript : Script :=
+  [.op .OP_IF, .pushNum 1, .op .OP_ELSE, .pushNum 0, .op .OP_ENDIF]
+
 private def isSingleSuccess (expected : StackElement) : ExecResult → Bool
   | .success [actual] [] => stackElementEq actual expected
   | _ => false
@@ -66,6 +69,51 @@ example : isFailure .stackUnderflow
 example : isFailure .verify
     (evaluate rejectingOracle [.op .OP_IF, .op .OP_VERIFY]
       [trueElement, falseElement] [] fixtureFlags fixtureTxContext) = true := by
+  native_decide
+
+/-! MINIMALIF follows the signature version: base ignores the flag,
+witness-v0 uses it, and Tapscript enforces it as a consensus rule. -/
+
+example : isSingleSuccess trueElement
+    (evaluate rejectingOracle conditionalScript [nonMinimalTruthyElement] []
+      fixtureFlags { fixtureTxContext with sigVersion := .base }) = true := by
+  native_decide
+
+example : isSingleSuccess trueElement
+    (evaluate rejectingOracle conditionalScript [nonMinimalTruthyElement] []
+      { fixtureFlags with minimalIf := false }
+      { fixtureTxContext with sigVersion := .witnessV0 }) = true := by
+  native_decide
+
+example : isFailure .minimalIf
+    (evaluate rejectingOracle conditionalScript [nonMinimalTruthyElement] []
+      fixtureFlags { fixtureTxContext with sigVersion := .witnessV0 }) = true := by
+  native_decide
+
+example : isFailure .tapscriptMinimalIf
+    (evaluate rejectingOracle conditionalScript [nonMinimalTruthyElement] []
+      { fixtureFlags with minimalIf := false }
+      { fixtureTxContext with sigVersion := .tapscript }) = true := by
+  native_decide
+
+example : isFailure .tapscriptMinimalIf
+    (evaluate rejectingOracle
+      [.op .OP_NOTIF, .pushNum 1, .op .OP_ENDIF]
+      [nonMinimalTruthyElement] [] { fixtureFlags with minimalIf := false }
+      { fixtureTxContext with sigVersion := .tapscript }) = true := by
+  native_decide
+
+example : isSingleSuccess trueElement
+    (evaluate rejectingOracle conditionalScript [trueElement] []
+      { fixtureFlags with minimalIf := false }
+      { fixtureTxContext with sigVersion := .tapscript }) = true := by
+  native_decide
+
+example : isSingleSuccess trueElement
+    (evaluate rejectingOracle
+      [.op .OP_NOTIF, .pushNum 1, .op .OP_ENDIF] [falseElement] []
+      { fixtureFlags with minimalIf := false }
+      { fixtureTxContext with sigVersion := .tapscript }) = true := by
   native_decide
 
 example : isFailure .unbalancedConditional

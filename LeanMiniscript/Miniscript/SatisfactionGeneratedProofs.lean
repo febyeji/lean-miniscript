@@ -444,13 +444,15 @@ theorem eq_boolToElement_of_unit
 theorem minimalIfSatisfied
     {result : StackElement} {value : Int} {expected : Bool}
     {mods : CorrectnessModifiers} {flags : ScriptFlags}
+    {version : SignatureVersion}
     (facts : BooleanResultFacts result value expected mods flags)
     (unit : mods.u = true) :
-    LeanMiniscript.Script.minimalIfSatisfied flags result := by
+    LeanMiniscript.Script.minimalIfSatisfied flags version result := by
   rw [facts.eq_boolToElement_of_unit unit]
+  apply LeanMiniscript.Script.minimalIfSatisfied_of_arg
   cases expected
-  · exact Or.inr falseElement_minimalIfArg
-  · exact Or.inr trueElement_minimalIfArg
+  · exact falseElement_minimalIfArg
+  · exact trueElement_minimalIfArg
 
 /-- Exact child result decodes assemble the operand-order premise used by a
     binary opcode after either W stack layout. -/

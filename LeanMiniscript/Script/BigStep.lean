@@ -792,7 +792,7 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       (script : Script) → (frame : ConditionalFrame) →
       (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
       splitConditional script = some frame →
-      minimalIfSatisfied flags top →
+      minimalIfSatisfied flags ctx.sigVersion top →
       Eval (frame.select (castToBool top)) rest altStack flags ctx result →
       Eval (.op .OP_IF :: script) (top :: rest) altStack flags ctx result
 
@@ -800,29 +800,27 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       (script : Script) → (frame : ConditionalFrame) →
       (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
       splitConditional script = some frame →
-      minimalIfSatisfied flags top →
+      minimalIfSatisfied flags ctx.sigVersion top →
       Eval (frame.select (!castToBool top)) rest altStack flags ctx result →
       Eval (.op .OP_NOTIF :: script) (top :: rest) altStack flags ctx result
 
   | if_minimalif_failure : (top : StackElement) → (rest altStack : Stack) →
       (script : Script) → (flags : ScriptFlags) → (ctx : TxContext) →
-      flags.minimalIf = true →
-      minimalIfArg top = false →
+      ¬ minimalIfSatisfied flags ctx.sigVersion top →
       Eval (.op .OP_IF :: script) (top :: rest) altStack flags ctx
-        (.failure .minimalIf)
+        (.failure (minimalIfError ctx.sigVersion))
 
   | notif_minimalif_failure : (top : StackElement) → (rest altStack : Stack) →
       (script : Script) → (flags : ScriptFlags) → (ctx : TxContext) →
-      flags.minimalIf = true →
-      minimalIfArg top = false →
+      ¬ minimalIfSatisfied flags ctx.sigVersion top →
       Eval (.op .OP_NOTIF :: script) (top :: rest) altStack flags ctx
-        (.failure .minimalIf)
+        (.failure (minimalIfError ctx.sigVersion))
 
   | if_unbalanced : (top : StackElement) → (rest altStack : Stack) →
       (script : Script) → (flags : ScriptFlags) → (ctx : TxContext) →
       (selectedResult : ExecResult) →
       splitConditional script = none →
-      minimalIfSatisfied flags top →
+      minimalIfSatisfied flags ctx.sigVersion top →
       Eval (selectUnclosedConditional script (castToBool top)) rest altStack
         flags ctx selectedResult →
       Eval (.op .OP_IF :: script) (top :: rest) altStack flags ctx
@@ -832,7 +830,7 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       (script : Script) → (flags : ScriptFlags) → (ctx : TxContext) →
       (selectedResult : ExecResult) →
       splitConditional script = none →
-      minimalIfSatisfied flags top →
+      minimalIfSatisfied flags ctx.sigVersion top →
       Eval (selectUnclosedConditional script (!castToBool top)) rest altStack
         flags ctx selectedResult →
       Eval (.op .OP_NOTIF :: script) (top :: rest) altStack flags ctx
@@ -1071,7 +1069,7 @@ theorem Eval.ifUnbalanced_result
     {top : StackElement} {rest altStack : Stack} {script : Script}
     {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
     (split : splitConditional script = none)
-    (minimal : minimalIfSatisfied flags top)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion top)
     (evaluated : Eval (.op .OP_IF :: script) (top :: rest) altStack flags ctx
       result) :
     ∃ selectedResult,
@@ -1089,7 +1087,7 @@ theorem Eval.notifUnbalanced_result
     {top : StackElement} {rest altStack : Stack} {script : Script}
     {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
     (split : splitConditional script = none)
-    (minimal : minimalIfSatisfied flags top)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion top)
     (evaluated : Eval (.op .OP_NOTIF :: script) (top :: rest) altStack flags ctx
       result) :
     ∃ selectedResult,
@@ -1386,7 +1384,7 @@ theorem Eval.exists_result
                         .stack_underflow .OP_IF 1 rest [] altStack flags ctx rfl
                           (by simp)⟩
                   | cons top stackRest =>
-                      by_cases minimal : minimalIfSatisfied flags top
+                      by_cases minimal : minimalIfSatisfied flags ctx.sigVersion top
                       · cases hSplit : splitConditional rest with
                         | none =>
                             have selectedShort :
@@ -1410,13 +1408,9 @@ theorem Eval.exists_result
                               ⟨result, evaluated⟩
                             exact ⟨result, .if_execute top stackRest altStack rest
                               frame flags ctx result hSplit minimal evaluated⟩
-                      · have flagEnabled : flags.minimalIf = true := by
-                          simp_all [minimalIfSatisfied]
-                        have nonMinimal : minimalIfArg top = false := by
-                          simp_all [minimalIfSatisfied]
-                        exact ⟨.failure .minimalIf,
+                      · exact ⟨.failure (minimalIfError ctx.sigVersion),
                           .if_minimalif_failure top stackRest altStack rest flags ctx
-                            flagEnabled nonMinimal⟩
+                            minimal⟩
               | OP_NOTIF =>
                   cases stack with
                   | nil =>
@@ -1424,7 +1418,7 @@ theorem Eval.exists_result
                         .stack_underflow .OP_NOTIF 1 rest [] altStack flags ctx rfl
                           (by simp)⟩
                   | cons top stackRest =>
-                      by_cases minimal : minimalIfSatisfied flags top
+                      by_cases minimal : minimalIfSatisfied flags ctx.sigVersion top
                       · cases hSplit : splitConditional rest with
                         | none =>
                             have selectedShort :
@@ -1448,13 +1442,9 @@ theorem Eval.exists_result
                               ⟨result, evaluated⟩
                             exact ⟨result, .notif_execute top stackRest altStack rest
                               frame flags ctx result hSplit minimal evaluated⟩
-                      · have flagEnabled : flags.minimalIf = true := by
-                          simp_all [minimalIfSatisfied]
-                        have nonMinimal : minimalIfArg top = false := by
-                          simp_all [minimalIfSatisfied]
-                        exact ⟨.failure .minimalIf,
+                      · exact ⟨.failure (minimalIfError ctx.sigVersion),
                           .notif_minimalif_failure top stackRest altStack rest flags ctx
-                            flagEnabled nonMinimal⟩
+                            minimal⟩
               | OP_ELSE =>
                   exact ⟨.failure .unbalancedConditional,
                     .else_unbalanced rest stack altStack flags ctx⟩
@@ -2001,32 +1991,35 @@ theorem Eval.fromAltStackNext
     Eval (.op .OP_FROMALTSTACK :: script) stack (x :: altRest) flags ctx result :=
   .fromAltStack x stack altRest script flags ctx result next
 
-/-- A concrete non-minimal truthy IF argument fails when MINIMALIF is active. -/
+/-- A concrete non-minimal truthy IF argument fails when the active signature
+    version requires MINIMALIF. -/
 theorem nonMinimalTruthy_if_else_minimalif_failure
     (rest altStack : Stack) (thenBranch elseBranch after : Script)
     (flags : ScriptFlags) (ctx : TxContext)
-    (hflags : flags.minimalIf = true) :
+    (nonMinimal : ¬ minimalIfSatisfied flags ctx.sigVersion
+      nonMinimalTruthyElement) :
     Eval (.op .OP_IF ::
           (thenBranch ++ (.op .OP_ELSE ::
             elseBranch ++ .op .OP_ENDIF :: after)))
       (nonMinimalTruthyElement :: rest) altStack flags ctx
-      (.failure .minimalIf) := by
+      (.failure (minimalIfError ctx.sigVersion)) := by
   exact Eval.if_minimalif_failure nonMinimalTruthyElement rest altStack
     (thenBranch ++ (.op .OP_ELSE :: elseBranch ++ .op .OP_ENDIF :: after))
-    flags ctx hflags nonMinimalTruthyElement_not_minimalIfArg
+    flags ctx nonMinimal
 
-/-- Without MINIMALIF, the same concrete non-minimal truthy IF argument selects
-    the true branch. -/
+/-- When the active signature-version rules admit it, the same concrete
+    non-minimal truthy IF argument selects the true branch. -/
 theorem nonMinimalTruthy_if_else_relaxed_true
     (rest altStack : Stack) (script : Script) (frame : ConditionalFrame)
     (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult)
-    (hflags : flags.minimalIf = false)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion
+      nonMinimalTruthyElement)
     (hSplit : splitConditional script = some frame)
     (hSelected : Eval (frame.select true) rest altStack flags ctx result) :
     Eval (.op .OP_IF :: script) (nonMinimalTruthyElement :: rest)
       altStack flags ctx result := by
   apply Eval.if_execute nonMinimalTruthyElement rest altStack script frame
-    flags ctx result hSplit (Or.inl hflags)
+    flags ctx result hSplit minimal
   simpa [nonMinimalTruthyElement_truthy] using hSelected
 
 /-- Moving a stack element to the alt stack and immediately back preserves both

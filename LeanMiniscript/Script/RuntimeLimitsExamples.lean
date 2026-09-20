@@ -70,7 +70,8 @@ example : errorIs .verify (run
 example : errorIs .pushSize (run
     [.op .OP_IF, .pushData (bytes 521), .op .OP_ELSE,
      .pushNum 0, .op .OP_VERIFY, .op .OP_ENDIF] [falseElement]) = true := by native_decide
-example : errorIs .minimalIf (run [.op .OP_IF, .pushData (bytes 521)] [bytes 2]) = true := by native_decide
+example : errorIs .tapscriptMinimalIf
+    (run [.op .OP_IF, .pushData (bytes 521)] [bytes 2]) = true := by native_decide
 example : errorIs .stackUnderflow (run [.op .OP_IF, .pushData (bytes 521)]) = true := by native_decide
 example : errorIs .unbalancedConditional (run [.op .OP_ELSE, .pushData (bytes 521)]) = true := by native_decide
 example : errorIs .pushSize (run [.op .OP_IF, .pushData (bytes 521)] [falseElement]) = true := by native_decide

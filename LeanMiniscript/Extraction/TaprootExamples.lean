@@ -93,7 +93,8 @@ example : verify annexWitness = .ok (initialValidationWeight annexWitness - 50) 
 example : verify [ByteArray.empty, scriptBytes, control] = .error (.script .evalFalse) := by native_decide
 example : verify (ByteArray.empty :: fullWitness) = .error (.script .cleanStack) := by native_decide
 example : verify [flip signature 40, scriptBytes, control] = .error (.script .schnorrSig) := by native_decide
-example : verify fullWitness { minimalIf := false } = .error (.script .tapscriptFlags) := by native_decide
+example : verify fullWitness { minimalIf := false } =
+    .ok (initialValidationWeight fullWitness - 50) := by native_decide
 private def oversized : ByteArray := ⟨Array.replicate 521 1⟩
 private def tooMany := List.replicate 1001 oversized ++ [scriptBytes, control]
 -- Initial limits precede signatures; count precedes element size.

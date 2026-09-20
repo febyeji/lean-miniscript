@@ -852,10 +852,12 @@ obligations. Older `execTapscript` / `execTapscriptTransaction` APIs
 retain their documented unchecked-commitment boundary.
 
 `verifyCommittedTapscriptTransaction` runs preparation, then
-`checkTapscriptAcceptance`. The latter enforces the existing Miniscript flag
-contract (`minimalIf` and `minimalData` enabled); unsupported settings return
-`MODEL_TAPSCRIPT_FLAGS`, a model-scope error rather than a Core consensus error.
-Execution errors retain their original tags. Successful execution must leave
+`checkTapscriptAcceptance`. The latter requires the modeled `minimalData` flag;
+unsupported settings return `MODEL_TAPSCRIPT_FLAGS`, a model-scope error rather
+than a Core consensus error. MINIMALIF is signature-version aware: base ignores
+the flag, witness-v0 uses it, and Tapscript enforces canonical false/true
+independently with `TAPSCRIPT_MINIMALIF`. Execution errors retain their original
+tags. Successful execution must leave
 exactly one main-stack item (`CLEANSTACK` otherwise, including an empty stack),
 then a truthy item (`EVAL_FALSE` otherwise, including negative zero). The final
 alt stack is unrestricted. Success returns the remaining validation weight;

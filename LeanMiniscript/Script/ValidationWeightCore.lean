@@ -111,7 +111,7 @@ def evaluateWithValidationWeight (oracle : CryptoOracle) (script : Script)
         match stack with
         | [] => .failure .stackUnderflow
         | top :: stackRest =>
-            if minimalIfSatisfied flags top then
+            if minimalIfSatisfied flags ctx.sigVersion top then
               match _split : splitConditional rest with
               | none => finishWeightedUnclosed
                   (evaluateWithValidationWeight oracle
@@ -120,7 +120,7 @@ def evaluateWithValidationWeight (oracle : CryptoOracle) (script : Script)
               | some frame => evaluateWithValidationWeight oracle
                   (frame.select (element.branchChoice top))
                   stackRest altStack flags ctx remaining
-            else .failure .minimalIf
+            else .failure (minimalIfError ctx.sigVersion)
       else
         match prepareValidationWeight element stack flags ctx remaining with
         | .error error => .failure error
@@ -167,19 +167,21 @@ inductive WeightedEval : Script → Stack → Stack → ScriptFlags → TxContex
       WeightedEval (element :: rest) [] alt flags ctx weight (.failure .stackUnderflow)
   | branchMinimal {element : ScriptElement} {rest : Script} {top : StackElement}
       {stack alt : Stack} {flags : ScriptFlags} {ctx : TxContext} {weight : Nat}
-      (branch : element.isBranch = true) (minimal : ¬ minimalIfSatisfied flags top) :
-      WeightedEval (element :: rest) (top :: stack) alt flags ctx weight (.failure .minimalIf)
+      (branch : element.isBranch = true)
+      (minimal : ¬ minimalIfSatisfied flags ctx.sigVersion top) :
+      WeightedEval (element :: rest) (top :: stack) alt flags ctx weight
+        (.failure (minimalIfError ctx.sigVersion))
   | branch {element : ScriptElement} {rest : Script} {frame : ConditionalFrame}
       {top : StackElement} {stack alt : Stack} {flags : ScriptFlags} {ctx : TxContext}
       {weight : Nat} {result : WeightedResult}
-      (branch : element.isBranch = true) (minimal : minimalIfSatisfied flags top)
+      (branch : element.isBranch = true) (minimal : minimalIfSatisfied flags ctx.sigVersion top)
       (split : splitConditional rest = some frame)
       (next : WeightedEval (frame.select (element.branchChoice top)) stack alt flags ctx weight result) :
       WeightedEval (element :: rest) (top :: stack) alt flags ctx weight result
   | unclosed {element : ScriptElement} {rest : Script} {top : StackElement}
       {stack alt : Stack} {flags : ScriptFlags} {ctx : TxContext} {weight : Nat}
       {result : WeightedResult}
-      (branch : element.isBranch = true) (minimal : minimalIfSatisfied flags top)
+      (branch : element.isBranch = true) (minimal : minimalIfSatisfied flags ctx.sigVersion top)
       (split : splitConditional rest = none)
       (next : WeightedEval (selectUnclosedConditional rest (element.branchChoice top))
         stack alt flags ctx weight result) :
@@ -234,7 +236,7 @@ theorem evaluateWithValidationWeight_sound
               cases stack with
               | nil => exact .branchUnderflow hBranch
               | cons top stackRest =>
-                  by_cases minimal : minimalIfSatisfied flags top
+                  by_cases minimal : minimalIfSatisfied flags ctx.sigVersion top
                   · simp only [minimal, ↓reduceIte]
                     cases split : splitConditional rest with
                     | none =>
