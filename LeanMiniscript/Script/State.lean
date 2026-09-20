@@ -128,6 +128,9 @@ inductive ScriptError where
   | badOpcode
   | tapscriptCheckMultiSig
   | equalVerify
+  | numEqualVerify
+  | checkSigVerify
+  | checkMultiSigVerify
   | verify
   | checkSequenceVerify
   | checkLockTimeVerify
@@ -138,10 +141,11 @@ inductive ScriptError where
 
 /-- Fixed main-stack inputs consumed or inspected by a modeled opcode.
 
-    `OP_CHECKMULTISIG` is the only variable-arity opcode in the current model,
-    so it has no fixed requirement. Conditional delimiters and
-    `OP_FROMALTSTACK` have fixed main-stack arity zero; their structural and
-    alternate-stack requirements are modeled separately. -/
+    `OP_CHECKMULTISIG` and `OP_CHECKMULTISIGVERIFY` are the variable-arity
+    opcodes in the current model, so they have no fixed requirement.
+    Conditional delimiters and `OP_FROMALTSTACK` have fixed main-stack arity
+    zero; their structural and alternate-stack requirements are modeled
+    separately. -/
 def Opcode.fixedMainStackInputs? : Opcode → Option Nat
   | .OP_NOP => some 0
   | .OP_IF | .OP_NOTIF => some 1
@@ -152,11 +156,11 @@ def Opcode.fixedMainStackInputs? : Opcode → Option Nat
   | .OP_FROMALTSTACK => some 0
   | .OP_ADD | .OP_BOOLAND | .OP_BOOLOR => some 2
   | .OP_0NOTEQUAL => some 1
-  | .OP_EQUAL | .OP_EQUALVERIFY | .OP_NUMEQUAL => some 2
+  | .OP_EQUAL | .OP_EQUALVERIFY | .OP_NUMEQUAL | .OP_NUMEQUALVERIFY => some 2
   | .OP_SHA256 | .OP_HASH256 | .OP_RIPEMD160 | .OP_HASH160 => some 1
-  | .OP_CHECKSIG => some 2
+  | .OP_CHECKSIG | .OP_CHECKSIGVERIFY => some 2
   | .OP_CHECKSIGADD => some 3
-  | .OP_CHECKMULTISIG => none
+  | .OP_CHECKMULTISIG | .OP_CHECKMULTISIGVERIFY => none
   | .OP_CHECKSEQUENCEVERIFY | .OP_CHECKLOCKTIMEVERIFY => some 1
   | .OP_VERIFY | .OP_SIZE => some 1
 
@@ -171,7 +175,7 @@ def Opcode.activeFixedMainStackInputs? (opcode : Opcode)
 /-- Opcodes in the generated subset that decode both operands as Script
     numbers with the ordinary four-byte limit. -/
 def Opcode.usesBinaryScriptNums : Opcode → Bool
-  | .OP_ADD | .OP_BOOLAND | .OP_BOOLOR | .OP_NUMEQUAL => true
+  | .OP_ADD | .OP_BOOLAND | .OP_BOOLOR | .OP_NUMEQUAL | .OP_NUMEQUALVERIFY => true
   | _ => false
 
 /-- Timelock opcodes decode one Script number with the extended five-byte

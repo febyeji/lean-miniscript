@@ -146,4 +146,47 @@ example : isSingleSuccess trueElement
       fixtureTxContext) = true := by
   native_decide
 
+/-! The fused VERIFY opcodes consume successful results and report their own
+failure codes after the underlying operation's checks. -/
+
+example : isSingleSuccess (scriptNum 7)
+    (evaluate rejectingOracle [.op .OP_NUMEQUALVERIFY, .pushNum 7]
+      [scriptNum 2, scriptNum 2] [] fixtureFlags fixtureTxContext) = true := by
+  native_decide
+
+example : isFailure .numEqualVerify
+    (evaluate rejectingOracle [.op .OP_NUMEQUALVERIFY]
+      [scriptNum 2, scriptNum 3] [] fixtureFlags fixtureTxContext) = true := by
+  native_decide
+
+example : isFailure .scriptNumNonMinimal
+    (evaluate rejectingOracle [.op .OP_NUMEQUALVERIFY]
+      [⟨#[0]⟩, scriptNum 0] [] fixtureFlags fixtureTxContext) = true := by
+  native_decide
+
+example : isSingleSuccess (scriptNum 7)
+    (evaluate acceptingOracle [.op .OP_CHECKSIGVERIFY, .pushNum 7]
+      [⟨#[0x02]⟩, ⟨#[0x30]⟩] []
+      { fixtureFlags with strictEncoding := false } fixtureTxContext) = true := by
+  native_decide
+
+example : isFailure .checkSigVerify
+    (evaluate rejectingOracle [.op .OP_CHECKSIGVERIFY]
+      [⟨#[0x02]⟩, ⟨#[0x30]⟩] []
+      { fixtureFlags with strictEncoding := false, nullFail := false }
+      fixtureTxContext) = true := by
+  native_decide
+
+example :
+    isFailure .stackUnderflow
+      (evaluate rejectingOracle [.op .OP_NUMEQUALVERIFY] [scriptNum 1] []
+        fixtureFlags fixtureTxContext) &&
+    isFailure .stackUnderflow
+      (evaluate rejectingOracle [.op .OP_CHECKSIGVERIFY] [⟨#[0x02]⟩] []
+        fixtureFlags fixtureTxContext) &&
+    isFailure .stackUnderflow
+      (evaluate rejectingOracle [.op .OP_CHECKMULTISIGVERIFY] [] []
+        fixtureFlags fixtureTxContext) = true := by
+  native_decide
+
 end LeanMiniscript.Script

@@ -48,6 +48,10 @@ theorem Eval.stackGrowth
     rename_i stack operands script alt flags ctx decoded checked dummy tail ih
     have remaining := decodeCheckMultiSigOperandsFor_rest_length_le decoded
     omega
+  case checkmultisigverify_success.refl =>
+    rename_i stack operands script alt flags ctx decoded checked dummy tail ih
+    have remaining := decodeCheckMultiSigOperandsFor_rest_length_le decoded
+    omega
   case checkmultisig_failure.refl =>
     rename_i stack operands script alt flags ctx decoded checked nullfail dummy tail ih
     have remaining := decodeCheckMultiSigOperandsFor_rest_length_le decoded

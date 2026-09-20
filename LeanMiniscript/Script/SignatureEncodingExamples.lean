@@ -152,6 +152,15 @@ example : isFailure .sigDer (evaluate accepting [.op .OP_CHECKSIG]
       [scriptNum 1, goodKey, scriptNum 1, goodSig, trueElement] [] strict tx) = true := by
   native_decide
 
+/-- Fused VERIFY variants retain signature encoding and NULLFAIL precedence. -/
+example : isFailure .sigDer (evaluate accepting [.op .OP_CHECKSIGVERIFY]
+      [badKey, badSig] [] strict tx) &&
+    isFailure .sigNullFail (evaluate rejecting [.op .OP_CHECKSIGVERIFY]
+      [goodKey, goodSig] [] strict tx) &&
+    isFailure .sigDer (evaluate rejecting [.op .OP_CHECKMULTISIGVERIFY]
+      [scriptNum 1, badKey, scriptNum 1, badSig, falseElement] [] strict tx) = true := by
+  native_decide
+
 /-- A signature is retained after a failed key attempt and consumed only
     after a successful match. Ordered matching can skip keys but not reorder
     signatures. -/

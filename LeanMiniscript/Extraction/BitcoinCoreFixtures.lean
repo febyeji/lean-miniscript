@@ -208,13 +208,16 @@ def opcodeFromCoreName? : String → Option Opcode
   | "EQUAL" => some .OP_EQUAL
   | "EQUALVERIFY" => some .OP_EQUALVERIFY
   | "NUMEQUAL" => some .OP_NUMEQUAL
+  | "NUMEQUALVERIFY" => some .OP_NUMEQUALVERIFY
   | "SHA256" => some .OP_SHA256
   | "HASH256" => some .OP_HASH256
   | "RIPEMD160" => some .OP_RIPEMD160
   | "HASH160" => some .OP_HASH160
   | "CHECKSIG" => some .OP_CHECKSIG
+  | "CHECKSIGVERIFY" => some .OP_CHECKSIGVERIFY
   | "CHECKSIGADD" => some .OP_CHECKSIGADD
   | "CHECKMULTISIG" => some .OP_CHECKMULTISIG
+  | "CHECKMULTISIGVERIFY" => some .OP_CHECKMULTISIGVERIFY
   | "CHECKSEQUENCEVERIFY" => some .OP_CHECKSEQUENCEVERIFY
   | "CHECKLOCKTIMEVERIFY" => some .OP_CHECKLOCKTIMEVERIFY
   | "VERIFY" => some .OP_VERIFY
@@ -239,13 +242,16 @@ private def opcodeFromByte? : Nat → Option Opcode
   | 0x87 => some .OP_EQUAL
   | 0x88 => some .OP_EQUALVERIFY
   | 0x9c => some .OP_NUMEQUAL
+  | 0x9d => some .OP_NUMEQUALVERIFY
   | 0xa8 => some .OP_SHA256
   | 0xaa => some .OP_HASH256
   | 0xa6 => some .OP_RIPEMD160
   | 0xa9 => some .OP_HASH160
   | 0xac => some .OP_CHECKSIG
+  | 0xad => some .OP_CHECKSIGVERIFY
   | 0xba => some .OP_CHECKSIGADD
   | 0xae => some .OP_CHECKMULTISIG
+  | 0xaf => some .OP_CHECKMULTISIGVERIFY
   | 0xb2 => some .OP_CHECKSEQUENCEVERIFY
   | 0xb1 => some .OP_CHECKLOCKTIMEVERIFY
   | 0x69 => some .OP_VERIFY
@@ -374,7 +380,8 @@ private def coreFlagNames (source : String) : List String :=
 
 private def scriptContainsSignature (script : Script) : Bool :=
   script.any fun
-    | .op .OP_CHECKSIG | .op .OP_CHECKSIGADD | .op .OP_CHECKMULTISIG => true
+    | .op .OP_CHECKSIG | .op .OP_CHECKSIGVERIFY | .op .OP_CHECKSIGADD |
+        .op .OP_CHECKMULTISIG | .op .OP_CHECKMULTISIGVERIFY => true
     | _ => false
 
 private def scriptContainsOpcode (wanted : Opcode) (script : Script) : Bool :=
@@ -442,6 +449,9 @@ def coreScriptErrorTag : ScriptError → String
   | .badOpcode => "BAD_OPCODE"
   | .tapscriptCheckMultiSig => "TAPSCRIPT_CHECKMULTISIG"
   | .equalVerify => "EQUALVERIFY"
+  | .numEqualVerify => "NUMEQUALVERIFY"
+  | .checkSigVerify => "CHECKSIGVERIFY"
+  | .checkMultiSigVerify => "CHECKMULTISIGVERIFY"
   | .verify => "VERIFY"
   | .checkSequenceVerify => "UNSATISFIED_LOCKTIME"
   | .checkLockTimeVerify => "UNSATISFIED_LOCKTIME"
@@ -454,7 +464,8 @@ private def supportedExpectedError : String → Bool
       "INVALID_ALTSTACK_OPERATION" | "SCRIPTNUM" | "MINIMALDATA" |
       "PUBKEY_COUNT" | "SIG_COUNT" | "NEGATIVE_LOCKTIME" |
       "SIG_NULLDUMMY" | "SIG_NULLFAIL" | "SIG_DER" | "SIG_HIGH_S" |
-      "SIG_HASHTYPE" | "PUBKEYTYPE" | "EQUALVERIFY" | "VERIFY" |
+      "SIG_HASHTYPE" | "PUBKEYTYPE" | "EQUALVERIFY" | "NUMEQUALVERIFY" |
+      "CHECKSIGVERIFY" | "CHECKMULTISIGVERIFY" | "VERIFY" |
       "UNSATISFIED_LOCKTIME" | "MINIMALIF" | "TAPSCRIPT_MINIMALIF" |
       "UNBALANCED_CONDITIONAL" => true
   | _ => false
@@ -466,7 +477,8 @@ private def errorBeforeFirstSignature (script : Script) (stack : Stack)
     (flags : ScriptFlags) : Option ScriptError := Id.run do
   let leadingScript := script.takeWhile fun element =>
     match element with
-    | .op .OP_CHECKSIG | .op .OP_CHECKSIGADD | .op .OP_CHECKMULTISIG => false
+    | .op .OP_CHECKSIG | .op .OP_CHECKSIGVERIFY | .op .OP_CHECKSIGADD |
+        .op .OP_CHECKMULTISIG | .op .OP_CHECKMULTISIGVERIFY => false
     | _ => true
   if leadingScript.any (fun element =>
       match element with
@@ -479,7 +491,7 @@ private def errorBeforeFirstSignature (script : Script) (stack : Stack)
   | .failure error => return some error
   | .success stack _ =>
       match script.drop leadingScript.length with
-      | .op .OP_CHECKSIG :: _ =>
+      | .op .OP_CHECKSIG :: _ | .op .OP_CHECKSIGVERIFY :: _ =>
           match stack with
           | pubkey :: sig :: _ =>
               match checkECDSAEncoding flags sig pubkey with
@@ -487,7 +499,7 @@ private def errorBeforeFirstSignature (script : Script) (stack : Stack)
               | .ok () => return none
           | _ => return some .stackUnderflow
       | .op .OP_CHECKSIGADD :: _ => return some .badOpcode
-      | .op .OP_CHECKMULTISIG :: _ =>
+      | .op .OP_CHECKMULTISIG :: _ | .op .OP_CHECKMULTISIGVERIFY :: _ =>
           match decodeCheckMultiSigOperands flags stack with
           | .error error => return some error
           | .ok operands =>

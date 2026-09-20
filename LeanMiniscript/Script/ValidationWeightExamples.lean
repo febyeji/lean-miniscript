@@ -40,6 +40,15 @@ example : (Bitcoin.serializeWitness [⟨Array.replicate 253 0⟩]).size = 257 :=
 example : resultIs [trueElement] 0 (run [.op .OP_CHECKSIG] [key, signature] 50) = true := by native_decide
 example : resultIs [falseElement] 0 (run [.op .OP_CHECKSIG] [key, falseElement] 0) = true := by native_decide
 example : errorIs .tapscriptValidationWeight (run [.op .OP_CHECKSIG] [key, signature] 49) = true := by native_decide
+example : resultIs [trueElement] 0
+  (run [.op .OP_CHECKSIGVERIFY, .pushNum 1] [key, signature] 50) = true := by
+  native_decide
+example : errorIs .tapscriptValidationWeight
+  (run [.op .OP_CHECKSIGVERIFY] [key, signature] 49) = true := by
+  native_decide
+example : errorIs .checkSigVerify
+  (run [.op .OP_CHECKSIGVERIFY] [key, falseElement] 0) = true := by
+  native_decide
 -- Unknown public-key versions cost the same amount.
 example : resultIs [trueElement] 0 (run [.op .OP_CHECKSIG] [unknownKey, trueElement] 50) = true := by native_decide
 example : errorIs .tapscriptValidationWeight (run [.op .OP_CHECKSIG] [unknownKey, trueElement] 49) = true := by native_decide
