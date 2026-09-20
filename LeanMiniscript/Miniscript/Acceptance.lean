@@ -22,9 +22,9 @@ flags that the current `Eval` semantics enforces.
 
     Both contexts require minimal Script-number operands. P2WSH additionally
     uses the modeled Miniscript-facing MINIMALIF and NULLDUMMY settings.
-    P2WSH enables NULLFAIL and STRICTENC. Tapscript requires MINIMALIF and
-    ignores the ECDSA encoding and NULLFAIL flags; its signature failures are
-    controlled by the signature version. -/
+    P2WSH enables NULLFAIL and STRICTENC. Tapscript enforces MINIMALIF through
+    its signature version rather than a flag and ignores the ECDSA encoding and
+    NULLFAIL flags; its signature failures are controlled by that version. -/
 def ModeledContextFlags (ctx : ScriptContext) (flags : ScriptFlags) : Prop :=
   match ctx with
   | .p2wsh =>
@@ -34,7 +34,6 @@ def ModeledContextFlags (ctx : ScriptContext) (flags : ScriptFlags) : Prop :=
       flags.nullFail = true ∧
       flags.strictEncoding = true
   | .tapscript =>
-      flags.minimalIf = true ∧
       flags.minimalData = true
 
 /-- The execution version must agree with the Miniscript script context. -/
@@ -101,7 +100,7 @@ def TapscriptDissatisfies (script : Script) (witness : TapscriptWitness)
 def checkTapscriptAcceptance (oracle : CryptoOracle) (script : Script)
     (witness : TapscriptWitness) (flags : ScriptFlags) (txCtx : TxContext) :
     Except ScriptError Nat :=
-  if flags.minimalIf && flags.minimalData then
+  if flags.minimalData then
     (evaluateTapscript oracle script witness flags txCtx).checkAcceptance
   else .error .tapscriptFlags
 
@@ -112,10 +111,10 @@ theorem checkTapscriptAcceptance_iff
     (script : Script) (witness : TapscriptWitness) (flags : ScriptFlags) (txCtx : TxContext) :
     (∃ weight, checkTapscriptAcceptance oracle script witness flags txCtx = .ok weight) ↔
       TapscriptAccepts script witness flags txCtx := by
-  by_cases enabled : flags.minimalIf = true ∧ flags.minimalData = true
+  by_cases enabled : flags.minimalData = true
   · have checkEq : checkTapscriptAcceptance oracle script witness flags txCtx =
         (evaluateTapscript CryptoOracle.model script witness flags txCtx).checkAcceptance := by
-      simp [checkTapscriptAcceptance, enabled.1, enabled.2, evaluateTapscript_eq_model agreement]
+      simp [checkTapscriptAcceptance, enabled, evaluateTapscript_eq_model agreement]
     constructor
     · rintro ⟨weight, checked⟩
       rw [checkEq] at checked

@@ -88,6 +88,7 @@ private def coreErrorTagFixtures : List (ScriptError × String) :=
    (.checkSequenceVerify, "UNSATISFIED_LOCKTIME"),
    (.checkLockTimeVerify, "UNSATISFIED_LOCKTIME"),
    (.minimalIf, "MINIMALIF"),
+   (.tapscriptMinimalIf, "TAPSCRIPT_MINIMALIF"),
    (.unbalancedConditional, "UNBALANCED_CONDITIONAL")]
 
 /-- Every modeled failure has an explicit Core or MODEL_ boundary tag. -/

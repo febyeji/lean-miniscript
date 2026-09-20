@@ -66,9 +66,16 @@ example : run [] [⟨#[2]⟩] = .ok 88 := by native_decide
 -- Only the main stack is subject to the final singleton requirement.
 example : run [.pushNum 1, .op .OP_TOALTSTACK, .pushNum 1] [] = .ok 89 := by native_decide
 
--- Disabled modeled flags are an explicit scope error, never acceptance.
+-- Tapscript MINIMALIF is a signature-version rule, independent of the
+-- witness-v0 policy flag.
 example : checkTapscriptAcceptance oracle [.pushNum 1] (witness [.pushNum 1] [])
-    { minimalIf := false } ctx = .error .tapscriptFlags := by native_decide
+    { minimalIf := false } ctx = .ok 87 := by native_decide
+example : checkTapscriptAcceptance oracle
+    [.op .OP_IF, .pushNum 1, .op .OP_ENDIF]
+    (witness [.op .OP_IF, .pushNum 1, .op .OP_ENDIF]
+      [nonMinimalTruthyElement])
+    { minimalIf := false } ctx = .error .tapscriptMinimalIf := by
+  native_decide
 example : checkTapscriptAcceptance oracle [.pushNum 1] (witness [.pushNum 1] [])
     { minimalData := false } ctx = .error .tapscriptFlags := by native_decide
 -- Metadata and execution-version errors remain distinct from initial limits.

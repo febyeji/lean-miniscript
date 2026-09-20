@@ -55,7 +55,7 @@ theorem ExecutesStackFrame.ifThen_execute
     {body : Script} {selector : StackElement} {inputs outputs : Stack}
     {flags : ScriptFlags} {ctx : TxContext}
     (balanced : BalancedControlFlow body)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (truth : castToBool selector = true)
     (bodyExec : ExecutesStackFrame body inputs outputs flags ctx) :
     ExecutesStackFrame (.op .OP_IF :: body ++ [.op .OP_ENDIF])
@@ -72,7 +72,7 @@ theorem ExecutesStackFrame.ifThen_skip
     {body : Script} {selector : StackElement} {inputs : Stack}
     {flags : ScriptFlags} {ctx : TxContext}
     (balanced : BalancedControlFlow body)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (falsy : castToBool selector = false) :
     ExecutesStackFrame (.op .OP_IF :: body ++ [.op .OP_ENDIF])
       (selector :: inputs) inputs flags ctx := by
@@ -88,7 +88,7 @@ theorem ExecutesStackFrame.notifThen_execute
     {body : Script} {selector : StackElement} {inputs outputs : Stack}
     {flags : ScriptFlags} {ctx : TxContext}
     (balanced : BalancedControlFlow body)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (falsy : castToBool selector = false)
     (bodyExec : ExecutesStackFrame body inputs outputs flags ctx) :
     ExecutesStackFrame (.op .OP_NOTIF :: body ++ [.op .OP_ENDIF])
@@ -105,7 +105,7 @@ theorem ExecutesStackFrame.notifThen_skip
     {body : Script} {selector : StackElement} {inputs : Stack}
     {flags : ScriptFlags} {ctx : TxContext}
     (balanced : BalancedControlFlow body)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (truth : castToBool selector = true) :
     ExecutesStackFrame (.op .OP_NOTIF :: body ++ [.op .OP_ENDIF])
       (selector :: inputs) inputs flags ctx := by
@@ -122,7 +122,7 @@ theorem ExecutesStackFrame.ifElse_first
     {inputs outputs : Stack} {flags : ScriptFlags} {ctx : TxContext}
     (firstBalanced : BalancedControlFlow firstBody)
     (secondBalanced : BalancedControlFlow secondBody)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (truth : castToBool selector = true)
     (bodyExec : ExecutesStackFrame firstBody inputs outputs flags ctx) :
     ExecutesStackFrame
@@ -144,7 +144,7 @@ theorem ExecutesStackFrame.ifElse_second
     {inputs outputs : Stack} {flags : ScriptFlags} {ctx : TxContext}
     (firstBalanced : BalancedControlFlow firstBody)
     (secondBalanced : BalancedControlFlow secondBody)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (falsy : castToBool selector = false)
     (bodyExec : ExecutesStackFrame secondBody inputs outputs flags ctx) :
     ExecutesStackFrame
@@ -167,7 +167,7 @@ theorem ExecutesStackFrame.notifElse_first
     {inputs outputs : Stack} {flags : ScriptFlags} {ctx : TxContext}
     (firstBalanced : BalancedControlFlow firstBody)
     (secondBalanced : BalancedControlFlow secondBody)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (falsy : castToBool selector = false)
     (bodyExec : ExecutesStackFrame firstBody inputs outputs flags ctx) :
     ExecutesStackFrame
@@ -190,7 +190,7 @@ theorem ExecutesStackFrame.notifElse_second
     {inputs outputs : Stack} {flags : ScriptFlags} {ctx : TxContext}
     (firstBalanced : BalancedControlFlow firstBody)
     (secondBalanced : BalancedControlFlow secondBody)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (truth : castToBool selector = true)
     (bodyExec : ExecutesStackFrame secondBody inputs outputs flags ctx) :
     ExecutesStackFrame
@@ -679,7 +679,7 @@ theorem BExecution.or_c_left
     {first second : CoreFragment} {firstArgs : Stack}
     {selector : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (firstExec : BExecution first firstArgs selector flags ctx)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (truth : castToBool selector = true) :
     VExecution (.or_c first second) firstArgs flags ctx := by
   have tail := ExecutesStackFrame.notifThen_skip
@@ -693,7 +693,7 @@ theorem BExecution.or_c_right
     {first second : CoreFragment} {firstArgs secondArgs : Stack}
     {selector : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (firstExec : BExecution first firstArgs selector flags ctx)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (falsy : castToBool selector = false)
     (secondExec : VExecution second secondArgs flags ctx) :
     VExecution (.or_c first second) (firstArgs ++ secondArgs) flags ctx := by
@@ -709,7 +709,7 @@ theorem BExecution.or_d_left
     {first second : CoreFragment} {firstArgs : Stack}
     {selector : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (firstExec : BExecution first firstArgs selector flags ctx)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (truth : castToBool selector = true) :
     BExecution (.or_d first second) firstArgs selector flags ctx := by
   intro rest altStack
@@ -733,7 +733,7 @@ theorem BExecution.or_d_right
     {first second : CoreFragment} {firstArgs secondArgs : Stack}
     {selector result : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (firstExec : BExecution first firstArgs selector flags ctx)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (falsy : castToBool selector = false)
     (secondExec : BExecution second secondArgs result flags ctx) :
     BExecution (.or_d first second) (firstArgs ++ secondArgs) result flags ctx := by
@@ -755,7 +755,7 @@ theorem BExecutionOutcome.or_d_left
     {first second : CoreFragment} {firstArgs : Stack}
     {selector : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (firstExec : BExecution first firstArgs selector flags ctx)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (truth : castToBool selector = true) :
     BExecutionOutcome (.or_d first second) firstArgs true flags ctx :=
   ⟨selector, firstExec.or_d_left minimal truth, truth⟩
@@ -765,7 +765,7 @@ theorem BExecutionOutcome.or_d_right
     {selector : StackElement} {expected : Bool}
     {flags : ScriptFlags} {ctx : TxContext}
     (firstExec : BExecution first firstArgs selector flags ctx)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (falsy : castToBool selector = false)
     (secondExec : BExecutionOutcome second secondArgs expected flags ctx) :
     BExecutionOutcome (.or_d first second) (firstArgs ++ secondArgs)
@@ -783,7 +783,7 @@ theorem BExecution.or_i_left
   simpa [BExecution, compile, compileWithKeyHash, List.append_assoc] using
     ExecutesStackFrame.ifElse_first
       (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (Or.inr trueElement_minimalIfArg) (by native_decide) executed
+      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by native_decide) executed
 
 /-- The canonical false selector chooses the second B branch of `or_i`. -/
 theorem BExecution.or_i_right
@@ -794,7 +794,7 @@ theorem BExecution.or_i_right
   simpa [BExecution, compile, compileWithKeyHash, List.append_assoc] using
     ExecutesStackFrame.ifElse_second
       (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (Or.inr falseElement_minimalIfArg) (by native_decide) executed
+      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by native_decide) executed
 
 theorem KExecution.or_i_left
     {first second : CoreFragment} {args : Stack} {key : StackElement}
@@ -804,7 +804,7 @@ theorem KExecution.or_i_left
   simpa [KExecution, compile, compileWithKeyHash, List.append_assoc] using
     ExecutesStackFrame.ifElse_first
       (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (Or.inr trueElement_minimalIfArg) (by native_decide) executed
+      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by native_decide) executed
 
 theorem KExecution.or_i_right
     {first second : CoreFragment} {args : Stack} {key : StackElement}
@@ -814,7 +814,7 @@ theorem KExecution.or_i_right
   simpa [KExecution, compile, compileWithKeyHash, List.append_assoc] using
     ExecutesStackFrame.ifElse_second
       (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (Or.inr falseElement_minimalIfArg) (by native_decide) executed
+      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by native_decide) executed
 
 theorem VExecution.or_i_left
     {first second : CoreFragment} {args : Stack}
@@ -824,7 +824,7 @@ theorem VExecution.or_i_left
   simpa [VExecution, compile, compileWithKeyHash, List.append_assoc] using
     ExecutesStackFrame.ifElse_first
       (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (Or.inr trueElement_minimalIfArg) (by native_decide) executed
+      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by native_decide) executed
 
 theorem VExecution.or_i_right
     {first second : CoreFragment} {args : Stack}
@@ -834,7 +834,7 @@ theorem VExecution.or_i_right
   simpa [VExecution, compile, compileWithKeyHash, List.append_assoc] using
     ExecutesStackFrame.ifElse_second
       (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (Or.inr falseElement_minimalIfArg) (by native_decide) executed
+      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by native_decide) executed
 
 theorem BExecutionOutcome.or_i_left
     {first second : CoreFragment} {args : Stack} {expected : Bool}
@@ -859,7 +859,7 @@ theorem BExecution.andor_true
     {first second third : CoreFragment} {firstArgs secondArgs : Stack}
     {selector result : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (firstExec : BExecution first firstArgs selector flags ctx)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (truth : castToBool selector = true)
     (secondExec : BExecution second secondArgs result flags ctx) :
     BExecution (.andor first second third) (firstArgs ++ secondArgs)
@@ -876,7 +876,7 @@ theorem BExecution.andor_false
     {first second third : CoreFragment} {firstArgs thirdArgs : Stack}
     {selector result : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (firstExec : BExecution first firstArgs selector flags ctx)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (falsy : castToBool selector = false)
     (thirdExec : BExecution third thirdArgs result flags ctx) :
     BExecution (.andor first second third) (firstArgs ++ thirdArgs)
@@ -892,7 +892,7 @@ theorem KExecution.andor_true
     {first second third : CoreFragment} {firstArgs secondArgs : Stack}
     {selector key : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (firstExec : BExecution first firstArgs selector flags ctx)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (truth : castToBool selector = true)
     (secondExec : KExecution second secondArgs key flags ctx) :
     KExecution (.andor first second third) (firstArgs ++ secondArgs)
@@ -908,7 +908,7 @@ theorem KExecution.andor_false
     {first second third : CoreFragment} {firstArgs thirdArgs : Stack}
     {selector key : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (firstExec : BExecution first firstArgs selector flags ctx)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (falsy : castToBool selector = false)
     (thirdExec : KExecution third thirdArgs key flags ctx) :
     KExecution (.andor first second third) (firstArgs ++ thirdArgs)
@@ -924,7 +924,7 @@ theorem VExecution.andor_true
     {first second third : CoreFragment} {firstArgs secondArgs : Stack}
     {selector : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (firstExec : BExecution first firstArgs selector flags ctx)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (truth : castToBool selector = true)
     (secondExec : VExecution second secondArgs flags ctx) :
     VExecution (.andor first second third) (firstArgs ++ secondArgs) flags ctx := by
@@ -939,7 +939,7 @@ theorem VExecution.andor_false
     {first second third : CoreFragment} {firstArgs thirdArgs : Stack}
     {selector : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (firstExec : BExecution first firstArgs selector flags ctx)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (falsy : castToBool selector = false)
     (thirdExec : VExecution third thirdArgs flags ctx) :
     VExecution (.andor first second third) (firstArgs ++ thirdArgs) flags ctx := by
@@ -955,7 +955,7 @@ theorem BExecutionOutcome.andor_true
     {selector : StackElement} {expected : Bool}
     {flags : ScriptFlags} {ctx : TxContext}
     (firstExec : BExecution first firstArgs selector flags ctx)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (truth : castToBool selector = true)
     (secondExec : BExecutionOutcome second secondArgs expected flags ctx) :
     BExecutionOutcome (.andor first second third) (firstArgs ++ secondArgs)
@@ -968,7 +968,7 @@ theorem BExecutionOutcome.andor_false
     {selector : StackElement} {expected : Bool}
     {flags : ScriptFlags} {ctx : TxContext}
     (firstExec : BExecution first firstArgs selector flags ctx)
-    (minimal : minimalIfSatisfied flags selector)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (falsy : castToBool selector = false)
     (thirdExec : BExecutionOutcome third thirdArgs expected flags ctx) :
     BExecutionOutcome (.andor first second third) (firstArgs ++ thirdArgs)
@@ -1001,7 +1001,7 @@ theorem VExecution.d
     apply Eval.if_execute (frame :=
       { branches := [compile fragment], after := [] })
     · exact split
-    · exact Or.inr trueElement_minimalIfArg
+    · exact minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg
     · simpa [ConditionalFrame.select, selectConditionalBranches, truth] using
         childExec
   simpa [BExecution, VExecution, ExecutesStackFrame, compile,
@@ -1028,7 +1028,7 @@ theorem d_dissatisfaction_execution
     apply Eval.if_execute (frame :=
       { branches := [compile fragment], after := [] })
     · exact split
-    · exact Or.inr falseElement_minimalIfArg
+    · exact minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg
     · simpa [ConditionalFrame.select, selectConditionalBranches, falsehood] using
         (Eval.done (stack := falseElement :: rest) (altStack := altStack))
   simpa [BExecution, ExecutesStackFrame, compile, compileWithKeyHash] using
@@ -1067,7 +1067,7 @@ theorem BExecution.j
     apply Eval.if_execute (frame :=
       { branches := [compile fragment], after := [] })
     · exact split
-    · exact Or.inr trueElement_minimalIfArg
+    · exact minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg
     · simpa [ConditionalFrame.select, selectConditionalBranches, truth] using
         childExec
   have ifExec' :
@@ -1130,7 +1130,7 @@ theorem j_dissatisfaction_execution
     apply Eval.if_execute (frame :=
       { branches := [compile fragment], after := [] })
     · exact split
-    · exact Or.inr falseElement_minimalIfArg
+    · exact minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg
     · simpa [ConditionalFrame.select, selectConditionalBranches, falsehood] using
         (Eval.done (stack := falseElement :: rest) (altStack := altStack))
   have ifExec' :

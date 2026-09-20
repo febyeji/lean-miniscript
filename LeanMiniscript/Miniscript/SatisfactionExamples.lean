@@ -992,9 +992,9 @@ example {preimage nonPreimage : StackElement} {flags : ScriptFlags}
         [nonPreimage] flags ctx := by
   constructor
   · exact (hash_satisfaction_execution matching).or_c_left
-      (Or.inr trueElement_minimalIfArg) (by native_decide)
+      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by native_decide)
   · exact (hash_dissatisfaction_execution mismatches).or_c_right
-      (Or.inr falseElement_minimalIfArg) (by native_decide)
+      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by native_decide)
       (BExecution.v (one_execution flags ctx) (by native_decide))
 
 /-- A well-typed `or_d` preserves its truthy Bd selector directly and returns
@@ -1011,9 +1011,9 @@ example {preimage nonPreimage : StackElement} {flags : ScriptFlags}
         [nonPreimage] trueElement flags ctx := by
   constructor
   · exact (hash_satisfaction_execution matching).or_d_left
-      (Or.inr trueElement_minimalIfArg) (by native_decide)
+      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by native_decide)
   · exact (hash_dissatisfaction_execution mismatches).or_d_right
-      (Or.inr falseElement_minimalIfArg) (by native_decide)
+      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by native_decide)
       (one_execution flags ctx)
 
 /-- Canonical `or_i` selectors support each result base with the same exact
@@ -1064,10 +1064,10 @@ example {preimage nonPreimage : StackElement} {flags : ScriptFlags}
         [nonPreimage] falseElement flags ctx := by
   constructor
   · exact (hash_satisfaction_execution matching).andor_true
-      (Or.inr trueElement_minimalIfArg) (by native_decide)
+      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by native_decide)
       (one_execution flags ctx)
   · exact (hash_dissatisfaction_execution mismatches).andor_false
-      (Or.inr falseElement_minimalIfArg) (by native_decide)
+      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by native_decide)
       (zero_execution flags ctx)
 
 /-- The same `andor` branch map preserves K outputs on both guard paths. -/
@@ -1085,10 +1085,10 @@ example {preimage nonPreimage : StackElement} {flags : ScriptFlags}
         [nonPreimage] key.bytes flags ctx := by
   constructor
   · exact (hash_satisfaction_execution matching).andor_true
-      (Or.inr trueElement_minimalIfArg) (by native_decide)
+      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by native_decide)
       (pk_k_execution key flags ctx)
   · exact (hash_dissatisfaction_execution mismatches).andor_false
-      (Or.inr falseElement_minimalIfArg) (by native_decide)
+      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by native_decide)
       (pk_k_execution key flags ctx)
 
 /-- The same `andor` branch map consumes well-typed V branches on both guard
@@ -1105,10 +1105,10 @@ example {preimage nonPreimage : StackElement} {flags : ScriptFlags}
         [nonPreimage] flags ctx := by
   constructor
   · exact VExecution.andor_true (hash_satisfaction_execution matching)
-      (Or.inr trueElement_minimalIfArg) (by native_decide)
+      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by native_decide)
       (BExecution.v (one_execution flags ctx) (by native_decide))
   · exact VExecution.andor_false (hash_dissatisfaction_execution mismatches)
-      (Or.inr falseElement_minimalIfArg) (by native_decide)
+      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by native_decide)
       (BExecution.v (one_execution flags ctx) (by native_decide))
 
 /-! ## Threshold candidates and execution -/
@@ -1683,6 +1683,7 @@ example :
 example :
     castToBool nonMinimalTruthyElement = true ∧
       ¬ minimalIfSatisfied ({ minimalIf := true } : ScriptFlags)
+        .witnessV0
         nonMinimalTruthyElement := by
   exact ⟨nonMinimalTruthyElement_truthy, by native_decide⟩
 
