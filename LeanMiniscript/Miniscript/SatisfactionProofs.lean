@@ -1,5 +1,6 @@
 import LeanMiniscript.Miniscript.Acceptance
 import LeanMiniscript.Miniscript.Compile
+import LeanMiniscript.Miniscript.CompileVerifyProofs
 import LeanMiniscript.Miniscript.Satisfaction
 import LeanMiniscript.Miniscript.Structural
 
@@ -365,8 +366,11 @@ theorem BExecution.v
         (.success rest altStack) :=
     Eval.verifyTrue truthy
       (Eval.done (stack := rest) (altStack := altStack))
+  have unfused := Eval.append fragmentExec verifyExec
+  have optimized := Eval.compileVerify_success
+    (compile_balancedControlFlow fragment) unfused
   simpa [BExecution, VExecution, ExecutesStackFrame, compile,
-    compileWithKeyHash] using Eval.append fragmentExec verifyExec
+    compileWithKeyHash] using optimized
 
 /-- A satisfying B outcome lifts through `v`; there is intentionally no false
     counterpart because a V fragment aborts instead of dissatisfying. -/
