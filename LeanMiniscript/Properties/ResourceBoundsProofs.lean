@@ -1,5 +1,298 @@
+import LeanMiniscript.Miniscript.CompileConcreteProofs
+import LeanMiniscript.Miniscript.Sane
 import LeanMiniscript.Properties.ResourceBounds
 import LeanMiniscript.Script.RuntimeStackBounds
+
+namespace LeanMiniscript.Properties
+
+open LeanMiniscript.Miniscript
+open LeanMiniscript.Script
+
+private inductive ElementSerializationShape where
+  | op (opcode : Opcode)
+  | pushData (size : Except SerializationError Nat)
+  | pushNum (value : Int)
+
+private def elementSerializationShape : ScriptElement → ElementSerializationShape
+  | .op opcode => .op opcode
+  | .pushData data => .pushData ((serializePushData data).map ByteArray.size)
+  | .pushNum value => .pushNum value
+
+private def elementShapeSize : ElementSerializationShape → Except SerializationError Nat
+  | .op _ => .ok 1
+  | .pushData size => size
+  | .pushNum value => (serializePushNum value).map ByteArray.size
+
+private def scriptSerializationShape (script : Script) : List ElementSerializationShape :=
+  script.map elementSerializationShape
+
+private def serializationShapeSize (shapes : List ElementSerializationShape)
+    (initialSize : Nat := 0) : Except SerializationError Nat :=
+  shapes.foldlM (fun size shape => do
+    let elementSize ← elementShapeSize shape
+    pure (size + elementSize)) initialSize
+
+private theorem serializeElement_size (element : ScriptElement) :
+    (serializeElement element).map ByteArray.size =
+      elementShapeSize (elementSerializationShape element) := by
+  cases element <;> rfl
+
+private theorem serializeScriptFold_size (script : Script) (initial : ByteArray) :
+    (script.foldlM (fun bytes element => do
+      let elementBytes ← serializeElement element
+      pure (bytes ++ elementBytes)) initial).map ByteArray.size =
+      serializationShapeSize (scriptSerializationShape script) initial.size := by
+  induction script generalizing initial with
+  | nil => rfl
+  | cons element script ih =>
+      simp only [List.foldlM_cons, scriptSerializationShape, List.map_cons,
+        serializationShapeSize, List.foldlM_cons]
+      cases serialized : serializeElement element with
+      | error error =>
+          have sizeError : elementShapeSize (elementSerializationShape element) =
+              .error error := by
+            rw [← serializeElement_size element, serialized]
+            rfl
+          rw [sizeError]
+          rfl
+      | ok bytes =>
+          have sizeOk : elementShapeSize (elementSerializationShape element) =
+              .ok bytes.size := by
+            rw [← serializeElement_size element, serialized]
+            rfl
+          rw [sizeOk]
+          change
+            (script.foldlM (fun accumulated next => do
+              let nextBytes ← serializeElement next
+              pure (accumulated ++ nextBytes)) (initial ++ bytes)).map
+                ByteArray.size =
+              serializationShapeSize (scriptSerializationShape script)
+                (initial.size + bytes.size)
+          rw [ih, ByteArray.size_append]
+
+private theorem serializedScriptSize_eq_shape (script : Script) :
+    LeanMiniscript.Script.serializedScriptSize script =
+      serializationShapeSize (scriptSerializationShape script) := by
+  unfold LeanMiniscript.Script.serializedScriptSize serializeScript
+  exact serializeScriptFold_size script ByteArray.empty
+
+private def verifyShapeReplacement? :
+    ElementSerializationShape → Option ElementSerializationShape
+  | .op .OP_EQUAL => some (.op .OP_EQUALVERIFY)
+  | .op .OP_CHECKSIG => some (.op .OP_CHECKSIGVERIFY)
+  | .op .OP_CHECKMULTISIG => some (.op .OP_CHECKMULTISIGVERIFY)
+  | .op .OP_NUMEQUAL => some (.op .OP_NUMEQUALVERIFY)
+  | _ => none
+
+private def compileVerifyShape
+    (shapes : List ElementSerializationShape) : List ElementSerializationShape :=
+  match shapes.reverse with
+  | [] => [.op .OP_VERIFY]
+  | last :: reversedPrefix =>
+      match verifyShapeReplacement? last with
+      | some replacement => (replacement :: reversedPrefix).reverse
+      | none => (.op .OP_VERIFY :: last :: reversedPrefix).reverse
+
+private theorem compileVerify_shape (script : Script) :
+    scriptSerializationShape (compileVerify script) =
+      compileVerifyShape (scriptSerializationShape script) := by
+  simp only [scriptSerializationShape, compileVerify, compileVerifyShape]
+  generalize reversedEq : script.reverse = reversed
+  have mappedReverse :
+      (List.map elementSerializationShape script).reverse =
+        List.map elementSerializationShape reversed := by
+    rw [← List.map_reverse, reversedEq]
+  rw [mappedReverse]
+  cases reversed with
+  | nil => simp [elementSerializationShape]
+  | cons last reversedPrefix =>
+      cases last with
+      | op opcode => cases opcode <;>
+          simp [elementSerializationShape, verifyReplacement?,
+            verifyShapeReplacement?, List.map_reverse]
+      | pushData data =>
+          simp [elementSerializationShape, verifyReplacement?,
+            verifyShapeReplacement?, List.map_reverse]
+      | pushNum value =>
+          simp [elementSerializationShape, verifyReplacement?,
+            verifyShapeReplacement?, List.map_reverse]
+
+private theorem serializePushData_size_twenty (data : ByteArray)
+    (size : data.size = 20) :
+    (serializePushData data).map ByteArray.size = .ok 21 := by
+  simp only [serializePushData, size]
+  change
+    (do
+      let lengthPrefix ← pushDataPrefix data.size
+      pure (⟨(lengthPrefix ++ data.data.toList).toArray⟩ : ByteArray)).map
+        ByteArray.size = .ok 21
+  simp only [pushDataPrefix, size, Nat.reduceLT, ↓reduceIte]
+  change
+    Except.ok (ByteArray.size
+      (⟨([UInt8.ofNat 20] ++ data.data.toList).toArray⟩ : ByteArray)) =
+      Except.ok 21
+  congr 1
+  simp only [ByteArray.size, List.size_toArray, List.length_append,
+    List.length_singleton, Array.length_toList]
+  have dataSize : data.data.size = 20 := size
+  omega
+
+mutual
+  private theorem compileWithKeyHash_shape_eq
+      (leftKeyHash rightKeyHash : PubKey → Hash160)
+      (leftSize : ∀ key, (leftKeyHash key).size = 20)
+      (rightSize : ∀ key, (rightKeyHash key).size = 20)
+      (fragment : CoreFragment) :
+      scriptSerializationShape (compileWithKeyHash leftKeyHash fragment) =
+        scriptSerializationShape (compileWithKeyHash rightKeyHash fragment) := by
+    cases fragment with
+    | zero | one | pk_k | older | after | sha256 | hash256 | ripemd160 |
+        hash160 | multi | multi_a => rfl
+    | pk_h key =>
+        simp only [compileWithKeyHash, scriptSerializationShape, List.map_cons,
+          List.map_nil, elementSerializationShape]
+        rw [serializePushData_size_twenty _ (leftSize key),
+          serializePushData_size_twenty _ (rightSize key)]
+    | and_v x y | and_b x y | or_b x y | or_c x y | or_d x y | or_i x y =>
+        have xEq := compileWithKeyHash_shape_eq leftKeyHash rightKeyHash
+          leftSize rightSize x
+        have yEq := compileWithKeyHash_shape_eq leftKeyHash rightKeyHash
+          leftSize rightSize y
+        unfold scriptSerializationShape at xEq yEq
+        simp only [compileWithKeyHash, scriptSerializationShape, List.map_append,
+          List.map_cons, List.map_nil]
+        rw [xEq, yEq]
+    | andor x y z =>
+        have xEq := compileWithKeyHash_shape_eq leftKeyHash rightKeyHash
+          leftSize rightSize x
+        have yEq := compileWithKeyHash_shape_eq leftKeyHash rightKeyHash
+          leftSize rightSize y
+        have zEq := compileWithKeyHash_shape_eq leftKeyHash rightKeyHash
+          leftSize rightSize z
+        unfold scriptSerializationShape at xEq yEq zEq
+        simp only [compileWithKeyHash, scriptSerializationShape, List.map_append,
+          List.map_cons, List.map_nil]
+        rw [xEq, yEq, zEq]
+    | a x | s x | c x | d x | j x | n x =>
+        have xEq := compileWithKeyHash_shape_eq leftKeyHash rightKeyHash
+          leftSize rightSize x
+        unfold scriptSerializationShape at xEq
+        simp only [compileWithKeyHash, scriptSerializationShape, List.map_append,
+          List.map_cons, List.map_nil]
+        rw [xEq]
+    | v x =>
+        simp only [compileWithKeyHash]
+        rw [compileVerify_shape, compileVerify_shape,
+          compileWithKeyHash_shape_eq leftKeyHash rightKeyHash leftSize rightSize x]
+    | thresh k fragments =>
+        have fragmentsEq := compileThreshWithKeyHash_shape_eq leftKeyHash
+          rightKeyHash leftSize rightSize fragments
+        unfold scriptSerializationShape at fragmentsEq
+        simp only [compileWithKeyHash, scriptSerializationShape, List.map_append,
+          List.map_cons, List.map_nil]
+        rw [fragmentsEq]
+
+  private theorem compileThreshWithKeyHash_shape_eq
+      (leftKeyHash rightKeyHash : PubKey → Hash160)
+      (leftSize : ∀ key, (leftKeyHash key).size = 20)
+      (rightSize : ∀ key, (rightKeyHash key).size = 20)
+      (fragments : List CoreFragment) :
+      scriptSerializationShape
+          (compileThreshWithKeyHash leftKeyHash fragments) =
+        scriptSerializationShape
+          (compileThreshWithKeyHash rightKeyHash fragments) := by
+    cases fragments with
+    | nil => rfl
+    | cons fragment fragments =>
+        have fragmentEq := compileWithKeyHash_shape_eq leftKeyHash rightKeyHash
+          leftSize rightSize fragment
+        have fragmentsEq := compileThreshTailWithKeyHash_shape_eq leftKeyHash
+          rightKeyHash leftSize rightSize fragments
+        unfold scriptSerializationShape at fragmentEq fragmentsEq
+        simp only [compileThreshWithKeyHash, scriptSerializationShape,
+          List.map_append]
+        rw [fragmentEq, fragmentsEq]
+
+  private theorem compileThreshTailWithKeyHash_shape_eq
+      (leftKeyHash rightKeyHash : PubKey → Hash160)
+      (leftSize : ∀ key, (leftKeyHash key).size = 20)
+      (rightSize : ∀ key, (rightKeyHash key).size = 20)
+      (fragments : List CoreFragment) :
+      scriptSerializationShape
+          (compileThreshTailWithKeyHash leftKeyHash fragments) =
+        scriptSerializationShape
+          (compileThreshTailWithKeyHash rightKeyHash fragments) := by
+    cases fragments with
+    | nil => rfl
+    | cons fragment fragments =>
+        have fragmentEq := compileWithKeyHash_shape_eq leftKeyHash rightKeyHash
+          leftSize rightSize fragment
+        have fragmentsEq := compileThreshTailWithKeyHash_shape_eq leftKeyHash
+          rightKeyHash leftSize rightSize fragments
+        unfold scriptSerializationShape at fragmentEq fragmentsEq
+        simp only [compileThreshTailWithKeyHash, scriptSerializationShape,
+          List.map_append, List.map_cons, List.map_nil]
+        rw [fragmentEq, fragmentsEq]
+end
+
+/-- A 20-byte key-HASH160 resolver gives every compiled fragment the exact
+    serialized size used by executable resource analysis. -/
+theorem resourceSerializedScriptSize_eq_compileWithKeyHash
+    (keyHash : PubKey → Hash160)
+    (keyHashSize : ∀ key, (keyHash key).size = 20)
+    (fragment : CoreFragment) :
+    resourceSerializedScriptSize fragment =
+      LeanMiniscript.Script.serializedScriptSize
+        (compileWithKeyHash keyHash fragment) := by
+  unfold resourceSerializedScriptSize compileForResourceAnalysis
+  rw [serializedScriptSize_eq_shape, serializedScriptSize_eq_shape]
+  apply congrArg serializationShapeSize
+  apply compileWithKeyHash_shape_eq
+  · intro key
+    rfl
+  · exact keyHashSize
+
+/-- Concrete HASH160 compilation has the exact serialized size used by
+    executable resource analysis. -/
+theorem resourceSerializedScriptSize_eq_compileConcrete
+    (fragment : CoreFragment) :
+    resourceSerializedScriptSize fragment =
+      LeanMiniscript.Script.serializedScriptSize
+        (compileConcrete fragment) :=
+  resourceSerializedScriptSize_eq_compileWithKeyHash concreteKeyHash
+    concreteKeyHash_size fragment
+
+end LeanMiniscript.Properties
+
+namespace LeanMiniscript.Miniscript.SaneFragment
+
+open LeanMiniscript.Properties
+open LeanMiniscript.Script
+
+/-- A sane fragment's resource certificate applies to the serialized output
+    of the executable concrete compiler. -/
+theorem compileConcrete_scriptSizeWithinLimit
+    {ctx : ScriptContext} (sane : SaneFragment ctx) :
+    ∃ size,
+      LeanMiniscript.Script.serializedScriptSize
+          (compileConcrete sane.checked.fragment) = .ok size ∧
+        scriptSizeWithinContextLimit ctx size = true := by
+  have resourceLimits := sane.withinResourceLimits
+  unfold WithinResourceLimits resourceLimitsSatisfied at resourceLimits
+  have compiledLimit :
+      compiledScriptSizeWithinLimit ctx sane.checked.fragment = true :=
+    (Bool.and_eq_true_iff.mp
+      (Bool.and_eq_true_iff.mp resourceLimits).1).1
+  cases sizeResult : resourceSerializedScriptSize sane.checked.fragment with
+  | error error =>
+      simp [compiledScriptSizeWithinLimit, sizeResult] at compiledLimit
+  | ok size =>
+      refine ⟨size, ?_, ?_⟩
+      · rw [← resourceSerializedScriptSize_eq_compileConcrete]
+        exact sizeResult
+      · simpa [compiledScriptSizeWithinLimit, sizeResult] using compiledLimit
+
+end LeanMiniscript.Miniscript.SaneFragment
 
 namespace LeanMiniscript.Properties
 
