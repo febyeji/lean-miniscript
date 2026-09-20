@@ -434,12 +434,16 @@ example : (satisfactionCandidates .zero unavailableEnv).dsat.usableWitness? =
     some [] := by rfl
 
 example : satisfy .one unavailableEnv = some [] := by rfl
+example : satisfyFinal .one unavailableEnv = none := by rfl
 example : satisfy .zero unavailableEnv = none := by rfl
 example : dissatisfy .zero unavailableEnv = some [] := by rfl
 example : dissatisfy .one unavailableEnv = none := by rfl
 
 /-- A signature is emitted as one serialized-order witness item. -/
 example : satisfy (.c (.pk_k key)) signingEnv = some [signature] := by rfl
+
+example : satisfyFinal (.c (.pk_k key)) signingEnv = some [signature] := by
+  rfl
 
 example : satisfy (.pk_k key) signingEnv = some [signature] := by rfl
 
@@ -482,6 +486,9 @@ example : satisfactionCandidates (.c (.pk_h key)) signingEnv =
 example : satisfy (.sha256 hashTarget) preimageEnv = some [preimage32] := by
   rfl
 
+example : satisfyFinal (.sha256 hashTarget) preimageEnv = none := by
+  rfl
+
 example : satisfy (.sha256 hashTarget) unavailableEnv = none := by
   rfl
 
@@ -508,8 +515,10 @@ example {preimage : StackElement}
   matching.1
 
 example : satisfy (.older 40) unavailableEnv = some [] := by native_decide
+example : satisfyFinal (.older 40) unavailableEnv = none := by native_decide
 example : satisfy (.older 60) unavailableEnv = none := by native_decide
 example : satisfy (.after 90) unavailableEnv = some [] := by native_decide
+example : satisfyFinal (.after 90) unavailableEnv = none := by native_decide
 example : satisfy (.after 110) unavailableEnv = none := by native_decide
 
 /-- Linear wrappers preserve the child's serialized witness and complete
@@ -637,6 +646,20 @@ example :
       satisfy (.or_i .one .zero) unavailableEnv = some [trueElement] ∧
       dissatisfy (.or_i .one .zero) unavailableEnv = some [falseElement] := by
   exact ⟨rfl, rfl, rfl, rfl⟩
+
+/-- The final HASSIG gate applies after BIP candidate selection. A unique
+    no-signature path remains selected and is rejected instead of being
+    replaced by the signed alternative. -/
+example :
+    satisfy (.or_i .one (.c (.pk_k key))) signingEnv =
+        some [trueElement] ∧
+      satisfyFinal (.or_i .one (.c (.pk_k key))) signingEnv = none := by
+  exact ⟨rfl, rfl⟩
+
+example :
+    (satisfyFinal
+      (.or_i (.c (.pk_k key)) (.c (.pk_k key))) signingEnv).isSome = true := by
+  native_decide
 
 /-- `or_c` chooses either the direct signature path or a false first-child
     selector followed by the V child. The latter wire witness reverses to put
