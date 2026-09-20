@@ -79,6 +79,15 @@ def compatible (usage : TimelockUsage) : Prop :=
   ¬ (usage.absoluteHeight = true ∧ usage.absoluteTime = true) ∧
   ¬ (usage.relativeHeight = true ∧ usage.relativeTime = true)
 
+/-- Two child summaries can execute together without mixing height and time
+    locks. Each child's internal `k` property is checked recursively, so this
+    predicate tests only conflicts that cross the child boundary. -/
+def compatibleWith (x y : TimelockUsage) : Prop :=
+  ¬ ((x.absoluteHeight = true ∧ y.absoluteTime = true) ∨
+      (x.absoluteTime = true ∧ y.absoluteHeight = true)) ∧
+  ¬ ((x.relativeHeight = true ∧ y.relativeTime = true) ∨
+      (x.relativeTime = true ∧ y.relativeHeight = true))
+
 end TimelockUsage
 
 namespace CoreFragment
@@ -122,11 +131,22 @@ end
 
 /-- Timelock mixing check for an AND-like pair. -/
 def andTimelocksCompatible (x y : CoreFragment) : Prop :=
-  ((timelocks x).union (timelocks y)).compatible
+  (timelocks x).compatibleWith (timelocks y)
 
-/-- Timelock mixing check for an AND-like triple. -/
-def andorTimelocksCompatible (x y z : CoreFragment) : Prop :=
-  ((timelocks x).union ((timelocks y).union (timelocks z))).compatible
+/-- In `andor(X,Y,Z)`, only the satisfied X/Y path combines timelocks. The Z
+    branch follows an unconditional dissatisfaction of X and is exclusive with
+    Y, matching the BIP 379 `k` rule. The third argument preserves the public
+    helper's constructor-shaped API. -/
+def andorTimelocksCompatible (x y _z : CoreFragment) : Prop :=
+  andTimelocksCompatible x y
+
+/-- Every pair of threshold children can execute together without a cross-child
+    timelock conflict. This preserves valid exclusive branches inside a child. -/
+def listTimelocksPairwiseCompatible : List CoreFragment → Prop
+  | [] => True
+  | fragment :: fragments =>
+      (timelocks fragment).compatibleWith (listTimelocks fragments) ∧
+      listTimelocksPairwiseCompatible fragments
 
 mutual
   /-- Every public key in a list is usable in the given script context. -/
@@ -173,7 +193,7 @@ mutual
     | .thresh k fragments =>
         validThreshold k fragments.length ∧
         allWellFormed ctx fragments ∧
-        (2 ≤ k → (listTimelocks fragments).compatible)
+        (2 ≤ k → listTimelocksPairwiseCompatible fragments)
     | .multi k keys =>
         ctx.permitsLegacyMulti ∧
         validThreshold k keys.length ∧

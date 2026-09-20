@@ -15,9 +15,26 @@ instance (usage : TimelockUsage) : Decidable usage.compatible := by
   unfold compatible
   infer_instance
 
+instance (x y : TimelockUsage) : Decidable (x.compatibleWith y) := by
+  unfold compatibleWith
+  infer_instance
+
 end TimelockUsage
 
 namespace CoreFragment
+
+/-- Executable decision procedure for pairwise threshold timelock
+    compatibility. -/
+def listTimelocksPairwiseCompatibleDecidable (fragments : List CoreFragment) :
+    Decidable (listTimelocksPairwiseCompatible fragments) := by
+  cases fragments with
+  | nil =>
+      simp only [listTimelocksPairwiseCompatible]
+      infer_instance
+  | cons fragment fragments =>
+      letI := listTimelocksPairwiseCompatibleDecidable fragments
+      simp only [listTimelocksPairwiseCompatible]
+      infer_instance
 
 /-- Executable decision procedure for public-key list validity. -/
 def allKeysValidDecidable (ctx : ScriptContext) (keys : List PubKey) :
@@ -63,12 +80,13 @@ mutual
         letI := wellFormedDecidable ctx x
         letI := wellFormedDecidable ctx y
         letI := wellFormedDecidable ctx z
-        simp only [WellFormed, andorTimelocksCompatible]
+        simp only [WellFormed, andorTimelocksCompatible, andTimelocksCompatible]
         infer_instance
     | a x | s x | c x | d x | v x | j x | n x =>
         simpa only [WellFormed] using wellFormedDecidable ctx x
     | thresh _ fragments =>
         letI := allWellFormedDecidable ctx fragments
+        letI := listTimelocksPairwiseCompatibleDecidable fragments
         simp only [WellFormed, validThreshold]
         infer_instance
     | multi _ keys | multi_a _ keys =>
