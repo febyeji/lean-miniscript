@@ -25,6 +25,10 @@ the key resolver used at the elaboration boundary.
     `SurfaceParseError`. -/
 abbrev KeyResolver := String → Except String PubKey
 
+/-- Maximum number of wrappers and calls on any path through a parsed surface
+    expression. This matches the recursion boundary used by rust-miniscript. -/
+def maxSurfaceRecursionDepth : Nat := 402
+
 /-- Structured failures produced by the surface text boundary. -/
 inductive SurfaceParseError where
   | emptyInput
@@ -38,6 +42,7 @@ inductive SurfaceParseError where
   | invalidNumber (position : Nat) (text : String)
   | invalidHex (position : Nat) (role text : String)
   | invalidHashLength (position : Nat) (role : String) (expected actual : Nat)
+  | maxRecursionDepthExceeded (maximum : Nat)
   | keyResolution (position : Nat) (token message : String)
   | keyContext (position : Nat) (token : String) (context : ScriptContext)
   | contextMismatch (position : Nat) (fragment : String) (context : ScriptContext)
@@ -106,8 +111,51 @@ private def tokenizeChars (position atomPosition : Nat)
               if reversedAtom.isEmpty then position else atomPosition
             tokenizeChars (position + 1) start (char :: reversedAtom) rest
 
+private def pushTokenizedAtom (position : Nat) (reversedAtom : List Char)
+    (reversedTokens : List SurfaceToken) : List SurfaceToken :=
+  match reversedAtom with
+  | [] => reversedTokens
+  | _ =>
+      ⟨.atom (String.ofList reversedAtom.reverse), position⟩ ::
+        reversedTokens
+
+/-- Tail-recursive implementation of `tokenizeChars`. Keeping the accumulator
+    reversed avoids retaining one call frame for every delimiter in malformed
+    input. -/
+private def tokenizeCharsAcc (position atomPosition : Nat)
+    (reversedAtom : List Char) (reversedTokens : List SurfaceToken) :
+    List Char → List SurfaceToken
+  | [] => (pushTokenizedAtom atomPosition reversedAtom reversedTokens).reverse
+  | char :: rest =>
+      if SurfaceText.isSpace char then
+        tokenizeCharsAcc (position + 1) (position + 1) []
+          (pushTokenizedAtom atomPosition reversedAtom reversedTokens) rest
+      else
+        match char with
+        | '(' =>
+            tokenizeCharsAcc (position + 1) (position + 1) []
+              (⟨.leftParen, position⟩ ::
+                pushTokenizedAtom atomPosition reversedAtom reversedTokens) rest
+        | ')' =>
+            tokenizeCharsAcc (position + 1) (position + 1) []
+              (⟨.rightParen, position⟩ ::
+                pushTokenizedAtom atomPosition reversedAtom reversedTokens) rest
+        | ',' =>
+            tokenizeCharsAcc (position + 1) (position + 1) []
+              (⟨.comma, position⟩ ::
+                pushTokenizedAtom atomPosition reversedAtom reversedTokens) rest
+        | ':' =>
+            tokenizeCharsAcc (position + 1) (position + 1) []
+              (⟨.colon, position⟩ ::
+                pushTokenizedAtom atomPosition reversedAtom reversedTokens) rest
+        | _ =>
+            let start :=
+              if reversedAtom.isEmpty then position else atomPosition
+            tokenizeCharsAcc (position + 1) start (char :: reversedAtom)
+              reversedTokens rest
+
 private def tokenizeSurface (input : String) : List SurfaceToken :=
-  tokenizeChars 0 0 [] input.toList
+  tokenizeCharsAcc 0 0 [] [] input.toList
 
 private def tokenText (token : SurfaceToken) : String :=
   match token.kind with
@@ -174,6 +222,27 @@ private theorem tokenizeChars_toLexemes (position atomPosition : Nat)
       · split <;> cases reversedAtom <;>
           simp [finishTokenizedAtom, finishLexemeAtom,
             SurfaceToken.toLexeme, ih]
+
+private theorem tokenizeCharsAcc_eq (position atomPosition : Nat)
+    (reversedAtom : List Char) (reversedTokens : List SurfaceToken)
+    (chars : List Char) :
+    tokenizeCharsAcc position atomPosition reversedAtom reversedTokens chars =
+      reversedTokens.reverse ++
+        tokenizeChars position atomPosition reversedAtom chars := by
+  induction chars generalizing position atomPosition reversedAtom reversedTokens with
+  | nil =>
+      cases reversedAtom <;>
+        simp [tokenizeCharsAcc, pushTokenizedAtom, tokenizeChars,
+          finishTokenizedAtom]
+  | cons char rest ih =>
+      simp only [tokenizeCharsAcc, tokenizeChars]
+      split
+      · cases reversedAtom <;>
+          simp [pushTokenizedAtom, finishTokenizedAtom, ih,
+            List.append_assoc]
+      · split <;> cases reversedAtom <;>
+          simp [pushTokenizedAtom, finishTokenizedAtom, ih,
+            List.append_assoc]
 
 private theorem tokenizeLexemeChars_safe_prefix
     (chars reversedAtom rest : List Char)
@@ -348,6 +417,8 @@ private theorem tokenizeSurface_renderExpr (expr : SurfaceText.Expr)
     (hSafe : expr.AtomsSafe) :
     (tokenizeSurface expr.render).map SurfaceToken.toLexeme = expr.lexemes := by
   rw [tokenizeSurface, SurfaceText.Expr.render, String.toList_ofList]
+  rw [tokenizeCharsAcc_eq]
+  simp only [List.reverse_nil, List.nil_append]
   rw [tokenizeChars_toLexemes]
   exact tokenizeLexemeChars_renderLexemes expr.lexemes
     (exprLexemesTokenizable expr hSafe)
@@ -408,6 +479,81 @@ end
 
 private def parseRaw (tokens : List SurfaceToken) : RawParseResult :=
   parseRawFuel (tokens.length + 1) tokens
+
+private inductive SurfaceDepthScan where
+  | parsed (remaining : List SurfaceToken)
+  | exceeded
+  | malformed
+
+/- Scan the token grammar before constructing its recursive syntax tree. The
+   semantic budget is shared along one path and reset for sibling arguments;
+   the fuel only makes the scanner structurally recursive. -/
+mutual
+  private def scanSurfaceDepthFuel :
+      Nat → Nat → List SurfaceToken → SurfaceDepthScan
+    | 0, _, _ => .malformed
+    | _ + 1, _, [] => .malformed
+    | fuel + 1, remainingDepth, token :: rest =>
+        match token.kind with
+        | .atom name =>
+            match rest with
+            | next :: remaining =>
+                match next.kind with
+                | .colon =>
+                    if name.length ≤ remainingDepth then
+                      scanSurfaceDepthFuel fuel
+                        (remainingDepth - name.length) remaining
+                    else
+                      .exceeded
+                | .leftParen =>
+                    match remainingDepth with
+                    | 0 => .exceeded
+                    | depth + 1 =>
+                        scanSurfaceArgumentsDepthFuel fuel depth remaining
+                | _ => .parsed rest
+            | [] => .parsed []
+        | _ => .malformed
+
+  private def scanSurfaceArgumentsDepthFuel :
+      Nat → Nat → List SurfaceToken → SurfaceDepthScan
+    | 0, _, _ => .malformed
+    | _ + 1, _, [] => .malformed
+    | fuel + 1, remainingDepth, token :: rest =>
+        match token.kind with
+        | .rightParen => .parsed rest
+        | _ =>
+            match scanSurfaceDepthFuel fuel remainingDepth (token :: rest) with
+            | .parsed remaining =>
+                scanMoreSurfaceArgumentsDepthFuel fuel remainingDepth remaining
+            | .exceeded => .exceeded
+            | .malformed => .malformed
+
+  private def scanMoreSurfaceArgumentsDepthFuel :
+      Nat → Nat → List SurfaceToken → SurfaceDepthScan
+    | 0, _, _ => .malformed
+    | _ + 1, _, [] => .malformed
+    | fuel + 1, remainingDepth, token :: rest =>
+        match token.kind with
+        | .rightParen => .parsed rest
+        | .comma =>
+            match scanSurfaceDepthFuel fuel remainingDepth rest with
+            | .parsed remaining =>
+                scanMoreSurfaceArgumentsDepthFuel fuel remainingDepth remaining
+            | .exceeded => .exceeded
+            | .malformed => .malformed
+        | _ => .malformed
+end
+
+private def tokensWithinSurfaceRecursionLimit
+    (tokens : List SurfaceToken) : Bool :=
+  match scanSurfaceDepthFuel (tokens.length + 1)
+      maxSurfaceRecursionDepth tokens with
+  | .exceeded => false
+  | .parsed _ | .malformed => true
+
+/-- Whether surface text stays within the public parser recursion boundary. -/
+def surfaceTextWithinRecursionLimit (input : String) : Bool :=
+  tokensWithinSurfaceRecursionLimit (tokenizeSurface input)
 
 private def remainingArgumentLexemes :
     List SurfaceText.Expr → List SurfaceText.Lexeme
@@ -902,6 +1048,21 @@ private theorem decodeHex_byteArrayHex (bytes : ByteArray) :
   simp [decodeHex?, LeanMiniscript.Script.byteArrayHex,
     decodeHexChars_byteHexChars]
 
+private theorem byteArrayHex_length (bytes : ByteArray) :
+    (LeanMiniscript.Script.byteArrayHex bytes).length = bytes.size * 2 := by
+  rcases bytes with ⟨data⟩
+  rw [LeanMiniscript.Script.byteArrayHex, String.length_ofList,
+    List.length_flatMap]
+  have hTwo : ∀ values : List UInt8,
+      (values.map (fun _ => 2)).sum = values.length * 2 := by
+    intro values
+    induction values with
+    | nil => rfl
+    | cons _ values ih => simp [ih, Nat.succ_mul]; omega
+  simpa only [LeanMiniscript.Script.byteHexChars, List.length_cons,
+    List.length_nil, Nat.zero_add, Array.length_toList, ByteArray.size]
+    using hTwo data.toList
+
 private theorem parseNatRaw_toString
     (role : String) (position value : Nat) :
     parseNatRaw role (.atom position (toString value)) = .ok value := by
@@ -977,20 +1138,26 @@ private theorem atomSafe_byteArrayHex (bytes : ByteArray)
     tokens. Context-specific serialized-shape checks remain in `parseSurface`;
     this byte codec does not validate secp256k1 curve membership. -/
 def resolveHexKey (token : String) : Except String PubKey :=
-  match decodeHex? token with
-  | some bytes => pure (PubKey.ofBytes bytes)
-  | none => .error "expected an even-length hexadecimal public key"
+  if token.length = 64 ∨ token.length = 66 then
+    match decodeHex? token with
+    | some bytes => pure (PubKey.ofBytes bytes)
+    | none => .error "expected a 32- or 33-byte hexadecimal public key"
+  else
+    .error "expected a 32- or 33-byte hexadecimal public key"
 
 private def parseHashBytes (role : String) (expectedLength : Nat)
     (raw : RawSurfaceExpr) : Except SurfaceParseError ByteArray := do
   let (position, text) ← rawAtom role raw
-  match decodeHex? text with
-  | none => .error (.invalidHex position role text)
-  | some bytes =>
-      if bytes.size = expectedLength then
-        pure bytes
-      else
-        .error (.invalidHashLength position role expectedLength bytes.size)
+  if text.length > expectedLength * 2 then
+    .error (.invalidHashLength position role expectedLength (text.length / 2))
+  else
+    match decodeHex? text with
+    | none => .error (.invalidHex position role text)
+    | some bytes =>
+        if bytes.size = expectedLength then
+          pure bytes
+        else
+          .error (.invalidHashLength position role expectedLength bytes.size)
 
 /-- Normalize resolved key bytes to the representation embedded in Script.
     BIP 386 permits compressed key expressions under `tr()`, but their
@@ -1018,10 +1185,14 @@ private def resolveKeyRaw (context : ScriptContext) (resolver : KeyResolver)
       | some normalized => pure normalized
       | none => .error (.keyContext position token context)
 
-private theorem resolveHexKey_prettyPubKey (key : PubKey) :
+private theorem resolveHexKey_prettyPubKey (key : PubKey)
+    (hSize : key.size = 32 ∨ key.size = 33) :
     resolveHexKey (prettyPubKey key) = .ok key := by
-  simp [resolveHexKey, prettyPubKey, decodeHex_byteArrayHex,
-    PubKey.ofBytes]
+  have hAllowed : key.bytes.size * 2 = 64 ∨ key.bytes.size * 2 = 66 := by
+    simp [PubKey.size] at hSize
+    omega
+  simp [resolveHexKey, prettyPubKey, byteArrayHex_length, hAllowed,
+    decodeHex_byteArrayHex, PubKey.ofBytes]
   rfl
 
 private theorem normalizeKeyForContext_of_valid
@@ -1037,7 +1208,13 @@ private theorem resolveKeyRaw_prettyPubKey
     (hValid : validResolvedPubKey context key) :
     resolveKeyRaw context resolveHexKey
         (.atom position (prettyPubKey key)) = .ok key := by
-  simp [resolveKeyRaw, rawAtom, resolveHexKey_prettyPubKey,
+  have hSize : key.size = 32 ∨ key.size = 33 := by
+    cases context with
+    | p2wsh =>
+        right
+        exact hValid.1
+    | tapscript => exact Or.inl hValid
+  simp [resolveKeyRaw, rawAtom, resolveHexKey_prettyPubKey key hSize,
     normalizeKeyForContext_of_valid context key hValid]
   rfl
 
@@ -1047,7 +1224,10 @@ private theorem parseHashBytes_byteArrayHex
     parseHashBytes role expectedLength
         (.atom position (LeanMiniscript.Script.byteArrayHex bytes)) =
       .ok bytes := by
-  simp [parseHashBytes, rawAtom, decodeHex_byteArrayHex, hSize]
+  have hLength :
+      (LeanMiniscript.Script.byteArrayHex bytes).length = expectedLength * 2 := by
+    rw [byteArrayHex_length, hSize]
+  simp [parseHashBytes, rawAtom, hLength, decodeHex_byteArrayHex, hSize]
   rfl
 
 private def validateSurface (context : ScriptContext)
@@ -2656,6 +2836,8 @@ private def parseSurfaceUnchecked (context : ScriptContext)
   let tokens := tokenizeSurface input
   if tokens.isEmpty then
     .error .emptyInput
+  else if !tokensWithinSurfaceRecursionLimit tokens then
+    .error (.maxRecursionDepthExceeded maxSurfaceRecursionDepth)
   else
     let (raw, remaining) ← parseRaw tokens
     match remaining with
@@ -2733,7 +2915,9 @@ def parseSurfaceHex (context : ScriptContext) (input : String) :
 
 private theorem parseSurfaceUnchecked_prettySurface
     (context : ScriptContext) (fragment : SurfaceFragment)
-    (hWellFormed : fragment.WellFormed context) :
+    (hWellFormed : fragment.WellFormed context)
+    (hDepth : surfaceTextWithinRecursionLimit
+      (prettySurface fragment) = true) :
     parseSurfaceUnchecked context resolveHexKey (prettySurface fragment) =
       .ok (normalizeSurface fragment) := by
   let expr := SurfaceText.normalizedExprWithWrappers prettyPubKey ""
@@ -2767,6 +2951,8 @@ private theorem parseSurfaceUnchecked_prettySurface
   change (do
     if tokens.isEmpty then
       Except.error SurfaceParseError.emptyInput
+    else if !tokensWithinSurfaceRecursionLimit tokens then
+      Except.error (.maxRecursionDepthExceeded maxSurfaceRecursionDepth)
     else
       let (raw, remaining) ← parseRaw tokens
       match remaining with
@@ -2778,6 +2964,11 @@ private theorem parseSurfaceUnchecked_prettySurface
     | nil => exact False.elim (hTokensNonempty hTokensValue)
     | cons => rfl
   rw [if_neg (by simpa using hTokensIsEmpty)]
+  have hWithin : tokensWithinSurfaceRecursionLimit tokens = true := by
+    simpa [surfaceTextWithinRecursionLimit, tokens, expr, prettySurface,
+      prettySurfaceWith, SurfaceText.prettyNormalizedSurfaceWithWrappers]
+      using hDepth
+  rw [hWithin]
   rw [hParse]
   exact hElaborate
 
@@ -2787,6 +2978,8 @@ private theorem parseSurfaceUnchecked_prettySurface
 theorem parseSurfaceHex_prettySurface
     (context : ScriptContext) (fragment : SurfaceFragment)
     (hWellFormed : fragment.WellFormed context)
+    (hDepth : surfaceTextWithinRecursionLimit
+      (prettySurface fragment) = true)
     (hInferred : (inferTyped context (desugar fragment)).isSome = true) :
     parseSurfaceHex context (prettySurface fragment) =
       .ok (normalizeSurface fragment) := by
@@ -2801,7 +2994,7 @@ theorem parseSurfaceHex_prettySurface
     rw [desugar_normalizeSurface]
     exact hInferred
   unfold parseSurfaceHex parseSurface
-  rw [parseSurfaceUnchecked_prettySurface context fragment hWellFormed]
+  rw [parseSurfaceUnchecked_prettySurface context fragment hWellFormed hDepth]
   change validateSurface context (normalizeSurface (normalizeSurface fragment)) =
     .ok (normalizeSurface fragment)
   rw [normalizeSurface_idempotent]
