@@ -1,4 +1,5 @@
 import LeanMiniscript.Miniscript.SurfacePretty
+import LeanMiniscript.Miniscript.TypeInference
 import LeanMiniscript.Miniscript.ValidationDecidable
 import Init.Data.List.Lemmas
 import Std.Data.String.ToNat
@@ -1052,7 +1053,9 @@ private theorem parseHashBytes_byteArrayHex
 private def validateSurface (context : ScriptContext)
     (fragment : SurfaceFragment) : Except SurfaceParseError SurfaceFragment :=
   if _ : fragment.WellFormed context then
-    pure fragment
+    match inferTyped context (desugar fragment) with
+    | some _ => pure fragment
+    | none => .error (.validationFailed context)
   else
     .error (.validationFailed context)
 
@@ -2683,11 +2686,43 @@ theorem normalizeSurface_of_parseSurface_eq_ok
       rw [hUnchecked] at h
       change validateSurface context (normalizeSurface unchecked) = .ok fragment at h
       by_cases hValid : (normalizeSurface unchecked).WellFormed context
+      · cases hTyped : inferTyped context
+          (desugar (normalizeSurface unchecked)) with
+        | none => simp [validateSurface, hValid, hTyped] at h
+        | some typed =>
+            simp [validateSurface, hValid, hTyped] at h
+            change Except.ok (normalizeSurface unchecked) = Except.ok fragment at h
+            injection h with hFragment
+            rw [← hFragment]
+            exact normalizeSurface_idempotent unchecked
       · simp [validateSurface, hValid] at h
-        change Except.ok (normalizeSurface unchecked) = Except.ok fragment at h
-        injection h with hFragment
-        rw [← hFragment]
-        exact normalizeSurface_idempotent unchecked
+
+/-- Successful public parsing returns a context-valid and well-typed surface
+    fragment. -/
+theorem wellFormed_and_hasType_of_parseSurface_eq_ok
+    (context : ScriptContext) (resolver : KeyResolver) (input : String)
+    (fragment : SurfaceFragment)
+    (h : parseSurface context resolver input = .ok fragment) :
+    fragment.WellFormed context ∧
+      ∃ ty, HasType context (desugar fragment) ty := by
+  unfold parseSurface at h
+  cases hUnchecked : parseSurfaceUnchecked context resolver input with
+  | error error =>
+      rw [hUnchecked] at h
+      contradiction
+  | ok unchecked =>
+      rw [hUnchecked] at h
+      change validateSurface context (normalizeSurface unchecked) = .ok fragment at h
+      by_cases hValid : (normalizeSurface unchecked).WellFormed context
+      · cases hTyped : inferTyped context
+          (desugar (normalizeSurface unchecked)) with
+        | none => simp [validateSurface, hValid, hTyped] at h
+        | some typed =>
+            simp [validateSurface, hValid, hTyped] at h
+            change Except.ok (normalizeSurface unchecked) = Except.ok fragment at h
+            injection h with hFragment
+            rw [← hFragment]
+            exact ⟨hValid, ⟨typed.val, typed.property⟩⟩
       · simp [validateSurface, hValid] at h
 
 /-- Parse canonical surface text whose key tokens are raw hexadecimal public
@@ -2747,11 +2782,12 @@ private theorem parseSurfaceUnchecked_prettySurface
   exact hElaborate
 
 /-- `parseSurfaceHex` is a left inverse of `prettySurface` for every
-    context-valid surface fragment, modulo the documented surface
+    context-valid, inferred surface fragment, modulo the documented surface
     normalization. -/
 theorem parseSurfaceHex_prettySurface
     (context : ScriptContext) (fragment : SurfaceFragment)
-    (hWellFormed : fragment.WellFormed context) :
+    (hWellFormed : fragment.WellFormed context)
+    (hInferred : (inferTyped context (desugar fragment)).isSome = true) :
     parseSurfaceHex context (prettySurface fragment) =
       .ok (normalizeSurface fragment) := by
   have hNormalizedWellFormed :
@@ -2760,12 +2796,19 @@ theorem parseSurfaceHex_prettySurface
     change (desugar (normalizeSurface fragment)).WellFormed context
     rw [desugar_normalizeSurface]
     exact hWellFormed
+  have hNormalizedInferred :
+      (inferTyped context (desugar (normalizeSurface fragment))).isSome = true := by
+    rw [desugar_normalizeSurface]
+    exact hInferred
   unfold parseSurfaceHex parseSurface
   rw [parseSurfaceUnchecked_prettySurface context fragment hWellFormed]
   change validateSurface context (normalizeSurface (normalizeSurface fragment)) =
     .ok (normalizeSurface fragment)
   rw [normalizeSurface_idempotent]
-  simp [validateSurface, hNormalizedWellFormed]
-  rfl
+  cases hTyped : inferTyped context (desugar (normalizeSurface fragment)) with
+  | none => simp [hTyped] at hNormalizedInferred
+  | some typed =>
+      simp [validateSurface, hNormalizedWellFormed, hTyped]
+      rfl
 
 end LeanMiniscript.Miniscript

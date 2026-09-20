@@ -120,26 +120,26 @@ private def p2wshConstructorInputs : List String :=
     "hash256(" ++ hash256 ++ ")",
     "ripemd160(" ++ hash160 ++ ")",
     "hash160(" ++ hash160 ++ ")",
-    "and_v(1,1)",
-    "and_b(1,1)",
-    "or_b(1,1)",
-    "or_c(1,1)",
-    "or_d(1,1)",
+    "and_v(v:1,0)",
+    "and_b(1,a:1)",
+    "or_b(0,a:0)",
+    "or_c(0,v:1)",
+    "or_d(0,1)",
     "or_i(1,1)",
-    "andor(1,1,1)",
+    "andor(0,1,1)",
     "a:1",
-    "s:1",
-    "c:1",
-    "d:1",
+    "s:sha256(" ++ hash256 ++ ")",
+    "c:or_i(pk_k(" ++ key ++ "),pk_k(" ++ key ++ "))",
+    "d:v:1",
     "v:1",
-    "j:1",
+    "j:sha256(" ++ hash256 ++ ")",
     "n:1",
-    "thresh(1,1)",
+    "thresh(1,0)",
     "multi(1," ++ key ++ ")",
     "pk(" ++ key ++ ")",
     "pkh(" ++ key ++ ")",
-    "and_n(1,1)",
-    "t:1",
+    "and_n(0,1)",
+    "t:v:1",
     "l:1",
     "u:1"
   ]
@@ -182,8 +182,8 @@ example :
   native_decide
 
 example :
-    parsesCanonically .p2wsh "  and_v( 1 , older(42) )  "
-      "and_v(1,older(42))" = true := by
+    parsesCanonically .p2wsh "  and_v( v:1 , older(42) )  "
+      "and_v(v:1,older(42))" = true := by
   native_decide
 
 example :
@@ -196,8 +196,8 @@ example :
 
 example :
     parsesCanonically .p2wsh
-      ("a:t:pk(" ++ prettyPubKey p2wshKey ++ ")")
-      ("at:pk(" ++ prettyPubKey p2wshKey ++ ")") = true := by
+      ("a:t:v:pk(" ++ prettyPubKey p2wshKey ++ ")")
+      ("atv:pk(" ++ prettyPubKey p2wshKey ++ ")") = true := by
   native_decide
 
 example :
@@ -226,6 +226,14 @@ example :
 
 example :
     isValidationFailed (parseSurfaceHex .p2wsh "thresh(2,1)") = true := by
+  native_decide
+
+example :
+    isValidationFailed (parseSurfaceHex .p2wsh "j:0") = true := by
+  native_decide
+
+example :
+    isValidationFailed (parseSurfaceHex .p2wsh "and_v(1,1)") = true := by
   native_decide
 
 example :
