@@ -40,6 +40,21 @@ theorem satisfactionCorrectnessCore : SatisfactionCorrectnessCore := by
   exact ⟨modeled, version,
     (supported.satisfyContract generated).cleanStackResult⟩
 
+/-- The final HASSIG-filtered satisfaction API inherits core satisfaction
+    correctness from the ordinary selected candidate. -/
+theorem satisfyFinalCorrectnessCore
+    {ctx : ScriptContext} {fragment : CoreFragment} {env : SatEnv}
+    {witness : Witness} {flags : ScriptFlags}
+    (valid : ValidMiniscript ctx fragment)
+    (sound : env.Sound)
+    (encodings : env.EncodingSound flags)
+    (version : ModeledContextVersion ctx env.txCtx)
+    (modeled : ModeledContextFlags ctx flags)
+    (generated : satisfyFinal fragment env = some witness) :
+    Accepts ctx (compile fragment) witness flags env.txCtx :=
+  satisfactionCorrectnessCore valid sound encodings version modeled
+    (satisfyFinal_some_satisfy generated)
+
 /-- Every usable dissatisfaction generated for a valid dissatisfiable core
     Miniscript executes successfully to a clean false result. -/
 theorem dissatisfactionCorrectnessCore : DissatisfactionCorrectnessCore := by
@@ -59,6 +74,21 @@ theorem satisfactionCorrectnessSurface : SatisfactionCorrectnessSurface := by
   simpa [compileSurface, compileSurfaceWithKeyHash, compile] using
     satisfactionCorrectnessCore valid sound encodings version modeled
       generated
+
+/-- Surface compilation inherits final HASSIG-filtered satisfaction
+    correctness through desugaring. -/
+theorem satisfyFinalCorrectnessSurface
+    {ctx : ScriptContext} {fragment : SurfaceFragment} {env : SatEnv}
+    {witness : Witness} {flags : ScriptFlags}
+    (valid : ValidSurfaceMiniscript ctx fragment)
+    (sound : env.Sound)
+    (encodings : env.EncodingSound flags)
+    (version : ModeledContextVersion ctx env.txCtx)
+    (modeled : ModeledContextFlags ctx flags)
+    (generated : satisfyFinal (desugar fragment) env = some witness) :
+    Accepts ctx (compileSurface fragment) witness flags env.txCtx :=
+  satisfactionCorrectnessSurface valid sound encodings version modeled
+    (satisfyFinal_some_satisfy generated)
 
 /-- Surface dissatisfaction is the corresponding desugaring corollary of core
     dissatisfaction correctness. -/

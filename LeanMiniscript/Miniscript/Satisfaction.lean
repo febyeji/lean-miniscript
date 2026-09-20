@@ -398,14 +398,23 @@ def witness? : CandidateResult → Option Witness
   | .candidate value => some value.witness
 
 /-- Project a witness unless it is marked DONTUSE. This only enforces the
-    DONTUSE boundary; top-level timelock/HASSIG policy is a later selection
-    step. -/
+    recursive candidate boundary; top-level HASSIG policy is a later step. -/
 def usableWitness? : CandidateResult → Option Witness
   | .impossible => none
   | .candidate value =>
       match value.status with
       | .usable => some value.witness
       | .dontUse => none
+
+/-- Project a final top-level satisfaction witness. BIP 379 requires the
+    already-selected candidate to be usable and to contain a signature. This
+    check happens after selection and never chooses a different alternative. -/
+def finalWitness? : CandidateResult → Option Witness
+  | .impossible => none
+  | .candidate value =>
+      match value.status, value.hasSig with
+      | .usable, true => some value.witness
+      | _, _ => none
 
 /-- Compose two possible results. Impossibility is absorbing. -/
 def combine : CandidateResult → CandidateResult → CandidateResult
@@ -424,6 +433,49 @@ def combine : CandidateResult → CandidateResult → CandidateResult
 @[simp] theorem impossible_usableWitness? :
     (impossible : CandidateResult).usableWitness? = none := by
   rfl
+
+@[simp] theorem usable_finalWitness? (witness : Witness) :
+    (usable witness true).finalWitness? = some witness := by
+  rfl
+
+@[simp] theorem usable_without_sig_finalWitness? (witness : Witness) :
+    (usable witness false).finalWitness? = none := by
+  rfl
+
+@[simp] theorem dontUse_finalWitness? (witness : Witness) (hasSig : Bool)
+    (origin : CandidateOrigin) :
+    (dontUse witness hasSig origin).finalWitness? = none := by
+  cases hasSig <;> rfl
+
+@[simp] theorem impossible_finalWitness? :
+    (impossible : CandidateResult).finalWitness? = none := by
+  rfl
+
+/-- A final witness is exactly the witness of the selected usable HASSIG
+    candidate. -/
+theorem finalWitness?_eq_some_iff (result : CandidateResult)
+    (witness : Witness) :
+    result.finalWitness? = some witness ↔
+      ∃ candidate,
+        result = .candidate candidate ∧
+        candidate.status = .usable ∧
+        candidate.hasSig = true ∧
+        candidate.witness = witness := by
+  cases result with
+  | impossible => simp [finalWitness?]
+  | candidate candidate =>
+      cases status : candidate.status <;>
+        cases hasSig : candidate.hasSig <;>
+          simp [finalWitness?, status, hasSig]
+
+/-- Final projection only removes candidates from the ordinary usable
+    projection. -/
+theorem finalWitness?_some_usableWitness {result : CandidateResult}
+    {witness : Witness} (selected : result.finalWitness? = some witness) :
+    result.usableWitness? = some witness := by
+  rw [finalWitness?_eq_some_iff] at selected
+  obtain ⟨candidate, rfl, status, _, rfl⟩ := selected
+  simp [usableWitness?, status]
 
 @[simp] theorem impossible_select (right : CandidateResult) :
     select .impossible right = right := by
@@ -815,9 +867,14 @@ end
   | cons fragment fragments ih => simp [ih]
 
 /-- Project the usable satisfaction candidate. This is the leaf/composition
-    projection only; final timelock/HASSIG policy remains a later step. -/
+    projection only; final HASSIG policy remains a later step. -/
 def satisfy (fragment : CoreFragment) (env : SatEnv) : Option Witness :=
   (satisfactionCandidates fragment env).sat.usableWitness?
+
+/-- Return the final BIP 379 satisfaction only when the selected usable
+    candidate has HASSIG. Selection is not repeated after this policy gate. -/
+def satisfyFinal (fragment : CoreFragment) (env : SatEnv) : Option Witness :=
+  (satisfactionCandidates fragment env).sat.finalWitness?
 
 /-- Project the usable dissatisfaction candidate. Canonical hash
     dissatisfactions are deliberately absent here because their raw candidates
@@ -825,12 +882,29 @@ def satisfy (fragment : CoreFragment) (env : SatEnv) : Option Witness :=
 def dissatisfy (fragment : CoreFragment) (env : SatEnv) : Option Witness :=
   (satisfactionCandidates fragment env).dsat.usableWitness?
 
-/-- The paired candidate API is the single source for public satisfaction. -/
+/-- The paired candidate API is the source for ordinary satisfaction
+    projection. -/
 theorem satisfactionCandidates_sat_witness
     (fragment : CoreFragment) (env : SatEnv) :
     (satisfactionCandidates fragment env).sat.usableWitness? =
       satisfy fragment env := by
   rfl
+
+/-- Every final witness is the ordinary selected satisfaction witness. -/
+theorem satisfyFinal_some_satisfy {fragment : CoreFragment} {env : SatEnv}
+    {witness : Witness} (selected : satisfyFinal fragment env = some witness) :
+    satisfy fragment env = some witness := by
+  exact CandidateResult.finalWitness?_some_usableWitness selected
+
+/-- Successful final projection exposes the selected usable HASSIG candidate. -/
+theorem satisfyFinal_some_candidate {fragment : CoreFragment} {env : SatEnv}
+    {witness : Witness} (selected : satisfyFinal fragment env = some witness) :
+    ∃ candidate,
+      (satisfactionCandidates fragment env).sat = .candidate candidate ∧
+      candidate.status = .usable ∧
+      candidate.hasSig = true ∧
+      candidate.witness = witness := by
+  exact (CandidateResult.finalWitness?_eq_some_iff _ _).mp selected
 
 /-- The paired candidate API is the single source for public dissatisfaction. -/
 theorem satisfactionCandidates_dsat_witness
