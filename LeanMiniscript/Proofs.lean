@@ -15,7 +15,9 @@ import LeanMiniscript.Miniscript.SatisfactionGeneratedRecursiveProofs
 import LeanMiniscript.Miniscript.SatisfactionCorrectnessProofs
 import LeanMiniscript.Miniscript.SurfaceTextProofs
 import LeanMiniscript.Properties.ResourceBoundsProofs
+import LeanMiniscript.Properties.ResourceCompilerMetricProofs
 import LeanMiniscript.Properties.ResourcePathProofs
+import LeanMiniscript.Properties.SaneExecutionResourceProofs
 import LeanMiniscript.Properties.SatisfactionExecutionResourceProofs
 
 /-!
@@ -27,5 +29,6 @@ dissatisfaction correctness, stack-growth, active-path Script resource
 observations, terminal VERIFY fusion resource preservation, and runtime
 prefix-bound guarantees without adding their proof graph to the stable
 executable facade. Generated final satisfactions also expose one concrete
-resource observation bounded by the jointly selected stack and dynamic paths.
+resource observation bounded by the jointly selected stack and dynamic paths,
+including the context-specific limits certified by sane fragments.
 -/
