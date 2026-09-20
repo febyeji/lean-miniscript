@@ -53,6 +53,12 @@ private def isInvalidHashLength :
   | .error (.invalidHashLength ..) => true
   | _ => false
 
+private def isMaxRecursionDepthExceeded :
+    Except SurfaceParseError SurfaceFragment → Bool
+  | .error (.maxRecursionDepthExceeded maximum) =>
+      maximum == maxSurfaceRecursionDepth
+  | _ => false
+
 private def isKeyResolution :
     Except SurfaceParseError SurfaceFragment → Bool
   | .error (.keyResolution ..) => true
@@ -210,6 +216,78 @@ example :
 
 example :
     isInvalidHex (parseSurfaceHex .p2wsh "sha256(not-hex)") = true := by
+  native_decide
+
+private def repeatText (count : Nat) (text : String) : String :=
+  String.join (List.replicate count text)
+
+private def nestedOrI : Nat → String
+  | 0 => "0"
+  | depth + 1 => "or_i(1," ++ nestedOrI depth ++ ")"
+
+example : maxSurfaceRecursionDepth = 402 := by
+  rfl
+
+example :
+    parsesSuccessfully .p2wsh
+      (repeatText maxSurfaceRecursionDepth "n:" ++ "0") = true := by
+  native_decide
+
+example :
+    parsesSuccessfully .p2wsh
+      (repeatText maxSurfaceRecursionDepth "n" ++ ":0") = true := by
+  native_decide
+
+example :
+    isMaxRecursionDepthExceeded
+      (parseSurfaceHex .p2wsh
+        (repeatText (maxSurfaceRecursionDepth + 1) "n:" ++ "0")) = true := by
+  native_decide
+
+example :
+    isMaxRecursionDepthExceeded
+      (parseSurfaceHex .p2wsh
+        (repeatText (maxSurfaceRecursionDepth + 1) "n" ++ ":0")) = true := by
+  native_decide
+
+example :
+    parsesSuccessfully .p2wsh (nestedOrI maxSurfaceRecursionDepth) = true := by
+  native_decide
+
+example :
+    isMaxRecursionDepthExceeded
+      (parseSurfaceHex .p2wsh
+        (nestedOrI (maxSurfaceRecursionDepth + 1))) = true := by
+  native_decide
+
+example :
+    parsesSuccessfully .p2wsh
+      (repeatText 201 "n:" ++ nestedOrI 201) = true := by
+  native_decide
+
+example :
+    isMaxRecursionDepthExceeded
+      (parseSurfaceHex .p2wsh
+        (repeatText 201 "n:" ++ nestedOrI 202)) = true := by
+  native_decide
+
+private def wideMultiA (keyCount : Nat) : String :=
+  "multi_a(1," ++ String.intercalate ","
+    (List.replicate keyCount (prettyPubKey tapscriptKey)) ++ ")"
+
+example : surfaceTextWithinRecursionLimit (wideMultiA 999) = true := by
+  native_decide
+
+example :
+    isKeyResolution
+      (parseSurfaceHex .p2wsh
+        ("pk(" ++ repeatText 40000 "0" ++ ")")) = true := by
+  native_decide
+
+example :
+    isInvalidHashLength
+      (parseSurfaceHex .p2wsh
+        ("sha256(" ++ repeatText 40000 "0" ++ ")")) = true := by
   native_decide
 
 example :

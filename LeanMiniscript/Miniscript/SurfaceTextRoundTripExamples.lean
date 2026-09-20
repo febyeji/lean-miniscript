@@ -123,6 +123,7 @@ private inductive SurfaceErrorTag where
   | invalidNumber
   | invalidHex
   | invalidHashLength
+  | maxRecursionDepthExceeded
   | keyResolution
   | keyContext
   | contextMismatch
@@ -141,6 +142,7 @@ private def SurfaceParseError.tag : SurfaceParseError → SurfaceErrorTag
   | .invalidNumber .. => .invalidNumber
   | .invalidHex .. => .invalidHex
   | .invalidHashLength .. => .invalidHashLength
+  | .maxRecursionDepthExceeded .. => .maxRecursionDepthExceeded
   | .keyResolution .. => .keyResolution
   | .keyContext .. => .keyContext
   | .contextMismatch .. => .contextMismatch

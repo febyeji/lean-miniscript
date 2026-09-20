@@ -32,6 +32,7 @@ theorem prettySurface_normalizeSurface (fragment : SurfaceFragment) :
 def SurfaceTextRoundTrip : Prop :=
   ∀ (context : ScriptContext) (fragment : SurfaceFragment),
     fragment.WellFormed context →
+      surfaceTextWithinRecursionLimit (prettySurface fragment) = true →
       wellTyped context (desugar fragment) →
       parseSurfaceHex context (prettySurface fragment) =
         .ok (normalizeSurface fragment)
@@ -39,8 +40,8 @@ def SurfaceTextRoundTrip : Prop :=
 /-- Canonical hexadecimal surface printing and context-aware parsing satisfy
     `SurfaceTextRoundTrip`. -/
 theorem surfaceTextRoundTrip : SurfaceTextRoundTrip := by
-  rintro context fragment hWellFormed ⟨ty, hTyped⟩
-  exact parseSurfaceHex_prettySurface context fragment hWellFormed (by
+  rintro context fragment hWellFormed hDepth ⟨ty, hTyped⟩
+  exact parseSurfaceHex_prettySurface context fragment hWellFormed hDepth (by
     simp [inferTyped_complete hTyped])
 
 end LeanMiniscript.Miniscript
