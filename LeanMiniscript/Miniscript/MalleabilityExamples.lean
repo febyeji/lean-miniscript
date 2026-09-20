@@ -170,6 +170,9 @@ example : ¬ repeatedBranchKey.NoDuplicateKeys := by
 example : inferMalleability .tapscript repeatedBranchKey = none := by
   native_decide
 
+example : inferMalleabilityTyped .tapscript repeatedBranchKey = none := by
+  native_decide
+
 example : inferMalleability .tapscript
     (.multi_a 1 [xOnlyKey, xOnlyKey]) = none := by
   native_decide
