@@ -27,6 +27,19 @@ example : (CoreFragment.pk_k oddCompressedKey).WellFormed .p2wsh := by
 
 example : tapscriptMulti.WellFormed .tapscript := by native_decide
 
+/-- BIP 379's largest permitted `multi_a` key list remains well formed. -/
+example :
+    (CoreFragment.multi_a 1
+      (List.replicate MAX_PUBKEYS_PER_MULTI_A xOnlyKey)).WellFormed .tapscript := by
+  native_decide
+
+/-- A `multi_a` key list beyond Bitcoin Core's 999-key limit is rejected. -/
+example :
+    ¬ (CoreFragment.multi_a 1
+      (List.replicate (MAX_PUBKEYS_PER_MULTI_A + 1) xOnlyKey)).WellFormed
+        .tapscript := by
+  native_decide
+
 /-- Length alone does not make a P2WSH key compressed: BIP 380 requires a
     `02` or `03` serialization prefix. -/
 example : ¬ (CoreFragment.pk_k invalidCompressedKey).WellFormed .p2wsh := by

@@ -2452,7 +2452,7 @@ mutual
         exact canonicalExprCorrect_prependWrappers context wrappers _ _
           hWrappers hBody
     | multi_a threshold keys =>
-        have hKeys := canonicalKeyListCorrect context keys hWellFormed.2.2
+        have hKeys := canonicalKeyListCorrect context keys hWellFormed.2.2.2
         have hKeysNonempty : keys ≠ [] := by
           intro hEmpty
           subst keys
