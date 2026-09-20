@@ -25,6 +25,40 @@ def compileCheckSigAdd : List PubKey → Script
   | key :: keys =>
       [.pushData key, .op .OP_CHECKSIG] ++ compileCheckSigAddTail keys
 
+/-- Specialized terminal opcode used when the `v:` wrapper can fold verification
+    into the final instruction. -/
+def verifyReplacement? : ScriptElement → Option ScriptElement
+  | .op .OP_EQUAL => some (.op .OP_EQUALVERIFY)
+  | .op .OP_CHECKSIG => some (.op .OP_CHECKSIGVERIFY)
+  | .op .OP_CHECKMULTISIG => some (.op .OP_CHECKMULTISIGVERIFY)
+  | .op .OP_NUMEQUAL => some (.op .OP_NUMEQUALVERIFY)
+  | _ => none
+
+/-- Compile the `v:` wrapper using BIP 379's terminal VERIFY substitutions.
+    If the final instruction has no specialized VERIFY form, append
+    `OP_VERIFY`. -/
+def compileVerify : Script → Script
+  | script =>
+      match script.reverse with
+      | [] => [.op .OP_VERIFY]
+      | last :: reversedPrefix =>
+          match verifyReplacement? last with
+          | some replacement => (replacement :: reversedPrefix).reverse
+          | none => (.op .OP_VERIFY :: last :: reversedPrefix).reverse
+
+@[simp]
+theorem compileVerify_nil : compileVerify [] = [.op .OP_VERIFY] := by
+  rfl
+
+@[simp]
+theorem compileVerify_append_singleton
+    (initScript : Script) (last : ScriptElement) :
+    compileVerify (initScript ++ [last]) =
+      match verifyReplacement? last with
+      | some replacement => initScript ++ [replacement]
+      | none => initScript ++ [last, .op .OP_VERIFY] := by
+  simp [compileVerify, List.reverse_append]
+
 /- Compile a core Miniscript AST fragment to Bitcoin Script.
    Each core constructor has a fixed compilation scheme defined in BIP 379. -/
 mutual
@@ -79,9 +113,7 @@ def compileWithKeyHash (keyHash : PubKey → Hash160) : CoreFragment → Script
   | .c x => compileWithKeyHash keyHash x ++ [.op .OP_CHECKSIG]
   | .d x =>
       [.op .OP_DUP, .op .OP_IF] ++ compileWithKeyHash keyHash x ++ [.op .OP_ENDIF]
-  | .v x => compileWithKeyHash keyHash x ++ [.op .OP_VERIFY]
-      -- Note: in practice, OP_CHECKSIG→OP_CHECKSIGVERIFY optimization exists
-      -- but we model the general case
+  | .v x => compileVerify (compileWithKeyHash keyHash x)
   | .j x =>
       [.op .OP_SIZE, .op .OP_0NOTEQUAL, .op .OP_IF] ++
         compileWithKeyHash keyHash x ++ [.op .OP_ENDIF]

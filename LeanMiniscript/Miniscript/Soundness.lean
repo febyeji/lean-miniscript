@@ -132,32 +132,37 @@ def VTypeOGuarantee (m : CoreFragment) : Prop :=
 
 /-- Soundness for v(c(pk_k(key))): wrapper composition produces V-type behavior.
 
-    v(c(pk_k(key))) compiles to `[pushData key, OP_CHECKSIG] ++ [OP_VERIFY]`.
-    A valid signature verifies and leaves the original stack unchanged; an
-    invalid signature reaches the modeled VERIFY failure. -/
+    v(c(pk_k(key))) compiles to `[pushData key, OP_CHECKSIGVERIFY]`. A valid
+    signature verifies and leaves the original stack unchanged; an invalid
+    signature reaches the opcode-specific failure. -/
 theorem v_c_pk_k_soundness (key : PubKey) :
     VTypeOGuarantee (.v (.c (.pk_k key))) := by
   intro wit stack altStack flags ctx
+  have compiled : compile (.v (.c (.pk_k key))) =
+      [.pushData key, .op .OP_CHECKSIGVERIFY] := by
+    change compileVerify ([.pushData key] ++ [.op .OP_CHECKSIG]) = _
+    rw [compileVerify_append_singleton]
+    rfl
+  rw [compiled]
   cases checked : checkSigWithEncoding checkSig checkSchnorrSig flags ctx wit key with
   | error error =>
       right
       refine ⟨error, ?_⟩
-      simpa [compile, compileWithKeyHash] using
-        (Eval.pushDataNext (data := key)
-          (Eval.checksig_encoding_failure key wit stack [.op .OP_VERIFY] altStack flags ctx error checked))
+      exact Eval.pushDataNext (data := key)
+        (Eval.checksigverify_encoding_failure key wit stack [] altStack
+          flags ctx error checked)
   | ok valid =>
       cases valid with
       | false =>
           right
-          refine ⟨.verify, ?_⟩
-          simpa [compile, compileWithKeyHash] using
-            (Eval.pushDataNext (data := key)
-              (Eval.checksigFalse checked (Eval.verifyFalse (top := falseElement) (by native_decide))))
+          refine ⟨.checkSigVerify, ?_⟩
+          exact Eval.pushDataNext (data := key)
+            (Eval.checksigverify_failure key wit stack [] altStack flags ctx checked)
       | true =>
           left
-          simpa [compile, compileWithKeyHash] using
-            (Eval.pushDataNext (data := key)
-              (Eval.checksigTrue checked (Eval.verifyTrue (top := trueElement) (by native_decide) Eval.done)))
+          exact Eval.pushDataNext (data := key)
+            (Eval.checksigverify_success key wit stack [] altStack flags ctx
+              (.success stack altStack) checked Eval.done)
 
 /-- What a W-type fragment with 'o' modifier guarantees in the current
     stack-shape model:

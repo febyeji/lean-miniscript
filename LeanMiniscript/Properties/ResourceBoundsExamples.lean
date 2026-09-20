@@ -75,10 +75,10 @@ private def p2wshStack101 : CoreFragment :=
 example : maxSatisfactionInitialStack p2wshStack100 = some 100 := by
   native_decide
 
-example : (resourceUsage p2wshStack100).scriptSize = some 3429 := by
+example : (resourceUsage p2wshStack100).scriptSize = some 3425 := by
   native_decide
 
-example : maxSatisfactionOpCount p2wshStack100 = some 109 := by
+example : maxSatisfactionOpCount p2wshStack100 = some 105 := by
   native_decide
 
 example : resourceLimitsSatisfied .p2wsh p2wshStack100 = true := by
@@ -87,10 +87,10 @@ example : resourceLimitsSatisfied .p2wsh p2wshStack100 = true := by
 example : maxSatisfactionInitialStack p2wshStack101 = some 101 := by
   native_decide
 
-example : (resourceUsage p2wshStack101).scriptSize = some 3465 := by
+example : (resourceUsage p2wshStack101).scriptSize = some 3460 := by
   native_decide
 
-example : maxSatisfactionOpCount p2wshStack101 = some 111 := by
+example : maxSatisfactionOpCount p2wshStack101 = some 106 := by
   native_decide
 
 example : resourceLimitsSatisfied .p2wsh p2wshStack101 = false := by

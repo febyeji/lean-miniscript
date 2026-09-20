@@ -8,9 +8,8 @@ open LeanMiniscript.Script
 # BIP 379 compilation conformance
 
 `Bip379Compilation` states the selected translation scheme independently from
-the executable compiler. It deliberately uses the general `VERIFY` encoding;
-specialized VERIFY-opcode substitutions are permitted alternative encodings
-but are not produced by this model.
+the executable compiler, including BIP 379's specialized terminal VERIFY
+substitutions.
 -/
 
 /-- Independent relational specification for pushing a list of public keys. -/
@@ -36,6 +35,46 @@ inductive Bip379CheckSigAddCompilation : List PubKey → Script → Prop where
       (tailConforms : Bip379CheckSigAddTailCompilation keys tailScript) :
       Bip379CheckSigAddCompilation (key :: keys)
         ([.pushData key, .op .OP_CHECKSIG] ++ tailScript)
+
+/-- A terminal element for which BIP 379 has no specialized VERIFY opcode. -/
+def Bip379VerifyFallbackTerminal (element : ScriptElement) : Prop :=
+  element ≠ .op .OP_EQUAL ∧
+    element ≠ .op .OP_CHECKSIG ∧
+    element ≠ .op .OP_CHECKMULTISIG ∧
+    element ≠ .op .OP_NUMEQUAL
+
+private theorem bip379VerifyTerminal_cases (element : ScriptElement) :
+    element = .op .OP_EQUAL ∨
+      element = .op .OP_CHECKSIG ∨
+      element = .op .OP_CHECKMULTISIG ∨
+      element = .op .OP_NUMEQUAL ∨
+      Bip379VerifyFallbackTerminal element := by
+  cases element with
+  | op opcode => cases opcode <;> simp [Bip379VerifyFallbackTerminal]
+  | pushData data => simp [Bip379VerifyFallbackTerminal]
+  | pushNum number => simp [Bip379VerifyFallbackTerminal]
+
+/-- Independent relational specification for compiling the `v:` wrapper.
+    Verification is folded into a supported terminal opcode and otherwise
+    emitted as a separate `OP_VERIFY`. -/
+inductive Bip379VerifyCompilation : Script → Script → Prop where
+  | nil : Bip379VerifyCompilation [] [.op .OP_VERIFY]
+  | equal (initScript : Script) :
+      Bip379VerifyCompilation (initScript ++ [.op .OP_EQUAL])
+        (initScript ++ [.op .OP_EQUALVERIFY])
+  | checkSig (initScript : Script) :
+      Bip379VerifyCompilation (initScript ++ [.op .OP_CHECKSIG])
+        (initScript ++ [.op .OP_CHECKSIGVERIFY])
+  | checkMultiSig (initScript : Script) :
+      Bip379VerifyCompilation (initScript ++ [.op .OP_CHECKMULTISIG])
+        (initScript ++ [.op .OP_CHECKMULTISIGVERIFY])
+  | numEqual (initScript : Script) :
+      Bip379VerifyCompilation (initScript ++ [.op .OP_NUMEQUAL])
+        (initScript ++ [.op .OP_NUMEQUALVERIFY])
+  | fallback (initScript : Script) {element : ScriptElement}
+      (terminal : Bip379VerifyFallbackTerminal element) :
+      Bip379VerifyCompilation (initScript ++ [element])
+        (initScript ++ [element, .op .OP_VERIFY])
 
 mutual
 
@@ -119,9 +158,10 @@ inductive Bip379Compilation
       (conforms : Bip379Compilation keyHash x script) :
       Bip379Compilation keyHash (.d x)
         ([.op .OP_DUP, .op .OP_IF] ++ script ++ [.op .OP_ENDIF])
-  | v {x : CoreFragment} {script : Script}
-      (conforms : Bip379Compilation keyHash x script) :
-      Bip379Compilation keyHash (.v x) (script ++ [.op .OP_VERIFY])
+  | v {x : CoreFragment} {script verifiedScript : Script}
+      (conforms : Bip379Compilation keyHash x script)
+      (verifyConforms : Bip379VerifyCompilation script verifiedScript) :
+      Bip379Compilation keyHash (.v x) verifiedScript
   | j {x : CoreFragment} {script : Script}
       (conforms : Bip379Compilation keyHash x script) :
       Bip379Compilation keyHash (.j x)
@@ -187,6 +227,29 @@ theorem compileCheckSigAdd_conforms (keys : List PubKey) :
   | nil => exact .nil
   | cons key keys => exact .cons (compileCheckSigAddTail_conforms keys)
 
+/-- The executable VERIFY compiler implements the independent relation. -/
+theorem compileVerify_conforms (script : Script) :
+    Bip379VerifyCompilation script (compileVerify script) := by
+  rcases List.eq_nil_or_concat script with rfl | ⟨initScript, last, rfl⟩
+  · exact .nil
+  · simp only [List.concat_eq_append]
+    rw [compileVerify_append_singleton]
+    rcases bip379VerifyTerminal_cases last with
+      rfl | rfl | rfl | rfl | terminal
+    · exact .equal initScript
+    · exact .checkSig initScript
+    · exact .checkMultiSig initScript
+    · exact .numEqual initScript
+    · have noReplacement : verifyReplacement? last = none := by
+        cases last with
+        | op opcode =>
+            cases opcode <;>
+              simp_all [Bip379VerifyFallbackTerminal, verifyReplacement?]
+        | pushData data => simp [verifyReplacement?]
+        | pushNum number => simp [verifyReplacement?]
+      rw [noReplacement]
+      exact .fallback initScript terminal
+
 mutual
 
 theorem compileWithKeyHash_conforms
@@ -236,7 +299,9 @@ theorem compileWithKeyHash_conforms
   | s x => exact .s (compileWithKeyHash_conforms keyHash x)
   | c x => exact .c (compileWithKeyHash_conforms keyHash x)
   | d x => exact .d (compileWithKeyHash_conforms keyHash x)
-  | v x => exact .v (compileWithKeyHash_conforms keyHash x)
+  | v x =>
+      exact .v (compileWithKeyHash_conforms keyHash x)
+        (compileVerify_conforms (compileWithKeyHash keyHash x))
   | j x => exact .j (compileWithKeyHash_conforms keyHash x)
   | n x => exact .n (compileWithKeyHash_conforms keyHash x)
   | thresh k fragments =>
@@ -296,6 +361,25 @@ theorem Bip379CheckSigAddCompilation.eq_compileCheckSigAdd
   | cons tailConforms =>
       simp [compileCheckSigAdd, tailConforms.eq_compileCheckSigAddTail]
 
+/-- The independent VERIFY relation uniquely determines `compileVerify`. -/
+theorem Bip379VerifyCompilation.eq_compileVerify
+    {script verifiedScript : Script}
+    (conforms : Bip379VerifyCompilation script verifiedScript) :
+    verifiedScript = compileVerify script := by
+  induction conforms with
+  | nil => rfl
+  | equal initScript => simp [verifyReplacement?]
+  | checkSig initScript => simp [verifyReplacement?]
+  | checkMultiSig initScript => simp [verifyReplacement?]
+  | numEqual initScript => simp [verifyReplacement?]
+  | @fallback initScript element terminal =>
+      cases element with
+      | op opcode =>
+          cases opcode <;>
+            simp_all [Bip379VerifyFallbackTerminal, verifyReplacement?]
+      | pushData data => simp [verifyReplacement?]
+      | pushNum number => simp [verifyReplacement?]
+
 mutual
 
 theorem Bip379Compilation.eq_compileWithKeyHash
@@ -346,8 +430,9 @@ theorem Bip379Compilation.eq_compileWithKeyHash
       simp [compileWithKeyHash, conforms.eq_compileWithKeyHash]
   | d conforms =>
       simp [compileWithKeyHash, conforms.eq_compileWithKeyHash]
-  | v conforms =>
-      simp [compileWithKeyHash, conforms.eq_compileWithKeyHash]
+  | v conforms verifyConforms =>
+      simp [compileWithKeyHash, conforms.eq_compileWithKeyHash,
+        verifyConforms.eq_compileVerify]
   | j conforms =>
       simp [compileWithKeyHash, conforms.eq_compileWithKeyHash]
   | n conforms =>

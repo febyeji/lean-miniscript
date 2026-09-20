@@ -24,6 +24,27 @@ theorem scriptAllowed_append {ctx : ScriptContext} {left right : Script} :
   | nil => simp [ScriptAllowed]
   | cons element left ih => simp [ScriptAllowed, ih, and_assoc]
 
+/-- Folding a terminal VERIFY into its specialized opcode preserves context
+    availability. -/
+theorem Bip379VerifyCompilation.scriptAllowed
+    {script verifiedScript : Script}
+    (conforms : Bip379VerifyCompilation script verifiedScript)
+    {ctx : ScriptContext} (allowed : ScriptAllowed ctx script) :
+    ScriptAllowed ctx verifiedScript := by
+  cases conforms with
+  | nil => simp [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed]
+  | equal initScript =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using allowed
+  | checkSig initScript =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using allowed
+  | checkMultiSig initScript =>
+      cases ctx <;>
+        simp_all [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed]
+  | numEqual initScript =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using allowed
+  | fallback initScript terminal =>
+      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using allowed
+
 private theorem legacyMulti_opcodeAllowed {ctx : ScriptContext}
     (permits : ctx.permitsLegacyMulti) :
     OpcodeAllowed ctx .OP_CHECKMULTISIG := by
@@ -128,9 +149,9 @@ theorem Bip379Compilation.scriptAllowed
   | d conforms =>
       simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
         Bip379Compilation.scriptAllowed conforms wellFormed
-  | v conforms =>
-      simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
-        Bip379Compilation.scriptAllowed conforms wellFormed
+  | v conforms verifyConforms =>
+      exact verifyConforms.scriptAllowed
+        (Bip379Compilation.scriptAllowed conforms wellFormed)
   | j conforms =>
       simpa [ScriptAllowed, ScriptElementAllowed, OpcodeAllowed] using
         Bip379Compilation.scriptAllowed conforms wellFormed
@@ -268,6 +289,81 @@ private theorem checkSigAddCompilation_allNonConditional
       exact ⟨by trivial, by trivial,
         checkSigAddTailCompilation_allNonConditional tailConforms⟩
 
+/-- BIP 379's terminal VERIFY substitution preserves balanced conditional
+    control flow. -/
+theorem compileVerify_balancedControlFlow {script : Script}
+    (balanced : BalancedControlFlow script) :
+    BalancedControlFlow (compileVerify script) := by
+  induction balanced with
+  | nil => exact .atom (by trivial)
+  | @atom element nonConditional =>
+      cases element with
+      | op opcode =>
+          cases opcode <;>
+            simp [compileVerify, verifyReplacement?] <;>
+            first
+            | exact BalancedControlFlow.atom (by trivial)
+            | exact BalancedControlFlow.append
+                (BalancedControlFlow.atom (by trivial))
+                (BalancedControlFlow.atom (by trivial))
+      | pushData data =>
+          simp [compileVerify, verifyReplacement?]
+          exact BalancedControlFlow.append
+            (BalancedControlFlow.atom (by trivial))
+            (BalancedControlFlow.atom (by trivial))
+      | pushNum number =>
+          simp [compileVerify, verifyReplacement?]
+          exact BalancedControlFlow.append
+            (BalancedControlFlow.atom (by trivial))
+            (BalancedControlFlow.atom (by trivial))
+  | @append left right leftBalanced rightBalanced leftVerified rightVerified =>
+      rcases List.eq_nil_or_concat right with rfl | ⟨initScript, last, rfl⟩
+      · simpa using leftVerified
+      · simp only [List.concat_eq_append] at rightBalanced rightVerified ⊢
+        rw [compileVerify_append_singleton] at rightVerified
+        rw [← List.append_assoc, compileVerify_append_singleton]
+        cases replacementEq : verifyReplacement? last <;>
+          simp [replacementEq, List.append_assoc] at rightVerified ⊢
+        all_goals exact BalancedControlFlow.append leftBalanced rightVerified
+  | @ifThen body bodyBalanced bodyVerified =>
+      change BalancedControlFlow
+        (compileVerify (([.op .OP_IF] ++ body) ++ [.op .OP_ENDIF]))
+      rw [compileVerify_append_singleton]
+      simpa [verifyReplacement?, List.append_assoc] using BalancedControlFlow.append
+        (BalancedControlFlow.ifThen bodyBalanced)
+        (BalancedControlFlow.atom (by trivial) :
+          BalancedControlFlow [.op .OP_VERIFY])
+  | @notifThen body bodyBalanced bodyVerified =>
+      change BalancedControlFlow
+        (compileVerify (([.op .OP_NOTIF] ++ body) ++ [.op .OP_ENDIF]))
+      rw [compileVerify_append_singleton]
+      simpa [verifyReplacement?, List.append_assoc] using BalancedControlFlow.append
+        (BalancedControlFlow.notifThen bodyBalanced)
+        (BalancedControlFlow.atom (by trivial) :
+          BalancedControlFlow [.op .OP_VERIFY])
+  | @ifElse thenBranch elseBranch thenBalanced elseBalanced
+      thenVerified elseVerified =>
+      change BalancedControlFlow
+        (compileVerify
+          (([.op .OP_IF] ++ thenBranch ++ [.op .OP_ELSE] ++ elseBranch) ++
+            [.op .OP_ENDIF]))
+      rw [compileVerify_append_singleton]
+      simpa [verifyReplacement?, List.append_assoc] using BalancedControlFlow.append
+        (BalancedControlFlow.ifElse thenBalanced elseBalanced)
+        (BalancedControlFlow.atom (by trivial) :
+          BalancedControlFlow [.op .OP_VERIFY])
+  | @notifElse thenBranch elseBranch thenBalanced elseBalanced
+      thenVerified elseVerified =>
+      change BalancedControlFlow
+        (compileVerify
+          (([.op .OP_NOTIF] ++ thenBranch ++ [.op .OP_ELSE] ++ elseBranch) ++
+            [.op .OP_ENDIF]))
+      rw [compileVerify_append_singleton]
+      simpa [verifyReplacement?, List.append_assoc] using BalancedControlFlow.append
+        (BalancedControlFlow.notifElse thenBalanced elseBalanced)
+        (BalancedControlFlow.atom (by trivial) :
+          BalancedControlFlow [.op .OP_VERIFY])
+
 mutual
 
 /-- Every script admitted by the relational BIP 379 compiler has correctly
@@ -339,11 +435,10 @@ theorem Bip379Compilation.balancedControlFlow
         .atom (by trivial)
       exact BalancedControlFlow.append
         (Bip379Compilation.balancedControlFlow conforms) operatorBalanced
-  | v conforms =>
-      have operatorBalanced : BalancedControlFlow [.op .OP_VERIFY] :=
-        .atom (by trivial)
-      exact BalancedControlFlow.append
-        (Bip379Compilation.balancedControlFlow conforms) operatorBalanced
+  | v conforms verifyConforms =>
+      rw [verifyConforms.eq_compileVerify]
+      exact compileVerify_balancedControlFlow
+        (Bip379Compilation.balancedControlFlow conforms)
   | n conforms =>
       have operatorBalanced : BalancedControlFlow [.op .OP_0NOTEQUAL] :=
         .atom (by trivial)

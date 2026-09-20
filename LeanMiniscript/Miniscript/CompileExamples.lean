@@ -326,6 +326,65 @@ theorem coreConformanceFixtures_match :
     coreConformanceFixtures.all CoreConformanceFixture.matches = true := by
   native_decide
 
+/-! ## Specialized VERIFY compilation -/
+
+structure VerifyCompilationFixture where
+  fragment : CoreFragment
+  expectedAssembly : String
+  expectedBytes : ByteArray
+
+private def VerifyCompilationFixture.matches
+    (fixture : VerifyCompilationFixture) : Bool :=
+  let script := compileConcrete fixture.fragment
+  toAssembly script == fixture.expectedAssembly &&
+    scriptBytesMatch script fixture.expectedBytes
+
+/-- Fixtures for all four terminal substitutions, the general fallback, and
+VERIFY propagation through the final child of `and_v`. -/
+def verifyCompilationFixtures : List VerifyCompilationFixture :=
+  [
+    { fragment := .v (.sha256 oracleHash256),
+      expectedAssembly :=
+        "SIZE 32 EQUALVERIFY SHA256 " ++ pushed hash256Hex ++ " EQUALVERIFY",
+      expectedBytes := joinBytes
+        [rawBytes #[0x82, 0x01, 0x20, 0x88, 0xa8],
+          directPush oracleHash256, rawBytes #[0x88]] },
+    { fragment := .v (.c (.pk_k oracleKeyA)),
+      expectedAssembly := pushed keyAHex ++ " CHECKSIGVERIFY",
+      expectedBytes := joinBytes [directPush oracleKeyA, rawBytes #[0xad]] },
+    { fragment := .v (.multi 1 [oracleKeyA]),
+      expectedAssembly := "1 " ++ pushed keyAHex ++ " 1 CHECKMULTISIGVERIFY",
+      expectedBytes := joinBytes
+        [rawBytes #[0x51], directPush oracleKeyA, rawBytes #[0x51, 0xaf]] },
+    { fragment := .v (.multi_a 1 [oracleXOnlyKeyA]),
+      expectedAssembly := pushed xOnlyKeyAHex ++ " CHECKSIG 1 NUMEQUALVERIFY",
+      expectedBytes := joinBytes
+        [directPush oracleXOnlyKeyA, rawBytes #[0xac, 0x51, 0x9d]] },
+    { fragment := verifiedOlder,
+      expectedAssembly := "42 CHECKSEQUENCEVERIFY VERIFY",
+      expectedBytes := rawBytes #[0x01, 0x2a, 0xb2, 0x69] },
+    { fragment := .v (.and_v verifiedOlder (.c (.pk_k oracleKeyA))),
+      expectedAssembly := "42 CHECKSEQUENCEVERIFY VERIFY " ++
+        pushed keyAHex ++ " CHECKSIGVERIFY",
+      expectedBytes := joinBytes
+        [verifiedOlderBytes, directPush oracleKeyA, rawBytes #[0xad]] }
+  ]
+
+theorem verifyCompilationFixtures_match :
+    verifyCompilationFixtures.all VerifyCompilationFixture.matches = true := by
+  native_decide
+
+/-- Terminal rewriting remains executable for scripts longer than the largest
+`multi_a` compilation admitted by the resource checker. -/
+example :
+    let compiled := compileVerify
+      (List.replicate 2000 (.op .OP_NOP) ++ [.op .OP_NUMEQUAL])
+    compiled.length = 2001 ∧
+      (match compiled.reverse with
+        | .op .OP_NUMEQUALVERIFY :: _ => true
+        | _ => false) = true := by
+  native_decide
+
 structure SurfaceConformanceFixture where
   tag : SurfaceConstructorTag
   fragment : SurfaceFragment
