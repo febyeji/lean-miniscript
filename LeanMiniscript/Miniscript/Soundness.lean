@@ -448,29 +448,109 @@ def DissatisfactionCorrectnessSurface : Prop :=
     dissatisfy (desugar m) env = some witness →
     Dissatisfies ctx (compileSurface m) witness flags env.txCtx
 
-/-! ## MINIMALIF Bug Reproduction
+/-- The executable compiler preserves both successful satisfaction and clean
+    dissatisfaction semantics for every valid core Miniscript. -/
+def CompilationPreservesCoreSemantics : Prop :=
+  SatisfactionCorrectnessCore ∧ DissatisfactionCorrectnessCore
 
-  Historical context:
-  Before the fix, the typing rule for `or_i` did not require MINIMALIF flag,
-  allowing a malicious miner to use non-minimal IF arguments to bypass
-  the intended spending condition.
+/-- Surface compilation preserves the same two semantic observations after
+    desugaring to the core language. -/
+def CompilationPreservesSurfaceSemantics : Prop :=
+  SatisfactionCorrectnessSurface ∧ DissatisfactionCorrectnessSurface
 
-  Plan:
-  1. Define the PRE-FIX typing rule
-  2. Show that soundness does NOT hold under the pre-fix rule (counterexample)
-  3. Define the POST-FIX typing rule
-  4. Prove soundness holds under the post-fix rule
+/-! ## MINIMALIF regression
+
+Correctness typing is independent of runtime flags. The historical gap is
+therefore represented at the acceptance boundary: the pre-fix P2WSH contract
+omitted `minimalIf`, while `ModeledContextFlags` includes it. The concrete
+`or_i(1,0)` script below pins the semantic difference.
 -/
 
-/-!
-TODO(theorem): MINIMALIF regression.
+namespace MinimalIfRegression
 
-Core proof tasks:
-- Define pre-fix and post-fix typing rules for the core fragments affected by
-  `or_i`.
-- Construct the pre-fix counterexample with a non-minimal IF argument.
-- Prove the post-fix rule restores the relevant soundness property.
-- Check the surface `l:`/`u:` forms through `desugar`.
--/
+/-- The old P2WSH flag contract, before MINIMALIF was included. -/
+def PreFixP2wshFlags (flags : ScriptFlags) : Prop :=
+  flags.minimalData = true ∧
+  flags.nullDummy = true ∧
+  flags.nullFail = true ∧
+  flags.strictEncoding = true
+
+/-- A minimal branching fragment whose true branch succeeds. -/
+def fragment : CoreFragment := .or_i .one .zero
+
+/-- Flags admitted by the old boundary but rejected by the current one. -/
+def relaxedFlags : ScriptFlags := { minimalIf := false }
+
+/-- A transaction context for the P2WSH execution version. -/
+def witnessV0Context : TxContext where
+  version := 2
+  locktime := 0
+  sequence := 0
+  sigHash := ByteArray.empty
+  sigVersion := .witnessV0
+
+/-- The pre-fix flag contract admits a disabled MINIMALIF check. -/
+theorem relaxedFlags_preFix : PreFixP2wshFlags relaxedFlags := by
+  simp [PreFixP2wshFlags, relaxedFlags]
+
+/-- The current P2WSH acceptance contract rejects that same flag set. -/
+theorem relaxedFlags_not_modeled :
+    ¬ ModeledContextFlags .p2wsh relaxedFlags := by
+  simp [ModeledContextFlags, relaxedFlags]
+
+/-- Under the pre-fix boundary, a non-minimal truthy selector reaches the true
+    branch and leaves the canonical true result. -/
+theorem preFix_nonMinimal_selector_succeeds :
+    Eval (compile fragment) [nonMinimalTruthyElement] [] relaxedFlags
+      witnessV0Context (.success [trueElement] []) := by
+  change Eval
+    [.op .OP_IF, .pushNum 1, .op .OP_ELSE, .pushNum 0, .op .OP_ENDIF]
+    [nonMinimalTruthyElement] [] relaxedFlags witnessV0Context
+      (.success [trueElement] [])
+  apply Eval.if_execute nonMinimalTruthyElement [] []
+    [.pushNum 1, .op .OP_ELSE, .pushNum 0, .op .OP_ENDIF]
+    { branches := [[.pushNum 1], [.pushNum 0]], after := [] }
+  · rfl
+  · simp [minimalIfSatisfied, relaxedFlags, witnessV0Context]
+  · simpa [ConditionalFrame.select, selectConditionalBranches,
+      nonMinimalTruthyElement_truthy, scriptNum_one] using
+      (Eval.pushNum 1 [] [] [] relaxedFlags witnessV0Context
+        (.success [scriptNum 1] [])
+        (Eval.empty [scriptNum 1] [] relaxedFlags witnessV0Context))
+
+/-- With the current P2WSH flag contract, the same selector fails before
+    either branch executes. -/
+theorem modeled_nonMinimal_selector_fails
+    {flags : ScriptFlags} (modeled : ModeledContextFlags .p2wsh flags) :
+    Eval (compile fragment) [nonMinimalTruthyElement] [] flags
+      witnessV0Context (.failure .minimalIf) := by
+  change Eval
+    [.op .OP_IF, .pushNum 1, .op .OP_ELSE, .pushNum 0, .op .OP_ENDIF]
+    [nonMinimalTruthyElement] [] flags witnessV0Context
+      (.failure .minimalIf)
+  apply Eval.if_minimalif_failure
+  rcases modeled with ⟨minimalIf, _⟩
+  simp [minimalIfSatisfied, witnessV0Context, minimalIf,
+    nonMinimalTruthyElement_not_minimalIfArg]
+
+/-- Tapscript enforces MINIMALIF independently of the flag bit. -/
+theorem tapscript_nonMinimal_selector_fails (flags : ScriptFlags)
+    (ctx : TxContext) (version : ctx.sigVersion = .tapscript) :
+    Eval (compile fragment) [nonMinimalTruthyElement] [] flags ctx
+      (.failure .tapscriptMinimalIf) := by
+  change Eval
+    [.op .OP_IF, .pushNum 1, .op .OP_ELSE, .pushNum 0, .op .OP_ENDIF]
+    [nonMinimalTruthyElement] [] flags ctx
+      (.failure .tapscriptMinimalIf)
+  have rejected : ¬ minimalIfSatisfied flags ctx.sigVersion
+      nonMinimalTruthyElement := by
+    simp [minimalIfSatisfied, version,
+      nonMinimalTruthyElement_not_minimalIfArg]
+  simpa [version, minimalIfError] using
+    (Eval.if_minimalif_failure nonMinimalTruthyElement [] []
+      [.pushNum 1, .op .OP_ELSE, .pushNum 0, .op .OP_ENDIF]
+      flags ctx rejected)
+
+end MinimalIfRegression
 
 end LeanMiniscript.Miniscript

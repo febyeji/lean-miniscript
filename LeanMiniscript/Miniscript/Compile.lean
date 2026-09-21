@@ -170,6 +170,8 @@ def compileSurface (fragment : SurfaceFragment) : Script :=
 
 -- Raw compiler injectivity is intentionally not a target: compilation erases
 -- AST grouping, so distinct fragments can produce the same Script.
--- TODO(theorem): Prove that compilation preserves execution semantics.
+-- Satisfaction and dissatisfaction preservation are stated in `Soundness`
+-- and proved in `SatisfactionCorrectnessProofs`, where the source-side
+-- witness semantics and the Script evaluator are both available.
 
 end LeanMiniscript.Miniscript
