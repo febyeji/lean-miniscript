@@ -387,8 +387,8 @@ theorem a_c_pk_k_base_type_soundness (key : PubKey) :
                 have equal := Eval.result_unique evaluated canonical
                 contradiction
 
-/-! TODO(theorem): extend these arbitrary-input stack-frame proofs to every
-`HasType` constructor and close the target in `TypeSoundnessProofs`. -/
+/-! `TypeSoundnessProofs` extends these local examples to every `HasType`
+constructor and proves the complete Core and Surface type-soundness contracts. -/
 
 /-! ## Theorem 2: Satisfaction Correctness -/
 
