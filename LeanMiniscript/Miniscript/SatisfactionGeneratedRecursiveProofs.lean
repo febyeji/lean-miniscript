@@ -169,17 +169,18 @@ theorem supportsGeneratedContract_of_wellFormed_hasType
       restTyped restShape positive atMost =>
       have childrenWellFormed := wellFormed.2.1
       simp only [CoreFragment.allWellFormed] at childrenWellFormed
+      have safe : ArithmeticScriptNatSafe threshold :=
+        ArithmeticScriptNatSafe.of_lt (by
+          simpa [MAX_BIP_ARITHMETIC_VALUE, MAX_BIP_LOCK_VALUE,
+            maxArithmeticScriptNatExclusive] using
+            wellFormed.2.2.2)
       have firstSupported := supportsGeneratedContract_of_wellFormed_hasType
         version modeled sound encodings firstTyped childrenWellFormed.1
       have restSupported :=
         supportsGeneratedContractList_of_allWellFormed_hasTypeList
           version modeled sound encodings restTyped childrenWellFormed.2
-      by_cases valid : candidateThresholdValid threshold (first :: rest).length
-      · exact generatedContract_thresh firstSupported firstD firstUnit restSupported
-          restShape positive atMost valid.2.2
-      · exact generatedContract_thresh_invalid
-          (.thresh firstTyped firstD firstUnit restTyped restShape positive atMost)
-          valid
+      exact generatedContract_thresh firstSupported firstD firstUnit restSupported
+        restShape positive atMost safe
   | multi threshold keys positive atMost =>
       exact generatedContract_multi_of_wellFormed wellFormed version modeled
         sound encodings

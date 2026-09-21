@@ -86,11 +86,13 @@ def BaseTypeGuarantee (m : CoreFragment) (base : BaseType) : Prop :=
         finalAltStack = altStack ∧ BaseStackEffect base stack finalStack
     | .failure _ => True
 
-/-- Operational meaning of the `d` modifier: a usable dissatisfaction exists
-    for every material environment. Quantifying over all environments prevents
-    the witness from relying on an available signature or preimage. -/
+/-- Candidate-level meaning of the `d` modifier: a raw dissatisfaction exists
+    for every material environment. The raw projection intentionally includes
+    canonical `DONTUSE` rows such as hashlock dissatisfactions, before the later
+    malleability filter selects usable witnesses. -/
 def UnconditionalDissatisfaction (m : CoreFragment) : Prop :=
-  ∀ env : SatEnv, ∃ witness, dissatisfy m env = some witness
+  ∀ env : SatEnv, ∃ witness,
+    (satisfactionCandidates m env).dsat.witness? = some witness
 
 /-- What a K-type fragment guarantees:
     Given a witness stack, executing the compiled script either pushes exactly

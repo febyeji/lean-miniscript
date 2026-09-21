@@ -713,8 +713,11 @@ proof status is:
   `n`, and `u`;
 - `TypeSoundnessCore` and `TypeSoundnessSurface` now range over every valid
   correctness type. Their combined contract adds arbitrary-input base stack
-  safety and the usable-dissatisfaction existence promised by `d`; those two
-  obligations remain open;
+  safety and the raw possible-dissatisfaction existence promised by `d`.
+  `unconditionalDissatisfaction_of_wellFormed_hasType` proves the latter for
+  every constructor, including canonical hashlock rows marked `DONTUSE`.
+  Threshold well-formedness supplies the arithmetic literal bound shared with
+  candidate generation;
 - `SatisfactionCorrectnessCore` and `SatisfactionCorrectnessSurface` are proved
   by `satisfactionCorrectnessCore` and `satisfactionCorrectnessSurface`;
 - `DissatisfactionCorrectnessCore` and `DissatisfactionCorrectnessSurface` are
@@ -775,11 +778,10 @@ signature-weight, opcode, and unbalanced-conditional failures remain possible.
 `maxStackDepth` remains the separate AST-nesting metric and is not presented as
 a runtime bound.
 
-The immediate type-soundness work is the `HasType` induction for
-`BaseTypeGuarantee` and the completeness proof for
-`UnconditionalDissatisfaction`. The generated-witness obligation is already
-discharged for the complete type relation, and the Surface target follows from
-the Core target by desugaring.
+The remaining type-soundness work is the `HasType` induction for
+`BaseTypeSoundnessCore`. `typeSoundnessCore_of_base` combines that result with
+the proved generated-witness and unconditional-dissatisfaction obligations;
+the Surface target then follows by desugaring.
 
 ## Executable Schnorr Verification
 
