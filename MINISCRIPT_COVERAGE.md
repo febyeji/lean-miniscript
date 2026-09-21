@@ -707,8 +707,14 @@ context-valid input.
 The target propositions remain the shared public specifications. Their current
 proof status is:
 
-- `TypeSoundnessCore` and `TypeSoundnessSurface` require context validity,
-  relational typing, and an explicitly supported non-vacuous semantic case;
+- `GeneratedTypeSoundnessCore` and `GeneratedTypeSoundnessSurface` are proved
+  by `generatedTypeSoundnessCore` and `generatedTypeSoundnessSurface` for every
+  B, V, K, and W type, including the generated-witness meaning of `z`, `o`,
+  `n`, and `u`;
+- `TypeSoundnessCore` and `TypeSoundnessSurface` now range over every valid
+  correctness type. Their combined contract adds arbitrary-input base stack
+  safety and the usable-dissatisfaction existence promised by `d`; those two
+  obligations remain open;
 - `SatisfactionCorrectnessCore` and `SatisfactionCorrectnessSurface` are proved
   by `satisfactionCorrectnessCore` and `satisfactionCorrectnessSurface`;
 - `DissatisfactionCorrectnessCore` and `DissatisfactionCorrectnessSurface` are
@@ -769,8 +775,11 @@ signature-weight, opcode, and unbalanced-conditional failures remain possible.
 `maxStackDepth` remains the separate AST-nesting metric and is not presented as
 a runtime bound.
 
-The immediate proof work must extend named semantic predicates before extending
-`SupportedMiniType`. Unsupported modifier combinations do not reduce to `True`.
+The immediate type-soundness work is the `HasType` induction for
+`BaseTypeGuarantee` and the completeness proof for
+`UnconditionalDissatisfaction`. The generated-witness obligation is already
+discharged for the complete type relation, and the Surface target follows from
+the Core target by desugaring.
 
 ## Executable Schnorr Verification
 
