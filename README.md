@@ -163,14 +163,19 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   theorem over `HasType` and `HasTypeList` now assembles these local contracts
   for every well-formed, well-typed core constructor. Under the modeled
   version/flag and sound environment premises, every publicly usable generated
-  satisfaction or dissatisfaction carries the strong contract; this does not
-  assert that either projection exists. Arithmetic-unsafe typed thresholds are
-  covered by their empty candidate pair. The Core and Surface
+  satisfaction or dissatisfaction carries the strong contract. The Core and
+  Surface `generatedTypeSoundness*` theorems expose that result for every
+  correctness type, including B/V/K/W execution and generated-witness
+  `z`/`o`/`n`/`u` properties; they do not assert that either projection exists.
+  Arithmetic-unsafe typed thresholds are covered by their empty candidate
+  pair. The Core and Surface
   `satisfactionCorrectness*` and `dissatisfactionCorrectness*` theorems now turn
   those selected top-level B contracts into the resource-free `Accepts` and
   `Dissatisfies` predicates, with Surface compilation transported through
   desugaring.
-- Type-system soundness, candidate completeness, non-malleability, small-step
+- The remaining type-system soundness obligations are arbitrary-input B/V/K/W
+  stack-frame safety and usable dissatisfaction existence for `d`. Candidate
+  completeness, non-malleability, small-step
   semantics, cryptographic correctness proofs, executable ECDSA verification,
   unsupported Core failure classes,
   and full semantic coverage of the Bitcoin Core differential suite are

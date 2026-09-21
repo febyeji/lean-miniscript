@@ -42,6 +42,56 @@ def ValidDissatisfiableSurfaceMiniscript (ctx : ScriptContext)
     (m : SurfaceFragment) : Prop :=
   ValidDissatisfiableMiniscript ctx (desugar m)
 
+/-- The two successful output orders available to a W base fragment. -/
+inductive BaseWOutputOrder where
+  | savedFirst
+  | resultFirst
+  deriving Repr, DecidableEq, BEq
+
+namespace BaseWOutputOrder
+
+/-- Materialize a W output prefix in its exact main-stack order. -/
+def outputs : BaseWOutputOrder → StackElement → StackElement → Stack
+  | .savedFirst, saved, result => [saved, result]
+  | .resultFirst, saved, result => [result, saved]
+
+end BaseWOutputOrder
+
+/-- The successful main-stack effect associated with each Miniscript base
+    type. The input prefix records the arguments consumed by the fragment;
+    everything below that frame is preserved exactly. A W fragment additionally
+    protects one element above its arguments and may restore the two output
+    elements in either wrapper-defined order. -/
+inductive BaseStackEffect : BaseType → Stack → Stack → Prop where
+  | b (args rest : Stack) (result : StackElement) :
+      BaseStackEffect .B (args ++ rest) (result :: rest)
+  | v (args rest : Stack) :
+      BaseStackEffect .V (args ++ rest) rest
+  | k (args rest : Stack) (key : StackElement) :
+      BaseStackEffect .K (args ++ rest) (key :: rest)
+  | w (args rest : Stack) (saved result : StackElement)
+      (order : BaseWOutputOrder) :
+      BaseStackEffect .W (saved :: args ++ rest)
+        (order.outputs saved result ++ rest)
+
+/-- Arbitrary-input safety for a base type. Every successful execution has the
+    base type's exact stack-frame effect and restores the incoming alt stack.
+    Modeled Script failures remain valid terminal outcomes. -/
+def BaseTypeGuarantee (m : CoreFragment) (base : BaseType) : Prop :=
+  ∀ (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+      (outcome : ExecResult),
+    Eval (compile m) stack altStack flags ctx outcome →
+    match outcome with
+    | .success finalStack finalAltStack =>
+        finalAltStack = altStack ∧ BaseStackEffect base stack finalStack
+    | .failure _ => True
+
+/-- Operational meaning of the `d` modifier: a usable dissatisfaction exists
+    for every material environment. Quantifying over all environments prevents
+    the witness from relying on an available signature or preimage. -/
+def UnconditionalDissatisfaction (m : CoreFragment) : Prop :=
+  ∀ env : SatEnv, ∃ witness, dissatisfy m env = some witness
+
 /-- What a K-type fragment guarantees:
     Given a witness stack, executing the compiled script either pushes exactly
     one element (the key) while preserving the rest, or aborts with a modeled
@@ -179,38 +229,6 @@ def WTypeOGuarantee (m : CoreFragment) : Prop :=
     ∃ (err : ScriptError),
       Eval (compile m) (saved :: wit :: stack) altStack flags ctx (.failure err)
 
-/-- Type cases for which this file has a reusable, non-vacuous semantic
-    predicate. Unsupported combinations are excluded explicitly. In particular,
-    W types are not yet included because their protected-stack contract needs a
-    general statement beyond the local `a(c(pk_k))` example. -/
-def SupportedMiniType (ty : MiniType) : Prop :=
-  (ty.base = .K ∧ ty.mods.o = true) ∨
-  (ty.base = .B ∧ ty.mods.o = true) ∨
-  (ty.base = .V ∧ ty.mods.o = true)
-
-/-- Semantic guarantee selected by a currently supported Miniscript type.
-    Unlike the previous selector, no branch reduces to `True`. -/
-def MiniTypeGuarantee (m : CoreFragment) (ty : MiniType) : Prop :=
-  (ty.base = .K ∧ ty.mods.o = true ∧ KTypeGuarantee m) ∨
-  (ty.base = .B ∧ ty.mods.o = true ∧ BTypeOGuarantee m) ∨
-  (ty.base = .V ∧ ty.mods.o = true ∧ VTypeOGuarantee m)
-
-/-- The eventual core type-soundness theorem, stated as a proposition so the
-    repository has a shared target without introducing `sorry`. It is explicit
-    about the modifier cases covered by the current semantic predicates. -/
-def TypeSoundnessCore : Prop :=
-  ∀ {ctx : ScriptContext} {m : CoreFragment} {ty : MiniType},
-    ValidTypedFragment ctx m ty →
-    SupportedMiniType ty →
-    MiniTypeGuarantee m ty
-
-/-- Surface soundness should be the core theorem after desugaring. -/
-def TypeSoundnessSurface : Prop :=
-  ∀ {ctx : ScriptContext} {m : SurfaceFragment} {ty : MiniType},
-    ValidTypedSurfaceFragment ctx m ty →
-    SupportedMiniType ty →
-    MiniTypeGuarantee (desugar m) ty
-
 /-- Soundness for a(c(pk_k(key))): wrapper `a` turns the Bo behavior of
     c(pk_k(key)) into the corresponding W-type behavior by moving the protected
     top stack element through the alt stack. -/
@@ -243,35 +261,132 @@ theorem a_c_pk_k_soundness (key : PubKey) :
               (Eval.pushDataNext (data := key)
                 (Eval.checksigTrue checked (Eval.fromAltStackNext (x := saved) Eval.done))))
 
-/-- The `pk_k` example packaged through the shared semantic selector. -/
-theorem pk_k_mini_type_soundness (key : PubKey) :
-    MiniTypeGuarantee (.pk_k key)
-      ⟨.K, { o := true, n := true, d := true, u := true }⟩ := by
-  simpa [MiniTypeGuarantee] using pk_k_soundness key
+/-- `pk_k` satisfies the arbitrary-input K stack-frame contract. -/
+theorem pk_k_base_type_soundness (key : PubKey) :
+    BaseTypeGuarantee (.pk_k key) .K := by
+  intro stack altStack flags ctx outcome evaluated
+  cases outcome with
+  | failure error => trivial
+  | success finalStack finalAltStack =>
+      have canonical : Eval (compile (.pk_k key)) stack altStack flags ctx
+          (.success (key :: stack) altStack) := by
+        simpa [compile, compileWithKeyHash] using
+          (Eval.pushDataNext (data := key) Eval.done)
+      have equal := Eval.result_unique evaluated canonical
+      cases equal
+      exact ⟨rfl, .k [] stack key⟩
 
-/-- The `c(pk_k)` example packaged through the shared semantic selector. -/
-theorem c_pk_k_mini_type_soundness (key : PubKey) :
-    MiniTypeGuarantee (.c (.pk_k key))
-      ⟨.B, { o := true, n := true, d := true, u := true }⟩ := by
-  simpa [MiniTypeGuarantee] using c_pk_k_soundness key
+/-- `c(pk_k)` satisfies the arbitrary-input B stack-frame contract, including
+    the empty-stack failure boundary. -/
+theorem c_pk_k_base_type_soundness (key : PubKey) :
+    BaseTypeGuarantee (.c (.pk_k key)) .B := by
+  intro input altStack flags ctx outcome evaluated
+  cases outcome with
+  | failure error => trivial
+  | success finalStack finalAltStack =>
+      cases input with
+      | nil =>
+          have failed : Eval (compile (.c (.pk_k key))) [] altStack flags ctx
+              (.failure .stackUnderflow) := by
+            simpa [compile, compileWithKeyHash] using
+              (Eval.pushDataNext (data := key)
+                (Eval.fixedArityStackUnderflow
+                  (opcode := .OP_CHECKSIG) (required := 2)
+                  (arity := rfl) (underflow := by simp)))
+          have equal := Eval.result_unique evaluated failed
+          contradiction
+      | cons witness rest =>
+          rcases c_pk_k_soundness key witness rest altStack flags ctx with
+            succeeded | failed
+          · rcases succeeded with ⟨result, canonical⟩
+            have equal := Eval.result_unique evaluated canonical
+            cases equal
+            exact ⟨rfl, .b [witness] rest result⟩
+          · rcases failed with ⟨error, canonical⟩
+            have equal := Eval.result_unique evaluated canonical
+            contradiction
 
-/-- The `v(c(pk_k))` example packaged through the shared semantic selector. -/
-theorem v_c_pk_k_mini_type_soundness (key : PubKey) :
-    MiniTypeGuarantee (.v (.c (.pk_k key)))
-      ⟨.V, { o := true, n := true }⟩ := by
-  simpa [MiniTypeGuarantee] using v_c_pk_k_soundness key
+/-- `v(c(pk_k))` satisfies the arbitrary-input V stack-frame contract,
+    including the empty-stack failure boundary. -/
+theorem v_c_pk_k_base_type_soundness (key : PubKey) :
+    BaseTypeGuarantee (.v (.c (.pk_k key))) .V := by
+  intro input altStack flags ctx outcome evaluated
+  have compiled : compile (.v (.c (.pk_k key))) =
+      [.pushData key, .op .OP_CHECKSIGVERIFY] := by
+    change compileVerify ([.pushData key] ++ [.op .OP_CHECKSIG]) = _
+    rw [compileVerify_append_singleton]
+    rfl
+  cases outcome with
+  | failure error => trivial
+  | success finalStack finalAltStack =>
+      cases input with
+      | nil =>
+          have failed : Eval (compile (.v (.c (.pk_k key)))) [] altStack flags ctx
+              (.failure .stackUnderflow) := by
+            rw [compiled]
+            exact Eval.pushDataNext (data := key)
+              (Eval.fixedArityStackUnderflow
+                (opcode := .OP_CHECKSIGVERIFY) (required := 2)
+                (arity := rfl) (underflow := by simp))
+          have equal := Eval.result_unique evaluated failed
+          contradiction
+      | cons witness rest =>
+          rcases v_c_pk_k_soundness key witness rest altStack flags ctx with
+            succeeded | failed
+          · have effect : BaseStackEffect .V (witness :: rest) rest :=
+              .v [witness] rest
+            have equal := Eval.result_unique evaluated succeeded
+            cases equal
+            exact ⟨rfl, effect⟩
+          · rcases failed with ⟨error, canonical⟩
+            have equal := Eval.result_unique evaluated canonical
+            contradiction
 
-/-!
-TODO(theorem): promote these AST-level leaf and wrapper lemmas into the main
-core type-soundness theorem.
+/-- `a(c(pk_k))` satisfies the arbitrary-input W stack-frame contract,
+    including both insufficient-input failure boundaries. -/
+theorem a_c_pk_k_base_type_soundness (key : PubKey) :
+    BaseTypeGuarantee (.a (.c (.pk_k key))) .W := by
+  intro input altStack flags ctx outcome evaluated
+  cases outcome with
+  | failure error => trivial
+  | success finalStack finalAltStack =>
+      cases input with
+      | nil =>
+          have failed : Eval (compile (.a (.c (.pk_k key)))) [] altStack flags ctx
+              (.failure .stackUnderflow) := by
+            simpa [compile, compileWithKeyHash] using
+              (Eval.fixedArityStackUnderflow
+                (opcode := .OP_TOALTSTACK) (required := 1)
+                (arity := rfl) (underflow := by decide))
+          have equal := Eval.result_unique evaluated failed
+          contradiction
+      | cons saved tail =>
+          cases tail with
+          | nil =>
+              have failed :
+                  Eval (compile (.a (.c (.pk_k key)))) [saved] altStack flags ctx
+                    (.failure .stackUnderflow) := by
+                simpa [compile, compileWithKeyHash] using
+                  (Eval.toAltStackNext (x := saved)
+                    (Eval.pushDataNext (data := key)
+                      (Eval.fixedArityStackUnderflow
+                        (opcode := .OP_CHECKSIG) (required := 2)
+                        (arity := rfl) (underflow := by simp))))
+              have equal := Eval.result_unique evaluated failed
+              contradiction
+          | cons witness rest =>
+              rcases a_c_pk_k_soundness key saved witness rest altStack flags ctx with
+                succeeded | failed
+              · rcases succeeded with ⟨result, canonical⟩
+                have equal := Eval.result_unique evaluated canonical
+                cases equal
+                exact ⟨rfl, .w [witness] rest saved result .savedFirst⟩
+              · rcases failed with ⟨error, canonical⟩
+                have equal := Eval.result_unique evaluated canonical
+                contradiction
 
-Core proof tasks:
-- Extend `SupportedMiniType` only when the corresponding non-vacuous semantic
-  predicate is defined.
-- Prove the theorem by induction over the `HasType` derivation, with separate
-  lemmas for leaves, connectives, wrappers, threshold, `multi`, and `multi_a`.
-- Prove `TypeSoundnessSurface` as a corollary through `desugar`.
--/
+/-! TODO(theorem): extend these arbitrary-input stack-frame proofs to every
+`HasType` constructor and close the target in `TypeSoundnessProofs`. -/
 
 /-! ## Theorem 2: Satisfaction Correctness -/
 
