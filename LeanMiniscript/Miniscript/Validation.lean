@@ -6,6 +6,9 @@ namespace LeanMiniscript.Miniscript
     bit 31, independently of the wider raw Script-number operand boundary. -/
 def MAX_BIP_LOCK_VALUE : Nat := 2147483648
 
+/-- Exclusive signed four-byte bound for Miniscript arithmetic literals. -/
+def MAX_BIP_ARITHMETIC_VALUE : Nat := MAX_BIP_LOCK_VALUE
+
 /-- Values below this threshold are interpreted as block heights; values at or
     above it are interpreted as timestamps. -/
 def LOCKTIME_THRESHOLD : Nat := 500000000
@@ -201,7 +204,8 @@ mutual
     | .thresh k fragments =>
         validThreshold k fragments.length ∧
         allWellFormed ctx fragments ∧
-        (2 ≤ k → listTimelocksPairwiseCompatible fragments)
+        (2 ≤ k → listTimelocksPairwiseCompatible fragments) ∧
+        k < MAX_BIP_ARITHMETIC_VALUE
     | .multi k keys =>
         ctx.permitsLegacyMulti ∧
         validThreshold k keys.length ∧

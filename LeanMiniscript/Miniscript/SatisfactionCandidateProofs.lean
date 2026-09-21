@@ -76,6 +76,68 @@ end SatisfactionCandidate
 
 namespace CandidateResult
 
+/-- A raw candidate exists, independently of whether later BIP 379 selection
+    marks it usable or `DONTUSE`. -/
+def Possible (result : CandidateResult) : Prop :=
+  result ≠ .impossible
+
+namespace Possible
+
+/-- Every possible result exposes its concrete witness through the raw
+    projection. -/
+theorem witness {result : CandidateResult} (possible : result.Possible) :
+    ∃ witness, result.witness? = some witness := by
+  cases result with
+  | impossible => exact (possible rfl).elim
+  | candidate candidate => exact ⟨candidate.witness, rfl⟩
+
+/-- A freshly usable candidate is possible. -/
+theorem usable (witness : Witness) (hasSig : Bool) :
+    (CandidateResult.usable witness hasSig).Possible := by
+  simp [Possible, CandidateResult.usable]
+
+/-- A `DONTUSE` candidate remains present in the raw candidate set. -/
+theorem dontUse (witness : Witness) (hasSig : Bool)
+    (origin : CandidateOrigin) :
+    (CandidateResult.dontUse witness hasSig origin).Possible := by
+  simp [Possible, CandidateResult.dontUse]
+
+/-- Combining two possible candidates produces a possible candidate. -/
+theorem combine {left right : CandidateResult}
+    (leftPossible : left.Possible) (rightPossible : right.Possible) :
+    (left.combine right).Possible := by
+  cases left <;> cases right <;>
+    simp_all [Possible, CandidateResult.combine]
+
+/-- Selection preserves a possible left alternative. -/
+theorem selectLeft {left right : CandidateResult}
+    (leftPossible : left.Possible) : (left.select right).Possible := by
+  cases left <;> cases right <;>
+    simp_all [Possible, CandidateResult.select]
+
+/-- Selection preserves a possible right alternative. -/
+theorem selectRight {left right : CandidateResult}
+    (rightPossible : right.Possible) : (left.select right).Possible := by
+  cases left <;> cases right <;>
+    simp_all [Possible, CandidateResult.select]
+
+/-- Adding a selector preserves raw possibility. -/
+theorem withSelector {result : CandidateResult} (possible : result.Possible)
+    (selector : StackElement) : (result.withSelector selector).Possible := by
+  cases result <;> simp_all [Possible, CandidateResult.withSelector]
+
+/-- Marking a candidate non-canonical preserves raw possibility. -/
+theorem markNonCanonical {result : CandidateResult}
+    (possible : result.Possible) : result.markNonCanonical.Possible := by
+  cases result <;> simp_all [Possible, CandidateResult.markNonCanonical]
+
+/-- Marking a candidate overcomplete preserves raw possibility. -/
+theorem markOvercomplete {result : CandidateResult}
+    (possible : result.Possible) : result.markOvercomplete.Possible := by
+  cases result <;> simp_all [Possible, CandidateResult.markOvercomplete]
+
+end Possible
+
 /-- Every usable witness projected from `result` satisfies `predicate`. -/
 def Supports (result : CandidateResult) (predicate : Witness → Prop) : Prop :=
   ∀ witness, result.usableWitness? = some witness → predicate witness
@@ -498,6 +560,20 @@ theorem extendCounts_getD_zero (states : List CandidateResult)
   | nil => simp [extendCounts, CandidateResult.combine]
   | cons head tail => simp [extendCounts]
 
+/-- If every child has a possible dissatisfaction, the exact-count table's
+    zero-satisfaction entry is possible. -/
+theorem selectExactly_zero_possible (children : List CandidatePair)
+    (childrenDsat : ∀ child, child ∈ children → child.dsat.Possible) :
+    (selectExactly 0 children).Possible := by
+  induction children using listSnocInduction with
+  | nil =>
+      exact CandidateResult.Possible.usable [] false
+  | snoc children child ih =>
+      rw [selectExactly_append, extendCounts_getD_zero]
+      apply CandidateResult.Possible.combine
+      · exact ih (fun prior member => childrenDsat prior (by simp [member]))
+      · exact childrenDsat child (by simp)
+
 /-- Every positive entry of one DP extension selects between retaining its
     count with the child's dissatisfaction and incrementing the previous count
     with the child's satisfaction. The order matches the executable left-tie
@@ -595,6 +671,47 @@ private theorem thresholdFold_usable_source
         · exact False.elim
             ((CandidateResult.supports_markOvercomplete entry.1
               (fun _ => False)).of_usableWitness fromOvercomplete)
+
+/-- Threshold dissatisfaction selection preserves a possible canonical
+    count-zero candidate while it scans positive overcomplete rows. -/
+private theorem thresholdFold_possible
+    (threshold : Nat) (entries : List (CandidateResult × Nat))
+    (canonical : CandidateResult) (possible : canonical.Possible) :
+    (entries.foldl
+      (fun current entry =>
+        if entry.2 = threshold then current
+        else current.select entry.1.markOvercomplete)
+      canonical).Possible := by
+  induction entries generalizing canonical with
+  | nil => exact possible
+  | cons entry entries ih =>
+      simp only [List.foldl_cons]
+      apply ih
+      by_cases skipped : entry.2 = threshold
+      · simpa [skipped] using possible
+      · simp only [skipped, ↓reduceIte]
+        exact possible.selectLeft
+
+/-- A possible zero-count table entry makes the selected threshold
+    dissatisfaction possible, regardless of candidate usability metadata. -/
+theorem thresholdDissatisfaction_possible
+    {threshold : Nat} {states : List CandidateResult}
+    (canonical : (states.getD 0 .impossible).Possible) :
+    (thresholdDissatisfaction threshold states).Possible := by
+  cases states with
+  | nil => simp [CandidateResult.Possible] at canonical
+  | cons head tail =>
+      apply thresholdFold_possible
+      simpa using canonical
+
+/-- Possible child dissatisfactions compose into a possible threshold
+    dissatisfaction. -/
+theorem thresholdDissatisfaction_possible_of_children
+    (threshold : Nat) (children : List CandidatePair)
+    (childrenDsat : ∀ child, child ∈ children → child.dsat.Possible) :
+    (thresholdDissatisfaction threshold (countCandidates children)).Possible := by
+  apply thresholdDissatisfaction_possible
+  simpa [selectExactly] using selectExactly_zero_possible children childrenDsat
 
 /-- A usable threshold dissatisfaction comes unchanged from the canonical
     count-zero head state. This is intentionally one-way: arbitrary retained

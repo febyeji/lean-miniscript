@@ -1025,6 +1025,11 @@ private theorem supportsStackPathBounds_of_wellFormed_hasType
         ⟨HasType.n_wrap firstTyped, supported.sat, supported.dsat⟩
   | @thresh threshold first rest firstMods restTypes firstTyped firstD firstUnit
       restTyped restThreshold positive atMost =>
+      have safe : ArithmeticScriptNatSafe threshold :=
+        ArithmeticScriptNatSafe.of_lt (by
+          simpa [MAX_BIP_ARITHMETIC_VALUE, MAX_BIP_LOCK_VALUE,
+            maxArithmeticScriptNatExclusive] using
+            wellFormed.2.2.2)
       by_cases valid : candidateThresholdValid threshold (first :: rest).length
       · have childrenWellFormed := wellFormed.2.1
         simp only [CoreFragment.allWellFormed] at childrenWellFormed
@@ -1073,10 +1078,7 @@ private theorem supportsStackPathBounds_of_wellFormed_hasType
           refine ⟨summaryTrace, summaryEq, ?_⟩
           simp only [baseWitnessResultOffset]
           omega
-      · rw [satisfactionCandidates_thresh_invalid threshold (first :: rest) env valid]
-        exact ⟨.thresh firstTyped firstD firstUnit restTyped restThreshold
-          positive atMost, CandidateResult.supports_impossible _,
-          CandidateResult.supports_impossible _⟩
+      · exact (valid ⟨by omega, atMost, safe⟩).elim
   | multi threshold keys positive atMost =>
       simp only [CoreFragment.WellFormed] at wellFormed
       have keyBound : keys.length ≤ maxPubKeysPerMultiSig := by

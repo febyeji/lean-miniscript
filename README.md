@@ -167,15 +167,19 @@ compiled fragments to the stack behavior promised by the Miniscript type system.
   Surface `generatedTypeSoundness*` theorems expose that result for every
   correctness type, including B/V/K/W execution and generated-witness
   `z`/`o`/`n`/`u` properties; they do not assert that either projection exists.
-  Arithmetic-unsafe typed thresholds are covered by their empty candidate
-  pair. The Core and Surface
+  Threshold well-formedness now carries the arithmetic Script-number safety
+  required by candidate generation and compiled accumulation, so unsafe raw
+  thresholds are rejected at the checked-fragment boundary. The Core and Surface
   `satisfactionCorrectness*` and `dissatisfactionCorrectness*` theorems now turn
   those selected top-level B contracts into the resource-free `Accepts` and
   `Dissatisfies` predicates, with Surface compilation transported through
   desugaring.
-- The remaining type-system soundness obligations are arbitrary-input B/V/K/W
-  stack-frame safety and usable dissatisfaction existence for `d`. Candidate
-  completeness, non-malleability, small-step
+- The `d` modifier's unconditional dissatisfaction is proved structurally for
+  every well-formed typed constructor at the candidate level. Its raw projection
+  includes candidates marked `DONTUSE`, such as canonical hashlock
+  dissatisfactions.
+  The remaining type-system soundness obligation is arbitrary-input B/V/K/W
+  stack-frame safety. General candidate completeness, non-malleability, small-step
   semantics, cryptographic correctness proofs, executable ECDSA verification,
   unsupported Core failure classes,
   and full semantic coverage of the Bitcoin Core differential suite are
