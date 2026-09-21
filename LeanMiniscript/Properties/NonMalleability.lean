@@ -1,5 +1,6 @@
 import LeanMiniscript.Miniscript.MalleabilityInferenceProofs
-import LeanMiniscript.Miniscript.Satisfaction
+import LeanMiniscript.Miniscript.MalleabilitySatisfactionProofs
+import LeanMiniscript.Miniscript.Soundness
 
 namespace LeanMiniscript.Properties
 
@@ -17,11 +18,13 @@ produce different valid low-S signatures even though neither signature is
 third-party malleable.
 -/
 
-/-- A fragment satisfies the complete BIP 379 non-malleability judgment in a
-    script context. The local recursive rules and the global key-uniqueness
-    premise are both part of the contract. -/
+/-- A valid top-level fragment satisfies the complete BIP 379
+    non-malleability judgment in a script context. Correctness typing,
+    structural validity, the local recursive rules, and the global
+    key-uniqueness premise are all part of the contract. -/
 def NonMalleable (ctx : ScriptContext) (fragment : CoreFragment) : Prop :=
-  fragment.NoDuplicateKeys ∧
+  ValidMiniscript ctx fragment ∧
+    fragment.NoDuplicateKeys ∧
     ∃ modifiers,
       HasMalleability ctx fragment modifiers ∧
       modifiers.nonMalleable = true
@@ -79,27 +82,62 @@ theorem CanonicalSatisfaction.unique
 theorem nonMalleable_iff_infer
     {ctx : ScriptContext} {fragment : CoreFragment} :
     NonMalleable ctx fragment ↔
-      ∃ modifiers,
-        inferMalleability ctx fragment = some modifiers ∧
-        modifiers.nonMalleable = true := by
+      ValidMiniscript ctx fragment ∧
+        ∃ modifiers,
+          inferMalleability ctx fragment = some modifiers ∧
+          modifiers.nonMalleable = true := by
   constructor
-  · rintro ⟨unique, modifiers, typed, nonMalleable⟩
-    exact ⟨modifiers,
+  · rintro ⟨valid, unique, modifiers, typed, nonMalleable⟩
+    exact ⟨valid, modifiers,
       inferMalleability_complete unique typed, nonMalleable⟩
-  · rintro ⟨modifiers, inferred, nonMalleable⟩
-    exact ⟨inferMalleability_noDuplicateKeys inferred, modifiers,
+  · rintro ⟨valid, modifiers, inferred, nonMalleable⟩
+    exact ⟨valid, inferMalleability_noDuplicateKeys inferred, modifiers,
       inferMalleability_sound inferred, nonMalleable⟩
 
-/-- For a BIP 379 non-malleable fragment, two canonical selections made from
-    the same material environment coincide. -/
+/-- A valid BIP 379 non-malleable fragment never exposes a usable
+    non-canonical satisfaction candidate. -/
+theorem NonMalleable.canonicalWhenUsable
+    {ctx : ScriptContext} {fragment : CoreFragment}
+    (nonMalleable : NonMalleable ctx fragment) (env : SatEnv) :
+    (satisfactionCandidates fragment env).sat.CanonicalWhenUsable := by
+  rcases nonMalleable with
+    ⟨⟨typeMods, valid⟩, _, malleabilityMods, malleability,
+      nonMalleability⟩
+  exact (malleabilityCandidateSound env valid.wellFormed valid.hasType
+    malleability).canonicalSat nonMalleability
+
+/-- Every witness returned by the ordinary satisfaction projection of a
+    non-malleable fragment comes from a canonical candidate row. -/
+theorem NonMalleable.canonicalSatisfaction
+    {ctx : ScriptContext} {fragment : CoreFragment} {env : SatEnv}
+    {witness : Witness}
+    (nonMalleable : NonMalleable ctx fragment)
+    (selected : satisfy fragment env = some witness) :
+    CanonicalSatisfaction fragment env witness := by
+  apply canonicalSatisfaction_iff.mpr
+  refine ⟨selected, ?_⟩
+  unfold satisfy at selected
+  cases resultEq : (satisfactionCandidates fragment env).sat with
+  | impossible => simp [resultEq] at selected
+  | candidate candidate =>
+      refine ⟨candidate, rfl, ?_⟩
+      cases statusEq : candidate.status with
+      | dontUse =>
+          simp [resultEq, CandidateResult.usableWitness?, statusEq] at selected
+      | usable =>
+          exact nonMalleable.canonicalWhenUsable env candidate resultEq statusEq
+
+/-- For a BIP 379 non-malleable fragment, two successful projections from the
+    same material environment coincide and both have canonical provenance. -/
 theorem NonMalleable.canonicalWitness_unique
     {ctx : ScriptContext} {fragment : CoreFragment} {env : SatEnv}
     {first second : Witness}
-    (_nonMalleable : NonMalleable ctx fragment)
-    (firstCanonical : CanonicalSatisfaction fragment env first)
-    (secondCanonical : CanonicalSatisfaction fragment env second) :
-    first = second :=
-  firstCanonical.unique secondCanonical
+    (nonMalleable : NonMalleable ctx fragment)
+    (firstSelected : satisfy fragment env = some first)
+    (secondSelected : satisfy fragment env = some second) :
+    first = second := by
+  exact (nonMalleable.canonicalSatisfaction firstSelected).unique
+    (nonMalleable.canonicalSatisfaction secondSelected)
 
 /-- Surface Miniscript inherits the core non-malleability judgment through
     the unique desugaring boundary. -/
@@ -112,10 +150,10 @@ theorem SurfaceNonMalleable.canonicalWitness_unique
     {ctx : ScriptContext} {fragment : SurfaceFragment} {env : SatEnv}
     {first second : Witness}
     (nonMalleable : SurfaceNonMalleable ctx fragment)
-    (firstCanonical : CanonicalSatisfaction (desugar fragment) env first)
-    (secondCanonical : CanonicalSatisfaction (desugar fragment) env second) :
+    (firstSelected : satisfy (desugar fragment) env = some first)
+    (secondSelected : satisfy (desugar fragment) env = some second) :
     first = second :=
   NonMalleable.canonicalWitness_unique nonMalleable
-    firstCanonical secondCanonical
+    firstSelected secondSelected
 
 end LeanMiniscript.Properties
