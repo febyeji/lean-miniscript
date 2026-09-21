@@ -100,4 +100,15 @@ theorem dissatisfactionCorrectnessSurface :
     dissatisfactionCorrectnessCore valid sound encodings version modeled
       generated
 
+/-- Core compilation preserves the public satisfaction and dissatisfaction
+    semantics supplied by the deterministic candidate generator. -/
+theorem compilationPreservesCoreSemantics :
+    CompilationPreservesCoreSemantics :=
+  ⟨satisfactionCorrectnessCore, dissatisfactionCorrectnessCore⟩
+
+/-- Surface compilation inherits semantic preservation through desugaring. -/
+theorem compilationPreservesSurfaceSemantics :
+    CompilationPreservesSurfaceSemantics :=
+  ⟨satisfactionCorrectnessSurface, dissatisfactionCorrectnessSurface⟩
+
 end LeanMiniscript.Miniscript

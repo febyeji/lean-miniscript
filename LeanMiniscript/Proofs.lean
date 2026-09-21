@@ -20,6 +20,7 @@ import LeanMiniscript.Properties.ResourceCompilerMetricProofs
 import LeanMiniscript.Properties.ResourcePathProofs
 import LeanMiniscript.Properties.SaneExecutionResourceProofs
 import LeanMiniscript.Properties.SatisfactionExecutionResourceProofs
+import LeanMiniscript.Properties.NonMalleability
 
 /-!
 # Proof-oriented lean-miniscript modules
