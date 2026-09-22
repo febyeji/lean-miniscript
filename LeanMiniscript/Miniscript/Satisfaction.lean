@@ -220,6 +220,21 @@ def select (left right : SatisfactionCandidate) : SatisfactionCandidate :=
       | .dontUse, .usable => right
       | .usable, .usable | .dontUse, .dontUse => cheaperOrLeft left right
 
+/-- Candidate selection has a signature exactly when both competing choices
+    have signatures. A lone unsigned choice wins; two unsigned choices remain
+    unsigned while becoming `DONTUSE`. -/
+@[simp] theorem select_hasSig (left right : SatisfactionCandidate) :
+    (left.select right).hasSig = (left.hasSig && right.hasSig) := by
+  cases leftHasSig : left.hasSig <;> cases rightHasSig : right.hasSig
+  · simp [select, cheaperOrLeft, leftHasSig, rightHasSig]
+    split <;> simp_all [markDontUse]
+  · simp [select, leftHasSig, rightHasSig]
+  · simp [select, leftHasSig, rightHasSig]
+  · cases leftStatus : left.status <;> cases rightStatus : right.status <;>
+      simp [select, cheaperOrLeft, leftHasSig, rightHasSig,
+        leftStatus, rightStatus]
+    all_goals split <;> simp_all
+
 @[simp] theorem withSelector_witness
     (candidate : SatisfactionCandidate) (selector : StackElement) :
     (candidate.withSelector selector).witness =
@@ -1599,7 +1614,5 @@ theorem satisfactionCandidates_dsat_witness
     dissatisfy (.multi_a threshold keys) env =
       (multiACandidates threshold keys env).dsat.usableWitness? := by
   rfl
-
--- TODO: Analyze non-malleable satisfaction (unique canonical witness)
 
 end LeanMiniscript.Miniscript
