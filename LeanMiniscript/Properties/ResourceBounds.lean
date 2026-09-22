@@ -2,7 +2,7 @@ import LeanMiniscript.Miniscript.Types
 import LeanMiniscript.Miniscript.Compile
 import LeanMiniscript.Miniscript.Metrics
 import LeanMiniscript.Miniscript.Soundness
-import LeanMiniscript.Script.Serialization
+import LeanMiniscript.Script.Codec.Serialization
 import LeanMiniscript.Script.StackGrowthAllowance
 
 namespace LeanMiniscript.Properties

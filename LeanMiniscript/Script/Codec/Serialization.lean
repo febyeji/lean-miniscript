@@ -2,6 +2,12 @@ import LeanMiniscript.Script.State
 
 namespace LeanMiniscript.Script
 
+/-!
+# Bitcoin Script serialization
+
+Canonical byte serialization for the modeled Script subset.
+-/
+
 /-- Serialization can only encode data-push lengths representable by Bitcoin
     Script's four-byte `OP_PUSHDATA4` prefix. -/
 inductive SerializationError where
@@ -68,7 +74,7 @@ def pushDataPrefix (size : Nat) : Except SerializationError (List UInt8) :=
     .error (.pushDataTooLarge size)
 
 /-- Serialize a byte-vector with the shortest available length prefix. -/
-private def serializeLengthPrefixedPush
+def serializeLengthPrefixedPush
     (data : ByteArray) : Except SerializationError ByteArray := do
   let lengthPrefix ← pushDataPrefix data.size
   pure ⟨(lengthPrefix ++ data.data.toList).toArray⟩
@@ -109,10 +115,12 @@ def serializeElement : ScriptElement → Except SerializationError ByteArray
   | .pushNum n => serializePushNum n
 
 /-- Serialize a modeled Script to canonical Bitcoin Script bytes. -/
-def serializeScript (script : Script) : Except SerializationError ByteArray :=
-  script.foldlM (fun bytes element => do
+def serializeScript : Script → Except SerializationError ByteArray
+  | [] => .ok ByteArray.empty
+  | element :: rest => do
       let elementBytes ← serializeElement element
-      pure (bytes ++ elementBytes)) ByteArray.empty
+      let restBytes ← serializeScript rest
+      pure (elementBytes ++ restBytes)
 
 /-- Exact serialized byte size of a modeled Script. -/
 def serializedScriptSize (script : Script) : Except SerializationError Nat :=

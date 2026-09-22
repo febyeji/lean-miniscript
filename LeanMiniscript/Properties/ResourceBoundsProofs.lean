@@ -26,27 +26,27 @@ private def elementShapeSize : ElementSerializationShape → Except Serializatio
 private def scriptSerializationShape (script : Script) : List ElementSerializationShape :=
   script.map elementSerializationShape
 
-private def serializationShapeSize (shapes : List ElementSerializationShape)
-    (initialSize : Nat := 0) : Except SerializationError Nat :=
-  shapes.foldlM (fun size shape => do
-    let elementSize ← elementShapeSize shape
-    pure (size + elementSize)) initialSize
+private def serializationShapeSize :
+    List ElementSerializationShape → Except SerializationError Nat
+  | [] => .ok 0
+  | shape :: rest => do
+      let elementSize ← elementShapeSize shape
+      let restSize ← serializationShapeSize rest
+      pure (elementSize + restSize)
 
 private theorem serializeElement_size (element : ScriptElement) :
     (serializeElement element).map ByteArray.size =
       elementShapeSize (elementSerializationShape element) := by
   cases element <;> rfl
 
-private theorem serializeScriptFold_size (script : Script) (initial : ByteArray) :
-    (script.foldlM (fun bytes element => do
-      let elementBytes ← serializeElement element
-      pure (bytes ++ elementBytes)) initial).map ByteArray.size =
-      serializationShapeSize (scriptSerializationShape script) initial.size := by
-  induction script generalizing initial with
+private theorem serializeScript_size (script : Script) :
+    (serializeScript script).map ByteArray.size =
+      serializationShapeSize (scriptSerializationShape script) := by
+  induction script with
   | nil => rfl
   | cons element script ih =>
-      simp only [List.foldlM_cons, scriptSerializationShape, List.map_cons,
-        serializationShapeSize, List.foldlM_cons]
+      simp only [serializeScript, scriptSerializationShape, List.map_cons,
+        serializationShapeSize]
       cases serialized : serializeElement element with
       | error error =>
           have sizeError : elementShapeSize (elementSerializationShape element) =
@@ -61,20 +61,37 @@ private theorem serializeScriptFold_size (script : Script) (initial : ByteArray)
             rw [← serializeElement_size element, serialized]
             rfl
           rw [sizeOk]
-          change
-            (script.foldlM (fun accumulated next => do
-              let nextBytes ← serializeElement next
-              pure (accumulated ++ nextBytes)) (initial ++ bytes)).map
-                ByteArray.size =
-              serializationShapeSize (scriptSerializationShape script)
-                (initial.size + bytes.size)
-          rw [ih, ByteArray.size_append]
+          cases restSerialized : serializeScript script with
+          | error error =>
+              have restError :
+                  serializationShapeSize (scriptSerializationShape script) =
+                    .error error := by
+                rw [← ih, restSerialized]
+                rfl
+              change serializationShapeSize
+                (List.map elementSerializationShape script) =
+                  .error error at restError
+              rw [restError]
+              rfl
+          | ok restBytes =>
+              have restOk :
+                  serializationShapeSize (scriptSerializationShape script) =
+                    .ok restBytes.size := by
+                rw [← ih, restSerialized]
+                rfl
+              change serializationShapeSize
+                (List.map elementSerializationShape script) =
+                  .ok restBytes.size at restOk
+              rw [restOk]
+              change Except.ok (bytes ++ restBytes).size =
+                Except.ok (bytes.size + restBytes.size)
+              rw [ByteArray.size_append]
 
 private theorem serializedScriptSize_eq_shape (script : Script) :
     LeanMiniscript.Script.serializedScriptSize script =
       serializationShapeSize (scriptSerializationShape script) := by
-  unfold LeanMiniscript.Script.serializedScriptSize serializeScript
-  exact serializeScriptFold_size script ByteArray.empty
+  unfold LeanMiniscript.Script.serializedScriptSize
+  exact serializeScript_size script
 
 private def verifyShapeReplacement? :
     ElementSerializationShape → Option ElementSerializationShape

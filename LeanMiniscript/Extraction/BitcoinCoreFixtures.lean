@@ -1,6 +1,6 @@
 import Lean.Data.Json
 import LeanMiniscript.Extraction.RefInterp
-import LeanMiniscript.Script.Serialization
+import LeanMiniscript.Script.Codec.Deserialization
 
 namespace LeanMiniscript.Extraction
 
@@ -111,6 +111,16 @@ inductive CoreScriptSourceError where
   | unsupportedOpcode (offset : Nat) (byte : UInt8)
   | decoderFuelExhausted (offset : Nat)
   deriving Repr, DecidableEq
+
+/-- Preserve the fixture importer's public error categories while delegating
+    byte decoding to the shared Script deserializer. -/
+def CoreScriptSourceError.ofDeserialization :
+    DeserializationError → CoreScriptSourceError
+  | .truncatedPushLength offset width remaining =>
+      .truncatedPushLength offset width remaining
+  | .truncatedPushData offset expected remaining =>
+      .truncatedPushData offset expected remaining
+  | .unsupportedOpcode offset byte => .unsupportedOpcode offset byte
 
 private inductive CoreSourceToken where
   | word (text : String)
@@ -224,103 +234,11 @@ def opcodeFromCoreName? : String → Option Opcode
   | "SIZE" => some .OP_SIZE
   | _ => none
 
-private def opcodeFromByte? : Nat → Option Opcode
-  | 0x61 => some .OP_NOP
-  | 0x63 => some .OP_IF
-  | 0x64 => some .OP_NOTIF
-  | 0x67 => some .OP_ELSE
-  | 0x68 => some .OP_ENDIF
-  | 0x73 => some .OP_IFDUP
-  | 0x76 => some .OP_DUP
-  | 0x7c => some .OP_SWAP
-  | 0x6b => some .OP_TOALTSTACK
-  | 0x6c => some .OP_FROMALTSTACK
-  | 0x93 => some .OP_ADD
-  | 0x9a => some .OP_BOOLAND
-  | 0x9b => some .OP_BOOLOR
-  | 0x92 => some .OP_0NOTEQUAL
-  | 0x87 => some .OP_EQUAL
-  | 0x88 => some .OP_EQUALVERIFY
-  | 0x9c => some .OP_NUMEQUAL
-  | 0x9d => some .OP_NUMEQUALVERIFY
-  | 0xa8 => some .OP_SHA256
-  | 0xaa => some .OP_HASH256
-  | 0xa6 => some .OP_RIPEMD160
-  | 0xa9 => some .OP_HASH160
-  | 0xac => some .OP_CHECKSIG
-  | 0xad => some .OP_CHECKSIGVERIFY
-  | 0xba => some .OP_CHECKSIGADD
-  | 0xae => some .OP_CHECKMULTISIG
-  | 0xaf => some .OP_CHECKMULTISIGVERIFY
-  | 0xb2 => some .OP_CHECKSEQUENCEVERIFY
-  | 0xb1 => some .OP_CHECKLOCKTIMEVERIFY
-  | 0x69 => some .OP_VERIFY
-  | 0x82 => some .OP_SIZE
-  | _ => none
-
-private def decodePush (offset size : Nat) (payload : List UInt8) :
-    Except CoreScriptSourceError (ByteArray × List UInt8) :=
-  if size ≤ payload.length then
-    .ok (⟨(payload.take size).toArray⟩, payload.drop size)
-  else
-    .error (.truncatedPushData offset size payload.length)
-
-private def deserializeCoreBytesAux : Nat → List UInt8 → Nat →
-    Except CoreScriptSourceError Script
-  | _, [], _ => .ok []
-  | 0, _ :: _, offset => .error (.decoderFuelExhausted offset)
-  | fuel + 1, byte :: rest, offset => do
-      let value := byte.toNat
-      if value = 0 then
-        return .pushNum 0 ::
-          (← deserializeCoreBytesAux fuel rest (offset + 1))
-      else if value ≤ 75 then
-        let (data, tail) ← decodePush offset value rest
-        return .pushData data ::
-          (← deserializeCoreBytesAux fuel tail (offset + 1 + value))
-      else if value = 0x4c then
-        match rest with
-        | [] => throw (.truncatedPushLength offset 1 0)
-        | sizeByte :: payload =>
-            let size := sizeByte.toNat
-            let (data, tail) ← decodePush offset size payload
-            return .pushData data ::
-              (← deserializeCoreBytesAux fuel tail (offset + 2 + size))
-      else if value = 0x4d then
-        match rest with
-        | low :: high :: payload =>
-            let size := low.toNat + 256 * high.toNat
-            let (data, tail) ← decodePush offset size payload
-            return .pushData data ::
-              (← deserializeCoreBytesAux fuel tail (offset + 3 + size))
-        | _ => throw (.truncatedPushLength offset 2 rest.length)
-      else if value = 0x4e then
-        match rest with
-        | b0 :: b1 :: b2 :: b3 :: payload =>
-            let size := b0.toNat + 256 * b1.toNat + 65536 * b2.toNat +
-              16777216 * b3.toNat
-            let (data, tail) ← decodePush offset size payload
-            return .pushData data ::
-              (← deserializeCoreBytesAux fuel tail (offset + 5 + size))
-        | _ => throw (.truncatedPushLength offset 4 rest.length)
-      else if value = 0x4f then
-        return .pushNum (-1) ::
-          (← deserializeCoreBytesAux fuel rest (offset + 1))
-      else if 0x51 ≤ value ∧ value ≤ 0x60 then
-        return .pushNum (value - 0x50) ::
-          (← deserializeCoreBytesAux fuel rest (offset + 1))
-      else
-        match opcodeFromByte? value with
-        | some opcode =>
-            return .op opcode ::
-              (← deserializeCoreBytesAux fuel rest (offset + 1))
-        | none => throw (.unsupportedOpcode offset byte)
-
 /-- Decode raw Script bytes emitted by a Core fixture token, rejecting every
     opcode outside the modeled subset with its byte offset. -/
 def deserializeCoreScriptBytes (bytes : ByteArray) :
     Except CoreScriptSourceError Script :=
-  deserializeCoreBytesAux (bytes.size + 1) bytes.data.toList 0
+  (deserializeScript bytes).mapError CoreScriptSourceError.ofDeserialization
 
 private def compileCoreToken : CoreSourceToken →
     Except CoreScriptSourceError ByteArray

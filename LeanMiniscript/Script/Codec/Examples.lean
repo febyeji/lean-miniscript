@@ -1,12 +1,12 @@
-import LeanMiniscript.Script.Serialization
+import LeanMiniscript.Script.Codec.Proofs
 import LeanMiniscript.Miniscript.Compile
 
 namespace LeanMiniscript.Script
 
 open LeanMiniscript.Miniscript
 
-/-! Build-checked serialization fixtures for opcode values, push boundaries,
-numeric encodings, and representative compiler outputs. -/
+/-! Build-checked codec fixtures for opcode values, push boundaries, malformed
+inputs, normalized round trips, and representative compiler outputs. -/
 
 def opcodeSerializationFixtures : List (Opcode × UInt8) :=
   [(.OP_NOP, 0x61), (.OP_IF, 0x63), (.OP_NOTIF, 0x64),
@@ -79,6 +79,39 @@ example : serializePushNum 16 = .ok ⟨#[0x60]⟩ := by rfl
 example : serializePushNum 17 = .ok ⟨#[0x01, 0x11]⟩ := by rfl
 example : serializePushNum 127 = .ok ⟨#[0x01, 0x7f]⟩ := by rfl
 example : serializePushNum 128 = .ok ⟨#[0x02, 0x80, 0x00]⟩ := by rfl
+
+example : deserializeScript ⟨#[0x4c]⟩ =
+    .error (.truncatedPushLength 0 1 0) := by
+  rw [deserializeScript, deserializeScriptList.eq_def]
+  rfl
+
+example : deserializeScript ⟨#[0x02, 0xaa]⟩ =
+    .error (.truncatedPushData 0 2 1) := by
+  rw [deserializeScript, deserializeScriptList.eq_def]
+  rfl
+
+example : deserializeScript ⟨#[0xff]⟩ =
+    .error (.unsupportedOpcode 0 0xff) := by
+  rw [deserializeScript, deserializeScriptList.eq_def]
+  rfl
+
+def codecRoundTripFixture : Script :=
+  [.pushNum 0, .pushNum 16, .pushData ⟨#[0x11]⟩, .op .OP_DUP]
+
+example : normalizeSerializedScript codecRoundTripFixture =
+    codecRoundTripFixture := by
+  rfl
+
+example (encoded : ByteArray)
+    (serialized : serializeScript codecRoundTripFixture = .ok encoded) :
+    deserializeScript encoded = .ok codecRoundTripFixture := by
+  exact deserializeScript_serializeScript_of_normalized
+    codecRoundTripFixture encoded (by rfl) serialized
+
+example : normalizeSerializedScript
+    [.pushData ByteArray.empty, .pushNum 17] =
+    [.pushNum 0, .pushData ⟨#[0x11]⟩] := by
+  rfl
 
 def serializationKeyA : PubKey :=
   PubKey.ofBytes ⟨#[0x02] ++ (List.replicate 32 0x11).toArray⟩

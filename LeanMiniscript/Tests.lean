@@ -28,7 +28,7 @@ import LeanMiniscript.Script.ScriptNumExamples
 import LeanMiniscript.Script.SignatureEncodingExamples
 import LeanMiniscript.Script.SighashExecutionExamples
 import LeanMiniscript.Script.SignatureVersionExamples
-import LeanMiniscript.Script.SerializationExamples
+import LeanMiniscript.Script.Codec.Examples
 import LeanMiniscript.Script.ValidationWeightExamples
 import LeanMiniscript.Script.TapscriptAcceptanceExamples
 import LeanMiniscript.Script.TapscriptWitnessPolicyExamples
