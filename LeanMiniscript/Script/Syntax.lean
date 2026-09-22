@@ -59,8 +59,7 @@ inductive ScriptElement where
 /-- A Bitcoin Script is a list of script elements. -/
 abbrev Script := List ScriptElement
 
--- Serialization is defined in `Script.Serialization`.
--- TODO: Define script deserialization.
+-- Serialization and deserialization are defined in `Script.Codec`.
 -- Witness ordering and the execution-stack boundary are defined in
 -- `Miniscript.Witness`.
 

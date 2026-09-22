@@ -1,6 +1,6 @@
 import LeanMiniscript.Miniscript.CompileConcrete
 import LeanMiniscript.Script.Assembly
-import LeanMiniscript.Script.Serialization
+import LeanMiniscript.Script.Codec.Serialization
 
 namespace LeanMiniscript.Miniscript
 

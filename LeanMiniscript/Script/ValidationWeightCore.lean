@@ -1,5 +1,5 @@
 import LeanMiniscript.Script.Evaluator
-import LeanMiniscript.Script.Serialization
+import LeanMiniscript.Script.Codec.Serialization
 import LeanMiniscript.Bitcoin.Serialization
 
 namespace LeanMiniscript.Script
