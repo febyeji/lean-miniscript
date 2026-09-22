@@ -1,4 +1,5 @@
 import LeanMiniscript.Extraction.TaprootExamples
+import LeanMiniscript.Extraction.TaprootBytesExamples
 import LeanMiniscript.Bitcoin.TaprootControlBlockExamples
 import LeanMiniscript.Script.SchnorrExecutionExamples
 import LeanMiniscript.Bitcoin.SchnorrExamples
@@ -29,6 +30,7 @@ import LeanMiniscript.Script.SignatureEncodingExamples
 import LeanMiniscript.Script.SighashExecutionExamples
 import LeanMiniscript.Script.SignatureVersionExamples
 import LeanMiniscript.Script.Codec.Examples
+import LeanMiniscript.Script.Codec.ExecutionExamples
 import LeanMiniscript.Script.ValidationWeightExamples
 import LeanMiniscript.Script.TapscriptAcceptanceExamples
 import LeanMiniscript.Script.TapscriptWitnessPolicyExamples

@@ -12,6 +12,7 @@ import LeanMiniscript.Properties.ResourceBounds
 import LeanMiniscript.Properties.NonMalleability
 import LeanMiniscript.Extraction.RefInterp
 import LeanMiniscript.Extraction.Taproot
+import LeanMiniscript.Extraction.TaprootBytes
 import LeanMiniscript.Extraction.BitcoinCoreFixtures
 
 /-!
