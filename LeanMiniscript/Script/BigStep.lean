@@ -406,6 +406,106 @@ theorem splitConditional_unique {script : Script} {first second : ConditionalFra
   cases hSecond
   rfl
 
+/-- Map instructions within each branch and the suffix, retaining branch boundaries. -/
+def ConditionalFrame.map (f : ScriptElement → ScriptElement)
+    (frame : ConditionalFrame) : ConditionalFrame :=
+  { branches := frame.branches.map (List.map f), after := frame.after.map f }
+
+theorem selectConditionalBranches_map (f : ScriptElement → ScriptElement)
+    (branches : List Script) (selected : Bool) :
+    selectConditionalBranches selected (branches.map (List.map f)) =
+      (selectConditionalBranches selected branches).map f := by
+  induction branches generalizing selected with
+  | nil => rfl
+  | cons branch rest ih =>
+      cases selected <;> simp [selectConditionalBranches, ih]
+
+theorem ConditionalFrame.select_map (f : ScriptElement → ScriptElement)
+    (frame : ConditionalFrame) (selected : Bool) :
+    (frame.map f).select selected = (frame.select selected).map f := by
+  simp [ConditionalFrame.map, ConditionalFrame.select, selectConditionalBranches_map]
+
+private theorem splitConditionalAux_cons_nonConditional
+    (element : ScriptElement) (ordinary : NonConditional element)
+    (depth : Nat) (current : Script) (completed : List Script) (rest : Script) :
+    splitConditionalAux depth current completed (element :: rest) =
+      splitConditionalAux depth (element :: current) completed rest := by
+  cases element with
+  | pushData | pushNum => rfl
+  | op opcode => cases opcode <;> simp_all [NonConditional, splitConditionalAux]
+
+private theorem splitConditionalAux_map (f : ScriptElement → ScriptElement)
+    (preserves : ∀ element, f element = element ∨
+      (NonConditional element ∧ NonConditional (f element)))
+    (script : Script) (depth : Nat) (current : Script) (completed : List Script) :
+    splitConditionalAux depth (current.map f) (completed.map (List.map f))
+        (script.map f) =
+      (splitConditionalAux depth current completed script).map (ConditionalFrame.map f) := by
+  induction script generalizing depth current completed with
+  | nil => rfl
+  | cons element rest ih =>
+      rcases preserves element with unchanged | ⟨ordinary, mappedOrdinary⟩
+      · cases element with
+        | pushData | pushNum => simp [List.map_cons, unchanged, splitConditionalAux, ← ih]
+        | op opcode =>
+            cases opcode <;> cases depth <;>
+              simp [List.map_cons, unchanged, splitConditionalAux, ← ih,
+                ConditionalFrame.map, List.map_reverse]
+      · simp only [List.map_cons,
+          splitConditionalAux_cons_nonConditional _ ordinary,
+          splitConditionalAux_cons_nonConditional _ mappedOrdinary, ← ih]
+
+/-- Changing ordinary instructions preserves conditional parsing when every
+    conditional delimiter remains unchanged. -/
+theorem splitConditional_map (f : ScriptElement → ScriptElement)
+    (preserves : ∀ element, f element = element ∨
+      (NonConditional element ∧ NonConditional (f element))) (script : Script) :
+    splitConditional (script.map f) =
+      (splitConditional script).map (ConditionalFrame.map f) := by
+  exact splitConditionalAux_map f preserves script 0 [] []
+
+private theorem splitUnclosedConditionalAux_cons_nonConditional
+    (element : ScriptElement) (ordinary : NonConditional element)
+    (depth : Nat) (current : Script) (completed : List Script) (rest : Script) :
+    splitUnclosedConditionalAux depth current completed (element :: rest) =
+      splitUnclosedConditionalAux depth (element :: current) completed rest := by
+  cases element with
+  | pushData | pushNum => rfl
+  | op opcode => cases opcode <;> simp_all [NonConditional, splitUnclosedConditionalAux]
+
+private theorem splitUnclosedConditionalAux_map (f : ScriptElement → ScriptElement)
+    (preserves : ∀ element, f element = element ∨
+      (NonConditional element ∧ NonConditional (f element)))
+    (script : Script) (depth : Nat) (current : Script) (completed : List Script) :
+    splitUnclosedConditionalAux depth (current.map f) (completed.map (List.map f))
+        (script.map f) =
+      (splitUnclosedConditionalAux depth current completed script).map (List.map f) := by
+  induction script generalizing depth current completed with
+  | nil => simp [splitUnclosedConditionalAux, List.map_reverse]
+  | cons element rest ih =>
+      rcases preserves element with unchanged | ⟨ordinary, mappedOrdinary⟩
+      · cases element with
+        | pushData | pushNum =>
+            simp [List.map_cons, unchanged, splitUnclosedConditionalAux, ← ih]
+        | op opcode =>
+            cases opcode <;> cases depth <;>
+              simp [List.map_cons, unchanged, splitUnclosedConditionalAux, ← ih,
+                List.map_reverse]
+      · simp only [List.map_cons,
+          splitUnclosedConditionalAux_cons_nonConditional _ ordinary,
+          splitUnclosedConditionalAux_cons_nonConditional _ mappedOrdinary, ← ih]
+
+theorem selectUnclosedConditional_map (f : ScriptElement → ScriptElement)
+    (preserves : ∀ element, f element = element ∨
+      (NonConditional element ∧ NonConditional (f element)))
+    (script : Script) (selected : Bool) :
+    selectUnclosedConditional (script.map f) selected =
+      (selectUnclosedConditional script selected).map f := by
+  unfold selectUnclosedConditional
+  have mapped := splitUnclosedConditionalAux_map f preserves script 0 [] []
+  simp only [List.map_nil] at mapped
+  rw [mapped, selectConditionalBranches_map]
+
 /-- Big-step evaluation relation.
     `Eval script stack altStack flags ctx result` means executing `script`
     starting with main stack `stack` and alternate stack `altStack` in context

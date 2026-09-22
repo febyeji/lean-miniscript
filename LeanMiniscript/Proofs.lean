@@ -3,6 +3,8 @@ import LeanMiniscript.Script.RuntimeErasure
 import LeanMiniscript.Script.ExecutionResources
 import LeanMiniscript.Script.ScriptNumProofs
 import LeanMiniscript.Script.Codec.Proofs
+import LeanMiniscript.Script.Codec.VerificationProofs
+import LeanMiniscript.Extraction.TaprootBytesProofs
 import LeanMiniscript.Miniscript.TypeInferenceProofs
 import LeanMiniscript.Miniscript.MalleabilityInferenceProofs
 import LeanMiniscript.Miniscript.Conformance
@@ -26,7 +28,8 @@ import LeanMiniscript.Properties.NonMalleability
 /-!
 # Proof-oriented lean-miniscript modules
 
-This umbrella exports canonical Script codec round trips, conformance,
+This umbrella exports canonical Script codec round trips and preservation of
+execution, runtime limits and modeled Tapscript verification, conformance,
 structural, inference, surface normalization, generated-satisfaction contracts,
 Core/Surface satisfaction and dissatisfaction correctness, stack-growth,
 active-path Script resource observations, terminal VERIFY fusion resource
