@@ -15,6 +15,7 @@ inductive Opcode where
   | OP_ENDIF
   -- Stack manipulation
   | OP_IFDUP
+  | OP_DROP
   | OP_DUP
   | OP_SWAP
   | OP_TOALTSTACK

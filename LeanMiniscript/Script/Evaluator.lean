@@ -131,6 +131,11 @@ def evaluate (oracle : CryptoOracle) (script : Script)
             evaluate oracle rest (top :: top :: stackRest) altStack flags ctx
           else
             evaluate oracle rest (top :: stackRest) altStack flags ctx
+  | .op .OP_DROP :: rest =>
+      match stack with
+      | [] => .failure .stackUnderflow
+      | _ :: stackRest =>
+          evaluate oracle rest stackRest altStack flags ctx
   | .op .OP_DUP :: rest =>
       match stack with
       | [] => .failure .stackUnderflow
@@ -364,6 +369,22 @@ decreasing_by
       omega
     | have smaller := selectUnclosedConditional_length_le rest (!castToBool top)
       omega
+
+/-- Dropping any byte vector preserves the continuation result and alternate
+    stack, without decoding the dropped value or consulting the oracle. -/
+theorem evaluate_drop_cons (oracle : CryptoOracle) (script : Script)
+    (top : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_DROP :: script) (top :: stack) altStack flags ctx =
+      evaluate oracle script stack altStack flags ctx := by
+  simp [evaluate]
+
+/-- An empty main stack fails before the continuation, regardless of alt stack. -/
+theorem evaluate_drop_nil (oracle : CryptoOracle) (script : Script)
+    (altStack : Stack) (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle (.op .OP_DROP :: script) [] altStack flags ctx =
+      .failure .stackUnderflow := by
+  simp [evaluate]
 
 /-- An oracle agreeing with the abstract model computes the result of every
     relational `Eval` derivation. -/

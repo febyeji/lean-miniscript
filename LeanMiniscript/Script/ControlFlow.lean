@@ -13,7 +13,7 @@ those two guarantees without assigning execution semantics to the script.
 /-- The complete opcode universe represented by this model. -/
 def modeledOpcodes : List Opcode :=
   [.OP_NOP, .OP_IF, .OP_NOTIF, .OP_ELSE, .OP_ENDIF,
-   .OP_IFDUP, .OP_DUP, .OP_SWAP, .OP_TOALTSTACK, .OP_FROMALTSTACK,
+   .OP_IFDUP, .OP_DROP, .OP_DUP, .OP_SWAP, .OP_TOALTSTACK, .OP_FROMALTSTACK,
    .OP_ADD, .OP_BOOLAND, .OP_BOOLOR, .OP_0NOTEQUAL,
    .OP_EQUAL, .OP_EQUALVERIFY, .OP_NUMEQUAL, .OP_NUMEQUALVERIFY,
    .OP_SHA256, .OP_HASH256, .OP_RIPEMD160, .OP_HASH160,
