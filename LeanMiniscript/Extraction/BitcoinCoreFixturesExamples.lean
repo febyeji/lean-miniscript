@@ -21,7 +21,8 @@ private def rejectingOracle : CryptoOracle :=
 private def coreOpcodeNameFixtures : List (String × Opcode) :=
   [("NOP", .OP_NOP), ("IF", .OP_IF), ("NOTIF", .OP_NOTIF),
    ("ELSE", .OP_ELSE),
-   ("ENDIF", .OP_ENDIF), ("IFDUP", .OP_IFDUP), ("DUP", .OP_DUP),
+   ("ENDIF", .OP_ENDIF), ("IFDUP", .OP_IFDUP),
+   ("DROP", .OP_DROP), ("DUP", .OP_DUP),
    ("SWAP", .OP_SWAP), ("TOALTSTACK", .OP_TOALTSTACK),
    ("FROMALTSTACK", .OP_FROMALTSTACK), ("ADD", .OP_ADD),
    ("BOOLAND", .OP_BOOLAND), ("BOOLOR", .OP_BOOLOR),
@@ -232,13 +233,21 @@ private def quotedWhitespacePushes : Bool :=
 example : quotedWhitespacePushes = true := by
   native_decide
 
-private def rejectsDrop : Bool :=
+private def parsesDrop : Bool :=
   match parseCoreScriptSource "1 DROP" with
-  | .error (.unsupportedToken "DROP") => true
+  | .ok [.pushNum 1, .op .OP_DROP] => true
+  | _ => false
+
+example : parsesDrop = true := by
+  native_decide
+
+private def rejectsDepth : Bool :=
+  match parseCoreScriptSource "1 DEPTH" with
+  | .error (.unsupportedToken "DEPTH") => true
   | _ => false
 
 /-- An opcode outside the modeled subset is reported by token. -/
-example : rejectsDrop = true := by
+example : rejectsDepth = true := by
   native_decide
 
 private def rejectsTruncatedPush : Bool :=

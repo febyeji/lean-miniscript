@@ -26,6 +26,7 @@ def opcodeArityFixtures : List OpcodeArityFixture := [
   ⟨.OP_ELSE, some 0⟩,
   ⟨.OP_ENDIF, some 0⟩,
   ⟨.OP_IFDUP, some 1⟩,
+  ⟨.OP_DROP, some 1⟩,
   ⟨.OP_DUP, some 1⟩,
   ⟨.OP_SWAP, some 2⟩,
   ⟨.OP_TOALTSTACK, some 1⟩,
@@ -70,6 +71,10 @@ private def fixtureTxContext : TxContext where
   sigHash := ⟨#[]⟩
 
 /-! ## Raw opcode boundaries -/
+
+example : Eval [.op .OP_DROP] [] [trueElement] fixtureFlags fixtureTxContext
+    (.failure .stackUnderflow) := by
+  exact Eval.fixedArityStackUnderflow rfl (by decide)
 
 example : Eval [.op .OP_DUP] [] [] fixtureFlags fixtureTxContext
     (.failure .stackUnderflow) := by
