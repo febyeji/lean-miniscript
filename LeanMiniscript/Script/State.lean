@@ -150,7 +150,7 @@ def Opcode.fixedMainStackInputs? : Opcode → Option Nat
   | .OP_NOP => some 0
   | .OP_IF | .OP_NOTIF => some 1
   | .OP_ELSE | .OP_ENDIF => some 0
-  | .OP_IFDUP | .OP_DUP => some 1
+  | .OP_IFDUP | .OP_DROP | .OP_DUP => some 1
   | .OP_SWAP => some 2
   | .OP_TOALTSTACK => some 1
   | .OP_FROMALTSTACK => some 0

@@ -10,7 +10,7 @@ private def auditFixtureJson : String := r#"
   ["1", "1 EQUAL", "P2SH,STRICTENC", "OK"],
   ["0", "VERIFY", "P2SH,STRICTENC", "VERIFY"],
   ["1", "1 EQUAL", "P2SH,STRICTENC", "EVAL_FALSE"],
-  ["1", "DROP", "P2SH,STRICTENC", "OK"]
+  ["1", "DEPTH", "P2SH,STRICTENC", "OK"]
 ]
 "#
 
@@ -46,8 +46,8 @@ example : (auditFixture.bind fun audit => audit.unsupported.head?) =
     some {
       index := 4
       scriptSigSource := "1"
-      scriptPubKeySource := "DROP"
-      reason := .scriptPubKey (.unsupportedToken "DROP")
+      scriptPubKeySource := "DEPTH"
+      reason := .scriptPubKey (.unsupportedToken "DEPTH")
     } := by
   native_decide
 
@@ -56,7 +56,7 @@ example : auditFixture.map CoreFixtureAudit.unsupportedReasonCounts =
   native_decide
 
 example : auditFixture.map CoreFixtureAudit.unsupportedDetailCounts =
-    some [("script-pubkey-source.unsupported-token.DROP", 1)] := by
+    some [("script-pubkey-source.unsupported-token.DEPTH", 1)] := by
   native_decide
 
 private def sourceErrorDetailFixtures :
@@ -65,7 +65,7 @@ private def sourceErrorDetailFixtures :
    (.quoteInsideToken, "quote-inside-token"),
    (.invalidHex "0xz", "invalid-hex"),
    (.oddHexLength "0x0", "odd-hex-length"),
-   (.unsupportedToken "DROP", "unsupported-token.DROP"),
+   (.unsupportedToken "DEPTH", "unsupported-token.DEPTH"),
    (.serialization (.pushDataTooLarge 4294967296),
       "serialization.push-data-too-large"),
    (.truncatedPushLength 0 2 1, "truncated-push-length"),
@@ -76,6 +76,24 @@ private def sourceErrorDetailFixtures :
 /-- A representative of every source-error constructor has a stable detail. -/
 example : sourceErrorDetailFixtures.all fun (error, expected) =>
     error.detailCategory == expected := by
+  native_decide
+
+private def dropFixtureJson : String := r#"
+[
+  ["1 2", "DROP 1 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["", "DROP", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["1", "TOALTSTACK DROP", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["1", "DROP", "P2SH,STRICTENC", "EVAL_FALSE"],
+  ["", "0 IF DROP ENDIF 1", "P2SH,STRICTENC", "OK"],
+  ["1 2 DROP", "1 EQUAL", "P2SH,STRICTENC", "OK"]
+]
+"#
+
+/-- DROP covers stack order, empty main stacks, final acceptance, inactive
+    branches, and scriptSig execution through the Core fixture importer. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle dropFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 6 && audit.matchedRows == 6 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
   native_decide
 
 end LeanMiniscript.Extraction

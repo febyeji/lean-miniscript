@@ -34,6 +34,7 @@ def opcodeAssembly : Opcode → String
   | .OP_ELSE => "ELSE"
   | .OP_ENDIF => "ENDIF"
   | .OP_IFDUP => "IFDUP"
+  | .OP_DROP => "DROP"
   | .OP_DUP => "DUP"
   | .OP_SWAP => "SWAP"
   | .OP_TOALTSTACK => "TOALTSTACK"

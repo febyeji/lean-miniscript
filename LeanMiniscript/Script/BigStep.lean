@@ -896,6 +896,13 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op .OP_CHECKLOCKTIMEVERIFY :: script) (operand :: rest)
         altStack flags ctx (.failure .checkLockTimeVerify)
 
+  -- OP_DROP
+  | drop : (x : StackElement) → (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      Eval script rest altStack flags ctx result →
+      Eval (.op .OP_DROP :: script) (x :: rest) altStack flags ctx result
+
   -- OP_DUP
   | dup : (x : StackElement) → (rest : Stack) → (script : Script) →
       (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
@@ -1675,6 +1682,16 @@ theorem Eval.exists_result
                             ⟨result, evaluated⟩
                           exact ⟨result, .ifdup_true top stackRest altStack rest
                             flags ctx result hTruthy evaluated⟩
+              | OP_DROP =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_DROP 1 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons top stackRest =>
+                      rcases next stackRest altStack with ⟨result, evaluated⟩
+                      exact ⟨result, .drop top stackRest rest altStack flags ctx result
+                        evaluated⟩
               | OP_DUP =>
                   cases stack with
                   | nil =>

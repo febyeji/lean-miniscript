@@ -25,6 +25,7 @@ def opcodeFromByte? : Nat → Option Opcode
   | 0x67 => some .OP_ELSE
   | 0x68 => some .OP_ENDIF
   | 0x73 => some .OP_IFDUP
+  | 0x75 => some .OP_DROP
   | 0x76 => some .OP_DUP
   | 0x7c => some .OP_SWAP
   | 0x6b => some .OP_TOALTSTACK

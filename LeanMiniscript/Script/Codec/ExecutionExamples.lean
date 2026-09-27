@@ -51,6 +51,25 @@ example : run changingPushes = some (.success
      scriptNum (-1), scriptNum 16, scriptNum 1, ByteArray.empty] []) := by
   native_decide
 
+-- DROP preserves lower stack order, the alternate stack and signature budget.
+-- The dropped byte vector need not be a minimally encoded Script number.
+example : runLimited [.op .OP_DROP]
+    [⟨#[0, 0, 0, 0, 0]⟩, scriptNum 7, scriptNum 9] [scriptNum 3] 17 =
+    some (.success [scriptNum 7, scriptNum 9] [scriptNum 3] 17) := by
+  native_decide
+
+example : run [.op .OP_DROP] = some (.failure .stackUnderflow) := by
+  native_decide
+
+example : runLimited [.op .OP_DROP] [] [trueElement] =
+    some (.failure .stackUnderflow) := by
+  native_decide
+
+-- Inactive DROP never inspects an empty main stack.
+example : runLimited [.pushNum 0, .op .OP_IF, .op .OP_DROP,
+    .op .OP_ENDIF, .pushNum 1] = some (.success [trueElement] [] 50) := by
+  native_decide
+
 private def nestedBranches : Script :=
   [.pushData ⟨#[1]⟩, .op .OP_IF,
    .pushData ByteArray.empty, .op .OP_NOTIF, .pushNum 17, .op .OP_ENDIF,
