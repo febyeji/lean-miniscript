@@ -22,7 +22,7 @@ private def coreOpcodeNameFixtures : List (String × Opcode) :=
   [("NOP", .OP_NOP), ("IF", .OP_IF), ("NOTIF", .OP_NOTIF),
    ("ELSE", .OP_ELSE),
    ("ENDIF", .OP_ENDIF), ("IFDUP", .OP_IFDUP),
-   ("DEPTH", .OP_DEPTH), ("DROP", .OP_DROP), ("DUP", .OP_DUP),
+   ("DEPTH", .OP_DEPTH), ("DROP", .OP_DROP), ("DUP", .OP_DUP), ("NIP", .OP_NIP),
    ("SWAP", .OP_SWAP), ("TOALTSTACK", .OP_TOALTSTACK),
    ("FROMALTSTACK", .OP_FROMALTSTACK), ("ADD", .OP_ADD),
    ("BOOLAND", .OP_BOOLAND), ("BOOLOR", .OP_BOOLOR),
@@ -241,13 +241,13 @@ private def parsesDrop : Bool :=
 example : parsesDrop = true := by
   native_decide
 
-private def rejectsNip : Bool :=
-  match parseCoreScriptSource "1 NIP" with
-  | .error (.unsupportedToken "NIP") => true
+private def rejectsOver : Bool :=
+  match parseCoreScriptSource "1 OVER" with
+  | .error (.unsupportedToken "OVER") => true
   | _ => false
 
 /-- An opcode outside the modeled subset is reported by token. -/
-example : rejectsNip = true := by
+example : rejectsOver = true := by
   native_decide
 
 private def rejectsTruncatedPush : Bool :=

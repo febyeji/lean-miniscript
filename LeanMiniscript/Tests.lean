@@ -25,6 +25,7 @@ import LeanMiniscript.Script.ConditionalExamples
 import LeanMiniscript.Script.EvaluatorExamples
 import LeanMiniscript.Script.ExecutionResourcesExamples
 import LeanMiniscript.Script.NullFailExamples
+import LeanMiniscript.Script.NipExamples
 import LeanMiniscript.Script.NotExamples
 import LeanMiniscript.Script.WithinExamples
 import LeanMiniscript.Script.ScriptNumExamples

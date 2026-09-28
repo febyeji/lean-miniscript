@@ -1081,6 +1081,13 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op .OP_ENDIF :: script) stack altStack flags ctx
         (.failure .unbalancedConditional)
 
+  -- OP_NIP: Core 9be056a8a72b624dae9623b2f7bded92c2a21c91,
+  -- src/script/interpreter.cpp: erase stack.end() - 2 after checking two inputs.
+  | nip : (top discarded : StackElement) → (rest altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      Eval script (top :: rest) altStack flags ctx result →
+      Eval (.op .OP_NIP :: script) (top :: discarded :: rest) altStack flags ctx result
+
   -- OP_SWAP
   | swap : (a b : StackElement) → (rest altStack : Stack) → (script : Script) →
       (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
@@ -1755,6 +1762,21 @@ theorem Eval.exists_result
                         ⟨result, evaluated⟩
                       exact ⟨result, .dup top stackRest rest altStack flags ctx result
                         evaluated⟩
+              | OP_NIP =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_NIP 2 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_NIP 2 rest [top] altStack flags ctx
+                              rfl (by simp)⟩
+                      | cons discarded stackRest =>
+                          rcases next (top :: stackRest) altStack with ⟨result, evaluated⟩
+                          exact ⟨result, .nip top discarded stackRest altStack rest
+                            flags ctx result evaluated⟩
               | OP_SWAP =>
                   cases stack with
                   | nil =>
@@ -2353,6 +2375,29 @@ theorem Eval.existsUnique_result
 theorem Eval.done {stack altStack : Stack} {flags : ScriptFlags} {ctx : TxContext} :
     Eval [] stack altStack flags ctx (.success stack altStack) :=
   .empty stack altStack flags ctx
+
+/-- NIP removes precisely the second item for every pair of byte vectors. -/
+theorem Eval.nip_result (top discarded : StackElement) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
+    Eval [.op .OP_NIP] (top :: discarded :: stack) altStack flags ctx result ↔
+      result = .success (top :: stack) altStack := by
+  have canonical : Eval [.op .OP_NIP] (top :: discarded :: stack) altStack flags ctx
+      (.success (top :: stack) altStack) :=
+    .nip top discarded stack altStack [] flags ctx _ .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- With zero or one main-stack item, NIP terminates before any suffix. -/
+theorem Eval.nip_underflow_result {stack altStack : Stack} {script : Script}
+    {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    (short : stack.length < 2)
+    (evaluated : Eval (.op .OP_NIP :: script) stack altStack flags ctx result) :
+    result = .failure .stackUnderflow :=
+  evaluated.result_unique (.stack_underflow .OP_NIP 2 script stack altStack flags ctx rfl short)
 
 /-- DEPTH has this exact relational result for every main/alternate stack. -/
 theorem Eval.depth_result (stack altStack : Stack) (flags : ScriptFlags)

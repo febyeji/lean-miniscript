@@ -143,6 +143,11 @@ def evaluate (oracle : CryptoOracle) (script : Script)
       | [] => .failure .stackUnderflow
       | top :: stackRest =>
           evaluate oracle rest (top :: top :: stackRest) altStack flags ctx
+  | .op .OP_NIP :: rest =>
+      match stack with
+      | top :: _ :: stackRest =>
+          evaluate oracle rest (top :: stackRest) altStack flags ctx
+      | _ => .failure .stackUnderflow
   | .op .OP_SWAP :: rest =>
       match stack with
       | top :: belowTop :: stackRest =>
@@ -423,6 +428,33 @@ theorem evaluate_drop_nil (oracle : CryptoOracle) (script : Script)
     evaluate oracle (.op .OP_DROP :: script) [] altStack flags ctx =
       .failure .stackUnderflow := by
   simp [evaluate]
+
+/-- NIP passes the unchanged top item and lower stack to the continuation. -/
+theorem evaluate_nip_cons (oracle : CryptoOracle) (script : Script)
+    (top discarded : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_NIP :: script) (top :: discarded :: stack) altStack flags ctx =
+      evaluate oracle script (top :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- Zero or one main-stack item causes underflow before the suffix executes. -/
+theorem evaluate_nip_underflow (oracle : CryptoOracle) (script : Script)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (short : stack.length < 2) :
+    evaluate oracle (.op .OP_NIP :: script) stack altStack flags ctx =
+      .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨discarded, rest⟩⟩
+  all_goals simp_all [evaluate]
+  omega
+
+/-- The complete NIP result for arbitrary stacks, flags, context and oracle. -/
+theorem evaluate_nip (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_NIP] stack altStack flags ctx =
+      match stack with
+      | top :: _ :: rest => .success (top :: rest) altStack
+      | _ => .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨discarded, rest⟩⟩ <;> simp [evaluate]
 
 /-- NOT decodes one Script number and passes a canonical boolean to the
     continuation. The four-byte and minimal-data checks precede that continuation. -/

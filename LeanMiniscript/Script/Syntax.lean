@@ -18,6 +18,7 @@ inductive Opcode where
   | OP_DEPTH
   | OP_DROP
   | OP_DUP
+  | OP_NIP
   | OP_SWAP
   | OP_TOALTSTACK
   | OP_FROMALTSTACK
