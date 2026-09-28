@@ -1123,6 +1123,13 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval script (third :: top :: second :: rest) altStack flags ctx result →
       Eval (.op .OP_ROT :: script) (top :: second :: third :: rest) altStack flags ctx result
 
+  -- OP_2ROT: Core 9be056a8a72b624dae9623b2f7bded92c2a21c91,
+  -- src/script/interpreter.cpp: move stacktop(-6) and stacktop(-5) to the top after checking six inputs.
+  | twoRot : (top second third fourth fifth sixth : StackElement) → (rest altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      Eval script (fifth :: sixth :: top :: second :: third :: fourth :: rest) altStack flags ctx result →
+      Eval (.op .OP_2ROT :: script) (top :: second :: third :: fourth :: fifth :: sixth :: rest) altStack flags ctx result
+
   -- OP_SWAP
   | swap : (a b : StackElement) → (rest altStack : Stack) → (script : Script) →
       (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
@@ -1897,6 +1904,25 @@ theorem Eval.exists_result
                                 ⟨result, evaluated⟩
                               exact ⟨result, .rot top second third stackRest altStack rest
                                 flags ctx result evaluated⟩
+              | OP_2ROT =>
+                  rcases stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ |
+                    ⟨fourth, _ | ⟨fifth, _ | ⟨sixth, stackRest⟩⟩⟩⟩⟩⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_2ROT 6 rest _ altStack flags ctx rfl (by simp)⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_2ROT 6 rest _ altStack flags ctx rfl (by simp)⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_2ROT 6 rest _ altStack flags ctx rfl (by simp)⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_2ROT 6 rest _ altStack flags ctx rfl (by simp)⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_2ROT 6 rest _ altStack flags ctx rfl (by simp)⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_2ROT 6 rest _ altStack flags ctx rfl (by simp)⟩
+                  · rcases next (fifth :: sixth :: top :: second :: third :: fourth :: stackRest)
+                      altStack with ⟨result, evaluated⟩
+                    exact ⟨result, .twoRot top second third fourth fifth sixth stackRest altStack
+                      rest flags ctx result evaluated⟩
               | OP_SWAP =>
                   cases stack with
                   | nil =>
@@ -2633,6 +2659,29 @@ theorem Eval.rot_underflow_result {stack altStack : Stack} {script : Script}
     (evaluated : Eval (.op .OP_ROT :: script) stack altStack flags ctx result) :
     result = .failure .stackUnderflow :=
   evaluated.result_unique (.stack_underflow .OP_ROT 3 script stack altStack flags ctx rfl short)
+
+/-- 2ROT moves the fifth and sixth items to the top, preserving the lower stack and raw bytes. -/
+theorem Eval.twoRot_result (top second third fourth fifth sixth : StackElement) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
+    Eval [.op .OP_2ROT] (top :: second :: third :: fourth :: fifth :: sixth :: stack) altStack flags ctx result ↔
+      result = .success (fifth :: sixth :: top :: second :: third :: fourth :: stack) altStack := by
+  have canonical : Eval [.op .OP_2ROT] (top :: second :: third :: fourth :: fifth :: sixth :: stack) altStack flags ctx
+      (.success (fifth :: sixth :: top :: second :: third :: fourth :: stack) altStack) :=
+    .twoRot top second third fourth fifth sixth stack altStack [] flags ctx _ .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- With fewer than six main-stack items, 2ROT terminates before any suffix. -/
+theorem Eval.twoRot_underflow_result {stack altStack : Stack} {script : Script}
+    {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    (short : stack.length < 6)
+    (evaluated : Eval (.op .OP_2ROT :: script) stack altStack flags ctx result) :
+    result = .failure .stackUnderflow :=
+  evaluated.result_unique (.stack_underflow .OP_2ROT 6 script stack altStack flags ctx rfl short)
 
 /-- DEPTH has this exact relational result for every main/alternate stack. -/
 theorem Eval.depth_result (stack altStack : Stack) (flags : ScriptFlags)

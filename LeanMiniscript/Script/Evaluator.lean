@@ -173,6 +173,11 @@ def evaluate (oracle : CryptoOracle) (script : Script)
       | top :: second :: third :: stackRest =>
           evaluate oracle rest (third :: top :: second :: stackRest) altStack flags ctx
       | _ => .failure .stackUnderflow
+  | .op .OP_2ROT :: rest =>
+      match stack with
+      | top :: second :: third :: fourth :: fifth :: sixth :: stackRest =>
+          evaluate oracle rest (fifth :: sixth :: top :: second :: third :: fourth :: stackRest) altStack flags ctx
+      | _ => .failure .stackUnderflow
   | .op .OP_SWAP :: rest =>
       match stack with
       | top :: belowTop :: stackRest =>
@@ -616,6 +621,33 @@ theorem evaluate_rot (oracle : CryptoOracle) (stack altStack : Stack)
       | _ => .failure .stackUnderflow := by
   rcases stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, rest⟩⟩⟩ <;> simp [evaluate]
 
+/-- 2ROT moves the fifth and sixth items above the top four before any continuation. -/
+theorem evaluate_twoRot_cons (oracle : CryptoOracle) (script : Script)
+    (top second third fourth fifth sixth : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_2ROT :: script) (top :: second :: third :: fourth :: fifth :: sixth :: stack) altStack flags ctx =
+      evaluate oracle script (fifth :: sixth :: top :: second :: third :: fourth :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- Fewer than six main-stack items cause underflow before the suffix executes. -/
+theorem evaluate_twoRot_underflow (oracle : CryptoOracle) (script : Script)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (short : stack.length < 6) :
+    evaluate oracle (.op .OP_2ROT :: script) stack altStack flags ctx =
+      .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ | ⟨fourth, _ | ⟨fifth, _ | ⟨sixth, rest⟩⟩⟩⟩⟩⟩
+  all_goals simp_all [evaluate]
+  omega
+
+/-- The complete 2ROT result for arbitrary stacks, flags, context and oracle. -/
+theorem evaluate_twoRot (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_2ROT] stack altStack flags ctx =
+      match stack with
+      | top :: second :: third :: fourth :: fifth :: sixth :: rest => .success (fifth :: sixth :: top :: second :: third :: fourth :: rest) altStack
+      | _ => .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ | ⟨fourth, _ | ⟨fifth, _ | ⟨sixth, rest⟩⟩⟩⟩⟩⟩ <;> simp [evaluate]
+
 /-- NOT decodes one Script number and passes a canonical boolean to the
     continuation. The four-byte and minimal-data checks precede that continuation. -/
 theorem evaluate_not_cons (oracle : CryptoOracle) (script : Script)
@@ -803,7 +835,11 @@ theorem evaluate_eq_of_eval
       cases stackTail <;> simp_all [evaluate] <;> try omega
     all_goals
       rename_i belowTop stackTail
-      cases stackTail <;> simp_all [evaluate] <;> omega
+      cases stackTail <;> simp_all [evaluate] <;> try omega
+    all_goals
+      rename_i third stackTail
+      rcases stackTail with _ | ⟨fourth, _ | ⟨fifth, _ | ⟨sixth, tail⟩⟩⟩ <;>
+        simp_all [evaluate] <;> omega
   case checksigadd_unavailable =>
     rename_i stack rest alt flags ctx unavailable
     cases stack <;> try simp_all [evaluate]
