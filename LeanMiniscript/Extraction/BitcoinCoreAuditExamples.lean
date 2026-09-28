@@ -413,11 +413,10 @@ private def tuckFixtureJson : String := r#"
 ]
 "#
 
-/-- Verbatim TUCK rows from bitcoinCoreScriptTestsCommit: four compare;
-    the two rows ending in 2DROP remain explicitly unsupported. -/
+/-- All six verbatim TUCK rows compare, including the two ending in 2DROP. -/
 example : ((auditCoreScriptTests rejectingFixtureOracle tuckFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 4 && audit.matchedRows == 4 &&
-      audit.unsupportedRows == 2 && audit.allComparedRowsMatch) = some true := by
+    fun audit => audit.comparedRows == 6 && audit.matchedRows == 6 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
   native_decide
 
 private def tuckBoundaryFixtureJson : String := r#"
@@ -442,6 +441,48 @@ private def tuckBoundaryFixtureJson : String := r#"
     bytes, alternate stacks, inactive code and underflow before suffixes. -/
 example : ((auditCoreScriptTests rejectingFixtureOracle tuckBoundaryFixtureJson).toOption.map
     fun audit => audit.comparedRows == 13 && audit.matchedRows == 13 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def twoDropFixtureJson : String := r#"
+[
+  ["0 1", "TUCK DEPTH 3 EQUALVERIFY SWAP 2DROP", "P2SH,STRICTENC", "OK"],
+  ["0 0", "2DROP 1", "P2SH,STRICTENC", "OK"],
+  ["1 0", "TUCK DEPTH 3 EQUALVERIFY SWAP 2DROP", "P2SH,STRICTENC", "EVAL_FALSE"],
+  ["1", "2DROP 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- Verbatim 2DROP blockers from bitcoinCoreScriptTestsCommit cover success,
+    final false results, insufficient input, and TUCK continuations. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle twoDropFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 4 && audit.matchedRows == 4 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def twoDropBoundaryFixtureJson : String := r#"
+[
+  ["1 2", "0x6d 1", "MINIMALDATA", "OK"],
+  ["9 8 7 6", "2DROP 8 EQUALVERIFY 9 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2", "2DROP", "MINIMALDATA", "EVAL_FALSE"],
+  ["1 2 3 2DROP", "1 EQUAL", "MINIMALDATA", "OK"],
+  ["0x01 0x80 0x02 0x0100", "2DROP 1", "", "OK"],
+  ["0x01 0x80 0x02 0x0100", "2DROP 1", "MINIMALDATA", "OK"],
+  ["2147483647 -2147483647", "2DROP 1", "MINIMALDATA", "OK"],
+  ["2147483648 -2147483648", "2DROP 1", "MINIMALDATA", "OK"],
+  ["0x02 0x0100 1 2", "2DROP 0x02 0x0100 EQUAL", "MINIMALDATA", "OK"],
+  ["9 8 7 6", "TOALTSTACK 2DROP FROMALTSTACK 6 EQUALVERIFY 9 EQUAL", "MINIMALDATA", "OK"],
+  ["", "0 IF 2DROP ENDIF 1", "MINIMALDATA", "OK"],
+  ["1", "0 IF 2DROP ENDIF", "MINIMALDATA", "OK"],
+  ["", "2DROP 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1", "2DROP 1", "MINIMALDATA", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- Separate local Core-format rows check raw bytes, remaining stack order,
+    numeric bytes without decoding, alt stacks, inactive code and suffixes. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle twoDropBoundaryFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 14 && audit.matchedRows == 14 &&
       audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
   native_decide
 
