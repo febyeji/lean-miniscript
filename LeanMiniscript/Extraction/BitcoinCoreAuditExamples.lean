@@ -486,4 +486,57 @@ example : ((auditCoreScriptTests rejectingFixtureOracle twoDropBoundaryFixtureJs
       audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
   native_decide
 
+private def twoRotFixtureJson : String := r#"
+[
+  ["25 24 23 22 21 20", "2ROT 24 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["25 24 23 22 21 20", "2ROT DROP 25 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["25 24 23 22 21 20", "2ROT 2DROP 20 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["25 24 23 22 21 20", "2ROT 2DROP DROP 21 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["25 24 23 22 21 20", "2ROT 2DROP 2DROP 22 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["25 24 23 22 21 20", "2ROT 2DROP 2DROP DROP 23 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["25 24 23 22 21 20", "2ROT 2ROT 22 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["25 24 23 22 21 20", "2ROT 2ROT 2ROT 20 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["1 2 3 4 5 6", "2ROT DEPTH 6 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["0 1 0 0 0 0", "2ROT", "P2SH,STRICTENC", "OK"],
+  ["1 1 1 1 1", "2ROT", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- All eleven verbatim 2ROT rows from bitcoinCoreScriptTestsCommit cover
+    pair order, repeated rotation, stack depth, final truth and underflow. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle twoRotFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 11 && audit.matchedRows == 11 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def twoRotBoundaryFixtureJson : String := r#"
+[
+  ["1 2 3 4 5 6", "0x71 2 EQUALVERIFY 1 EQUALVERIFY 6 EQUALVERIFY 5 EQUALVERIFY 4 EQUALVERIFY 3 EQUAL", "MINIMALDATA", "OK"],
+  ["9 1 2 3 4 5 6", "2ROT 2DROP 2DROP 2DROP 9 EQUAL", "MINIMALDATA", "OK"],
+  ["1 0 3 4 5 6", "2ROT", "MINIMALDATA", "EVAL_FALSE"],
+  ["1 2 3 4 5 6 2ROT", "2 EQUAL", "MINIMALDATA", "OK"],
+  ["1 0x01 0x80 3 4 5 6", "2ROT 0x01 0x80 EQUAL", "", "OK"],
+  ["1 0x01 0x80 3 4 5 6", "2ROT 0x01 0x80 EQUAL", "MINIMALDATA", "OK"],
+  ["1 0x02 0x0100 3 4 5 6", "2ROT 0x02 0x0100 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2147483648 3 4 5 6", "2ROT 2147483648 EQUAL", "MINIMALDATA", "OK"],
+  ["-2147483648 2 3 4 5 6", "2ROT DROP -2147483648 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2 3 4 5 6", "2ROT TOALTSTACK 1 EQUALVERIFY FROMALTSTACK 2 EQUAL", "MINIMALDATA", "OK"],
+  ["", "0 IF 2ROT ENDIF 1", "MINIMALDATA", "OK"],
+  ["1 2 3 4 5", "0 IF 2ROT ENDIF 5 EQUAL", "MINIMALDATA", "OK"],
+  ["", "2ROT 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1", "2ROT 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1 1", "2ROT 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1 1 1", "2ROT 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1 1 1 1", "2ROT 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1 1 1 1 1", "2ROT 1", "MINIMALDATA", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- Separate local Core-format rows check raw bytes, lower-stack order,
+    numeric bytes without decoding, alt stacks, inactive code and every short input. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle twoRotBoundaryFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 18 && audit.matchedRows == 18 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
 end LeanMiniscript.Extraction
