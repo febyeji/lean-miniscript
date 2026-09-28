@@ -10,7 +10,7 @@ private def auditFixtureJson : String := r#"
   ["1", "1 EQUAL", "P2SH,STRICTENC", "OK"],
   ["0", "VERIFY", "P2SH,STRICTENC", "VERIFY"],
   ["1", "1 EQUAL", "P2SH,STRICTENC", "EVAL_FALSE"],
-  ["1", "OVER", "P2SH,STRICTENC", "OK"]
+  ["1", "PICK", "P2SH,STRICTENC", "OK"]
 ]
 "#
 
@@ -46,8 +46,8 @@ example : (auditFixture.bind fun audit => audit.unsupported.head?) =
     some {
       index := 4
       scriptSigSource := "1"
-      scriptPubKeySource := "OVER"
-      reason := .scriptPubKey (.unsupportedToken "OVER")
+      scriptPubKeySource := "PICK"
+      reason := .scriptPubKey (.unsupportedToken "PICK")
     } := by
   native_decide
 
@@ -56,7 +56,7 @@ example : auditFixture.map CoreFixtureAudit.unsupportedReasonCounts =
   native_decide
 
 example : auditFixture.map CoreFixtureAudit.unsupportedDetailCounts =
-    some [("script-pubkey-source.unsupported-token.OVER", 1)] := by
+    some [("script-pubkey-source.unsupported-token.PICK", 1)] := by
   native_decide
 
 private def sourceErrorDetailFixtures :
@@ -65,7 +65,7 @@ private def sourceErrorDetailFixtures :
    (.quoteInsideToken, "quote-inside-token"),
    (.invalidHex "0xz", "invalid-hex"),
    (.oddHexLength "0x0", "odd-hex-length"),
-   (.unsupportedToken "OVER", "unsupported-token.OVER"),
+   (.unsupportedToken "PICK", "unsupported-token.PICK"),
    (.serialization (.pushDataTooLarge 4294967296),
       "serialization.push-data-too-large"),
    (.truncatedPushLength 0 2 1, "truncated-push-length"),
@@ -266,6 +266,48 @@ private def nipBoundaryFixtureJson : String := r#"
 /-- Separate local Core-format regressions cover raw byte parsing, unchanged
     non-minimal and five-byte numbers, lower/alt stacks, inactive code and suffixes. -/
 example : ((auditCoreScriptTests rejectingFixtureOracle nipBoundaryFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 12 && audit.matchedRows == 12 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def overFixtureJson : String := r#"
+[
+  ["1 0", "OVER DEPTH 3 EQUALVERIFY", "P2SH,STRICTENC", "OK"],
+  ["1 0", "OVER", "P2SH,STRICTENC", "OK"],
+  ["NOP", "OVER 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["1", "OVER", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["0 1", "OVER DEPTH 3 EQUALVERIFY", "P2SH,STRICTENC", "EVAL_FALSE"],
+  ["1", "OVER", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- All six verbatim OVER rows from bitcoinCoreScriptTestsCommit cover copied
+    values, stack depth, zero/one-input underflow and final truth. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle overFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 6 && audit.matchedRows == 6 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def overBoundaryFixtureJson : String := r#"
+[
+  ["1 0", "0x78", "MINIMALDATA", "OK"],
+  ["0 1", "OVER", "MINIMALDATA", "EVAL_FALSE"],
+  ["9 8 7", "OVER 8 EQUALVERIFY 7 EQUALVERIFY 8 EQUALVERIFY 9 EQUAL", "MINIMALDATA", "OK"],
+  ["0x01 0x80 1", "OVER 0x01 0x80 EQUAL", "", "OK"],
+  ["0x02 0x0100 1", "OVER 0x02 0x0100 EQUAL", "MINIMALDATA", "OK"],
+  ["2147483648 1", "OVER 2147483648 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2147483648", "OVER 1 EQUAL", "MINIMALDATA", "OK"],
+  ["1 0 OVER", "1 EQUAL", "MINIMALDATA", "OK"],
+  ["", "0 IF OVER ENDIF 1", "MINIMALDATA", "OK"],
+  ["8 7", "OVER TOALTSTACK 7 EQUALVERIFY 8 EQUALVERIFY FROMALTSTACK 8 EQUAL", "MINIMALDATA", "OK"],
+  ["", "OVER 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1", "OVER 1", "MINIMALDATA", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- Separate local Core-format rows cover raw opcode parsing, original stack
+    order, exact non-minimal/five-byte copies, alt stacks, inactive code and suffixes. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle overBoundaryFixtureJson).toOption.map
     fun audit => audit.comparedRows == 12 && audit.matchedRows == 12 &&
       audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
   native_decide

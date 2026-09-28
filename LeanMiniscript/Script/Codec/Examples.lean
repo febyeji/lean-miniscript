@@ -12,7 +12,7 @@ def opcodeSerializationFixtures : List (Opcode × UInt8) :=
   [(.OP_NOP, 0x61), (.OP_IF, 0x63), (.OP_NOTIF, 0x64),
    (.OP_ELSE, 0x67), (.OP_ENDIF, 0x68),
    (.OP_IFDUP, 0x73), (.OP_DEPTH, 0x74), (.OP_DROP, 0x75),
-   (.OP_DUP, 0x76), (.OP_NIP, 0x77), (.OP_SWAP, 0x7c),
+   (.OP_DUP, 0x76), (.OP_NIP, 0x77), (.OP_OVER, 0x78), (.OP_SWAP, 0x7c),
    (.OP_TOALTSTACK, 0x6b), (.OP_FROMALTSTACK, 0x6c),
    (.OP_ADD, 0x93), (.OP_BOOLAND, 0x9a), (.OP_BOOLOR, 0x9b),
    (.OP_NOT, 0x91), (.OP_0NOTEQUAL, 0x92),

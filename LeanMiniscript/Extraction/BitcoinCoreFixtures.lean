@@ -211,6 +211,7 @@ def opcodeFromCoreName? : String → Option Opcode
   | "DROP" => some .OP_DROP
   | "DUP" => some .OP_DUP
   | "NIP" => some .OP_NIP
+  | "OVER" => some .OP_OVER
   | "SWAP" => some .OP_SWAP
   | "TOALTSTACK" => some .OP_TOALTSTACK
   | "FROMALTSTACK" => some .OP_FROMALTSTACK
