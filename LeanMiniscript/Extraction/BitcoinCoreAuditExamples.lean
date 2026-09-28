@@ -312,4 +312,53 @@ example : ((auditCoreScriptTests rejectingFixtureOracle overBoundaryFixtureJson)
       audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
   native_decide
 
+private def rotFixtureJson : String := r#"
+[
+  ["22 21 20", "ROT 22 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["22 21 20", "ROT DROP 20 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["22 21 20", "ROT DROP DROP 21 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["22 21 20", "ROT ROT 21 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["22 21 20", "ROT ROT ROT 20 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["1 0 0", "ROT", "P2SH,STRICTENC", "OK"],
+  ["NOP", "ROT 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["NOP", "1 ROT 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["NOP", "1 2 ROT 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["NOP", "0 1 2 ROT", "P2SH,STRICTENC", "EVAL_FALSE"],
+  ["1 1", "ROT", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- Verbatim ROT rows from bitcoinCoreScriptTestsCommit cover operand order,
+    repeated rotation, final truth and all three underflow lengths. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle rotFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 11 && audit.matchedRows == 11 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def rotBoundaryFixtureJson : String := r#"
+[
+  ["1 2 3", "0x7b 1 EQUAL", "MINIMALDATA", "OK"],
+  ["9 8 7 6", "ROT 8 EQUALVERIFY 6 EQUALVERIFY 7 EQUALVERIFY 9 EQUAL", "MINIMALDATA", "OK"],
+  ["0x01 0x80 1 2", "ROT 0x01 0x80 EQUAL", "", "OK"],
+  ["0x02 0x0100 1 2", "ROT 0x02 0x0100 EQUAL", "MINIMALDATA", "OK"],
+  ["2147483648 1 2", "ROT 2147483648 EQUAL", "MINIMALDATA", "OK"],
+  ["0 1 2", "ROT", "MINIMALDATA", "EVAL_FALSE"],
+  ["1 2 3 ROT", "1 EQUAL", "MINIMALDATA", "OK"],
+  ["", "0 IF ROT ENDIF 1", "MINIMALDATA", "OK"],
+  ["1", "0 IF ROT ENDIF 1 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2", "0 IF ROT ENDIF 2 EQUALVERIFY 1 EQUAL", "MINIMALDATA", "OK"],
+  ["9 8 7", "ROT TOALTSTACK 7 EQUALVERIFY 8 EQUALVERIFY FROMALTSTACK 9 EQUAL", "MINIMALDATA", "OK"],
+  ["", "ROT 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1", "ROT 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1 2", "ROT 1", "MINIMALDATA", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- Local Core-format regressions cover raw bytes, scriptSig, preserved numeric
+    encodings, lower/alternate stacks and inactive branches. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle rotBoundaryFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 14 && audit.matchedRows == 14 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
 end LeanMiniscript.Extraction

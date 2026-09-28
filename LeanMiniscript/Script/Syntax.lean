@@ -20,6 +20,7 @@ inductive Opcode where
   | OP_DUP
   | OP_NIP
   | OP_OVER
+  | OP_ROT
   | OP_SWAP
   | OP_TOALTSTACK
   | OP_FROMALTSTACK

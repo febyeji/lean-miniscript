@@ -39,6 +39,7 @@ def opcodeAssembly : Opcode → String
   | .OP_DUP => "DUP"
   | .OP_NIP => "NIP"
   | .OP_OVER => "OVER"
+  | .OP_ROT => "ROT"
   | .OP_SWAP => "SWAP"
   | .OP_TOALTSTACK => "TOALTSTACK"
   | .OP_FROMALTSTACK => "FROMALTSTACK"

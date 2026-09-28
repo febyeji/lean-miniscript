@@ -153,6 +153,11 @@ def evaluate (oracle : CryptoOracle) (script : Script)
       | top :: below :: stackRest =>
           evaluate oracle rest (below :: top :: below :: stackRest) altStack flags ctx
       | _ => .failure .stackUnderflow
+  | .op .OP_ROT :: rest =>
+      match stack with
+      | top :: second :: third :: stackRest =>
+          evaluate oracle rest (third :: top :: second :: stackRest) altStack flags ctx
+      | _ => .failure .stackUnderflow
   | .op .OP_SWAP :: rest =>
       match stack with
       | top :: belowTop :: stackRest =>
@@ -487,6 +492,33 @@ theorem evaluate_over (oracle : CryptoOracle) (stack altStack : Stack)
       | top :: below :: rest => .success (below :: top :: below :: rest) altStack
       | _ => .failure .stackUnderflow := by
   rcases stack with _ | ⟨top, _ | ⟨below, rest⟩⟩ <;> simp [evaluate]
+
+/-- ROT moves the third item above the top two before any continuation. -/
+theorem evaluate_rot_cons (oracle : CryptoOracle) (script : Script)
+    (top second third : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_ROT :: script) (top :: second :: third :: stack) altStack flags ctx =
+      evaluate oracle script (third :: top :: second :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- Fewer than three main-stack items cause underflow before the suffix executes. -/
+theorem evaluate_rot_underflow (oracle : CryptoOracle) (script : Script)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (short : stack.length < 3) :
+    evaluate oracle (.op .OP_ROT :: script) stack altStack flags ctx =
+      .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, rest⟩⟩⟩
+  all_goals simp_all [evaluate]
+  omega
+
+/-- The complete ROT result for arbitrary stacks, flags, context and oracle. -/
+theorem evaluate_rot (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_ROT] stack altStack flags ctx =
+      match stack with
+      | top :: second :: third :: rest => .success (third :: top :: second :: rest) altStack
+      | _ => .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, rest⟩⟩⟩ <;> simp [evaluate]
 
 /-- NOT decodes one Script number and passes a canonical boolean to the
     continuation. The four-byte and minimal-data checks precede that continuation. -/
