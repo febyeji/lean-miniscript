@@ -31,7 +31,14 @@ theorem Eval.replaceSuccessfulSuffix
       generalize resultEq : ExecResult.success out outAlt = result at run
       cases run <;>
         simp_all [NonConditional] <;>
-        grind [Eval]
+        try grind [Eval]
+      case within =>
+        rename_i upperBytes lowerBytes valueBytes upper lower value rest decoded tail
+        cases resultEq
+        apply Eval.within upperBytes lowerBytes valueBytes upper lower value rest altStack
+          replacement flags ctx _ decoded
+        apply replace
+        simpa using tail
   | @ifThen body bodyBalanced bodyIH =>
       generalize resultEq : ExecResult.success out outAlt = result at run
       cases run

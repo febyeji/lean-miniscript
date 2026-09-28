@@ -160,7 +160,7 @@ def Opcode.fixedMainStackInputs? : Opcode → Option Nat
   | .OP_EQUAL | .OP_EQUALVERIFY | .OP_NUMEQUAL | .OP_NUMEQUALVERIFY => some 2
   | .OP_SHA256 | .OP_HASH256 | .OP_RIPEMD160 | .OP_HASH160 => some 1
   | .OP_CHECKSIG | .OP_CHECKSIGVERIFY => some 2
-  | .OP_CHECKSIGADD => some 3
+  | .OP_WITHIN | .OP_CHECKSIGADD => some 3
   | .OP_CHECKMULTISIG | .OP_CHECKMULTISIGVERIFY => none
   | .OP_CHECKSEQUENCEVERIFY | .OP_CHECKLOCKTIMEVERIFY => some 1
   | .OP_VERIFY | .OP_SIZE => some 1
@@ -381,6 +381,16 @@ def decodeBinaryScriptNums (flags : ScriptFlags) (top belowTop : StackElement) :
   let topValue ← decodeScriptNum top flags.minimalData
     maxArithmeticScriptNumBytes
   pure (topValue, belowValue)
+
+/-- Decode WITHIN's three operands in Core order: value, lower bound, upper
+    bound. Both arguments and returned tuple use this model's top-first order,
+    `(upper, lower, value)`. A decoder error stops before later operands. -/
+def decodeWithinScriptNums (flags : ScriptFlags)
+    (upperBytes lowerBytes valueBytes : StackElement) : Except ScriptError (Int × Int × Int) := do
+  let value ← decodeScriptNum valueBytes flags.minimalData maxArithmeticScriptNumBytes
+  let lower ← decodeScriptNum lowerBytes flags.minimalData maxArithmeticScriptNumBytes
+  let upper ← decodeScriptNum upperBytes flags.minimalData maxArithmeticScriptNumBytes
+  pure (upper, lower, value)
 
 /-- Dynamically decoded legacy multisignature operands in top-first stack order.
 

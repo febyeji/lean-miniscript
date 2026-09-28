@@ -187,6 +187,16 @@ def evaluate (oracle : CryptoOracle) (script : Script)
                 (boolToElement ((a != 0) || (b != 0)) :: stackRest)
                 altStack flags ctx
       | _ => .failure .stackUnderflow
+  | .op .OP_WITHIN :: rest =>
+      match stack with
+      | upperBytes :: lowerBytes :: valueBytes :: stackRest =>
+          match decodeWithinScriptNums flags upperBytes lowerBytes valueBytes with
+          | .error error => .failure error
+          | .ok (upper, lower, value) =>
+              evaluate oracle rest
+                (boolToElement (decide (lower ≤ value ∧ value < upper)) :: stackRest)
+                altStack flags ctx
+      | _ => .failure .stackUnderflow
   | .op .OP_NOT :: rest =>
       match stack with
       | [] => .failure .stackUnderflow
@@ -465,6 +475,110 @@ theorem evaluate_not (oracle : CryptoOracle) (stack altStack : Stack)
           | .error error => .failure error
           | .ok value => .success (boolToElement (value == 0) :: rest) altStack := by
   cases stack <;> simp [evaluate]
+
+/-- WITHIN consumes the top-first triple (upper, lower, value), decodes value
+    first, and passes one canonical half-open interval test to the continuation. -/
+theorem evaluate_within_cons (oracle : CryptoOracle) (script : Script)
+    (upperBytes lowerBytes valueBytes : StackElement) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle (.op .OP_WITHIN :: script)
+        (upperBytes :: lowerBytes :: valueBytes :: stack) altStack flags ctx =
+      match decodeWithinScriptNums flags upperBytes lowerBytes valueBytes with
+      | .error error => .failure error
+      | .ok (upper, lower, value) => evaluate oracle script
+          (boolToElement (decide (lower ≤ value ∧ value < upper)) :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- Three successful numeric decodings determine the exact continuation result. -/
+theorem evaluate_within_of_decode (oracle : CryptoOracle) (script : Script)
+    (upperBytes lowerBytes valueBytes : StackElement) (upper lower value : Int)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (valueDecoded : decodeScriptNum valueBytes flags.minimalData maxArithmeticScriptNumBytes =
+      .ok value)
+    (lowerDecoded : decodeScriptNum lowerBytes flags.minimalData maxArithmeticScriptNumBytes =
+      .ok lower)
+    (upperDecoded : decodeScriptNum upperBytes flags.minimalData maxArithmeticScriptNumBytes =
+      .ok upper) :
+    evaluate oracle (.op .OP_WITHIN :: script)
+        (upperBytes :: lowerBytes :: valueBytes :: stack) altStack flags ctx =
+      evaluate oracle script (boolToElement (decide (lower ≤ value ∧ value < upper)) :: stack)
+        altStack flags ctx := by
+  simp [evaluate_within_cons, decodeWithinScriptNums, valueDecoded, lowerDecoded, upperDecoded]
+  rfl
+
+/-- All three inputs are required before any numeric decode or continuation. -/
+theorem evaluate_within_underflow (oracle : CryptoOracle) (script : Script)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (short : stack.length < 3) :
+    evaluate oracle (.op .OP_WITHIN :: script) stack altStack flags ctx =
+      .failure .stackUnderflow := by
+  rcases stack with _ | ⟨upper, _ | ⟨lower, _ | ⟨value, rest⟩⟩⟩
+  all_goals simp_all [evaluate]
+  omega
+
+/-- A WITHIN decoder error terminates execution before the suffix. -/
+theorem evaluate_within_decode_failure (oracle : CryptoOracle) (script : Script)
+    (upperBytes lowerBytes valueBytes : StackElement) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) (error : ScriptError)
+    (decoded : decodeWithinScriptNums flags upperBytes lowerBytes valueBytes = .error error) :
+    evaluate oracle (.op .OP_WITHIN :: script)
+        (upperBytes :: lowerBytes :: valueBytes :: stack) altStack flags ctx = .failure error := by
+  rw [evaluate_within_cons, decoded]
+
+/-- The value decoder error wins over both bounds and the suffix. -/
+theorem evaluate_within_value_failure (oracle : CryptoOracle) (script : Script)
+    (upperBytes lowerBytes valueBytes : StackElement) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) (error : ScriptError)
+    (failed : decodeScriptNum valueBytes flags.minimalData maxArithmeticScriptNumBytes =
+      .error error) :
+    evaluate oracle (.op .OP_WITHIN :: script)
+        (upperBytes :: lowerBytes :: valueBytes :: stack) altStack flags ctx = .failure error := by
+  apply evaluate_within_decode_failure
+  simp [decodeWithinScriptNums, failed]
+  rfl
+
+/-- After a valid value, a lower-bound decoder error wins over the upper bound. -/
+theorem evaluate_within_lower_failure (oracle : CryptoOracle) (script : Script)
+    (upperBytes lowerBytes valueBytes : StackElement) (value : Int) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) (error : ScriptError)
+    (decoded : decodeScriptNum valueBytes flags.minimalData maxArithmeticScriptNumBytes = .ok value)
+    (failed : decodeScriptNum lowerBytes flags.minimalData maxArithmeticScriptNumBytes =
+      .error error) :
+    evaluate oracle (.op .OP_WITHIN :: script)
+        (upperBytes :: lowerBytes :: valueBytes :: stack) altStack flags ctx = .failure error := by
+  apply evaluate_within_decode_failure
+  simp [decodeWithinScriptNums, decoded, failed]
+  rfl
+
+/-- The upper bound is decoded after the value and lower bound, even if the
+    already-decoded value lies below the lower bound. Its error stops the suffix. -/
+theorem evaluate_within_upper_failure (oracle : CryptoOracle) (script : Script)
+    (upperBytes lowerBytes valueBytes : StackElement) (lower value : Int) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) (error : ScriptError)
+    (valueDecoded : decodeScriptNum valueBytes flags.minimalData maxArithmeticScriptNumBytes =
+      .ok value)
+    (lowerDecoded : decodeScriptNum lowerBytes flags.minimalData maxArithmeticScriptNumBytes =
+      .ok lower)
+    (failed : decodeScriptNum upperBytes flags.minimalData maxArithmeticScriptNumBytes =
+      .error error) :
+    evaluate oracle (.op .OP_WITHIN :: script)
+        (upperBytes :: lowerBytes :: valueBytes :: stack) altStack flags ctx = .failure error := by
+  apply evaluate_within_decode_failure
+  simp [decodeWithinScriptNums, valueDecoded, lowerDecoded, failed]
+  rfl
+
+/-- The complete resource-free WITHIN result for arbitrary stacks and oracle. -/
+theorem evaluate_within (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_WITHIN] stack altStack flags ctx =
+      match stack with
+      | upperBytes :: lowerBytes :: valueBytes :: rest =>
+          match decodeWithinScriptNums flags upperBytes lowerBytes valueBytes with
+          | .error error => .failure error
+          | .ok (upper, lower, value) =>
+              .success (boolToElement (decide (lower ≤ value ∧ value < upper)) :: rest) altStack
+      | _ => .failure .stackUnderflow := by
+  rcases stack with _ | ⟨upper, _ | ⟨lower, _ | ⟨value, rest⟩⟩⟩ <;> simp [evaluate]
 
 /-- An oracle agreeing with the abstract model computes the result of every
     relational `Eval` derivation. -/

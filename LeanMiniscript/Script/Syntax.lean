@@ -32,6 +32,7 @@ inductive Opcode where
   | OP_EQUALVERIFY
   | OP_NUMEQUAL
   | OP_NUMEQUALVERIFY
+  | OP_WITHIN
   -- Cryptographic hash
   | OP_SHA256
   | OP_HASH256

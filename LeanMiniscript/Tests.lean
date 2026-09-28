@@ -26,6 +26,7 @@ import LeanMiniscript.Script.EvaluatorExamples
 import LeanMiniscript.Script.ExecutionResourcesExamples
 import LeanMiniscript.Script.NullFailExamples
 import LeanMiniscript.Script.NotExamples
+import LeanMiniscript.Script.WithinExamples
 import LeanMiniscript.Script.ScriptNumExamples
 import LeanMiniscript.Script.SignatureEncodingExamples
 import LeanMiniscript.Script.SighashExecutionExamples

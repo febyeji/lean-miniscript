@@ -40,6 +40,7 @@ def opcodeFromByte? : Nat → Option Opcode
   | 0x88 => some .OP_EQUALVERIFY
   | 0x9c => some .OP_NUMEQUAL
   | 0x9d => some .OP_NUMEQUALVERIFY
+  | 0xa5 => some .OP_WITHIN
   | 0xa8 => some .OP_SHA256
   | 0xaa => some .OP_HASH256
   | 0xa6 => some .OP_RIPEMD160
