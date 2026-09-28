@@ -25,6 +25,7 @@ def opcodeByte : Opcode → UInt8
   | .OP_ELSE => 0x67
   | .OP_ENDIF => 0x68
   | .OP_IFDUP => 0x73
+  | .OP_DEPTH => 0x74
   | .OP_DROP => 0x75
   | .OP_DUP => 0x76
   | .OP_SWAP => 0x7c

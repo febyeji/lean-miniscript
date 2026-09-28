@@ -26,6 +26,7 @@ def opcodeArityFixtures : List OpcodeArityFixture := [
   ⟨.OP_ELSE, some 0⟩,
   ⟨.OP_ENDIF, some 0⟩,
   ⟨.OP_IFDUP, some 1⟩,
+  ⟨.OP_DEPTH, some 0⟩,
   ⟨.OP_DROP, some 1⟩,
   ⟨.OP_DUP, some 1⟩,
   ⟨.OP_SWAP, some 2⟩,
