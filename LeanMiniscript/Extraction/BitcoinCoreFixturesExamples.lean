@@ -23,7 +23,7 @@ private def coreOpcodeNameFixtures : List (String × Opcode) :=
    ("ELSE", .OP_ELSE),
    ("ENDIF", .OP_ENDIF), ("2DUP", .OP_2DUP), ("IFDUP", .OP_IFDUP),
    ("DEPTH", .OP_DEPTH), ("DROP", .OP_DROP), ("DUP", .OP_DUP), ("NIP", .OP_NIP), ("OVER", .OP_OVER), ("ROT", .OP_ROT),
-   ("SWAP", .OP_SWAP), ("TOALTSTACK", .OP_TOALTSTACK),
+   ("SWAP", .OP_SWAP), ("TUCK", .OP_TUCK), ("TOALTSTACK", .OP_TOALTSTACK),
    ("FROMALTSTACK", .OP_FROMALTSTACK), ("ADD", .OP_ADD),
    ("BOOLAND", .OP_BOOLAND), ("BOOLOR", .OP_BOOLOR),
    ("NOT", .OP_NOT), ("0NOTEQUAL", .OP_0NOTEQUAL), ("EQUAL", .OP_EQUAL),

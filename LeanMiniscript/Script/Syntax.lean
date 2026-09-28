@@ -23,6 +23,7 @@ inductive Opcode where
   | OP_OVER
   | OP_ROT
   | OP_SWAP
+  | OP_TUCK
   | OP_TOALTSTACK
   | OP_FROMALTSTACK
   -- Arithmetic / Logic

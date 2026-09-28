@@ -402,4 +402,47 @@ example : ((auditCoreScriptTests rejectingFixtureOracle twoDupBoundaryFixtureJso
       audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
   native_decide
 
+private def tuckFixtureJson : String := r#"
+[
+  ["0 1", "TUCK DEPTH 3 EQUALVERIFY SWAP 2DROP", "P2SH,STRICTENC", "OK"],
+  ["0 1", "TUCK", "P2SH,STRICTENC", "OK"],
+  ["NOP", "TUCK 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["1", "TUCK 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["1 0", "TUCK DEPTH 3 EQUALVERIFY SWAP 2DROP", "P2SH,STRICTENC", "EVAL_FALSE"],
+  ["1", "TUCK", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- Verbatim TUCK rows from bitcoinCoreScriptTestsCommit: four compare;
+    the two rows ending in 2DROP remain explicitly unsupported. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle tuckFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 4 && audit.matchedRows == 4 &&
+      audit.unsupportedRows == 2 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def tuckBoundaryFixtureJson : String := r#"
+[
+  ["0 1", "0x7d DEPTH 3 EQUALVERIFY 1 EQUALVERIFY 0 EQUALVERIFY 1 EQUAL", "MINIMALDATA", "OK"],
+  ["1 0", "TUCK", "MINIMALDATA", "EVAL_FALSE"],
+  ["9 8 7", "TUCK 7 EQUALVERIFY 8 EQUALVERIFY 7 EQUALVERIFY 9 EQUAL", "MINIMALDATA", "OK"],
+  ["1 0x01 0x80", "TUCK DROP DROP 0x01 0x80 EQUAL", "", "OK"],
+  ["1 0x01 0x80", "TUCK DROP DROP 0x01 0x80 EQUAL", "MINIMALDATA", "OK"],
+  ["1 0x02 0x0100", "TUCK DROP DROP 0x02 0x0100 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2147483648", "TUCK DROP DROP 2147483648 EQUAL", "MINIMALDATA", "OK"],
+  ["2147483648 1", "TUCK DROP 2147483648 EQUALVERIFY 1 EQUAL", "MINIMALDATA", "OK"],
+  ["0 1 TUCK", "1 EQUALVERIFY 0 EQUALVERIFY 1 EQUAL", "MINIMALDATA", "OK"],
+  ["", "0 IF TUCK ENDIF 1", "MINIMALDATA", "OK"],
+  ["9 8 7", "TUCK TOALTSTACK 8 EQUALVERIFY 7 EQUALVERIFY 9 EQUALVERIFY FROMALTSTACK 7 EQUAL", "MINIMALDATA", "OK"],
+  ["", "TUCK 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1", "TUCK 1", "MINIMALDATA", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- Local Core-format rows check raw bytes, insertion order, exact numeric
+    bytes, alternate stacks, inactive code and underflow before suffixes. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle tuckBoundaryFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 13 && audit.matchedRows == 13 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
 end LeanMiniscript.Extraction

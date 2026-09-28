@@ -530,6 +530,85 @@ theorem runtimeStep_over_preserves (oracle : CryptoOracle)
       subst next
       exact executeRuntimeElement_over_preserves oracle state middle flags ctx executed
 
+/-- Active TUCK inserts a top-item copy beneath the top two, preserving the
+    remaining stack and every other runtime field. Underflow precedes the combined-stack limit. -/
+theorem executeRuntimeElement_tuck (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
+    executeRuntimeElement oracle (.op .OP_TUCK) state flags ctx =
+      match state.stack with
+      | top :: below :: rest => .ok { state with stack := top :: below :: top :: rest }
+      | _ => .error .stackUnderflow := by
+  rcases stackEq : state.stack with _ | ⟨top, _ | ⟨below, rest⟩⟩
+  all_goals
+    simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
+      active, prepareValidationWeight, evaluate_tuck, stackEq]
+    rfl
+
+/-- Inactive TUCK leaves the entire runtime state unchanged, for every stack. -/
+theorem executeRuntimeElement_tuck_inactive (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
+    executeRuntimeElement oracle (.op .OP_TUCK) state flags ctx = .ok state := by
+  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
+  rfl
+
+/-- Successful active TUCK increases stack count by one; inactive TUCK keeps it.
+    Both preserve the alternate stack, conditions and signature budget. -/
+theorem executeRuntimeElement_tuck_preserves (oracle : CryptoOracle)
+    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (executed : executeRuntimeElement oracle (.op .OP_TUCK) state flags ctx = .ok next) :
+    next.stack.length = state.stack.length + (if state.conditions.all id then 1 else 0) ∧
+      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
+      next.weight = state.weight := by
+  cases active : state.conditions.all id with
+  | false =>
+      rw [executeRuntimeElement_tuck_inactive oracle state flags ctx active] at executed
+      cases executed
+      simp
+  | true =>
+      rw [executeRuntimeElement_tuck oracle state flags ctx active] at executed
+      rcases stackEq : state.stack with _ | ⟨top, _ | ⟨below, rest⟩⟩
+      all_goals simp [stackEq] at executed
+      cases executed
+      simp
+
+/-- TUCK underflow precedes resource checking. Success checks the combined
+    main/alternate stack count after inserting the copied item. -/
+theorem runtimeStep_tuck (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
+    runtimeStep oracle (.op .OP_TUCK) state flags ctx =
+      match state.stack with
+      | top :: below :: rest =>
+          if rest.length + 3 + state.altStack.length > maxStackSize then
+            .error .stackSize
+          else .ok { state with stack := top :: below :: top :: rest }
+      | _ => .error .stackUnderflow := by
+  rw [runtimeStep, executeRuntimeElement_tuck oracle state flags ctx active]
+  rcases stackEq : state.stack with _ | ⟨top, _ | ⟨below, rest⟩⟩
+  all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
+
+/-- An inactive TUCK still performs the shared combined-stack check. -/
+theorem runtimeStep_tuck_inactive (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
+    runtimeStep oracle (.op .OP_TUCK) state flags ctx = checkRuntimeStack state := by
+  rw [runtimeStep, executeRuntimeElement_tuck_inactive oracle state flags ctx inactive]
+  rfl
+
+/-- The post-instruction stack check retains TUCK's state invariants. -/
+theorem runtimeStep_tuck_preserves (oracle : CryptoOracle)
+    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (stepped : runtimeStep oracle (.op .OP_TUCK) state flags ctx = .ok next) :
+    next.stack.length = state.stack.length + (if state.conditions.all id then 1 else 0) ∧
+      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
+      next.weight = state.weight := by
+  unfold runtimeStep at stepped
+  cases executed : executeRuntimeElement oracle (.op .OP_TUCK) state flags ctx with
+  | error error => simp [executed, bind, Except.bind] at stepped
+  | ok middle =>
+      simp only [executed, bind, Except.bind] at stepped
+      have same := (checkRuntimeStack_ok stepped).1
+      subst next
+      exact executeRuntimeElement_tuck_preserves oracle state middle flags ctx executed
+
 /-- Active ROT moves the third item to the top, preserving all other runtime
     fields. Underflow precedes the combined-stack limit. -/
 theorem executeRuntimeElement_rot (oracle : CryptoOracle) (state : RuntimeState)

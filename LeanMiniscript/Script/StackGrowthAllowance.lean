@@ -10,7 +10,7 @@ namespace LeanMiniscript.Script
 def ScriptElement.stackGrowthAllowance : ScriptElement → Nat
   | .op .OP_2DUP => 2
   | .pushData _ | .pushNum _ => 1
-  | .op .OP_IFDUP | .op .OP_DEPTH | .op .OP_DUP | .op .OP_OVER | .op .OP_SIZE |
+  | .op .OP_IFDUP | .op .OP_DEPTH | .op .OP_DUP | .op .OP_OVER | .op .OP_TUCK | .op .OP_SIZE |
       .op .OP_CHECKMULTISIG | .op .OP_CHECKMULTISIGVERIFY => 1
   | .op _ => 0
 

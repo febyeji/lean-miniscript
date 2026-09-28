@@ -33,6 +33,7 @@ def opcodeByte : Opcode → UInt8
   | .OP_OVER => 0x78
   | .OP_ROT => 0x7b
   | .OP_SWAP => 0x7c
+  | .OP_TUCK => 0x7d
   | .OP_TOALTSTACK => 0x6b
   | .OP_FROMALTSTACK => 0x6c
   | .OP_ADD => 0x93

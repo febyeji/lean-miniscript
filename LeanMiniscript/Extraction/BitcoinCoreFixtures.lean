@@ -215,6 +215,7 @@ def opcodeFromCoreName? : String → Option Opcode
   | "OVER" => some .OP_OVER
   | "ROT" => some .OP_ROT
   | "SWAP" => some .OP_SWAP
+  | "TUCK" => some .OP_TUCK
   | "TOALTSTACK" => some .OP_TOALTSTACK
   | "FROMALTSTACK" => some .OP_FROMALTSTACK
   | "ADD" => some .OP_ADD

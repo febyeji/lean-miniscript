@@ -33,6 +33,7 @@ def opcodeFromByte? : Nat → Option Opcode
   | 0x78 => some .OP_OVER
   | 0x7b => some .OP_ROT
   | 0x7c => some .OP_SWAP
+  | 0x7d => some .OP_TUCK
   | 0x6b => some .OP_TOALTSTACK
   | 0x6c => some .OP_FROMALTSTACK
   | 0x93 => some .OP_ADD
