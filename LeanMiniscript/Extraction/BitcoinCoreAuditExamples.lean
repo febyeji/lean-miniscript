@@ -174,4 +174,58 @@ example : ((auditCoreScriptTests rejectingFixtureOracle notBoundaryFixtureJson).
       audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
   native_decide
 
+private def withinFixtureJson : String := r#"
+[
+  ["0 0 1", "WITHIN", "P2SH,STRICTENC", "OK"],
+  ["1 0 1", "WITHIN NOT", "P2SH,STRICTENC", "OK"],
+  ["0 -2147483647 2147483647", "WITHIN", "P2SH,STRICTENC", "OK"],
+  ["-1 -100 100", "WITHIN", "P2SH,STRICTENC", "OK"],
+  ["11 -100 100", "WITHIN", "P2SH,STRICTENC", "OK"],
+  ["-2147483647 -100 100", "WITHIN NOT", "P2SH,STRICTENC", "OK"],
+  ["2147483647 -100 100", "WITHIN NOT", "P2SH,STRICTENC", "OK"],
+  ["-1 -1 0", "WITHIN", "P2SH,STRICTENC", "OK"],
+  ["0x02 0x0000 0 0", "WITHIN DROP 1", "", "OK"],
+  ["0 0x02 0x0000 0", "WITHIN DROP 1", "", "OK"],
+  ["0 0 0x02 0x0000", "WITHIN DROP 1", "", "OK"],
+  ["1 1", "WITHIN", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["0x02 0x0000 0 0", "WITHIN DROP 1", "MINIMALDATA", "SCRIPTNUM"],
+  ["0 0x02 0x0000 0", "WITHIN DROP 1", "MINIMALDATA", "SCRIPTNUM"],
+  ["0 0 0x02 0x0000", "WITHIN DROP 1", "MINIMALDATA", "SCRIPTNUM"]
+]
+"#
+
+/-- All fifteen verbatim WITHIN rows from bitcoinCoreScriptTestsCommit cover
+    operand order, interval boundaries, signed numbers, underflow and each
+    non-minimal operand position with minimal encoding enabled and disabled. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle withinFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 15 && audit.matchedRows == 15 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def withinBoundaryFixtureJson : String := r#"
+[
+  ["0 0 1", "0xa5", "MINIMALDATA", "OK"],
+  ["0 0 0", "WITHIN", "MINIMALDATA", "EVAL_FALSE"],
+  ["1 2 0", "WITHIN", "MINIMALDATA", "EVAL_FALSE"],
+  ["-2147483647 -2147483647 2147483647", "WITHIN", "MINIMALDATA", "OK"],
+  ["2147483648 0 1", "WITHIN DROP 1", "", "SCRIPTNUM"],
+  ["0 -2147483648 1", "WITHIN DROP 1", "", "SCRIPTNUM"],
+  ["0 0 2147483648", "WITHIN DROP 1", "", "SCRIPTNUM"],
+  ["0x01 0x80 0 1", "WITHIN", "", "OK"],
+  ["0x01 0x80 0 1", "WITHIN", "MINIMALDATA", "SCRIPTNUM"],
+  ["", "WITHIN 1", "", "INVALID_STACK_OPERATION"],
+  ["1", "WITHIN 1", "", "INVALID_STACK_OPERATION"],
+  ["", "0 IF WITHIN ENDIF 1", "MINIMALDATA", "OK"],
+  ["0 0 1 WITHIN", "1 EQUAL", "MINIMALDATA", "OK"],
+  ["9 0 0 1", "WITHIN VERIFY 9 EQUAL", "MINIMALDATA", "OK"]
+]
+"#
+
+/-- Separate local Core-format rows exercise raw byte parsing, equal/reversed
+    bounds, four/five-byte limits, negative zero, inactive code and scriptSig. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle withinBoundaryFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 14 && audit.matchedRows == 14 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
 end LeanMiniscript.Extraction

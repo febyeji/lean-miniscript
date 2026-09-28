@@ -187,6 +187,112 @@ theorem runtimeStep_not_preserves (oracle : CryptoOracle)
       subst next
       exact executeRuntimeElement_not_preserves oracle state middle flags ctx executed
 
+/-- Active WITHIN decodes value, lower bound, then upper bound. Success removes
+    two main-stack items and preserves every other runtime field. -/
+theorem executeRuntimeElement_within (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
+    executeRuntimeElement oracle (.op .OP_WITHIN) state flags ctx =
+      match state.stack with
+      | upperBytes :: lowerBytes :: valueBytes :: rest =>
+          match decodeWithinScriptNums flags upperBytes lowerBytes valueBytes with
+          | .error error => .error error
+          | .ok (upper, lower, value) =>
+              .ok { state with stack := boolToElement (decide (lower ≤ value ∧ value < upper)) :: rest }
+      | _ => .error .stackUnderflow := by
+  rcases stackEq : state.stack with _ | ⟨upperBytes, _ | ⟨lowerBytes, _ | ⟨valueBytes, rest⟩⟩⟩
+  all_goals try { simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
+    active, prepareValidationWeight, evaluate_within, stackEq]; rfl }
+  cases decoded : decodeWithinScriptNums flags upperBytes lowerBytes valueBytes with
+  | error error =>
+      simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
+        active, prepareValidationWeight, evaluate_within, stackEq, decoded]
+      rfl
+  | ok values =>
+      rcases values with ⟨upper, lower, value⟩
+      simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
+        active, prepareValidationWeight, evaluate_within, stackEq, decoded]
+      rfl
+
+/-- Inactive WITHIN leaves the entire state unchanged, including malformed or
+    missing operands. -/
+theorem executeRuntimeElement_within_inactive (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
+    executeRuntimeElement oracle (.op .OP_WITHIN) state flags ctx = .ok state := by
+  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
+  rfl
+
+/-- Successful active WITHIN reduces stack count by two; inactive WITHIN keeps
+    it unchanged. Both preserve the alternate stack, conditions and budget. -/
+theorem executeRuntimeElement_within_preserves (oracle : CryptoOracle)
+    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (executed : executeRuntimeElement oracle (.op .OP_WITHIN) state flags ctx = .ok next) :
+    next.stack.length + (if state.conditions.all id then 2 else 0) = state.stack.length ∧
+      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
+      next.weight = state.weight := by
+  cases active : state.conditions.all id with
+  | false =>
+      rw [executeRuntimeElement_within_inactive oracle state flags ctx active] at executed
+      cases executed
+      simp
+  | true =>
+      rw [executeRuntimeElement_within oracle state flags ctx active] at executed
+      rcases stackEq : state.stack with _ | ⟨upperBytes, _ | ⟨lowerBytes, _ | ⟨valueBytes, rest⟩⟩⟩
+      all_goals try { simp [stackEq] at executed }
+      cases decoded : decodeWithinScriptNums flags upperBytes lowerBytes valueBytes with
+      | error error => simp [stackEq, decoded] at executed
+      | ok values =>
+          rcases values with ⟨upper, lower, value⟩
+          simp [stackEq, decoded] at executed
+          cases executed
+          simp
+
+/-- Underflow and all three decoder errors precede the post-instruction stack
+    check. The successful result has one item above the untouched suffix. -/
+theorem runtimeStep_within (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
+    runtimeStep oracle (.op .OP_WITHIN) state flags ctx =
+      match state.stack with
+      | upperBytes :: lowerBytes :: valueBytes :: rest =>
+          match decodeWithinScriptNums flags upperBytes lowerBytes valueBytes with
+          | .error error => .error error
+          | .ok (upper, lower, value) =>
+              if rest.length + 1 + state.altStack.length > maxStackSize then
+                .error .stackSize
+              else .ok { state with stack := boolToElement (decide (lower ≤ value ∧ value < upper)) :: rest }
+      | _ => .error .stackUnderflow := by
+  rw [runtimeStep, executeRuntimeElement_within oracle state flags ctx active]
+  rcases stackEq : state.stack with _ | ⟨upperBytes, _ | ⟨lowerBytes, _ | ⟨valueBytes, rest⟩⟩⟩
+  all_goals try rfl
+  cases decoded : decodeWithinScriptNums flags upperBytes lowerBytes valueBytes with
+  | error error => simp [decoded, bind, Except.bind]
+  | ok values =>
+      rcases values with ⟨upper, lower, value⟩
+      simp [decoded, bind, Except.bind, checkRuntimeStack]
+
+/-- An inactive WITHIN still performs the shared post-instruction stack check. -/
+theorem runtimeStep_within_inactive (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
+    runtimeStep oracle (.op .OP_WITHIN) state flags ctx = checkRuntimeStack state := by
+  rw [runtimeStep, executeRuntimeElement_within_inactive oracle state flags ctx inactive]
+  rfl
+
+/-- The post-instruction resource check retains WITHIN's state invariants. -/
+theorem runtimeStep_within_preserves (oracle : CryptoOracle)
+    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (stepped : runtimeStep oracle (.op .OP_WITHIN) state flags ctx = .ok next) :
+    next.stack.length + (if state.conditions.all id then 2 else 0) = state.stack.length ∧
+      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
+      next.weight = state.weight := by
+  unfold runtimeStep at stepped
+  cases executed : executeRuntimeElement oracle (.op .OP_WITHIN) state flags ctx with
+  | error error => simp [executed, bind, Except.bind] at stepped
+  | ok middle =>
+      simp only [executed, bind, Except.bind] at stepped
+      have same := (checkRuntimeStack_ok stepped).1
+      subst next
+      exact executeRuntimeElement_within_preserves oracle state middle flags ctx executed
+
+
 theorem runtimeStep_stackBound
     {oracle : CryptoOracle} {element : ScriptElement} {before after : RuntimeState}
     {flags : ScriptFlags} {ctx : TxContext}

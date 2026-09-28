@@ -222,6 +222,7 @@ def opcodeFromCoreName? : String → Option Opcode
   | "EQUALVERIFY" => some .OP_EQUALVERIFY
   | "NUMEQUAL" => some .OP_NUMEQUAL
   | "NUMEQUALVERIFY" => some .OP_NUMEQUALVERIFY
+  | "WITHIN" => some .OP_WITHIN
   | "SHA256" => some .OP_SHA256
   | "HASH256" => some .OP_HASH256
   | "RIPEMD160" => some .OP_RIPEMD160

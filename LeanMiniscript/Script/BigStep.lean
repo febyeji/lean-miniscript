@@ -563,6 +563,13 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op opcode :: script) (top :: belowTop :: rest) altStack flags ctx
         (.failure error)
 
+  | within_scriptnum_failure : (upperBytes lowerBytes valueBytes : StackElement) →
+      (rest : Stack) → (script : Script) → (altStack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (error : ScriptError) →
+      decodeWithinScriptNums flags upperBytes lowerBytes valueBytes = .error error →
+      Eval (.op .OP_WITHIN :: script) (upperBytes :: lowerBytes :: valueBytes :: rest)
+        altStack flags ctx (.failure error)
+
   | not_scriptnum_failure : (operand : StackElement) →
       (rest : Stack) → (script : Script) → (altStack : Stack) →
       (flags : ScriptFlags) → (ctx : TxContext) → (error : ScriptError) →
@@ -1092,6 +1099,17 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval script (x :: stack) altRest flags ctx result →
       Eval (.op .OP_FROMALTSTACK :: script) stack (x :: altRest) flags ctx result
 
+  -- OP_WITHIN: Core 9be056a8a72b624dae9623b2f7bded92c2a21c91,
+  -- src/script/interpreter.cpp: decode x, min, max, then test min <= x && x < max.
+  | within : (upperBytes lowerBytes valueBytes : StackElement) →
+      (upper lower value : Int) → (rest altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      decodeWithinScriptNums flags upperBytes lowerBytes valueBytes = .ok (upper, lower, value) →
+      Eval script (boolToElement (decide (lower ≤ value ∧ value < upper)) :: rest)
+        altStack flags ctx result →
+      Eval (.op .OP_WITHIN :: script) (upperBytes :: lowerBytes :: valueBytes :: rest)
+        altStack flags ctx result
+
   -- OP_NOT: Core 9be056a8a72b624dae9623b2f7bded92c2a21c91,
   -- src/script/interpreter.cpp: decode CScriptNum, then replace with bn == 0.
   | op_not : (operand : StackElement) → (value : Int) →
@@ -1196,6 +1214,11 @@ theorem Eval.append
   all_goals cases resultEq <;>
     simp_all <;>
     try grind [Eval]
+  case within.refl =>
+    rename_i upperBytes lowerBytes valueBytes upper lower value rest alt script flags ctx decoded _ ih
+    apply Eval.within upperBytes lowerBytes valueBytes upper lower value rest alt
+      (script ++ right) flags ctx result decoded
+    simpa using ih rightEval
   case if_execute.refl =>
     rename_i top rest altStack script frame flags ctx split minimal _ ih
     have splitAppended := splitConditional_append_of_some
@@ -1843,6 +1866,38 @@ theorem Eval.exists_result
                                   altStack with ⟨result, evaluated⟩
                               exact ⟨result, .boolor top belowTop a b stackRest rest
                                 altStack flags ctx result hDecoded evaluated⟩
+              | OP_WITHIN =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_WITHIN 3 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons upperBytes tail =>
+                      cases tail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_WITHIN 3 rest [upperBytes] altStack flags ctx
+                              rfl (by simp)⟩
+                      | cons lowerBytes tail =>
+                          cases tail with
+                          | nil =>
+                              exact ⟨.failure .stackUnderflow,
+                                .stack_underflow .OP_WITHIN 3 rest [upperBytes, lowerBytes]
+                                  altStack flags ctx rfl (by simp)⟩
+                          | cons valueBytes stackRest =>
+                              cases decoded : decodeWithinScriptNums flags
+                                  upperBytes lowerBytes valueBytes with
+                              | error error =>
+                                  exact ⟨.failure error, .within_scriptnum_failure
+                                    upperBytes lowerBytes valueBytes stackRest rest altStack
+                                    flags ctx error decoded⟩
+                              | ok values =>
+                                  rcases values with ⟨upper, lower, value⟩
+                                  rcases next
+                                      (boolToElement (decide (lower ≤ value ∧ value < upper)) ::
+                                        stackRest) altStack with ⟨result, evaluated⟩
+                                  exact ⟨result, .within upperBytes lowerBytes valueBytes
+                                    upper lower value stackRest altStack rest flags ctx result
+                                    decoded evaluated⟩
               | OP_NOT =>
                   cases stack with
                   | nil =>
@@ -2341,6 +2396,37 @@ theorem Eval.notScriptNumFailure_result
     result = .failure error :=
   evaluated.result_unique
     (.not_scriptnum_failure operand stack script altStack flags ctx error decoded)
+
+/-- Decoded WITHIN operands determine the exact relational stack result. -/
+theorem Eval.within_result (upperBytes lowerBytes valueBytes : StackElement)
+    (upper lower value : Int) (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeWithinScriptNums flags upperBytes lowerBytes valueBytes = .ok (upper, lower, value))
+    (result : ExecResult) :
+    Eval [.op .OP_WITHIN] (upperBytes :: lowerBytes :: valueBytes :: stack) altStack flags ctx result ↔
+      result = .success (boolToElement (decide (lower ≤ value ∧ value < upper)) :: stack) altStack := by
+  have canonical : Eval [.op .OP_WITHIN] (upperBytes :: lowerBytes :: valueBytes :: stack)
+      altStack flags ctx (.success (boolToElement (decide (lower ≤ value ∧ value < upper)) :: stack)
+        altStack) :=
+    .within upperBytes lowerBytes valueBytes upper lower value stack altStack [] flags ctx _
+      decoded .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- Every relational execution after a WITHIN decoding error has that failure. -/
+theorem Eval.withinScriptNumFailure_result
+    {upperBytes lowerBytes valueBytes : StackElement} {stack altStack : Stack} {script : Script}
+    {flags : ScriptFlags} {ctx : TxContext} {error : ScriptError} {result : ExecResult}
+    (decoded : decodeWithinScriptNums flags upperBytes lowerBytes valueBytes = .error error)
+    (evaluated : Eval (.op .OP_WITHIN :: script) (upperBytes :: lowerBytes :: valueBytes :: stack)
+      altStack flags ctx result) :
+    result = .failure error :=
+  evaluated.result_unique
+    (.within_scriptnum_failure upperBytes lowerBytes valueBytes stack script altStack flags ctx
+      error decoded)
 
 theorem Eval.pushDataNext
     {data : StackElement} {rest : Script} {stack altStack : Stack}

@@ -41,6 +41,7 @@ def opcodeArityFixtures : List OpcodeArityFixture := [
   ⟨.OP_EQUALVERIFY, some 2⟩,
   ⟨.OP_NUMEQUAL, some 2⟩,
   ⟨.OP_NUMEQUALVERIFY, some 2⟩,
+  ⟨.OP_WITHIN, some 3⟩,
   ⟨.OP_SHA256, some 1⟩,
   ⟨.OP_HASH256, some 1⟩,
   ⟨.OP_RIPEMD160, some 1⟩,

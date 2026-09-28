@@ -40,6 +40,7 @@ def opcodeByte : Opcode → UInt8
   | .OP_EQUALVERIFY => 0x88
   | .OP_NUMEQUAL => 0x9c
   | .OP_NUMEQUALVERIFY => 0x9d
+  | .OP_WITHIN => 0xa5
   | .OP_SHA256 => 0xa8
   | .OP_HASH256 => 0xaa
   | .OP_RIPEMD160 => 0xa6

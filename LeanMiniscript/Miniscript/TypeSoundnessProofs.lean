@@ -41,7 +41,14 @@ theorem Eval.splitBalancedAppend_success
       generalize resultEq : ExecResult.success out outAlt = result at run
       cases run <;>
         simp_all [NonConditional] <;>
-        grind [Eval]
+        try grind [Eval]
+      case within =>
+        rename_i upperBytes lowerBytes valueBytes upper lower value rest decoded tail
+        cases resultEq
+        refine ⟨boolToElement (decide (lower ≤ value ∧ value < upper)) :: rest, altStack,
+          Eval.within upperBytes lowerBytes valueBytes upper lower value rest altStack
+            [] flags ctx _ decoded (.empty _ _ _ _), ?_⟩
+        simpa using tail
   | @ifThen body bodyBalanced bodyIH =>
       generalize resultEq : ExecResult.success out outAlt = result at run
       cases run

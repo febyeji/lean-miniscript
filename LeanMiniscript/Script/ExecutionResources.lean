@@ -206,6 +206,13 @@ theorem exists_of_eval_success
     rename_i top rest altStack script frame flags ctx split minimal selected ih
     rcases ih rfl with ⟨resources, observed⟩
     exact ⟨_, EvalResources.notif_execute split minimal observed⟩
+  case within =>
+    cases resultEq
+    rename_i upperBytes lowerBytes valueBytes upper lower value rest alt script flags ctx decoded _ ih
+    obtain ⟨resources, observed⟩ := ih rfl
+    exact ⟨_, EvalResources.step
+      (Eval.within upperBytes lowerBytes valueBytes upper lower value rest alt [] flags ctx _
+        decoded (.empty _ _ _ _)) observed⟩
   all_goals cases resultEq <;> try simp_all
   all_goals
     obtain ⟨resources, observed⟩ :=
