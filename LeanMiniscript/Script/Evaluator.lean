@@ -148,6 +148,11 @@ def evaluate (oracle : CryptoOracle) (script : Script)
       | top :: _ :: stackRest =>
           evaluate oracle rest (top :: stackRest) altStack flags ctx
       | _ => .failure .stackUnderflow
+  | .op .OP_2DUP :: rest =>
+      match stack with
+      | top :: below :: stackRest =>
+          evaluate oracle rest (top :: below :: top :: below :: stackRest) altStack flags ctx
+      | _ => .failure .stackUnderflow
   | .op .OP_OVER :: rest =>
       match stack with
       | top :: below :: stackRest =>
@@ -465,6 +470,33 @@ theorem evaluate_nip (oracle : CryptoOracle) (stack altStack : Stack)
       | top :: _ :: rest => .success (top :: rest) altStack
       | _ => .failure .stackUnderflow := by
   rcases stack with _ | ⟨top, _ | ⟨discarded, rest⟩⟩ <;> simp [evaluate]
+
+/-- 2DUP prepends an exact copy of the top pair before the continuation. -/
+theorem evaluate_twoDup_cons (oracle : CryptoOracle) (script : Script)
+    (top below : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_2DUP :: script) (top :: below :: stack) altStack flags ctx =
+      evaluate oracle script (top :: below :: top :: below :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- Zero or one main-stack item causes underflow before the suffix executes. -/
+theorem evaluate_twoDup_underflow (oracle : CryptoOracle) (script : Script)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (short : stack.length < 2) :
+    evaluate oracle (.op .OP_2DUP :: script) stack altStack flags ctx =
+      .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨below, rest⟩⟩
+  all_goals simp_all [evaluate]
+  omega
+
+/-- The complete 2DUP result for arbitrary stacks, flags, context and oracle. -/
+theorem evaluate_twoDup (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_2DUP] stack altStack flags ctx =
+      match stack with
+      | top :: below :: rest => .success (top :: below :: top :: below :: rest) altStack
+      | _ => .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨below, rest⟩⟩ <;> simp [evaluate]
 
 /-- OVER prepends an exact copy of the second item before the continuation. -/
 theorem evaluate_over_cons (oracle : CryptoOracle) (script : Script)

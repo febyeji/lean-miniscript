@@ -8,6 +8,7 @@ namespace LeanMiniscript.Script
     always shrinks the stack is independent of the useful fragment-level
     bound. -/
 def ScriptElement.stackGrowthAllowance : ScriptElement → Nat
+  | .op .OP_2DUP => 2
   | .pushData _ | .pushNum _ => 1
   | .op .OP_IFDUP | .op .OP_DEPTH | .op .OP_DUP | .op .OP_OVER | .op .OP_SIZE |
       .op .OP_CHECKMULTISIG | .op .OP_CHECKMULTISIGVERIFY => 1
@@ -27,22 +28,42 @@ theorem stackGrowthAllowance_append (left right : Script) :
   | nil => simp [stackGrowthAllowance]
   | cons element rest ih => simp [stackGrowthAllowance, ih, Nat.add_assoc]
 
-/-- Every element allowance is at most one, so the refined allowance never
-    exceeds the earlier instruction-count allowance. -/
-theorem ScriptElement.stackGrowthAllowance_le_one (element : ScriptElement) :
+/-- The instruction-count bound applies when every source element is charged
+    at most one stack item. OP_2DUP requires the general weighted bound. -/
+def OneItemGrowth (script : Script) : Prop :=
+  ∀ element ∈ script, element.stackGrowthAllowance ≤ 1
+
+@[simp]
+theorem oneItemGrowth_nil : OneItemGrowth [] := by simp [OneItemGrowth]
+
+@[simp]
+theorem oneItemGrowth_cons (element : ScriptElement) (script : Script) :
+    OneItemGrowth (element :: script) ↔
+      element.stackGrowthAllowance ≤ 1 ∧ OneItemGrowth script := by
+  simp [OneItemGrowth]
+
+@[simp]
+theorem oneItemGrowth_append (left right : Script) :
+    OneItemGrowth (left ++ right) ↔ OneItemGrowth left ∧ OneItemGrowth right := by
+  simp [OneItemGrowth, List.mem_append, or_imp, forall_and]
+
+/-- All modeled elements except 2DUP have a one-item allowance. -/
+theorem ScriptElement.stackGrowthAllowance_le_one (element : ScriptElement)
+    (notTwoDup : element ≠ .op .OP_2DUP) :
     element.stackGrowthAllowance ≤ 1 := by
   cases element with
   | pushData data => simp [ScriptElement.stackGrowthAllowance]
   | pushNum value => simp [ScriptElement.stackGrowthAllowance]
-  | op opcode => cases opcode <;> simp [ScriptElement.stackGrowthAllowance]
+  | op opcode => cases opcode <;> simp_all [ScriptElement.stackGrowthAllowance]
 
-theorem stackGrowthAllowance_le_length (script : Script) :
+theorem stackGrowthAllowance_le_length (script : Script) (oneItem : OneItemGrowth script) :
     stackGrowthAllowance script ≤ script.length := by
   induction script with
   | nil => simp [stackGrowthAllowance]
   | cons element rest ih =>
+      obtain ⟨head, tail⟩ := (oneItemGrowth_cons element rest).mp oneItem
+      have tailBound := ih tail
       simp only [stackGrowthAllowance, List.length_cons]
-      have elementBound := element.stackGrowthAllowance_le_one
       omega
 
 /-- A source prefix cannot have more growth allowance than the whole script. -/
