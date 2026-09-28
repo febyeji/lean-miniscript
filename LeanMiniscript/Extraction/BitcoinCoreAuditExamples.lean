@@ -361,4 +361,45 @@ example : ((auditCoreScriptTests rejectingFixtureOracle rotBoundaryFixtureJson).
       audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
   native_decide
 
+private def twoDupFixtureJson : String := r#"
+[
+  ["13 14", "2DUP ROT EQUALVERIFY EQUAL", "P2SH,STRICTENC", "OK"],
+  ["0 1", "2DUP", "P2SH,STRICTENC", "OK"],
+  ["NOP", "2DUP 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["1", "2DUP 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["1", "2DUP", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- Verbatim 2DUP rows from bitcoinCoreScriptTestsCommit cover copy order,
+    ROT continuation, final truth and zero/one-item underflow. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle twoDupFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 5 && audit.matchedRows == 5 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def twoDupBoundaryFixtureJson : String := r#"
+[
+  ["1 2", "0x6e 2 EQUALVERIFY 1 EQUALVERIFY 2 EQUALVERIFY 1 EQUAL", "MINIMALDATA", "OK"],
+  ["9 8 7", "2DUP 7 EQUALVERIFY 8 EQUALVERIFY 7 EQUALVERIFY 8 EQUALVERIFY 9 EQUAL", "MINIMALDATA", "OK"],
+  ["0 1", "2DUP 1 EQUALVERIFY 0 EQUALVERIFY 1 EQUALVERIFY 0 EQUAL", "MINIMALDATA", "OK"],
+  ["1 0", "2DUP", "", "EVAL_FALSE"],
+  ["0x01 0x80 1", "2DUP DROP 0x01 0x80 EQUAL", "", "OK"],
+  ["0x02 0x0100 1", "2DUP DROP 0x02 0x0100 EQUAL", "MINIMALDATA", "OK"],
+  ["2147483648 1", "2DUP DROP 2147483648 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2DUP", "NOP", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1 2 2DUP", "2 EQUALVERIFY 1 EQUALVERIFY 2 EQUALVERIFY 1 EQUAL", "MINIMALDATA", "OK"],
+  ["", "0 IF 2DUP ENDIF 1", "MINIMALDATA", "OK"],
+  ["1", "0 IF 2DUP ENDIF 1 EQUAL", "MINIMALDATA", "OK"],
+  ["8 7", "2DUP TOALTSTACK TOALTSTACK 7 EQUALVERIFY 8 EQUALVERIFY FROMALTSTACK 8 EQUALVERIFY FROMALTSTACK 7 EQUAL", "MINIMALDATA", "OK"]
+]
+"#
+
+/-- Local Core-format rows cover raw opcode parsing, copy order, preserved
+    byte encodings, scriptSig, alternate stacks and inactive execution. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle twoDupBoundaryFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 12 && audit.matchedRows == 12 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
 end LeanMiniscript.Extraction

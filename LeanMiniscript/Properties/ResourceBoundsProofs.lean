@@ -316,6 +316,84 @@ namespace LeanMiniscript.Properties
 open LeanMiniscript.Miniscript
 open LeanMiniscript.Script
 
+private theorem keyPushes_oneItemGrowth
+    {keys : List PubKey} {script : Script}
+    (conforms : Bip379KeyPushCompilation keys script) : OneItemGrowth script := by
+  induction conforms <;> simp_all [ScriptElement.stackGrowthAllowance]
+
+private theorem checkSigAddTail_oneItemGrowth
+    {keys : List PubKey} {script : Script}
+    (conforms : Bip379CheckSigAddTailCompilation keys script) : OneItemGrowth script := by
+  induction conforms <;> simp_all [ScriptElement.stackGrowthAllowance]
+
+private theorem checkSigAdd_oneItemGrowth
+    {keys : List PubKey} {script : Script}
+    (conforms : Bip379CheckSigAddCompilation keys script) : OneItemGrowth script := by
+  cases conforms with
+  | nil => simp [ScriptElement.stackGrowthAllowance]
+  | cons tail => simpa [ScriptElement.stackGrowthAllowance] using checkSigAddTail_oneItemGrowth tail
+
+private theorem verify_oneItemGrowth
+    {script verified : Script} (conforms : Bip379VerifyCompilation script verified)
+    (oneItem : OneItemGrowth script) : OneItemGrowth verified := by
+  cases conforms <;> simp_all [ScriptElement.stackGrowthAllowance]
+
+mutual
+private theorem compilation_oneItemGrowth
+    {keyHash : PubKey → Hash160} {fragment : CoreFragment} {script : Script}
+    (conforms : Bip379Compilation keyHash fragment script) : OneItemGrowth script := by
+  cases conforms with
+  | zero | one | pkK | pkH | older | after | sha256 | hash256 | ripemd160 | hash160 =>
+      simp [ScriptElement.stackGrowthAllowance]
+  | andV x y | andB x y | orB x y | orC x y | orD x y | orI x y =>
+      simpa [ScriptElement.stackGrowthAllowance] using
+        And.intro (compilation_oneItemGrowth x) (compilation_oneItemGrowth y)
+  | andor x y z =>
+      simpa [ScriptElement.stackGrowthAllowance, and_assoc] using
+        And.intro (compilation_oneItemGrowth x)
+          (And.intro (compilation_oneItemGrowth z) (compilation_oneItemGrowth y))
+  | a child | s child | c child | d child | j child | n child =>
+      simpa [ScriptElement.stackGrowthAllowance] using compilation_oneItemGrowth child
+  | v child verified => exact verify_oneItemGrowth verified (compilation_oneItemGrowth child)
+  | thresh children =>
+      simpa [ScriptElement.stackGrowthAllowance] using thresh_oneItemGrowth children
+  | multi _ keys =>
+      simpa [ScriptElement.stackGrowthAllowance] using keyPushes_oneItemGrowth keys
+  | multiA _ keys =>
+      simpa [ScriptElement.stackGrowthAllowance] using checkSigAdd_oneItemGrowth keys
+
+private theorem thresh_oneItemGrowth
+    {keyHash : PubKey → Hash160} {fragments : List CoreFragment} {script : Script}
+    (conforms : Bip379ThreshCompilation keyHash fragments script) : OneItemGrowth script := by
+  cases conforms with
+  | nil => simp
+  | cons head tail =>
+      exact (oneItemGrowth_append _ _).mpr
+        ⟨compilation_oneItemGrowth head, threshTail_oneItemGrowth tail⟩
+
+private theorem threshTail_oneItemGrowth
+    {keyHash : PubKey → Hash160} {fragments : List CoreFragment} {script : Script}
+    (conforms : Bip379ThreshTailCompilation keyHash fragments script) : OneItemGrowth script := by
+  cases conforms with
+  | nil => simp
+  | cons head tail =>
+      simpa [ScriptElement.stackGrowthAllowance] using
+        And.intro (compilation_oneItemGrowth head) (threshTail_oneItemGrowth tail)
+end
+
+/-- Every compiler output retains one-item growth per source element, for any
+    key-hash resolver, including threshold children and VERIFY substitutions. -/
+theorem compileWithKeyHash_oneItemGrowth (keyHash : PubKey → Hash160) (fragment : CoreFragment) :
+    OneItemGrowth (compileWithKeyHash keyHash fragment) :=
+  compilation_oneItemGrowth (compileWithKeyHash_conforms keyHash fragment)
+
+theorem compile_oneItemGrowth (fragment : CoreFragment) : OneItemGrowth (compile fragment) :=
+  compileWithKeyHash_oneItemGrowth modelKeyHash fragment
+
+theorem compileSurface_oneItemGrowth (fragment : SurfaceFragment) :
+    OneItemGrowth (compileSurface fragment) :=
+  compile_oneItemGrowth (desugar fragment)
+
 /-- Every successfully executed compiled core fragment satisfies the
     conservative combined-stack bound. The general Script theorem makes
     context validity and typing unnecessary for this particular bound. -/
@@ -325,7 +403,7 @@ theorem compile_stackGrowth
     (evaluated : Eval (compile fragment) stack alt flags ctx (.success finalStack finalAlt)) :
     finalStack.length + finalAlt.length ≤
       stack.length + alt.length + scriptElementCount fragment :=
-  evaluated.stackGrowth
+  evaluated.stackGrowth (compile_oneItemGrowth fragment)
 
 /-- Discharge the existing resource contract without weakening its statement. -/
 theorem resourceBoundsSound : ResourceBoundsSound := by
@@ -352,7 +430,7 @@ theorem compile_prefix_stackBound
     (isPrefix : visited.IsPrefix (compile fragment))
     (budget : before.stack.length + before.altStack.length + scriptElementCount fragment ≤ maxStackSize) :
     after.stack.length + after.altStack.length ≤ maxStackSize :=
-  reached.stackBound agreement isPrefix budget
+  reached.stackBound agreement isPrefix budget (compile_oneItemGrowth fragment)
 
 /-- Surface prefix bounds use the instruction count of the desugared core. -/
 theorem compileSurface_prefix_stackBound
@@ -364,13 +442,13 @@ theorem compileSurface_prefix_stackBound
     (budget : before.stack.length + before.altStack.length +
       scriptElementCount (desugar fragment) ≤ maxStackSize) :
     after.stack.length + after.altStack.length ≤ maxStackSize :=
-  reached.stackBound agreement isPrefix budget
+  reached.stackBound agreement isPrefix budget (compileSurface_oneItemGrowth fragment)
 
 /-- The fragment-specific allowance is never weaker than the earlier compiled
     instruction-count allowance. -/
 theorem maxStackGrowth_le_scriptElementCount (fragment : CoreFragment) :
     maxStackGrowth fragment ≤ scriptElementCount fragment :=
-  stackGrowthAllowance_le_length (compile fragment)
+  stackGrowthAllowance_le_length (compile fragment) (compile_oneItemGrowth fragment)
 
 /-- The static fragment allowance bounds every reachable compiled prefix. -/
 theorem compile_prefix_maxStackGrowth

@@ -1,4 +1,5 @@
 import LeanMiniscript.Script.RuntimeErasure
+import LeanMiniscript.Script.StackGrowthAllowance
 
 namespace LeanMiniscript.Script
 
@@ -25,14 +26,50 @@ private theorem decodeCheckMultiSigOperandsFor_rest_length_le
         dsimp only
         omega
 
-/-- Successful execution grows the combined main/alt stack by at most one
-    item per source instruction. This bound holds for every modeled Script,
+private theorem selectConditionalTail_stackGrowthAllowance
+    (script : Script) (depth : Nat) (selected : Bool) (tail : Script)
+    (projected : selectConditionalTail depth selected script = some tail) :
+    stackGrowthAllowance tail ≤ stackGrowthAllowance script := by
+  induction script generalizing depth selected tail with
+  | nil => simp [selectConditionalTail] at projected
+  | cons element rest ih =>
+      have kept (nextDepth : Nat)
+          (mapped : (selectConditionalTail nextDepth selected rest).map
+            (fun suffix => if selected then element :: suffix else suffix) = some tail) :
+          stackGrowthAllowance tail ≤ stackGrowthAllowance (element :: rest) := by
+        cases result : selectConditionalTail nextDepth selected rest with
+        | none => simp [result] at mapped
+        | some suffix =>
+            have bound := ih nextDepth selected suffix result
+            simp only [result, Option.map_some, Option.some.injEq] at mapped
+            subst tail
+            cases selected <;> simp [stackGrowthAllowance] at * <;> omega
+      cases element with
+      | pushData data => exact kept depth projected
+      | pushNum number => exact kept depth projected
+      | op opcode =>
+          cases opcode <;> cases depth <;> simp only [selectConditionalTail] at projected
+          all_goals first
+          | exact kept _ projected
+          | simpa [stackGrowthAllowance, ScriptElement.stackGrowthAllowance] using
+              ih _ _ _ projected
+          | cases projected; simp [stackGrowthAllowance, ScriptElement.stackGrowthAllowance]
+
+private theorem conditional_select_stackGrowthAllowance
+    {script : Script} {frame : ConditionalFrame}
+    (split : splitConditional script = some frame) (selected : Bool) :
+    stackGrowthAllowance (frame.select selected) ≤ stackGrowthAllowance script := by
+  apply selectConditionalTail_stackGrowthAllowance script 0 selected (frame.select selected)
+  simp [selectConditionalTail_eq, split]
+
+/-- Successful execution grows the combined main/alt stack by at most the sum
+    of source opcode allowances. This holds for every modeled Script,
     independently of typing, initial stack bounds, and cryptographic results. -/
-theorem Eval.stackGrowth
+theorem Eval.stackGrowth_le_allowance
     {script : Script} {stack alt finalStack finalAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext}
     (evaluated : Eval script stack alt flags ctx (.success finalStack finalAlt)) :
-    finalStack.length + finalAlt.length ≤ stack.length + alt.length + script.length := by
+    finalStack.length + finalAlt.length ≤ stack.length + alt.length + stackGrowthAllowance script := by
   generalize resultEq : ExecResult.success finalStack finalAlt = result at evaluated
   induction evaluated
   case if_unbalanced =>
@@ -42,7 +79,8 @@ theorem Eval.stackGrowth
     rename_i top rest alt script flags ctx selectedResult split minimal selected ih
     cases selectedResult <;> simp_all [finishUnclosedConditional]
   all_goals cases resultEq
-  all_goals simp_all only [List.length_cons, List.length_nil, true_implies]
+  all_goals simp_all only [List.length_cons, true_implies,
+    stackGrowthAllowance, ScriptElement.stackGrowthAllowance]
   all_goals try omega
   case checkmultisig_success.refl =>
     rename_i stack operands script alt flags ctx decoded checked dummy tail ih
@@ -58,34 +96,71 @@ theorem Eval.stackGrowth
     omega
   case if_execute.refl =>
     rename_i top rest alt script frame flags ctx split minimal tail ih
-    have shorter := ConditionalFrame.select_length_lt split (castToBool top)
+    have shorter := conditional_select_stackGrowthAllowance split (castToBool top)
     omega
   case notif_execute.refl =>
     rename_i top rest alt script frame flags ctx split minimal tail ih
-    have shorter := ConditionalFrame.select_length_lt split (!castToBool top)
+    have shorter := conditional_select_stackGrowthAllowance split (!castToBool top)
     omega
 
-/-- The source-order model inherits the same growth bound through success
-    erasure, starting with no open conditional. -/
-theorem RuntimeEval.stackGrowth
+/-- The instruction-count bound follows when every source element has a
+    one-item allowance. -/
+theorem Eval.stackGrowth
+    {script : Script} {stack alt finalStack finalAlt : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (evaluated : Eval script stack alt flags ctx (.success finalStack finalAlt))
+    (oneItem : OneItemGrowth script) :
+    finalStack.length + finalAlt.length ≤ stack.length + alt.length + script.length := by
+  have growth := evaluated.stackGrowth_le_allowance
+  have bound := stackGrowthAllowance_le_length script oneItem
+  omega
+
+/-- Source-order success inherits the opcode-weighted bound through erasure. -/
+theorem RuntimeEval.stackGrowth_le_allowance
     {script : Script} {stack alt finalStack finalAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext} {weight finalWeight : Nat}
     (evaluated : RuntimeEval script
       { stack := stack, altStack := alt, weight := weight } flags ctx
       (.success finalStack finalAlt finalWeight)) :
-    finalStack.length + finalAlt.length ≤ stack.length + alt.length + script.length :=
-  evaluated.erase_success.stackGrowth
+    finalStack.length + finalAlt.length ≤
+      stack.length + alt.length + stackGrowthAllowance script :=
+  evaluated.erase_success.stackGrowth_le_allowance
 
-/-- Executable runtime success satisfies the growth bound whenever the oracle
-    agrees with the abstract semantics. This does not assert that execution
+/-- Executable runtime success satisfies the weighted bound under the existing
+    oracle refinement contract. -/
+theorem evaluateWithRuntimeLimits_stackGrowth_le_allowance
+    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
+    {script : Script} {stack alt finalStack finalAlt : Stack}
+    {flags : ScriptFlags} {ctx : TxContext} {weight finalWeight : Nat}
+    (success : evaluateWithRuntimeLimits oracle script stack alt flags ctx weight =
+      .success finalStack finalAlt finalWeight) :
+    finalStack.length + finalAlt.length ≤
+      stack.length + alt.length + stackGrowthAllowance script :=
+  (evaluateWithRuntimeLimits_eval_success agreement success).stackGrowth_le_allowance
+
+/-- Source-order success inherits the instruction-count bound when source
+    elements have one-item allowances, starting with no open conditional. -/
+theorem RuntimeEval.stackGrowth
+    {script : Script} {stack alt finalStack finalAlt : Stack}
+    {flags : ScriptFlags} {ctx : TxContext} {weight finalWeight : Nat}
+    (evaluated : RuntimeEval script
+      { stack := stack, altStack := alt, weight := weight } flags ctx
+      (.success finalStack finalAlt finalWeight))
+    (oneItem : OneItemGrowth script) :
+    finalStack.length + finalAlt.length ≤ stack.length + alt.length + script.length :=
+  evaluated.erase_success.stackGrowth oneItem
+
+/-- Executable runtime success satisfies the instruction-count bound for
+    one-item source elements when the oracle refines the model. This does not assert that execution
     succeeds or that intermediate stacks stay below this final-state bound. -/
 theorem evaluateWithRuntimeLimits_stackGrowth
     {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
     {script : Script} {stack alt finalStack finalAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext} {weight finalWeight : Nat}
     (success : evaluateWithRuntimeLimits oracle script stack alt flags ctx weight =
-      .success finalStack finalAlt finalWeight) :
+      .success finalStack finalAlt finalWeight)
+    (oneItem : OneItemGrowth script) :
     finalStack.length + finalAlt.length ≤ stack.length + alt.length + script.length :=
-  (evaluateWithRuntimeLimits_eval_success agreement success).stackGrowth
+  (evaluateWithRuntimeLimits_eval_success agreement success).stackGrowth oneItem
 
 end LeanMiniscript.Script

@@ -1088,6 +1088,13 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval script (top :: rest) altStack flags ctx result →
       Eval (.op .OP_NIP :: script) (top :: discarded :: rest) altStack flags ctx result
 
+  -- OP_2DUP: Core 9be056a8a72b624dae9623b2f7bded92c2a21c91,
+  -- src/script/interpreter.cpp: copy stacktop(-2), then stacktop(-1), after checking two inputs.
+  | twoDup : (top below : StackElement) → (rest altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      Eval script (top :: below :: top :: below :: rest) altStack flags ctx result →
+      Eval (.op .OP_2DUP :: script) (top :: below :: rest) altStack flags ctx result
+
   -- OP_OVER: Core 9be056a8a72b624dae9623b2f7bded92c2a21c91,
   -- src/script/interpreter.cpp: copy stacktop(-2) after checking two inputs.
   | over : (top below : StackElement) → (rest altStack : Stack) → (script : Script) →
@@ -1791,6 +1798,22 @@ theorem Eval.exists_result
                           rcases next (top :: stackRest) altStack with ⟨result, evaluated⟩
                           exact ⟨result, .nip top discarded stackRest altStack rest
                             flags ctx result evaluated⟩
+              | OP_2DUP =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_2DUP 2 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_2DUP 2 rest [top] altStack flags ctx
+                              rfl (by simp)⟩
+                      | cons below stackRest =>
+                          rcases next (top :: below :: top :: below :: stackRest) altStack with
+                            ⟨result, evaluated⟩
+                          exact ⟨result, .twoDup top below stackRest altStack rest
+                            flags ctx result evaluated⟩
               | OP_OVER =>
                   cases stack with
                   | nil =>
@@ -2450,6 +2473,29 @@ theorem Eval.nip_underflow_result {stack altStack : Stack} {script : Script}
     (evaluated : Eval (.op .OP_NIP :: script) stack altStack flags ctx result) :
     result = .failure .stackUnderflow :=
   evaluated.result_unique (.stack_underflow .OP_NIP 2 script stack altStack flags ctx rfl short)
+
+/-- 2DUP copies the top pair in order above the unchanged original stack. -/
+theorem Eval.twoDup_result (top below : StackElement) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
+    Eval [.op .OP_2DUP] (top :: below :: stack) altStack flags ctx result ↔
+      result = .success (top :: below :: top :: below :: stack) altStack := by
+  have canonical : Eval [.op .OP_2DUP] (top :: below :: stack) altStack flags ctx
+      (.success (top :: below :: top :: below :: stack) altStack) :=
+    .twoDup top below stack altStack [] flags ctx _ .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- With zero or one main-stack item, 2DUP terminates before any suffix. -/
+theorem Eval.twoDup_underflow_result {stack altStack : Stack} {script : Script}
+    {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    (short : stack.length < 2)
+    (evaluated : Eval (.op .OP_2DUP :: script) stack altStack flags ctx result) :
+    result = .failure .stackUnderflow :=
+  evaluated.result_unique (.stack_underflow .OP_2DUP 2 script stack altStack flags ctx rfl short)
 
 /-- OVER copies precisely the second item above the unchanged original stack. -/
 theorem Eval.over_result (top below : StackElement) (stack altStack : Stack)

@@ -372,6 +372,85 @@ theorem runtimeStep_nip_preserves (oracle : CryptoOracle)
       subst next
       exact executeRuntimeElement_nip_preserves oracle state middle flags ctx executed
 
+/-- Active 2DUP copies the top pair in order, keeping the original stack
+    and every other runtime field. Underflow precedes the combined-stack limit. -/
+theorem executeRuntimeElement_twoDup (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
+    executeRuntimeElement oracle (.op .OP_2DUP) state flags ctx =
+      match state.stack with
+      | top :: below :: rest => .ok { state with stack := top :: below :: top :: below :: rest }
+      | _ => .error .stackUnderflow := by
+  rcases stackEq : state.stack with _ | ⟨top, _ | ⟨below, rest⟩⟩
+  all_goals
+    simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
+      active, prepareValidationWeight, evaluate_twoDup, stackEq]
+    rfl
+
+/-- Inactive 2DUP leaves the entire runtime state unchanged, for every stack. -/
+theorem executeRuntimeElement_twoDup_inactive (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
+    executeRuntimeElement oracle (.op .OP_2DUP) state flags ctx = .ok state := by
+  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
+  rfl
+
+/-- Successful active 2DUP increases stack count by two; inactive 2DUP keeps it.
+    Both preserve the alternate stack, conditions and signature budget. -/
+theorem executeRuntimeElement_twoDup_preserves (oracle : CryptoOracle)
+    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (executed : executeRuntimeElement oracle (.op .OP_2DUP) state flags ctx = .ok next) :
+    next.stack.length = state.stack.length + (if state.conditions.all id then 2 else 0) ∧
+      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
+      next.weight = state.weight := by
+  cases active : state.conditions.all id with
+  | false =>
+      rw [executeRuntimeElement_twoDup_inactive oracle state flags ctx active] at executed
+      cases executed
+      simp
+  | true =>
+      rw [executeRuntimeElement_twoDup oracle state flags ctx active] at executed
+      rcases stackEq : state.stack with _ | ⟨top, _ | ⟨below, rest⟩⟩
+      all_goals simp [stackEq] at executed
+      cases executed
+      simp
+
+/-- 2DUP underflow precedes resource checking. Success checks the combined
+    main/alternate stack count after pushing both copied items. -/
+theorem runtimeStep_twoDup (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
+    runtimeStep oracle (.op .OP_2DUP) state flags ctx =
+      match state.stack with
+      | top :: below :: rest =>
+          if rest.length + 4 + state.altStack.length > maxStackSize then
+            .error .stackSize
+          else .ok { state with stack := top :: below :: top :: below :: rest }
+      | _ => .error .stackUnderflow := by
+  rw [runtimeStep, executeRuntimeElement_twoDup oracle state flags ctx active]
+  rcases stackEq : state.stack with _ | ⟨top, _ | ⟨below, rest⟩⟩
+  all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
+
+/-- An inactive 2DUP still performs the shared combined-stack check. -/
+theorem runtimeStep_twoDup_inactive (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
+    runtimeStep oracle (.op .OP_2DUP) state flags ctx = checkRuntimeStack state := by
+  rw [runtimeStep, executeRuntimeElement_twoDup_inactive oracle state flags ctx inactive]
+  rfl
+
+/-- The post-instruction stack check retains 2DUP's state invariants. -/
+theorem runtimeStep_twoDup_preserves (oracle : CryptoOracle)
+    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (stepped : runtimeStep oracle (.op .OP_2DUP) state flags ctx = .ok next) :
+    next.stack.length = state.stack.length + (if state.conditions.all id then 2 else 0) ∧
+      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
+      next.weight = state.weight := by
+  unfold runtimeStep at stepped
+  cases executed : executeRuntimeElement oracle (.op .OP_2DUP) state flags ctx with
+  | error error => simp [executed, bind, Except.bind] at stepped
+  | ok middle =>
+      simp only [executed, bind, Except.bind] at stepped
+      have same := (checkRuntimeStack_ok stepped).1
+      subst next
+      exact executeRuntimeElement_twoDup_preserves oracle state middle flags ctx executed
+
 /-- Active OVER copies the second item to the top, keeping the original stack
     and every other runtime field. Underflow precedes the combined-stack limit. -/
 theorem executeRuntimeElement_over (oracle : CryptoOracle) (state : RuntimeState)

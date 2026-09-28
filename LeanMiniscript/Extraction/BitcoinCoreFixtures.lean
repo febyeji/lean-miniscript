@@ -206,6 +206,7 @@ def opcodeFromCoreName? : String → Option Opcode
   | "NOTIF" => some .OP_NOTIF
   | "ELSE" => some .OP_ELSE
   | "ENDIF" => some .OP_ENDIF
+  | "2DUP" => some .OP_2DUP
   | "IFDUP" => some .OP_IFDUP
   | "DEPTH" => some .OP_DEPTH
   | "DROP" => some .OP_DROP
