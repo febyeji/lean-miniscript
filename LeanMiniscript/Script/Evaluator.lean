@@ -131,6 +131,8 @@ def evaluate (oracle : CryptoOracle) (script : Script)
             evaluate oracle rest (top :: top :: stackRest) altStack flags ctx
           else
             evaluate oracle rest (top :: stackRest) altStack flags ctx
+  | .op .OP_DEPTH :: rest =>
+      evaluate oracle rest (scriptNat stack.length :: stack) altStack flags ctx
   | .op .OP_DROP :: rest =>
       match stack with
       | [] => .failure .stackUnderflow
@@ -369,6 +371,22 @@ decreasing_by
       omega
     | have smaller := selectUnclosedConditional_length_le rest (!castToBool top)
       omega
+
+/-- DEPTH pushes the main-stack length before continuing, for every oracle,
+    flag set and transaction context. Existing stack elements retain their order. -/
+theorem evaluate_depth_cons (oracle : CryptoOracle) (script : Script)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle (.op .OP_DEPTH :: script) stack altStack flags ctx =
+      evaluate oracle script (scriptNat stack.length :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- The exact result of DEPTH includes the unchanged alternate stack. This is
+    the resource-free evaluator; runtime stack limits are checked separately. -/
+theorem evaluate_depth (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_DEPTH] stack altStack flags ctx =
+      .success (scriptNat stack.length :: stack) altStack := by
+  simp [evaluate]
 
 /-- Dropping any byte vector preserves the continuation result and alternate
     stack, without decoding the dropped value or consulting the oracle. -/

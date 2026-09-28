@@ -896,6 +896,13 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op .OP_CHECKLOCKTIMEVERIFY :: script) (operand :: rest)
         altStack flags ctx (.failure .checkLockTimeVerify)
 
+  -- OP_DEPTH: Core 9be056a8a72b624dae9623b2f7bded92c2a21c91,
+  -- src/script/interpreter.cpp: push CScriptNum(stack.size()).getvch().
+  | depth : (stack altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      Eval script (scriptNat stack.length :: stack) altStack flags ctx result →
+      Eval (.op .OP_DEPTH :: script) stack altStack flags ctx result
+
   -- OP_DROP
   | drop : (x : StackElement) → (rest : Stack) → (script : Script) →
       (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
@@ -1682,6 +1689,10 @@ theorem Eval.exists_result
                             ⟨result, evaluated⟩
                           exact ⟨result, .ifdup_true top stackRest altStack rest
                             flags ctx result hTruthy evaluated⟩
+              | OP_DEPTH =>
+                  rcases next (scriptNat stack.length :: stack) altStack with
+                    ⟨result, evaluated⟩
+                  exact ⟨result, .depth stack altStack rest flags ctx result evaluated⟩
               | OP_DROP =>
                   cases stack with
                   | nil =>
@@ -2252,6 +2263,21 @@ theorem Eval.existsUnique_result
 theorem Eval.done {stack altStack : Stack} {flags : ScriptFlags} {ctx : TxContext} :
     Eval [] stack altStack flags ctx (.success stack altStack) :=
   .empty stack altStack flags ctx
+
+/-- DEPTH has this exact relational result for every main/alternate stack. -/
+theorem Eval.depth_result (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) (result : ExecResult) :
+    Eval [.op .OP_DEPTH] stack altStack flags ctx result ↔
+      result = .success (scriptNat stack.length :: stack) altStack := by
+  have canonical : Eval [.op .OP_DEPTH] stack altStack flags ctx
+      (.success (scriptNat stack.length :: stack) altStack) :=
+    .depth stack altStack [] flags ctx _ .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
 
 theorem Eval.pushDataNext
     {data : StackElement} {rest : Script} {stack altStack : Stack}

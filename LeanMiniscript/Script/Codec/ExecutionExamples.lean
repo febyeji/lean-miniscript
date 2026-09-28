@@ -51,6 +51,66 @@ example : run changingPushes = some (.success
      scriptNum (-1), scriptNum 16, scriptNum 1, ByteArray.empty] []) := by
   native_decide
 
+-- DEPTH counts only the pre-instruction main stack, including an empty one.
+example : runLimited [.op .OP_DEPTH] [] [scriptNum 9] 0 =
+    some (.success [ByteArray.empty] [scriptNum 9] 0) := by
+  native_decide
+
+-- Existing byte vectors retain their order and need no numeric decoding.
+example : runLimited [.op .OP_DEPTH]
+    [⟨#[0, 0, 0, 0, 0]⟩, scriptNum 7, scriptNum 9] [scriptNum 3] 17 =
+    some (.success [scriptNum 3, ⟨#[0, 0, 0, 0, 0]⟩, scriptNum 7, scriptNum 9]
+      [scriptNum 3] 17) := by
+  native_decide
+
+-- Each DEPTH observes the stack produced by its predecessor.
+example : run [.op .OP_DEPTH, .op .OP_DEPTH] =
+    some (.success [scriptNum 1, ByteArray.empty] []) := by
+  native_decide
+
+-- Inactive DEPTH leaves both stacks and the budget untouched.
+example : runLimited [.pushNum 0, .op .OP_IF, .op .OP_DEPTH, .op .OP_ENDIF]
+    [] [scriptNum 9] 17 = some (.success [] [scriptNum 9] 17) := by
+  native_decide
+
+-- These byte expectations cover sign padding and little-endian length changes.
+-- The cases above 1000 exercise only the resource-free evaluator.
+private def depthNumberFixtures : List (Nat × ByteArray) :=
+  [(0, ⟨#[]⟩), (1, ⟨#[1]⟩), (127, ⟨#[0x7f]⟩), (128, ⟨#[0x80, 0]⟩),
+   (255, ⟨#[0xff, 0]⟩), (256, ⟨#[0, 1]⟩),
+   (32767, ⟨#[0xff, 0x7f]⟩), (32768, ⟨#[0, 0x80, 0]⟩)]
+
+example : depthNumberFixtures.all (fun (size, expected) =>
+    let stack := List.replicate size trueElement
+    run [.op .OP_DEPTH] stack == some (.success (expected :: stack) [])) = true := by
+  native_decide
+
+-- Runtime success at 1000 combined items and failure on the next item.
+example : runLimited [.op .OP_DEPTH] (List.replicate 999 trueElement) =
+    some (.success (scriptNum 999 :: List.replicate 999 trueElement) [] 50) := by
+  native_decide
+
+example : runLimited [.op .OP_DEPTH] (List.replicate 1000 trueElement) =
+    some (.failure .stackSize) := by
+  native_decide
+
+example : runLimited [.op .OP_DEPTH] (List.replicate 998 trueElement) [trueElement] =
+    some (.success (scriptNum 998 :: List.replicate 998 trueElement) [trueElement] 50) := by
+  native_decide
+
+example : runLimited [.op .OP_DEPTH] (List.replicate 999 trueElement) [trueElement] =
+    some (.failure .stackSize) := by
+  native_decide
+
+example : runLimited [.op .OP_DEPTH] [] (List.replicate 1000 trueElement) =
+    some (.failure .stackSize) := by
+  native_decide
+
+-- A later DROP cannot repair the stack-limit failure caused by DEPTH.
+example : runLimited [.op .OP_DEPTH, .op .OP_DROP]
+    (List.replicate 1000 trueElement) = some (.failure .stackSize) := by
+  native_decide
+
 -- DROP preserves lower stack order, the alternate stack and signature budget.
 -- The dropped byte vector need not be a minimally encoded Script number.
 example : runLimited [.op .OP_DROP]

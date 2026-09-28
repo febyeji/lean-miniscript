@@ -10,7 +10,7 @@ private def auditFixtureJson : String := r#"
   ["1", "1 EQUAL", "P2SH,STRICTENC", "OK"],
   ["0", "VERIFY", "P2SH,STRICTENC", "VERIFY"],
   ["1", "1 EQUAL", "P2SH,STRICTENC", "EVAL_FALSE"],
-  ["1", "DEPTH", "P2SH,STRICTENC", "OK"]
+  ["1", "NIP", "P2SH,STRICTENC", "OK"]
 ]
 "#
 
@@ -46,8 +46,8 @@ example : (auditFixture.bind fun audit => audit.unsupported.head?) =
     some {
       index := 4
       scriptSigSource := "1"
-      scriptPubKeySource := "DEPTH"
-      reason := .scriptPubKey (.unsupportedToken "DEPTH")
+      scriptPubKeySource := "NIP"
+      reason := .scriptPubKey (.unsupportedToken "NIP")
     } := by
   native_decide
 
@@ -56,7 +56,7 @@ example : auditFixture.map CoreFixtureAudit.unsupportedReasonCounts =
   native_decide
 
 example : auditFixture.map CoreFixtureAudit.unsupportedDetailCounts =
-    some [("script-pubkey-source.unsupported-token.DEPTH", 1)] := by
+    some [("script-pubkey-source.unsupported-token.NIP", 1)] := by
   native_decide
 
 private def sourceErrorDetailFixtures :
@@ -65,7 +65,7 @@ private def sourceErrorDetailFixtures :
    (.quoteInsideToken, "quote-inside-token"),
    (.invalidHex "0xz", "invalid-hex"),
    (.oddHexLength "0x0", "odd-hex-length"),
-   (.unsupportedToken "DEPTH", "unsupported-token.DEPTH"),
+   (.unsupportedToken "NIP", "unsupported-token.NIP"),
    (.serialization (.pushDataTooLarge 4294967296),
       "serialization.push-data-too-large"),
    (.truncatedPushLength 0 2 1, "truncated-push-length"),
@@ -92,6 +92,41 @@ private def dropFixtureJson : String := r#"
 /-- DROP covers stack order, empty main stacks, final acceptance, inactive
     branches, and scriptSig execution through the Core fixture importer. -/
 example : ((auditCoreScriptTests rejectingFixtureOracle dropFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 6 && audit.matchedRows == 6 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def depthFixtureJson : String := r#"
+[
+  ["", "DEPTH 0 EQUAL", "P2SH,STRICTENC", "OK", "Test the test: we should have an empty stack after scriptSig evaluation"],
+  ["0 IFDUP", "DEPTH 1 EQUALVERIFY 0 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["1 IFDUP", "DEPTH 2 EQUALVERIFY 1 EQUALVERIFY 1 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["0x05 0x0100000000 IFDUP", "DEPTH 2 EQUALVERIFY 0x05 0x0100000000 EQUAL", "P2SH,STRICTENC", "OK", "IFDUP dups non ints"],
+  ["0 DROP", "DEPTH 0 EQUAL", "P2SH,STRICTENC", "OK"]
+]
+"#
+
+/-- Verbatim rows from bitcoinCoreScriptTestsCommit cover DEPTH on empty and
+    populated stacks, with non-numeric elements and preceding stack operations. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle depthFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 5 && audit.matchedRows == 5 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def depthBoundaryFixtureJson : String := r#"
+[
+  ["", "DEPTH", "P2SH,STRICTENC", "EVAL_FALSE"],
+  ["1 2", "DEPTH 2 EQUALVERIFY 2 EQUALVERIFY 1 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["1", "TOALTSTACK DEPTH 0 EQUALVERIFY FROMALTSTACK 1 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["", "0 IF DEPTH ENDIF DEPTH 0 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["DEPTH", "0 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["", "0x74 0 EQUAL", "P2SH,STRICTENC", "OK"]
+]
+"#
+
+/-- Local Core-format regressions cover final truth, stack order, alt-stack
+    exclusion, inactive execution, scriptSig and raw-byte parsing. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle depthBoundaryFixtureJson).toOption.map
     fun audit => audit.comparedRows == 6 && audit.matchedRows == 6 &&
       audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
   native_decide

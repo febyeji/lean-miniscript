@@ -79,6 +79,28 @@ def runtimeStep (oracle : CryptoOracle) (element : ScriptElement)
   let next ← executeRuntimeElement oracle element state flags ctx
   checkRuntimeStack next
 
+/-- Active DEPTH changes only the main stack, preserving the condition stack,
+    alternate stack and signature budget for every oracle. -/
+theorem executeRuntimeElement_depth (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
+    executeRuntimeElement oracle (.op .OP_DEPTH) state flags ctx =
+      .ok { state with stack := scriptNat state.stack.length :: state.stack } := by
+  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
+    active, prepareValidationWeight, evaluate_depth]
+  rfl
+
+/-- The extra DEPTH item must fit in the combined main/alternate stack limit.
+    The check runs after the push and retains the remaining signature budget. -/
+theorem runtimeStep_depth (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
+    runtimeStep oracle (.op .OP_DEPTH) state flags ctx =
+      if state.stack.length + state.altStack.length < maxStackSize then
+        .ok { state with stack := scriptNat state.stack.length :: state.stack }
+      else .error .stackSize := by
+  rw [runtimeStep, executeRuntimeElement_depth oracle state flags ctx active]
+  simp only [bind, Except.bind, checkRuntimeStack, List.length_cons]
+  split <;> split <;> first | rfl | omega
+
 theorem runtimeStep_stackBound
     {oracle : CryptoOracle} {element : ScriptElement} {before after : RuntimeState}
     {flags : ScriptFlags} {ctx : TxContext}
