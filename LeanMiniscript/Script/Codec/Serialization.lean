@@ -34,6 +34,7 @@ def opcodeByte : Opcode → UInt8
   | .OP_ADD => 0x93
   | .OP_BOOLAND => 0x9a
   | .OP_BOOLOR => 0x9b
+  | .OP_NOT => 0x91
   | .OP_0NOTEQUAL => 0x92
   | .OP_EQUAL => 0x87
   | .OP_EQUALVERIFY => 0x88

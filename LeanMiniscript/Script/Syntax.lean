@@ -25,6 +25,7 @@ inductive Opcode where
   | OP_ADD
   | OP_BOOLAND
   | OP_BOOLOR
+  | OP_NOT
   | OP_0NOTEQUAL
   -- Comparison
   | OP_EQUAL

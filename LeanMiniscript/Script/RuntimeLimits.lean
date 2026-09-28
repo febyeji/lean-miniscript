@@ -101,6 +101,92 @@ theorem runtimeStep_depth (oracle : CryptoOracle) (state : RuntimeState)
   simp only [bind, Except.bind, checkRuntimeStack, List.length_cons]
   split <;> split <;> first | rfl | omega
 
+/-- Active NOT decodes one operand and preserves every other runtime field.
+    Underflow and decoder errors are returned before the stack-limit check. -/
+theorem executeRuntimeElement_not (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
+    executeRuntimeElement oracle (.op .OP_NOT) state flags ctx =
+      match state.stack with
+      | [] => .error .stackUnderflow
+      | operand :: rest =>
+          match decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+          | .error error => .error error
+          | .ok value => .ok { state with stack := boolToElement (value == 0) :: rest } := by
+  cases stackEq : state.stack with
+  | nil =>
+      simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
+        active, prepareValidationWeight, evaluate_not, stackEq]
+      rfl
+  | cons operand rest =>
+      cases decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes <;>
+        simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
+          active, prepareValidationWeight, evaluate_not, stackEq, decoded] <;> rfl
+
+/-- Inactive NOT leaves the entire state unchanged, including malformed operands. -/
+theorem executeRuntimeElement_not_inactive (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
+    executeRuntimeElement oracle (.op .OP_NOT) state flags ctx = .ok state := by
+  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
+  rfl
+
+/-- Every successful NOT step before resource checking preserves stack count,
+    alternate stack, conditions and signature budget, in active or inactive code. -/
+theorem executeRuntimeElement_not_preserves (oracle : CryptoOracle)
+    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (executed : executeRuntimeElement oracle (.op .OP_NOT) state flags ctx = .ok next) :
+    next.stack.length = state.stack.length ∧ next.altStack = state.altStack ∧
+      next.conditions = state.conditions ∧ next.weight = state.weight := by
+  cases active : state.conditions.all id with
+  | false =>
+      rw [executeRuntimeElement_not_inactive oracle state flags ctx active] at executed
+      cases executed
+      exact ⟨rfl, rfl, rfl, rfl⟩
+  | true =>
+      rw [executeRuntimeElement_not oracle state flags ctx active] at executed
+      cases stackEq : state.stack with
+      | nil => simp [stackEq] at executed
+      | cons operand rest =>
+          cases decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes <;>
+            simp [stackEq, decoded] at executed
+          cases executed
+          simp
+
+/-- For active NOT, numeric errors precede the combined-stack limit; successful
+    decoding keeps the stack count and succeeds exactly within that limit. -/
+theorem runtimeStep_not (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
+    runtimeStep oracle (.op .OP_NOT) state flags ctx =
+      match state.stack with
+      | [] => .error .stackUnderflow
+      | operand :: rest =>
+          match decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+          | .error error => .error error
+          | .ok value =>
+              if state.stack.length + state.altStack.length > maxStackSize then
+                .error .stackSize
+              else .ok { state with stack := boolToElement (value == 0) :: rest } := by
+  rw [runtimeStep, executeRuntimeElement_not oracle state flags ctx active]
+  cases stackEq : state.stack with
+  | nil => rfl
+  | cons operand rest =>
+      cases decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes <;>
+        simp [decoded, bind, Except.bind, checkRuntimeStack]
+
+/-- The post-instruction stack check preserves the same NOT state invariants. -/
+theorem runtimeStep_not_preserves (oracle : CryptoOracle)
+    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (stepped : runtimeStep oracle (.op .OP_NOT) state flags ctx = .ok next) :
+    next.stack.length = state.stack.length ∧ next.altStack = state.altStack ∧
+      next.conditions = state.conditions ∧ next.weight = state.weight := by
+  unfold runtimeStep at stepped
+  cases executed : executeRuntimeElement oracle (.op .OP_NOT) state flags ctx with
+  | error error => simp [executed, bind, Except.bind] at stepped
+  | ok middle =>
+      simp only [executed, bind, Except.bind] at stepped
+      have same := (checkRuntimeStack_ok stepped).1
+      subst next
+      exact executeRuntimeElement_not_preserves oracle state middle flags ctx executed
+
 theorem runtimeStep_stackBound
     {oracle : CryptoOracle} {element : ScriptElement} {before after : RuntimeState}
     {flags : ScriptFlags} {ctx : TxContext}

@@ -131,4 +131,47 @@ example : ((auditCoreScriptTests rejectingFixtureOracle depthBoundaryFixtureJson
       audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
   native_decide
 
+private def notFixtureJson : String := r#"
+[
+  ["0 NOT", "NOP", "P2SH,STRICTENC", "OK"],
+  ["1 NOT", "0 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["11 NOT", "0 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["0x01 0x00", "NOT", "P2SH,STRICTENC", "OK", "non-minimal-0 NOT"],
+  ["0x01 0x80", "NOT", "P2SH,STRICTENC", "OK", "negative-0 NOT"],
+  ["0x01 0x81", "NOT", "P2SH,STRICTENC", "EVAL_FALSE", "negative 1 NOT"],
+  ["0x02 0x0000", "NOT DROP 1", "", "OK"],
+  ["'abcdef' NOT", "0 EQUAL", "P2SH,STRICTENC", "SCRIPTNUM", "NOT is an arithmetic operand"],
+  ["NOP", "NOT 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["0x01 0x00", "NOT DROP 1", "MINIMALDATA", "SCRIPTNUM", "numequals 0"],
+  ["0x01 0x80", "NOT DROP 1", "MINIMALDATA", "SCRIPTNUM", "0x80 (negative zero) numequals 0"],
+  ["0x02 0x0500", "NOT DROP 1", "MINIMALDATA", "SCRIPTNUM", "numequals 5"],
+  ["0x02 0x0580", "NOT DROP 1", "MINIMALDATA", "SCRIPTNUM", "numequals -5"],
+  ["0x04 0xffff7f80", "NOT DROP 1", "MINIMALDATA", "SCRIPTNUM", "Minimal encoding is 0xffffff"]
+]
+"#
+
+/-- Verbatim rows from bitcoinCoreScriptTestsCommit cover NOT in both scripts,
+    canonical and non-minimal numbers, negative zero, underflow and overflow. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle notFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 14 && audit.matchedRows == 14 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def notBoundaryFixtureJson : String := r#"
+[
+  ["0", "0x91 1 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["-2147483647", "NOT 0 EQUAL", "MINIMALDATA", "OK"],
+  ["2147483647", "NOT 0 EQUAL", "MINIMALDATA", "OK"],
+  ["2147483648", "NOT", "", "SCRIPTNUM"],
+  ["", "0 IF NOT ENDIF 1", "P2SH,STRICTENC", "OK"]
+]
+"#
+
+/-- Local Core-format rows pin the raw opcode, four/five-byte boundary and
+    inactive underflow without changing the importer's support boundary. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle notBoundaryFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 5 && audit.matchedRows == 5 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
 end LeanMiniscript.Extraction

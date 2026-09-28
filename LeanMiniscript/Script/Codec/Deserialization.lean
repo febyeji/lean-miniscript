@@ -34,6 +34,7 @@ def opcodeFromByte? : Nat → Option Opcode
   | 0x93 => some .OP_ADD
   | 0x9a => some .OP_BOOLAND
   | 0x9b => some .OP_BOOLOR
+  | 0x91 => some .OP_NOT
   | 0x92 => some .OP_0NOTEQUAL
   | 0x87 => some .OP_EQUAL
   | 0x88 => some .OP_EQUALVERIFY

@@ -156,7 +156,7 @@ def Opcode.fixedMainStackInputs? : Opcode → Option Nat
   | .OP_TOALTSTACK => some 1
   | .OP_FROMALTSTACK => some 0
   | .OP_ADD | .OP_BOOLAND | .OP_BOOLOR => some 2
-  | .OP_0NOTEQUAL => some 1
+  | .OP_NOT | .OP_0NOTEQUAL => some 1
   | .OP_EQUAL | .OP_EQUALVERIFY | .OP_NUMEQUAL | .OP_NUMEQUALVERIFY => some 2
   | .OP_SHA256 | .OP_HASH256 | .OP_RIPEMD160 | .OP_HASH160 => some 1
   | .OP_CHECKSIG | .OP_CHECKSIGVERIFY => some 2

@@ -216,6 +216,7 @@ def opcodeFromCoreName? : String → Option Opcode
   | "ADD" => some .OP_ADD
   | "BOOLAND" => some .OP_BOOLAND
   | "BOOLOR" => some .OP_BOOLOR
+  | "NOT" => some .OP_NOT
   | "0NOTEQUAL" => some .OP_0NOTEQUAL
   | "EQUAL" => some .OP_EQUAL
   | "EQUALVERIFY" => some .OP_EQUALVERIFY
