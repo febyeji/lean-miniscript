@@ -31,6 +31,7 @@ def opcodeArityFixtures : List OpcodeArityFixture := [
   ⟨.OP_DUP, some 1⟩,
   ⟨.OP_NIP, some 2⟩,
   ⟨.OP_OVER, some 2⟩,
+  ⟨.OP_ROT, some 3⟩,
   ⟨.OP_SWAP, some 2⟩,
   ⟨.OP_TOALTSTACK, some 1⟩,
   ⟨.OP_FROMALTSTACK, some 0⟩,

@@ -212,6 +212,7 @@ def opcodeFromCoreName? : String → Option Opcode
   | "DUP" => some .OP_DUP
   | "NIP" => some .OP_NIP
   | "OVER" => some .OP_OVER
+  | "ROT" => some .OP_ROT
   | "SWAP" => some .OP_SWAP
   | "TOALTSTACK" => some .OP_TOALTSTACK
   | "FROMALTSTACK" => some .OP_FROMALTSTACK

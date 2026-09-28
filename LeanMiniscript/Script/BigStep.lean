@@ -1095,6 +1095,13 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval script (below :: top :: below :: rest) altStack flags ctx result →
       Eval (.op .OP_OVER :: script) (top :: below :: rest) altStack flags ctx result
 
+  -- OP_ROT: Core 9be056a8a72b624dae9623b2f7bded92c2a21c91,
+  -- src/script/interpreter.cpp: rotate the top three items after checking arity.
+  | rot : (top second third : StackElement) → (rest altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      Eval script (third :: top :: second :: rest) altStack flags ctx result →
+      Eval (.op .OP_ROT :: script) (top :: second :: third :: rest) altStack flags ctx result
+
   -- OP_SWAP
   | swap : (a b : StackElement) → (rest altStack : Stack) → (script : Script) →
       (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
@@ -1800,6 +1807,28 @@ theorem Eval.exists_result
                             ⟨result, evaluated⟩
                           exact ⟨result, .over top below stackRest altStack rest
                             flags ctx result evaluated⟩
+              | OP_ROT =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_ROT 3 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_ROT 3 rest [top] altStack flags ctx
+                              rfl (by simp)⟩
+                      | cons second stackTail =>
+                          cases stackTail with
+                          | nil =>
+                              exact ⟨.failure .stackUnderflow,
+                                .stack_underflow .OP_ROT 3 rest [top, second] altStack
+                                  flags ctx rfl (by simp)⟩
+                          | cons third stackRest =>
+                              rcases next (third :: top :: second :: stackRest) altStack with
+                                ⟨result, evaluated⟩
+                              exact ⟨result, .rot top second third stackRest altStack rest
+                                flags ctx result evaluated⟩
               | OP_SWAP =>
                   cases stack with
                   | nil =>
@@ -2444,6 +2473,29 @@ theorem Eval.over_underflow_result {stack altStack : Stack} {script : Script}
     (evaluated : Eval (.op .OP_OVER :: script) stack altStack flags ctx result) :
     result = .failure .stackUnderflow :=
   evaluated.result_unique (.stack_underflow .OP_OVER 2 script stack altStack flags ctx rfl short)
+
+/-- ROT moves the third item to the top, preserving the lower stack and raw bytes. -/
+theorem Eval.rot_result (top second third : StackElement) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
+    Eval [.op .OP_ROT] (top :: second :: third :: stack) altStack flags ctx result ↔
+      result = .success (third :: top :: second :: stack) altStack := by
+  have canonical : Eval [.op .OP_ROT] (top :: second :: third :: stack) altStack flags ctx
+      (.success (third :: top :: second :: stack) altStack) :=
+    .rot top second third stack altStack [] flags ctx _ .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- With fewer than three main-stack items, ROT terminates before any suffix. -/
+theorem Eval.rot_underflow_result {stack altStack : Stack} {script : Script}
+    {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    (short : stack.length < 3)
+    (evaluated : Eval (.op .OP_ROT :: script) stack altStack flags ctx result) :
+    result = .failure .stackUnderflow :=
+  evaluated.result_unique (.stack_underflow .OP_ROT 3 script stack altStack flags ctx rfl short)
 
 /-- DEPTH has this exact relational result for every main/alternate stack. -/
 theorem Eval.depth_result (stack altStack : Stack) (flags : ScriptFlags)
