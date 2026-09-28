@@ -35,6 +35,7 @@ def opcodeArityFixtures : List OpcodeArityFixture := [
   ⟨.OP_ADD, some 2⟩,
   ⟨.OP_BOOLAND, some 2⟩,
   ⟨.OP_BOOLOR, some 2⟩,
+  ⟨.OP_NOT, some 1⟩,
   ⟨.OP_0NOTEQUAL, some 1⟩,
   ⟨.OP_EQUAL, some 2⟩,
   ⟨.OP_EQUALVERIFY, some 2⟩,

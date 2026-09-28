@@ -43,6 +43,7 @@ def opcodeAssembly : Opcode → String
   | .OP_ADD => "ADD"
   | .OP_BOOLAND => "BOOLAND"
   | .OP_BOOLOR => "BOOLOR"
+  | .OP_NOT => "NOT"
   | .OP_0NOTEQUAL => "0NOTEQUAL"
   | .OP_EQUAL => "EQUAL"
   | .OP_EQUALVERIFY => "EQUALVERIFY"

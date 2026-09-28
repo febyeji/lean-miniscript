@@ -563,6 +563,14 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op opcode :: script) (top :: belowTop :: rest) altStack flags ctx
         (.failure error)
 
+  | not_scriptnum_failure : (operand : StackElement) →
+      (rest : Stack) → (script : Script) → (altStack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (error : ScriptError) →
+      decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+        .error error →
+      Eval (.op .OP_NOT :: script) (operand :: rest) altStack flags ctx
+        (.failure error)
+
   | unary_scriptnum_failure : (operand : StackElement) →
       (rest : Stack) → (script : Script) → (altStack : Stack) →
       (flags : ScriptFlags) → (ctx : TxContext) → (error : ScriptError) →
@@ -1083,6 +1091,16 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
       Eval script (x :: stack) altRest flags ctx result →
       Eval (.op .OP_FROMALTSTACK :: script) stack (x :: altRest) flags ctx result
+
+  -- OP_NOT: Core 9be056a8a72b624dae9623b2f7bded92c2a21c91,
+  -- src/script/interpreter.cpp: decode CScriptNum, then replace with bn == 0.
+  | op_not : (operand : StackElement) → (value : Int) →
+      (rest altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+        .ok value →
+      Eval script (boolToElement (value == 0) :: rest) altStack flags ctx result →
+      Eval (.op .OP_NOT :: script) (operand :: rest) altStack flags ctx result
 
   -- OP_0NOTEQUAL
   | zeroNotEqual : (operand : StackElement) → (value : Int) →
@@ -1825,6 +1843,23 @@ theorem Eval.exists_result
                                   altStack with ⟨result, evaluated⟩
                               exact ⟨result, .boolor top belowTop a b stackRest rest
                                 altStack flags ctx result hDecoded evaluated⟩
+              | OP_NOT =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_NOT 1 rest [] altStack flags ctx rfl
+                          (by simp)⟩
+                  | cons operand stackRest =>
+                      cases hDecoded : decodeScriptNum operand flags.minimalData
+                          maxArithmeticScriptNumBytes with
+                      | error error =>
+                          exact ⟨.failure error, .not_scriptnum_failure operand
+                            stackRest rest altStack flags ctx error hDecoded⟩
+                      | ok value =>
+                          rcases next (boolToElement (value == 0) :: stackRest) altStack
+                            with ⟨result, evaluated⟩
+                          exact ⟨result, .op_not operand value stackRest altStack
+                            rest flags ctx result hDecoded evaluated⟩
               | OP_0NOTEQUAL =>
                   cases stack with
                   | nil =>
@@ -2278,6 +2313,34 @@ theorem Eval.depth_result (stack altStack : Stack) (flags : ScriptFlags)
   · intro equal
     subst result
     exact canonical
+
+/-- Successful NOT decoding determines its exact relational result. -/
+theorem Eval.not_result (operand : StackElement) (value : Int)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+      .ok value) (result : ExecResult) :
+    Eval [.op .OP_NOT] (operand :: stack) altStack flags ctx result ↔
+      result = .success (boolToElement (value == 0) :: stack) altStack := by
+  have canonical : Eval [.op .OP_NOT] (operand :: stack) altStack flags ctx
+      (.success (boolToElement (value == 0) :: stack) altStack) :=
+    .op_not operand value stack altStack [] flags ctx _ decoded .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- Any relational execution after a NOT decoder error has that exact failure. -/
+theorem Eval.notScriptNumFailure_result
+    {operand : StackElement} {stack altStack : Stack} {script : Script}
+    {flags : ScriptFlags} {ctx : TxContext} {error : ScriptError} {result : ExecResult}
+    (decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+      .error error)
+    (evaluated : Eval (.op .OP_NOT :: script) (operand :: stack) altStack flags ctx result) :
+    result = .failure error :=
+  evaluated.result_unique
+    (.not_scriptnum_failure operand stack script altStack flags ctx error decoded)
 
 theorem Eval.pushDataNext
     {data : StackElement} {rest : Script} {stack altStack : Stack}

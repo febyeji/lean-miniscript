@@ -187,6 +187,16 @@ def evaluate (oracle : CryptoOracle) (script : Script)
                 (boolToElement ((a != 0) || (b != 0)) :: stackRest)
                 altStack flags ctx
       | _ => .failure .stackUnderflow
+  | .op .OP_NOT :: rest =>
+      match stack with
+      | [] => .failure .stackUnderflow
+      | operand :: stackRest =>
+          match decodeScriptNum operand flags.minimalData
+              maxArithmeticScriptNumBytes with
+          | .error error => .failure error
+          | .ok value =>
+              evaluate oracle rest (boolToElement (value == 0) :: stackRest)
+                altStack flags ctx
   | .op .OP_0NOTEQUAL :: rest =>
       match stack with
       | [] => .failure .stackUnderflow
@@ -403,6 +413,58 @@ theorem evaluate_drop_nil (oracle : CryptoOracle) (script : Script)
     evaluate oracle (.op .OP_DROP :: script) [] altStack flags ctx =
       .failure .stackUnderflow := by
   simp [evaluate]
+
+/-- NOT decodes one Script number and passes a canonical boolean to the
+    continuation. The four-byte and minimal-data checks precede that continuation. -/
+theorem evaluate_not_cons (oracle : CryptoOracle) (script : Script)
+    (operand : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_NOT :: script) (operand :: stack) altStack flags ctx =
+      match decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+      | .error error => .failure error
+      | .ok value => evaluate oracle script (boolToElement (value == 0) :: stack)
+          altStack flags ctx := by
+  simp [evaluate]
+
+/-- Successful decoding replaces just the operand for every continuation and oracle. -/
+theorem evaluate_not_of_decode (oracle : CryptoOracle) (script : Script)
+    (operand : StackElement) (value : Int) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+      .ok value) :
+    evaluate oracle (.op .OP_NOT :: script) (operand :: stack) altStack flags ctx =
+      evaluate oracle script (boolToElement (value == 0) :: stack) altStack flags ctx := by
+  rw [evaluate_not_cons, decoded]
+
+/-- Empty-main-stack failure precedes the continuation for every alternate stack. -/
+theorem evaluate_not_nil (oracle : CryptoOracle) (script : Script)
+    (altStack : Stack) (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle (.op .OP_NOT :: script) [] altStack flags ctx =
+      .failure .stackUnderflow := by
+  simp [evaluate]
+
+/-- A numeric decoder error is the terminal NOT result. -/
+theorem evaluate_not_decode_failure (oracle : CryptoOracle) (script : Script)
+    (operand : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) (error : ScriptError)
+    (decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+      .error error) :
+    evaluate oracle (.op .OP_NOT :: script) (operand :: stack) altStack flags ctx =
+      .failure error := by
+  rw [evaluate_not_cons, decoded]
+
+/-- The complete single-NOT result, including underflow and numeric errors,
+    holds for arbitrary stacks, flags, transaction context and oracle. -/
+theorem evaluate_not (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_NOT] stack altStack flags ctx =
+      match stack with
+      | [] => .failure .stackUnderflow
+      | operand :: rest =>
+          match decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+          | .error error => .failure error
+          | .ok value => .success (boolToElement (value == 0) :: rest) altStack := by
+  cases stack <;> simp [evaluate]
 
 /-- An oracle agreeing with the abstract model computes the result of every
     relational `Eval` derivation. -/
