@@ -1088,6 +1088,13 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval script (top :: rest) altStack flags ctx result →
       Eval (.op .OP_NIP :: script) (top :: discarded :: rest) altStack flags ctx result
 
+  -- OP_2DROP: Core 9be056a8a72b624dae9623b2f7bded92c2a21c91,
+  -- src/script/interpreter.cpp: pop twice after checking two inputs.
+  | twoDrop : (top discarded : StackElement) → (rest altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      Eval script rest altStack flags ctx result →
+      Eval (.op .OP_2DROP :: script) (top :: discarded :: rest) altStack flags ctx result
+
   -- OP_2DUP: Core 9be056a8a72b624dae9623b2f7bded92c2a21c91,
   -- src/script/interpreter.cpp: copy stacktop(-2), then stacktop(-1), after checking two inputs.
   | twoDup : (top below : StackElement) → (rest altStack : Stack) → (script : Script) →
@@ -1805,6 +1812,21 @@ theorem Eval.exists_result
                           rcases next (top :: stackRest) altStack with ⟨result, evaluated⟩
                           exact ⟨result, .nip top discarded stackRest altStack rest
                             flags ctx result evaluated⟩
+              | OP_2DROP =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_2DROP 2 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_2DROP 2 rest [top] altStack flags ctx
+                              rfl (by simp)⟩
+                      | cons discarded stackRest =>
+                          rcases next stackRest altStack with ⟨result, evaluated⟩
+                          exact ⟨result, .twoDrop top discarded stackRest altStack rest
+                            flags ctx result evaluated⟩
               | OP_2DUP =>
                   cases stack with
                   | nil =>
@@ -2496,6 +2518,29 @@ theorem Eval.nip_underflow_result {stack altStack : Stack} {script : Script}
     (evaluated : Eval (.op .OP_NIP :: script) stack altStack flags ctx result) :
     result = .failure .stackUnderflow :=
   evaluated.result_unique (.stack_underflow .OP_NIP 2 script stack altStack flags ctx rfl short)
+
+/-- 2DROP removes precisely the top two items for every pair of byte vectors. -/
+theorem Eval.twoDrop_result (top discarded : StackElement) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
+    Eval [.op .OP_2DROP] (top :: discarded :: stack) altStack flags ctx result ↔
+      result = .success stack altStack := by
+  have canonical : Eval [.op .OP_2DROP] (top :: discarded :: stack) altStack flags ctx
+      (.success stack altStack) :=
+    .twoDrop top discarded stack altStack [] flags ctx _ .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- With zero or one main-stack item, 2DROP terminates before any suffix. -/
+theorem Eval.twoDrop_underflow_result {stack altStack : Stack} {script : Script}
+    {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    (short : stack.length < 2)
+    (evaluated : Eval (.op .OP_2DROP :: script) stack altStack flags ctx result) :
+    result = .failure .stackUnderflow :=
+  evaluated.result_unique (.stack_underflow .OP_2DROP 2 script stack altStack flags ctx rfl short)
 
 /-- 2DUP copies the top pair in order above the unchanged original stack. -/
 theorem Eval.twoDup_result (top below : StackElement) (stack altStack : Stack)

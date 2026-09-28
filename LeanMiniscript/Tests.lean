@@ -28,6 +28,7 @@ import LeanMiniscript.Script.NullFailExamples
 import LeanMiniscript.Script.NipExamples
 import LeanMiniscript.Script.OverExamples
 import LeanMiniscript.Script.RotExamples
+import LeanMiniscript.Script.TwoDropExamples
 import LeanMiniscript.Script.TwoDupExamples
 import LeanMiniscript.Script.TuckExamples
 import LeanMiniscript.Script.NotExamples

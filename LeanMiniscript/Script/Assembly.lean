@@ -33,6 +33,7 @@ def opcodeAssembly : Opcode → String
   | .OP_NOTIF => "NOTIF"
   | .OP_ELSE => "ELSE"
   | .OP_ENDIF => "ENDIF"
+  | .OP_2DROP => "2DROP"
   | .OP_2DUP => "2DUP"
   | .OP_IFDUP => "IFDUP"
   | .OP_DEPTH => "DEPTH"

@@ -148,6 +148,11 @@ def evaluate (oracle : CryptoOracle) (script : Script)
       | top :: _ :: stackRest =>
           evaluate oracle rest (top :: stackRest) altStack flags ctx
       | _ => .failure .stackUnderflow
+  | .op .OP_2DROP :: rest =>
+      match stack with
+      | _ :: _ :: stackRest =>
+          evaluate oracle rest stackRest altStack flags ctx
+      | _ => .failure .stackUnderflow
   | .op .OP_2DUP :: rest =>
       match stack with
       | top :: below :: stackRest =>
@@ -473,6 +478,33 @@ theorem evaluate_nip (oracle : CryptoOracle) (stack altStack : Stack)
     evaluate oracle [.op .OP_NIP] stack altStack flags ctx =
       match stack with
       | top :: _ :: rest => .success (top :: rest) altStack
+      | _ => .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨discarded, rest⟩⟩ <;> simp [evaluate]
+
+/-- 2DROP passes the lower stack unchanged to the continuation. -/
+theorem evaluate_twoDrop_cons (oracle : CryptoOracle) (script : Script)
+    (top discarded : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_2DROP :: script) (top :: discarded :: stack) altStack flags ctx =
+      evaluate oracle script stack altStack flags ctx := by
+  simp [evaluate]
+
+/-- Zero or one main-stack item causes underflow before the suffix executes. -/
+theorem evaluate_twoDrop_underflow (oracle : CryptoOracle) (script : Script)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (short : stack.length < 2) :
+    evaluate oracle (.op .OP_2DROP :: script) stack altStack flags ctx =
+      .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨discarded, rest⟩⟩
+  all_goals simp_all [evaluate]
+  omega
+
+/-- The complete 2DROP result for arbitrary stacks, flags, context and oracle. -/
+theorem evaluate_twoDrop (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_2DROP] stack altStack flags ctx =
+      match stack with
+      | _ :: _ :: rest => .success rest altStack
       | _ => .failure .stackUnderflow := by
   rcases stack with _ | ⟨top, _ | ⟨discarded, rest⟩⟩ <;> simp [evaluate]
 
