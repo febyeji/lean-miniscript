@@ -10,7 +10,7 @@ private def auditFixtureJson : String := r#"
   ["1", "1 EQUAL", "P2SH,STRICTENC", "OK"],
   ["0", "VERIFY", "P2SH,STRICTENC", "VERIFY"],
   ["1", "1 EQUAL", "P2SH,STRICTENC", "EVAL_FALSE"],
-  ["1", "NIP", "P2SH,STRICTENC", "OK"]
+  ["1", "OVER", "P2SH,STRICTENC", "OK"]
 ]
 "#
 
@@ -46,8 +46,8 @@ example : (auditFixture.bind fun audit => audit.unsupported.head?) =
     some {
       index := 4
       scriptSigSource := "1"
-      scriptPubKeySource := "NIP"
-      reason := .scriptPubKey (.unsupportedToken "NIP")
+      scriptPubKeySource := "OVER"
+      reason := .scriptPubKey (.unsupportedToken "OVER")
     } := by
   native_decide
 
@@ -56,7 +56,7 @@ example : auditFixture.map CoreFixtureAudit.unsupportedReasonCounts =
   native_decide
 
 example : auditFixture.map CoreFixtureAudit.unsupportedDetailCounts =
-    some [("script-pubkey-source.unsupported-token.NIP", 1)] := by
+    some [("script-pubkey-source.unsupported-token.OVER", 1)] := by
   native_decide
 
 private def sourceErrorDetailFixtures :
@@ -65,7 +65,7 @@ private def sourceErrorDetailFixtures :
    (.quoteInsideToken, "quote-inside-token"),
    (.invalidHex "0xz", "invalid-hex"),
    (.oddHexLength "0x0", "odd-hex-length"),
-   (.unsupportedToken "NIP", "unsupported-token.NIP"),
+   (.unsupportedToken "OVER", "unsupported-token.OVER"),
    (.serialization (.pushDataTooLarge 4294967296),
       "serialization.push-data-too-large"),
    (.truncatedPushLength 0 2 1, "truncated-push-length"),
@@ -225,6 +225,48 @@ private def withinBoundaryFixtureJson : String := r#"
     bounds, four/five-byte limits, negative zero, inactive code and scriptSig. -/
 example : ((auditCoreScriptTests rejectingFixtureOracle withinBoundaryFixtureJson).toOption.map
     fun audit => audit.comparedRows == 14 && audit.matchedRows == 14 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def nipFixtureJson : String := r#"
+[
+  ["0 1", "NIP", "P2SH,STRICTENC", "OK"],
+  ["0 1", "NIP", "P2SH,STRICTENC", "OK"],
+  ["NOP", "NIP", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["NOP", "1 NIP", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["NOP", "1 0 NIP", "P2SH,STRICTENC", "EVAL_FALSE"],
+  ["1", "NIP", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- All six verbatim NIP rows from bitcoinCoreScriptTestsCommit cover success,
+    zero/one-input underflow and a false surviving top item. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle nipFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 6 && audit.matchedRows == 6 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def nipBoundaryFixtureJson : String := r#"
+[
+  ["0 1", "0x77", "MINIMALDATA", "OK"],
+  ["1 0", "NIP", "MINIMALDATA", "EVAL_FALSE"],
+  ["9 8 7", "NIP 7 EQUALVERIFY 9 EQUAL", "MINIMALDATA", "OK"],
+  ["1 0x01 0x80", "NIP 0x01 0x80 EQUAL", "", "OK"],
+  ["1 0x02 0x0100", "NIP 0x02 0x0100 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2147483648", "NIP 2147483648 EQUAL", "MINIMALDATA", "OK"],
+  ["2147483648 1", "NIP", "MINIMALDATA", "OK"],
+  ["0 1 NIP", "1 EQUAL", "MINIMALDATA", "OK"],
+  ["", "0 IF NIP ENDIF 1", "MINIMALDATA", "OK"],
+  ["9 0 1", "NIP TOALTSTACK 9 EQUALVERIFY FROMALTSTACK", "MINIMALDATA", "OK"],
+  ["", "NIP 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1", "NIP 1", "MINIMALDATA", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- Separate local Core-format regressions cover raw byte parsing, unchanged
+    non-minimal and five-byte numbers, lower/alt stacks, inactive code and suffixes. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle nipBoundaryFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 12 && audit.matchedRows == 12 &&
       audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
   native_decide
 
