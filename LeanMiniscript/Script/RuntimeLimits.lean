@@ -848,6 +848,86 @@ theorem runtimeStep_twoRot_preserves (oracle : CryptoOracle)
       subst next
       exact executeRuntimeElement_twoRot_preserves oracle state middle flags ctx executed
 
+/-- Active 2SWAP exchanges the top two pairs, preserving all other runtime
+    fields. Underflow precedes the combined-stack limit. -/
+theorem executeRuntimeElement_twoSwap (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
+    executeRuntimeElement oracle (.op .OP_2SWAP) state flags ctx =
+      match state.stack with
+      | top :: second :: third :: fourth :: rest =>
+          .ok { state with stack := third :: fourth :: top :: second :: rest }
+      | _ => .error .stackUnderflow := by
+  rcases stackEq : state.stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ | ⟨fourth, rest⟩⟩⟩⟩
+  all_goals
+    simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
+      active, prepareValidationWeight, evaluate_twoSwap, stackEq]
+    rfl
+
+/-- Inactive 2SWAP leaves the entire runtime state unchanged, for every stack. -/
+theorem executeRuntimeElement_twoSwap_inactive (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
+    executeRuntimeElement oracle (.op .OP_2SWAP) state flags ctx = .ok state := by
+  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
+  rfl
+
+/-- Successful 2SWAP preserves stack count, alternate stack, conditions and
+    signature budget, in both active and inactive branches. -/
+theorem executeRuntimeElement_twoSwap_preserves (oracle : CryptoOracle)
+    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (executed : executeRuntimeElement oracle (.op .OP_2SWAP) state flags ctx = .ok next) :
+    next.stack.length = state.stack.length ∧
+      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
+      next.weight = state.weight := by
+  cases active : state.conditions.all id with
+  | false =>
+      rw [executeRuntimeElement_twoSwap_inactive oracle state flags ctx active] at executed
+      cases executed
+      simp
+  | true =>
+      rw [executeRuntimeElement_twoSwap oracle state flags ctx active] at executed
+      rcases stackEq : state.stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ | ⟨fourth, rest⟩⟩⟩⟩
+      all_goals simp [stackEq] at executed
+      cases executed
+      simp
+
+/-- 2SWAP checks its four inputs before the combined-stack bound; the exchange
+    preserves the count used by that bound. -/
+theorem runtimeStep_twoSwap (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
+    runtimeStep oracle (.op .OP_2SWAP) state flags ctx =
+      match state.stack with
+      | top :: second :: third :: fourth :: rest =>
+          if rest.length + 4 + state.altStack.length > maxStackSize then
+            .error .stackSize
+          else .ok { state with stack := third :: fourth :: top :: second :: rest }
+      | _ => .error .stackUnderflow := by
+  rw [runtimeStep, executeRuntimeElement_twoSwap oracle state flags ctx active]
+  rcases stackEq : state.stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ | ⟨fourth, rest⟩⟩⟩⟩
+  all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
+
+/-- An inactive 2SWAP still performs the shared combined-stack check. -/
+theorem runtimeStep_twoSwap_inactive (oracle : CryptoOracle) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
+    runtimeStep oracle (.op .OP_2SWAP) state flags ctx = checkRuntimeStack state := by
+  rw [runtimeStep, executeRuntimeElement_twoSwap_inactive oracle state flags ctx inactive]
+  rfl
+
+/-- The post-instruction stack check retains 2SWAP's state invariants. -/
+theorem runtimeStep_twoSwap_preserves (oracle : CryptoOracle)
+    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (stepped : runtimeStep oracle (.op .OP_2SWAP) state flags ctx = .ok next) :
+    next.stack.length = state.stack.length ∧
+      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
+      next.weight = state.weight := by
+  unfold runtimeStep at stepped
+  cases executed : executeRuntimeElement oracle (.op .OP_2SWAP) state flags ctx with
+  | error error => simp [executed, bind, Except.bind] at stepped
+  | ok middle =>
+      simp only [executed, bind, Except.bind] at stepped
+      have same := (checkRuntimeStack_ok stepped).1
+      subst next
+      exact executeRuntimeElement_twoSwap_preserves oracle state middle flags ctx executed
+
 theorem runtimeStep_stackBound
     {oracle : CryptoOracle} {element : ScriptElement} {before after : RuntimeState}
     {flags : ScriptFlags} {ctx : TxContext}

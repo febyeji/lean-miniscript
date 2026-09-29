@@ -21,7 +21,7 @@ private def rejectingOracle : CryptoOracle :=
 private def coreOpcodeNameFixtures : List (String × Opcode) :=
   [("NOP", .OP_NOP), ("IF", .OP_IF), ("NOTIF", .OP_NOTIF),
    ("ELSE", .OP_ELSE),
-   ("ENDIF", .OP_ENDIF), ("2DROP", .OP_2DROP), ("2DUP", .OP_2DUP), ("2ROT", .OP_2ROT), ("IFDUP", .OP_IFDUP),
+   ("ENDIF", .OP_ENDIF), ("2DROP", .OP_2DROP), ("2DUP", .OP_2DUP), ("2ROT", .OP_2ROT), ("2SWAP", .OP_2SWAP), ("IFDUP", .OP_IFDUP),
    ("DEPTH", .OP_DEPTH), ("DROP", .OP_DROP), ("DUP", .OP_DUP), ("NIP", .OP_NIP), ("OVER", .OP_OVER), ("ROT", .OP_ROT),
    ("SWAP", .OP_SWAP), ("TUCK", .OP_TUCK), ("TOALTSTACK", .OP_TOALTSTACK),
    ("FROMALTSTACK", .OP_FROMALTSTACK), ("ADD", .OP_ADD),

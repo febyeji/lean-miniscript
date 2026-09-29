@@ -209,6 +209,7 @@ def opcodeFromCoreName? : String → Option Opcode
   | "2DROP" => some .OP_2DROP
   | "2DUP" => some .OP_2DUP
   | "2ROT" => some .OP_2ROT
+  | "2SWAP" => some .OP_2SWAP
   | "IFDUP" => some .OP_IFDUP
   | "DEPTH" => some .OP_DEPTH
   | "DROP" => some .OP_DROP
