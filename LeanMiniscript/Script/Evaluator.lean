@@ -178,6 +178,11 @@ def evaluate (oracle : CryptoOracle) (script : Script)
       | top :: second :: third :: fourth :: fifth :: sixth :: stackRest =>
           evaluate oracle rest (fifth :: sixth :: top :: second :: third :: fourth :: stackRest) altStack flags ctx
       | _ => .failure .stackUnderflow
+  | .op .OP_2SWAP :: rest =>
+      match stack with
+      | top :: second :: third :: fourth :: stackRest =>
+          evaluate oracle rest (third :: fourth :: top :: second :: stackRest) altStack flags ctx
+      | _ => .failure .stackUnderflow
   | .op .OP_SWAP :: rest =>
       match stack with
       | top :: belowTop :: stackRest =>
@@ -647,6 +652,33 @@ theorem evaluate_twoRot (oracle : CryptoOracle) (stack altStack : Stack)
       | top :: second :: third :: fourth :: fifth :: sixth :: rest => .success (fifth :: sixth :: top :: second :: third :: fourth :: rest) altStack
       | _ => .failure .stackUnderflow := by
   rcases stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ | ⟨fourth, _ | ⟨fifth, _ | ⟨sixth, rest⟩⟩⟩⟩⟩⟩ <;> simp [evaluate]
+
+/-- 2SWAP exchanges the top two pairs before any continuation. -/
+theorem evaluate_twoSwap_cons (oracle : CryptoOracle) (script : Script)
+    (top second third fourth : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_2SWAP :: script) (top :: second :: third :: fourth :: stack) altStack flags ctx =
+      evaluate oracle script (third :: fourth :: top :: second :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- Fewer than four main-stack items cause underflow before the suffix executes. -/
+theorem evaluate_twoSwap_underflow (oracle : CryptoOracle) (script : Script)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (short : stack.length < 4) :
+    evaluate oracle (.op .OP_2SWAP :: script) stack altStack flags ctx =
+      .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ | ⟨fourth, rest⟩⟩⟩⟩
+  all_goals simp_all [evaluate]
+  omega
+
+/-- The complete 2SWAP result for arbitrary stacks, flags, context and oracle. -/
+theorem evaluate_twoSwap (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_2SWAP] stack altStack flags ctx =
+      match stack with
+      | top :: second :: third :: fourth :: rest => .success (third :: fourth :: top :: second :: rest) altStack
+      | _ => .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ | ⟨fourth, rest⟩⟩⟩⟩ <;> simp [evaluate]
 
 /-- NOT decodes one Script number and passes a canonical boolean to the
     continuation. The four-byte and minimal-data checks precede that continuation. -/

@@ -161,6 +161,7 @@ def Opcode.fixedMainStackInputs? : Opcode → Option Nat
   | .OP_SHA256 | .OP_HASH256 | .OP_RIPEMD160 | .OP_HASH160 => some 1
   | .OP_CHECKSIG | .OP_CHECKSIGVERIFY => some 2
   | .OP_2ROT => some 6
+  | .OP_2SWAP => some 4
   | .OP_ROT | .OP_WITHIN | .OP_CHECKSIGADD => some 3
   | .OP_CHECKMULTISIG | .OP_CHECKMULTISIGVERIFY => none
   | .OP_CHECKSEQUENCEVERIFY | .OP_CHECKLOCKTIMEVERIFY => some 1

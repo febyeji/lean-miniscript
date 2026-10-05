@@ -539,4 +539,49 @@ example : ((auditCoreScriptTests rejectingFixtureOracle twoRotBoundaryFixtureJso
       audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
   native_decide
 
+private def twoSwapFixtureJson : String := r#"
+[
+  ["1 3 5 7", "2SWAP ADD 4 EQUALVERIFY ADD 12 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["0 1 0 0", "2SWAP", "P2SH,STRICTENC", "OK"],
+  ["NOP", "2SWAP 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["1", "2 3 2SWAP 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["1 1 1", "2SWAP", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- All five verbatim 2SWAP rows from bitcoinCoreScriptTestsCommit cover
+    pair order, truth and underflow before a continuation. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle twoSwapFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 5 && audit.matchedRows == 5 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def twoSwapBoundaryFixtureJson : String := r#"
+[
+  ["1 2 3 4", "0x72 2 EQUALVERIFY 1 EQUALVERIFY 4 EQUALVERIFY 3 EQUAL", "MINIMALDATA", "OK"],
+  ["9 1 2 3 4", "2SWAP 2DROP 2DROP 9 EQUAL", "MINIMALDATA", "OK"],
+  ["1 0 3 4", "2SWAP", "MINIMALDATA", "EVAL_FALSE"],
+  ["1 2 3 4 2SWAP", "2 EQUAL", "MINIMALDATA", "OK"],
+  ["1 0x01 0x80 3 4", "2SWAP 0x01 0x80 EQUAL", "", "OK"],
+  ["1 0x01 0x80 3 4", "2SWAP 0x01 0x80 EQUAL", "MINIMALDATA", "OK"],
+  ["1 0x02 0x0100 3 4", "2SWAP 0x02 0x0100 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2147483648 3 4", "2SWAP 2147483648 EQUAL", "MINIMALDATA", "OK"],
+  ["-2147483648 2 3 4", "2SWAP DROP -2147483648 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2 3 4", "2SWAP TOALTSTACK 1 EQUALVERIFY FROMALTSTACK 2 EQUAL", "MINIMALDATA", "OK"],
+  ["", "0 IF 2SWAP ENDIF 1", "MINIMALDATA", "OK"],
+  ["1 2 3", "0 IF 2SWAP ENDIF 3 EQUAL", "MINIMALDATA", "OK"],
+  ["", "2SWAP 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1", "2SWAP 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1 1", "2SWAP 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1 1 1", "2SWAP 1", "MINIMALDATA", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- Separate local Core-format rows check raw bytes, lower-stack order,
+    numeric bytes without decoding, alt stacks, inactive code and every short input. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle twoSwapBoundaryFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 16 && audit.matchedRows == 16 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
 end LeanMiniscript.Extraction
