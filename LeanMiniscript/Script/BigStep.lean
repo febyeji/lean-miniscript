@@ -534,6 +534,25 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval rest stack altStack flags ctx result →
       Eval (.op .OP_NOP :: rest) stack altStack flags ctx result
 
+  -- Upgradeable NOPs are permitted by consensus and can be discouraged by policy.
+  | upgradeableNop : (opcode : Opcode) → (rest : Script) →
+      (stack altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      opcode.isUpgradeableNop = true → flags.discourageUpgradableNops = false →
+      Eval rest stack altStack flags ctx result →
+      Eval (.op opcode :: rest) stack altStack flags ctx result
+
+  | upgradeableNop_discouraged : (opcode : Opcode) → (rest : Script) →
+      (stack altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      opcode.isUpgradeableNop = true → flags.discourageUpgradableNops = true →
+      Eval (.op opcode :: rest) stack altStack flags ctx
+        (.failure .discourageUpgradableNops)
+
+  -- OP_RETURN fails as soon as it is executed.
+  | opReturn : (rest : Script) → (stack altStack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) →
+      Eval (.op .OP_RETURN :: rest) stack altStack flags ctx (.failure .opReturn)
+
   -- Fixed-arity opcode failure. Variable-arity CHECKMULTISIG and malformed
   -- operand encodings have their own semantic boundaries.
   | stack_underflow : (opcode : Opcode) → (required : Nat) →
@@ -1547,7 +1566,7 @@ theorem Eval.fixedArityStackUnderflow_result
     (evaluated : Eval (.op opcode :: script) stack altStack flags ctx result) :
     result = .failure .stackUnderflow := by
   cases opcode <;> cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1558,7 +1577,7 @@ theorem Eval.fromAltStack_empty_result
     (evaluated : Eval (.op .OP_FROMALTSTACK :: script) stack [] flags ctx result) :
     result = .failure .altStackUnderflow := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1576,7 +1595,7 @@ theorem Eval.ifUnbalanced_result
         flags ctx selectedResult ∧
       result = finishUnclosedConditional selectedResult := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
       Opcode.usesTimelockScriptNum, minimalIfSatisfied] <;>
     try omega
   case if_unbalanced => exact ⟨_, by assumption, rfl⟩
@@ -1594,7 +1613,7 @@ theorem Eval.notifUnbalanced_result
         flags ctx selectedResult ∧
       result = finishUnclosedConditional selectedResult := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
       Opcode.usesTimelockScriptNum, minimalIfSatisfied] <;>
     try omega
   case notif_unbalanced => exact ⟨_, by assumption, rfl⟩
@@ -1606,7 +1625,7 @@ theorem Eval.elseUnbalanced_result
     (evaluated : Eval (.op .OP_ELSE :: script) stack altStack flags ctx result) :
     result = .failure .unbalancedConditional := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1617,7 +1636,7 @@ theorem Eval.endifUnbalanced_result
     (evaluated : Eval (.op .OP_ENDIF :: script) stack altStack flags ctx result) :
     result = .failure .unbalancedConditional := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1634,7 +1653,7 @@ theorem Eval.binaryScriptNumFailure_result
   cases opcode <;> simp_all [Opcode.usesBinaryScriptNums]
   all_goals
     cases evaluated <;>
-      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
         Opcode.usesTimelockScriptNum] <;>
       omega
 
@@ -1649,7 +1668,7 @@ theorem Eval.unaryScriptNumFailure_result
       altStack flags ctx result) :
     result = .failure error := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1664,7 +1683,7 @@ theorem Eval.checksigaddScriptNumFailure_result
       (pubkey :: countBytes :: sig :: rest) altStack flags ctx result) :
     result = .failure error := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
       Opcode.usesTimelockScriptNum, decodeCheckSigAddCount] <;>
     omega
 
@@ -1679,7 +1698,7 @@ theorem Eval.checkMultiSigOperandFailure_result
       result) :
     result = .failure error := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1698,7 +1717,7 @@ theorem Eval.checkMultiSigNullDummyFailure_result
       result) :
     result = .failure .nullDummy := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
       Opcode.usesTimelockScriptNum] <;>
     try omega <;> grind
 
@@ -1717,7 +1736,7 @@ theorem Eval.timelockScriptNumFailure_result
   cases opcode <;> simp_all [Opcode.usesTimelockScriptNum]
   all_goals
     cases evaluated <;>
-      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
         Opcode.usesTimelockScriptNum] <;>
       omega
 
@@ -1737,7 +1756,7 @@ theorem Eval.timelockNegativeFailure_result
   cases opcode <;> simp_all [Opcode.usesTimelockScriptNum]
   all_goals
     cases evaluated <;>
-      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
         Opcode.usesTimelockScriptNum] <;>
       omega
 
@@ -1755,7 +1774,7 @@ theorem Eval.checkSequenceVerifyFailure_result
       (operand :: rest) altStack flags ctx result) :
     result = .failure .checkSequenceVerify := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1773,7 +1792,7 @@ theorem Eval.checkLockTimeVerifyFailure_result
       (operand :: rest) altStack flags ctx result) :
     result = .failure .checkLockTimeVerify := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1790,7 +1809,7 @@ theorem Eval.result_unique
   -- rule must reopen the corresponding determinism obligations.
   induction first generalizing secondResult <;> cases second
   all_goals
-    try simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+    try simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
       Opcode.usesTimelockScriptNum, minimalIfSatisfied, decodeCheckSigAddCount]
     try omega
     try solve_by_elim
@@ -1917,6 +1936,88 @@ theorem Eval.exists_result
                   rcases next stack altStack with ⟨result, evaluated⟩
                   exact ⟨result, .nop rest stack altStack flags ctx result
                     evaluated⟩
+              | OP_NOP1 =>
+                  cases discouraged : flags.discourageUpgradableNops with
+                  | false =>
+                      rcases next stack altStack with ⟨result, evaluated⟩
+                      exact ⟨result, .upgradeableNop .OP_NOP1 rest stack altStack
+                        flags ctx result rfl discouraged evaluated⟩
+                  | true =>
+                      exact ⟨.failure .discourageUpgradableNops,
+                        .upgradeableNop_discouraged .OP_NOP1 rest stack altStack
+                          flags ctx rfl discouraged⟩
+              | OP_NOP4 =>
+                  cases discouraged : flags.discourageUpgradableNops with
+                  | false =>
+                      rcases next stack altStack with ⟨result, evaluated⟩
+                      exact ⟨result, .upgradeableNop .OP_NOP4 rest stack altStack
+                        flags ctx result rfl discouraged evaluated⟩
+                  | true =>
+                      exact ⟨.failure .discourageUpgradableNops,
+                        .upgradeableNop_discouraged .OP_NOP4 rest stack altStack
+                          flags ctx rfl discouraged⟩
+              | OP_NOP5 =>
+                  cases discouraged : flags.discourageUpgradableNops with
+                  | false =>
+                      rcases next stack altStack with ⟨result, evaluated⟩
+                      exact ⟨result, .upgradeableNop .OP_NOP5 rest stack altStack
+                        flags ctx result rfl discouraged evaluated⟩
+                  | true =>
+                      exact ⟨.failure .discourageUpgradableNops,
+                        .upgradeableNop_discouraged .OP_NOP5 rest stack altStack
+                          flags ctx rfl discouraged⟩
+              | OP_NOP6 =>
+                  cases discouraged : flags.discourageUpgradableNops with
+                  | false =>
+                      rcases next stack altStack with ⟨result, evaluated⟩
+                      exact ⟨result, .upgradeableNop .OP_NOP6 rest stack altStack
+                        flags ctx result rfl discouraged evaluated⟩
+                  | true =>
+                      exact ⟨.failure .discourageUpgradableNops,
+                        .upgradeableNop_discouraged .OP_NOP6 rest stack altStack
+                          flags ctx rfl discouraged⟩
+              | OP_NOP7 =>
+                  cases discouraged : flags.discourageUpgradableNops with
+                  | false =>
+                      rcases next stack altStack with ⟨result, evaluated⟩
+                      exact ⟨result, .upgradeableNop .OP_NOP7 rest stack altStack
+                        flags ctx result rfl discouraged evaluated⟩
+                  | true =>
+                      exact ⟨.failure .discourageUpgradableNops,
+                        .upgradeableNop_discouraged .OP_NOP7 rest stack altStack
+                          flags ctx rfl discouraged⟩
+              | OP_NOP8 =>
+                  cases discouraged : flags.discourageUpgradableNops with
+                  | false =>
+                      rcases next stack altStack with ⟨result, evaluated⟩
+                      exact ⟨result, .upgradeableNop .OP_NOP8 rest stack altStack
+                        flags ctx result rfl discouraged evaluated⟩
+                  | true =>
+                      exact ⟨.failure .discourageUpgradableNops,
+                        .upgradeableNop_discouraged .OP_NOP8 rest stack altStack
+                          flags ctx rfl discouraged⟩
+              | OP_NOP9 =>
+                  cases discouraged : flags.discourageUpgradableNops with
+                  | false =>
+                      rcases next stack altStack with ⟨result, evaluated⟩
+                      exact ⟨result, .upgradeableNop .OP_NOP9 rest stack altStack
+                        flags ctx result rfl discouraged evaluated⟩
+                  | true =>
+                      exact ⟨.failure .discourageUpgradableNops,
+                        .upgradeableNop_discouraged .OP_NOP9 rest stack altStack
+                          flags ctx rfl discouraged⟩
+              | OP_NOP10 =>
+                  cases discouraged : flags.discourageUpgradableNops with
+                  | false =>
+                      rcases next stack altStack with ⟨result, evaluated⟩
+                      exact ⟨result, .upgradeableNop .OP_NOP10 rest stack altStack
+                        flags ctx result rfl discouraged evaluated⟩
+                  | true =>
+                      exact ⟨.failure .discourageUpgradableNops,
+                        .upgradeableNop_discouraged .OP_NOP10 rest stack altStack
+                          flags ctx rfl discouraged⟩
+              | OP_RETURN =>
+                  exact ⟨.failure .opReturn, .opReturn rest stack altStack flags ctx⟩
               | OP_IF =>
                   cases stack with
                   | nil =>
@@ -3295,6 +3396,70 @@ theorem Eval.twoSwap_underflow_result {stack altStack : Stack} {script : Script}
     (evaluated : Eval (.op .OP_2SWAP :: script) stack altStack flags ctx result) :
     result = .failure .stackUnderflow :=
   evaluated.result_unique (.stack_underflow .OP_2SWAP 4 script stack altStack flags ctx rfl short)
+
+/-- An allowed upgradeable NOP preserves the suffix relation and both stacks. -/
+theorem Eval.upgradeableNop_cons (opcode : Opcode) (script : Script)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (upgradeable : opcode.isUpgradeableNop = true)
+    (allowed : flags.discourageUpgradableNops = false) (result : ExecResult) :
+    Eval (.op opcode :: script) stack altStack flags ctx result ↔
+      Eval script stack altStack flags ctx result := by
+  constructor
+  · intro evaluated
+    rcases Eval.exists_result script stack altStack flags ctx with ⟨nextResult, next⟩
+    have same := evaluated.result_unique
+      (.upgradeableNop opcode script stack altStack flags ctx nextResult
+        upgradeable allowed next)
+    cases same
+    exact next
+  · exact .upgradeableNop opcode script stack altStack flags ctx result upgradeable allowed
+
+/-- An allowed upgradeable NOP has the exact unchanged-stack result. -/
+theorem Eval.upgradeableNop_result (opcode : Opcode)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (upgradeable : opcode.isUpgradeableNop = true)
+    (allowed : flags.discourageUpgradableNops = false) (result : ExecResult) :
+    Eval [.op opcode] stack altStack flags ctx result ↔
+      result = .success stack altStack := by
+  have canonical : Eval [.op opcode] stack altStack flags ctx (.success stack altStack) :=
+    .upgradeableNop opcode [] stack altStack flags ctx _ upgradeable allowed .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- A discouraged upgradeable NOP terminates before its suffix. -/
+theorem Eval.upgradeableNop_failure_result (opcode : Opcode) (script : Script)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (upgradeable : opcode.isUpgradeableNop = true)
+    (discouraged : flags.discourageUpgradableNops = true) (result : ExecResult) :
+    Eval (.op opcode :: script) stack altStack flags ctx result ↔
+      result = .failure .discourageUpgradableNops := by
+  have canonical : Eval (.op opcode :: script) stack altStack flags ctx
+      (.failure .discourageUpgradableNops) :=
+    .upgradeableNop_discouraged opcode script stack altStack flags ctx upgradeable discouraged
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- Active RETURN determines the terminal result for every stack and suffix. -/
+theorem Eval.opReturn_result (script : Script) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
+    Eval (.op .OP_RETURN :: script) stack altStack flags ctx result ↔
+      result = .failure .opReturn := by
+  have canonical : Eval (.op .OP_RETURN :: script) stack altStack flags ctx
+      (.failure .opReturn) := .opReturn script stack altStack flags ctx
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
 
 /-- A decoded in-range index determines the exact OP_PICK result. -/
 theorem Eval.pick_result (operand top : StackElement) (index : Nat)

@@ -89,6 +89,12 @@ def evaluate (oracle : CryptoOracle) (script : Script)
       evaluate oracle rest (scriptNum value :: stack) altStack flags ctx
   | .op .OP_NOP :: rest =>
       evaluate oracle rest stack altStack flags ctx
+  | .op .OP_NOP1 :: rest | .op .OP_NOP4 :: rest | .op .OP_NOP5 :: rest |
+      .op .OP_NOP6 :: rest | .op .OP_NOP7 :: rest | .op .OP_NOP8 :: rest |
+      .op .OP_NOP9 :: rest | .op .OP_NOP10 :: rest =>
+      if flags.discourageUpgradableNops then .failure .discourageUpgradableNops
+      else evaluate oracle rest stack altStack flags ctx
+  | .op .OP_RETURN :: _ => .failure .opReturn
   | .op .OP_IF :: rest =>
       match stack with
       | [] => .failure .stackUnderflow
@@ -1394,6 +1400,41 @@ theorem evaluate_binaryScriptNums_decode_failure (oracle : CryptoOracle) (opcode
       .failure error := by
   cases opcode <;> simp_all [Opcode.usesBinaryScriptNums, evaluate]
 
+/-- Upgradeable NOPs either stop on policy or evaluate the suffix unchanged. -/
+theorem evaluate_upgradeableNop_cons (oracle : CryptoOracle) (opcode : Opcode)
+    (script : Script) (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (upgradeable : opcode.isUpgradeableNop = true) :
+    evaluate oracle (.op opcode :: script) stack altStack flags ctx =
+      if flags.discourageUpgradableNops then .failure .discourageUpgradableNops
+      else evaluate oracle script stack altStack flags ctx := by
+  cases opcode <;> simp_all [Opcode.isUpgradeableNop, evaluate]
+
+/-- A single upgradeable NOP retains both stacks when policy permits it. -/
+theorem evaluate_upgradeableNop (oracle : CryptoOracle) (opcode : Opcode)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (upgradeable : opcode.isUpgradeableNop = true) :
+    evaluate oracle [.op opcode] stack altStack flags ctx =
+      if flags.discourageUpgradableNops then .failure .discourageUpgradableNops
+      else .success stack altStack := by
+  rw [evaluate_upgradeableNop_cons oracle opcode [] stack altStack flags ctx upgradeable]
+  simp [evaluate]
+
+/-- The policy error precedes every instruction in the suffix. -/
+theorem evaluate_upgradeableNop_failure (oracle : CryptoOracle) (opcode : Opcode)
+    (script : Script) (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (upgradeable : opcode.isUpgradeableNop = true)
+    (discouraged : flags.discourageUpgradableNops = true) :
+    evaluate oracle (.op opcode :: script) stack altStack flags ctx =
+      .failure .discourageUpgradableNops := by
+  simp [evaluate_upgradeableNop_cons oracle opcode script stack altStack flags ctx upgradeable,
+    discouraged]
+
+/-- Active RETURN fails without consulting either stack or its suffix. -/
+theorem evaluate_opReturn (oracle : CryptoOracle) (script : Script)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle (.op .OP_RETURN :: script) stack altStack flags ctx = .failure .opReturn := by
+  simp [evaluate]
+
 /-- An oracle agreeing with the abstract model computes the result of every
     relational `Eval` derivation. -/
 theorem evaluate_eq_of_eval
@@ -1411,10 +1452,16 @@ theorem evaluate_eq_of_eval
   induction evaluated <;>
     simp_all [evaluate, CryptoOracle.RefinesModel,
       Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
-      Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.usesTimelockScriptNum, minimalIfSatisfied,
+      Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop, Opcode.usesTimelockScriptNum, minimalIfSatisfied,
       boolToElement, decodeCheckSigAddCount] <;>
     try omega <;>
     try grind
+  case upgradeableNop =>
+    rename_i opcode rest stack alt flags ctx result upgradeable allowed next ih
+    cases opcode <;> simp_all [evaluate]
+  case upgradeableNop_discouraged =>
+    rename_i opcode rest stack alt flags ctx upgradeable discouraged
+    cases opcode <;> simp_all [evaluate]
   case stack_underflow =>
     rename_i opcode required rest stack alt flags ctx arity underflow
     cases opcode <;> cases stack <;>

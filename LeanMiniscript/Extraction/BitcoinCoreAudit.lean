@@ -44,6 +44,8 @@ def CoreFixtureUnsupported.category : CoreFixtureUnsupported → String
   | .witnessCase => "witness"
   | .scriptSig _ => "script-sig-source"
   | .scriptPubKey _ => "script-pubkey-source"
+  | .legacyScriptSig _ => "legacy-script-sig"
+  | .legacyScriptPubKey _ => "legacy-script-pubkey"
   | .unsupportedFlag _ => "flag"
   | .p2shEvaluation => "p2sh"
   | .signatureOpcode => "signature-result"
@@ -67,6 +69,13 @@ def CoreScriptSourceError.detailCategory : CoreScriptSourceError → String
       "unsupported-opcode-byte.0x" ++ byteHex byte
   | .decoderFuelExhausted _ => "decoder-fuel-exhausted"
 
+/-- Explicit exclusions at the raw legacy interpreter boundary. -/
+def CoreLegacyUnsupported.detailCategory : CoreLegacyUnsupported → String
+  | .opcode _ byte => "unsupported-opcode-byte.0x" ++ byteHex byte
+  | .signatureOpcode => "signature-result"
+  | .scriptSize _ => "script-size"
+  | .opcodeCount _ => "opcode-count"
+
 /-- Fine-grained category for prioritizing the next model extension. -/
 def CoreFixtureUnsupported.detailCategory : CoreFixtureUnsupported → String
   | .witnessCase => "witness"
@@ -74,6 +83,8 @@ def CoreFixtureUnsupported.detailCategory : CoreFixtureUnsupported → String
       "script-sig-source." ++ error.detailCategory
   | .scriptPubKey error =>
       "script-pubkey-source." ++ error.detailCategory
+  | .legacyScriptSig reason => "legacy-script-sig." ++ reason.detailCategory
+  | .legacyScriptPubKey reason => "legacy-script-pubkey." ++ reason.detailCategory
   | .unsupportedFlag flag => "flag." ++ flag
   | .p2shEvaluation => "p2sh"
   | .signatureOpcode => "signature-result"

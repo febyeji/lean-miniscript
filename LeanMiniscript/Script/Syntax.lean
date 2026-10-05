@@ -9,6 +9,15 @@ namespace LeanMiniscript.Script
 inductive Opcode where
   -- Flow control
   | OP_NOP
+  | OP_NOP1
+  | OP_NOP4
+  | OP_NOP5
+  | OP_NOP6
+  | OP_NOP7
+  | OP_NOP8
+  | OP_NOP9
+  | OP_NOP10
+  | OP_RETURN
   | OP_IF
   | OP_NOTIF
   | OP_ELSE

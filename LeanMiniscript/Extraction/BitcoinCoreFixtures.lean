@@ -1,6 +1,7 @@
 import Lean.Data.Json
 import LeanMiniscript.Extraction.RefInterp
 import LeanMiniscript.Script.Codec.Deserialization
+import LeanMiniscript.Extraction.BitcoinCoreLegacyScript
 
 namespace LeanMiniscript.Extraction
 
@@ -202,6 +203,15 @@ private def decodeRawHexToken (token : String) :
 /-- Map the modeled opcode names used by Bitcoin Core fixture sources. -/
 def opcodeFromCoreName? : String → Option Opcode
   | "NOP" => some .OP_NOP
+  | "NOP1" => some .OP_NOP1
+  | "NOP4" => some .OP_NOP4
+  | "NOP5" => some .OP_NOP5
+  | "NOP6" => some .OP_NOP6
+  | "NOP7" => some .OP_NOP7
+  | "NOP8" => some .OP_NOP8
+  | "NOP9" => some .OP_NOP9
+  | "NOP10" => some .OP_NOP10
+  | "RETURN" => some .OP_RETURN
   | "IF" => some .OP_IF
   | "NOTIF" => some .OP_NOTIF
   | "ELSE" => some .OP_ELSE
@@ -268,6 +278,32 @@ def deserializeCoreScriptBytes (bytes : ByteArray) :
     Except CoreScriptSourceError Script :=
   (deserializeScript bytes).mapError CoreScriptSourceError.ofDeserialization
 
+/-- Legacy-only source aliases compile to their literal bytes, while the
+shared Script AST continues to reject the corresponding unmodeled opcodes. -/
+private def coreLegacyOpcodeByteFromName? : String → Option UInt8
+  | "RESERVED" => some 0x50
+  | "VER" => some 0x62
+  | "VERIF" => some 0x65
+  | "VERNOTIF" => some 0x66
+  | "CAT" => some 0x7e
+  | "SUBSTR" => some 0x7f
+  | "LEFT" => some 0x80
+  | "RIGHT" => some 0x81
+  | "INVERT" => some 0x83
+  | "AND" => some 0x84
+  | "OR" => some 0x85
+  | "XOR" => some 0x86
+  | "RESERVED1" => some 0x89
+  | "RESERVED2" => some 0x8a
+  | "2MUL" => some 0x8d
+  | "2DIV" => some 0x8e
+  | "MUL" => some 0x95
+  | "DIV" => some 0x96
+  | "MOD" => some 0x97
+  | "LSHIFT" => some 0x98
+  | "RSHIFT" => some 0x99
+  | _ => none
+
 private def compileCoreToken : CoreSourceToken →
     Except CoreScriptSourceError ByteArray
   | .quoted text => (serializePushData text.toUTF8).mapError .serialization
@@ -281,7 +317,10 @@ private def compileCoreToken : CoreSourceToken →
           | none =>
               match opcodeFromCoreName? token with
               | some opcode => .ok ⟨#[opcodeByte opcode]⟩
-              | none => .error (.unsupportedToken token)
+              | none =>
+                  match coreLegacyOpcodeByteFromName? token with
+                  | some byte => .ok ⟨#[byte]⟩
+                  | none => .error (.unsupportedToken token)
 
 /-- Compile Core's fixture tokens to the exact byte stream that its test
     utility feeds to the Script interpreter. -/
@@ -304,6 +343,8 @@ inductive CoreFixtureUnsupported where
   | witnessCase
   | scriptSig (error : CoreScriptSourceError)
   | scriptPubKey (error : CoreScriptSourceError)
+  | legacyScriptSig (reason : CoreLegacyUnsupported)
+  | legacyScriptPubKey (reason : CoreLegacyUnsupported)
   | unsupportedFlag (flag : String)
   | p2shEvaluation
   | signatureOpcode
@@ -319,6 +360,8 @@ structure SupportedCoreFixture where
   scriptSig : Script
   scriptPubKey : Script
   flags : ScriptFlags
+  /-- Raw legacy execution is prepared only when a source cannot enter Script. -/
+  rawPrograms : Option (CoreLegacyProgram × CoreLegacyProgram) := none
 
 private def coreFlagNames (source : String) : List String :=
   if source.trimAscii.isEmpty then []
@@ -339,8 +382,8 @@ private def isP2SHScript : Script → Bool
   | [.op .OP_HASH160, .pushData hash, .op .OP_EQUAL] => hash.size == 20
   | _ => false
 
-/-- `DISCOURAGE_UPGRADABLE_NOPS` does not apply to `OP_NOP`; NOP1 through
-    NOP10 remain rejected at the source boundary. -/
+/-- Accept flags whose effects are modeled or whose affected operations are
+excluded by the subsequent fixture admission checks. -/
 private def firstUnsupportedFlag (names : List String) : Option String :=
   names.find? fun flag =>
     !["P2SH", "STRICTENC", "DERSIG", "LOW_S", "MINIMALDATA", "MINIMALIF", "NULLDUMMY", "NULLFAIL",
@@ -355,6 +398,7 @@ private def flagsForCoreFixture (names : List String) : ScriptFlags where
   strictEncoding := names.contains "STRICTENC"
   derSig := names.contains "DERSIG"
   lowS := names.contains "LOW_S"
+  discourageUpgradableNops := names.contains "DISCOURAGE_UPGRADABLE_NOPS"
 
 private def sourceUsesMinimalPushes (source : String) (script : Script) : Bool :=
   match coreScriptSourceBytes source, serializeScript script with
@@ -393,6 +437,9 @@ def coreScriptErrorTag : ScriptError → String
   | .tapscriptFlags => "MODEL_TAPSCRIPT_FLAGS"
   | .discourageUpgradablePubkeyType => "DISCOURAGE_UPGRADABLE_PUBKEYTYPE"
   | .badOpcode => "BAD_OPCODE"
+  | .opReturn => "OP_RETURN"
+  | .disabledOpcode => "DISABLED_OPCODE"
+  | .discourageUpgradableNops => "DISCOURAGE_UPGRADABLE_NOPS"
   | .tapscriptCheckMultiSig => "TAPSCRIPT_CHECKMULTISIG"
   | .equalVerify => "EQUALVERIFY"
   | .numEqualVerify => "NUMEQUALVERIFY"
@@ -406,7 +453,8 @@ def coreScriptErrorTag : ScriptError → String
   | .unbalancedConditional => "UNBALANCED_CONDITIONAL"
 
 private def supportedExpectedError : String → Bool
-  | "OK" | "EVAL_FALSE" | "INVALID_STACK_OPERATION" |
+  | "OK" | "EVAL_FALSE" | "BAD_OPCODE" | "OP_RETURN" | "DISABLED_OPCODE" |
+      "DISCOURAGE_UPGRADABLE_NOPS" | "INVALID_STACK_OPERATION" |
       "INVALID_ALTSTACK_OPERATION" | "SCRIPTNUM" | "MINIMALDATA" |
       "PUBKEY_COUNT" | "SIG_COUNT" | "NEGATIVE_LOCKTIME" |
       "SIG_NULLDUMMY" | "SIG_NULLFAIL" | "SIG_DER" | "SIG_HIGH_S" |
@@ -482,14 +530,11 @@ private def coreErrorBeforeSignature (scriptSig scriptPubKey : Script)
     affected semantics are absent: `P2SH` requires a non-P2SH scriptPubKey,
     while a signature opcode is admitted only for an error that must occur
     before its crypto callback. Every other unmodeled condition is reported. -/
-def prepareCoreFixture (test : CoreScriptTest) :
+private def prepareTypedCoreFixture (test : CoreScriptTest)
+    (scriptSig scriptPubKey : Script) :
     Except CoreFixtureUnsupported SupportedCoreFixture := do
-  if test.witness.isSome then throw .witnessCase
   if !supportedExpectedError test.expectedError then
     throw (.expectedError test.expectedError)
-  let scriptSig ← (parseCoreScriptSource test.scriptSigSource).mapError .scriptSig
-  let scriptPubKey ←
-    (parseCoreScriptSource test.scriptPubKeySource).mapError .scriptPubKey
   let flagNames := coreFlagNames test.flagSource
   if let some flag := firstUnsupportedFlag flagNames then
     throw (.unsupportedFlag flag)
@@ -518,6 +563,51 @@ def prepareCoreFixture (test : CoreScriptTest) :
     flags := flagsForCoreFixture flagNames
   }
 
+/-- Raw legacy execution supports source-order push and combined-stack errors.
+The typed fixture path retains its existing execution boundary. -/
+private def supportedRawExpectedError (tag : String) : Bool :=
+  supportedExpectedError tag || tag == "PUSH_SIZE" || tag == "STACK_SIZE"
+
+private def prepareRawCoreFixture (test : CoreScriptTest) :
+    Except CoreFixtureUnsupported SupportedCoreFixture := do
+  let sigBytes ← (coreScriptSourceBytes test.scriptSigSource).mapError .scriptSig
+  let pubKeyBytes ← (coreScriptSourceBytes test.scriptPubKeySource).mapError .scriptPubKey
+  let scriptSig ← (decodeCoreLegacyScript sigBytes).mapError .legacyScriptSig
+  let scriptPubKey ← (decodeCoreLegacyScript pubKeyBytes).mapError .legacyScriptPubKey
+  let flagNames := coreFlagNames test.flagSource
+  if let some flag := firstUnsupportedFlag flagNames then throw (.unsupportedFlag flag)
+  if flagNames.contains "P2SH" && scriptPubKey.isP2SH then throw .p2shEvaluation
+  if flagNames.contains "MINIMALDATA" &&
+      (scriptSig.hasNonMinimalPush || scriptPubKey.hasNonMinimalPush) then
+    throw .nonMinimalPushEncoding
+  if (scriptSig.containsOpcode .OP_CHECKLOCKTIMEVERIFY ||
+      scriptPubKey.containsOpcode .OP_CHECKLOCKTIMEVERIFY) &&
+      !flagNames.contains "CHECKLOCKTIMEVERIFY" then
+    throw (.inactiveTimelockOpcode "CHECKLOCKTIMEVERIFY")
+  if (scriptSig.containsOpcode .OP_CHECKSEQUENCEVERIFY ||
+      scriptPubKey.containsOpcode .OP_CHECKSEQUENCEVERIFY) &&
+      !flagNames.contains "CHECKSEQUENCEVERIFY" then
+    throw (.inactiveTimelockOpcode "CHECKSEQUENCEVERIFY")
+  return {
+    source := test
+    scriptSig := (parseCoreScriptSource test.scriptSigSource).toOption.getD []
+    scriptPubKey := (parseCoreScriptSource test.scriptPubKeySource).toOption.getD []
+    flags := flagsForCoreFixture flagNames
+    rawPrograms := some (scriptSig, scriptPubKey)
+  }
+
+/-- Prepare typed fixtures as before, with a separate raw legacy fallback for
+source-decode errors. Witness, P2SH, signature dependence, unsupported flags,
+and unmodeled legacy limits remain explicitly excluded. -/
+def prepareCoreFixture (test : CoreScriptTest) :
+    Except CoreFixtureUnsupported SupportedCoreFixture := do
+  if test.witness.isSome then throw .witnessCase
+  if !supportedRawExpectedError test.expectedError then
+    throw (.expectedError test.expectedError)
+  match parseCoreScriptSource test.scriptSigSource, parseCoreScriptSource test.scriptPubKeySource with
+  | .ok scriptSig, .ok scriptPubKey => prepareTypedCoreFixture test scriptSig scriptPubKey
+  | _, _ => prepareRawCoreFixture test
+
 /-- Observable result at Bitcoin Core's `VerifyScript` boundary. `none` is a
     successful execution whose final stack is empty or false. -/
 inductive CoreFixtureOutcome where
@@ -544,15 +634,25 @@ def coreFixtureTxContext : TxContext where
     as it is at Core's two `EvalScript` boundaries. -/
 def runCoreFixture (oracle : CryptoOracle)
     (fixture : SupportedCoreFixture) : CoreFixtureOutcome :=
-  match execScript oracle fixture.scriptSig [] fixture.flags coreFixtureTxContext with
-  | .failure error => .rejected (some error)
-  | .success stack _ =>
-      match execScript oracle fixture.scriptPubKey stack fixture.flags
-          coreFixtureTxContext with
+  match fixture.rawPrograms with
+  | some (scriptSig, scriptPubKey) =>
+      match runCoreLegacyScript oracle scriptSig [] fixture.flags coreFixtureTxContext with
+      | .error error => .rejected (some error)
+      | .ok stack =>
+          match runCoreLegacyScript oracle scriptPubKey stack fixture.flags coreFixtureTxContext with
+          | .error error => .rejected (some error)
+          | .ok [] => .rejected none
+          | .ok (top :: _) => if castToBool top then .accepted else .rejected none
+  | none =>
+      match execScript oracle fixture.scriptSig [] fixture.flags coreFixtureTxContext with
       | .failure error => .rejected (some error)
-      | .success [] _ => .rejected none
-      | .success (top :: _) _ =>
-          if castToBool top then .accepted else .rejected none
+      | .success stack _ =>
+          match execScript oracle fixture.scriptPubKey stack fixture.flags
+              coreFixtureTxContext with
+          | .failure error => .rejected (some error)
+          | .success [] _ => .rejected none
+          | .success (top :: _) _ =>
+              if castToBool top then .accepted else .rejected none
 
 /-- Import, conservatively classify, execute, and compare one Core fixture. -/
 def checkCoreFixture (oracle : CryptoOracle) (test : CoreScriptTest) :

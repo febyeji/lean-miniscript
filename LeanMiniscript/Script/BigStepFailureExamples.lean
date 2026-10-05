@@ -21,6 +21,15 @@ structure OpcodeArityFixture where
     encoded in the stack. -/
 def opcodeArityFixtures : List OpcodeArityFixture := [
   ⟨.OP_NOP, some 0⟩,
+  ⟨.OP_NOP1, some 0⟩,
+  ⟨.OP_NOP4, some 0⟩,
+  ⟨.OP_NOP5, some 0⟩,
+  ⟨.OP_NOP6, some 0⟩,
+  ⟨.OP_NOP7, some 0⟩,
+  ⟨.OP_NOP8, some 0⟩,
+  ⟨.OP_NOP9, some 0⟩,
+  ⟨.OP_NOP10, some 0⟩,
+  ⟨.OP_RETURN, some 0⟩,
   ⟨.OP_IF, some 1⟩,
   ⟨.OP_NOTIF, some 1⟩,
   ⟨.OP_ELSE, some 0⟩,

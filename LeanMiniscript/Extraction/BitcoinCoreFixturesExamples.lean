@@ -19,7 +19,10 @@ private def rejectingOracle : CryptoOracle :=
     (fun _sig _pubkey _sigHash => false)
 
 private def coreOpcodeNameFixtures : List (String × Opcode) :=
-  [("NOP", .OP_NOP), ("IF", .OP_IF), ("NOTIF", .OP_NOTIF),
+  [("NOP1", .OP_NOP1), ("NOP4", .OP_NOP4), ("NOP5", .OP_NOP5), ("NOP6", .OP_NOP6),
+   ("NOP7", .OP_NOP7), ("NOP8", .OP_NOP8), ("NOP9", .OP_NOP9), ("NOP10", .OP_NOP10),
+   ("RETURN", .OP_RETURN),
+   ("NOP", .OP_NOP), ("IF", .OP_IF), ("NOTIF", .OP_NOTIF),
    ("ELSE", .OP_ELSE),
    ("ENDIF", .OP_ENDIF), ("2DROP", .OP_2DROP), ("2DUP", .OP_2DUP),
    ("3DUP", .OP_3DUP), ("2OVER", .OP_2OVER), ("2ROT", .OP_2ROT),
@@ -87,7 +90,10 @@ example : ["3DUP", "0x6f"].all (fun source =>
   native_decide
 
 private def coreErrorTagFixtures : List (ScriptError × String) :=
-  [(.stackUnderflow, "INVALID_STACK_OPERATION"),
+  [(.opReturn, "OP_RETURN"),
+   (.disabledOpcode, "DISABLED_OPCODE"),
+   (.discourageUpgradableNops, "DISCOURAGE_UPGRADABLE_NOPS"),
+   (.stackUnderflow, "INVALID_STACK_OPERATION"),
    (.altStackUnderflow, "INVALID_ALTSTACK_OPERATION"),
    (.scriptNumOverflow, "SCRIPTNUM"),
    (.scriptNumNonMinimal, "SCRIPTNUM"),
