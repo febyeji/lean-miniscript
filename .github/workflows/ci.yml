@@ -20,3 +20,15 @@ jobs:
         with:
           auto-config: false
           build: true
+      - name: Test Core audit gate
+        run: python3 -B -m unittest discover -s scripts -p 'test_check_core_fixture_audit.py' -v
+      - name: Audit pinned Bitcoin Core fixtures
+        shell: bash
+        run: python3 scripts/check_core_fixture_audit.py 2>&1 | tee core-fixture-audit.log
+      - name: Upload Core audit report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: core-fixture-audit
+          path: core-fixture-audit.log
+          if-no-files-found: ignore
