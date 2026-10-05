@@ -45,8 +45,10 @@ file. The report retains unsupported rows and their reasons.
 A separate legacy byte interpreter handles reserved and disabled opcodes,
 invalid bytes, and truncated pushes in source order. Its raw fallback excludes
 witness and P2SH evaluation, decoded signature operations, scripts over 10,000
-bytes or 201 counted opcodes, and nonminimal pushes under MINIMALDATA. Typed
-fixture execution retains its existing resource-free boundary. These fixture
+bytes or 201 counted opcodes. Original nonminimal push encodings use this
+interpreter when MINIMALDATA is set: active pushes fail after the push-size
+check, while inactive pushes retain their branch behavior. Typed fixture
+execution retains its existing resource-free boundary. These fixture
 extensions preserve the canonical Tapscript API's OP_SUCCESSx boundary.
 
 ## Related Work

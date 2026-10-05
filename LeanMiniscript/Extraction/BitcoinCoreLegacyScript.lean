@@ -145,14 +145,6 @@ def decodeCoreLegacyScript (bytes : ByteArray) :
   if count > 201 then throw (.opcodeCount count)
   return ⟨instructions⟩
 
-/-- The raw fixture preparer rejects nonminimal pushes whenever MINIMALDATA is
-requested, including pushes in inactive code, matching its conservative AST
-admission rule. Execution is reached only after this preparation check. -/
-def CoreLegacyProgram.hasNonMinimalPush (program : CoreLegacyProgram) : Bool :=
-  program.instructions.any fun
-    | .modeled _ minimal => !minimal
-    | .failure _ _ _ => false
-
 /-- Identify a modeled opcode retained in a prepared raw program. -/
 def CoreLegacyProgram.containsOpcode (program : CoreLegacyProgram) (wanted : Opcode) : Bool :=
   program.instructions.any fun
@@ -168,18 +160,65 @@ def CoreLegacyProgram.isP2SH (program : CoreLegacyProgram) : Bool :=
 
 /-- One instruction in the legacy-only fixture path. Unconditional errors are
 visited even in inactive branches; skipped reserved bytes still check stack
-size. Modeled instructions retain the shared runtime's error order. -/
+size. Original push minimality is enforced only in active code, after the
+unconditional push-size check and before the post-instruction stack check. -/
 def coreLegacyStep (oracle : CryptoOracle) (instruction : CoreLegacyInstruction)
     (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
     Except ScriptError RuntimeState :=
   match instruction with
+  | .modeled (.pushData data) minimal =>
+      if data.size > maxScriptElementSize then .error .pushSize
+      else if state.conditions.all id && flags.minimalData && !minimal then .error .minimalData
+      else runtimeStep oracle (.pushData data) state flags { ctx with sigVersion := .base }
   | .modeled element _ => runtimeStep oracle element state flags { ctx with sigVersion := .base }
   | .failure error activeOnly _ =>
       if !activeOnly || state.conditions.all id then .error error
       else checkRuntimeStack state
 
+/-- Oversized retained pushes fail before the minimality or branch checks. -/
+theorem coreLegacyStep_pushSize (oracle : CryptoOracle) (data : ByteArray)
+    (minimal : Bool) (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (oversized : data.size > maxScriptElementSize) :
+    coreLegacyStep oracle (.modeled (.pushData data) minimal) state flags ctx =
+      .error .pushSize := by
+  simp [coreLegacyStep, oversized]
+
+/-- A bounded, active, nonminimal push fails before execution and stack growth. -/
+theorem coreLegacyStep_nonMinimalPush (oracle : CryptoOracle) (data : ByteArray)
+    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (bounded : data.size ≤ maxScriptElementSize)
+    (active : state.conditions.all id = true) (enforced : flags.minimalData = true) :
+    coreLegacyStep oracle (.modeled (.pushData data) false) state flags ctx =
+      .error .minimalData := by
+  simp [coreLegacyStep, Nat.not_lt.mpr bounded, active, enforced]
+
+/-- Inactive bounded pushes retain the shared runtime's branch and stack checks. -/
+theorem coreLegacyStep_inactivePush (oracle : CryptoOracle) (data : ByteArray)
+    (minimal : Bool) (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (bounded : data.size ≤ maxScriptElementSize)
+    (inactive : state.conditions.all id = false) :
+    coreLegacyStep oracle (.modeled (.pushData data) minimal) state flags ctx =
+      runtimeStep oracle (.pushData data) state flags { ctx with sigVersion := .base } := by
+  simp [coreLegacyStep, Nat.not_lt.mpr bounded, inactive]
+
+/-- Disabling MINIMALDATA leaves bounded pushes to the shared runtime. -/
+theorem coreLegacyStep_minimalDataDisabled (oracle : CryptoOracle) (data : ByteArray)
+    (minimal : Bool) (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (bounded : data.size ≤ maxScriptElementSize) (disabled : flags.minimalData = false) :
+    coreLegacyStep oracle (.modeled (.pushData data) minimal) state flags ctx =
+      runtimeStep oracle (.pushData data) state flags { ctx with sigVersion := .base } := by
+  simp [coreLegacyStep, Nat.not_lt.mpr bounded, disabled]
+
+/-- A minimal encoding reaches the shared runtime regardless of MINIMALDATA. -/
+theorem coreLegacyStep_minimalPush (oracle : CryptoOracle) (data : ByteArray)
+    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (bounded : data.size ≤ maxScriptElementSize) :
+    coreLegacyStep oracle (.modeled (.pushData data) true) state flags ctx =
+      runtimeStep oracle (.pushData data) state flags { ctx with sigVersion := .base } := by
+  simp [coreLegacyStep, Nat.not_lt.mpr bounded]
+
 /-- Execute prepared instructions in source order under the BASE signature
-version. The fixture preparer separately enforces retained push minimality. -/
+version, retaining branch-sensitive original push minimality. -/
 def evaluateCoreLegacy (oracle : CryptoOracle) : List CoreLegacyInstruction → RuntimeState →
     ScriptFlags → TxContext → Except ScriptError RuntimeState
   | [], state, _, _ =>

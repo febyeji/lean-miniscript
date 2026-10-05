@@ -360,7 +360,7 @@ structure SupportedCoreFixture where
   scriptSig : Script
   scriptPubKey : Script
   flags : ScriptFlags
-  /-- Raw legacy execution is prepared only when a source cannot enter Script. -/
+  /-- Raw legacy execution retains source errors and original push encodings. -/
   rawPrograms : Option (CoreLegacyProgram × CoreLegacyProgram) := none
 
 private def coreFlagNames (source : String) : List String :=
@@ -417,6 +417,7 @@ def coreScriptErrorTag : ScriptError → String
   | .evalFalse => "EVAL_FALSE"
   | .scriptNumOverflow => "SCRIPTNUM"
   | .scriptNumNonMinimal => "SCRIPTNUM"
+  | .minimalData => "MINIMALDATA"
   | .pubkeyCount => "PUBKEY_COUNT"
   | .signatureCount => "SIG_COUNT"
   | .negativeLocktime => "NEGATIVE_LOCKTIME"
@@ -533,17 +534,18 @@ private def coreErrorBeforeSignature (scriptSig scriptPubKey : Script)
 private def prepareTypedCoreFixture (test : CoreScriptTest)
     (scriptSig scriptPubKey : Script) :
     Except CoreFixtureUnsupported SupportedCoreFixture := do
-  if !supportedExpectedError test.expectedError then
-    throw (.expectedError test.expectedError)
   let flagNames := coreFlagNames test.flagSource
-  if let some flag := firstUnsupportedFlag flagNames then
-    throw (.unsupportedFlag flag)
-  if flagNames.contains "P2SH" && isP2SHScript scriptPubKey then
-    throw .p2shEvaluation
+  -- Preserve source encodings in the raw path, including its PUSH_SIZE errors.
   if flagNames.contains "MINIMALDATA" &&
       (!sourceUsesMinimalPushes test.scriptSigSource scriptSig ||
         !sourceUsesMinimalPushes test.scriptPubKeySource scriptPubKey) then
     throw .nonMinimalPushEncoding
+  if !supportedExpectedError test.expectedError then
+    throw (.expectedError test.expectedError)
+  if let some flag := firstUnsupportedFlag flagNames then
+    throw (.unsupportedFlag flag)
+  if flagNames.contains "P2SH" && isP2SHScript scriptPubKey then
+    throw .p2shEvaluation
   if scriptContainsSignature scriptSig || scriptContainsSignature scriptPubKey then
     match coreErrorBeforeSignature scriptSig scriptPubKey (flagsForCoreFixture flagNames) with
     | none => throw .signatureOpcode
@@ -577,9 +579,6 @@ private def prepareRawCoreFixture (test : CoreScriptTest) :
   let flagNames := coreFlagNames test.flagSource
   if let some flag := firstUnsupportedFlag flagNames then throw (.unsupportedFlag flag)
   if flagNames.contains "P2SH" && scriptPubKey.isP2SH then throw .p2shEvaluation
-  if flagNames.contains "MINIMALDATA" &&
-      (scriptSig.hasNonMinimalPush || scriptPubKey.hasNonMinimalPush) then
-    throw .nonMinimalPushEncoding
   if (scriptSig.containsOpcode .OP_CHECKLOCKTIMEVERIFY ||
       scriptPubKey.containsOpcode .OP_CHECKLOCKTIMEVERIFY) &&
       !flagNames.contains "CHECKLOCKTIMEVERIFY" then
@@ -596,16 +595,19 @@ private def prepareRawCoreFixture (test : CoreScriptTest) :
     rawPrograms := some (scriptSig, scriptPubKey)
   }
 
-/-- Prepare typed fixtures as before, with a separate raw legacy fallback for
-source-decode errors. Witness, P2SH, signature dependence, unsupported flags,
-and unmodeled legacy limits remain explicitly excluded. -/
+/-- Prepare typed fixtures with a raw legacy fallback for source-decode errors
+and original nonminimal push encodings. Witness, P2SH, signature dependence,
+unsupported flags, and unmodeled legacy limits remain explicitly excluded. -/
 def prepareCoreFixture (test : CoreScriptTest) :
     Except CoreFixtureUnsupported SupportedCoreFixture := do
   if test.witness.isSome then throw .witnessCase
   if !supportedRawExpectedError test.expectedError then
     throw (.expectedError test.expectedError)
   match parseCoreScriptSource test.scriptSigSource, parseCoreScriptSource test.scriptPubKeySource with
-  | .ok scriptSig, .ok scriptPubKey => prepareTypedCoreFixture test scriptSig scriptPubKey
+  | .ok scriptSig, .ok scriptPubKey =>
+      match prepareTypedCoreFixture test scriptSig scriptPubKey with
+      | .error .nonMinimalPushEncoding => prepareRawCoreFixture test
+      | result => result
   | _, _ => prepareRawCoreFixture test
 
 /-- Observable result at Bitcoin Core's `VerifyScript` boundary. `none` is a
