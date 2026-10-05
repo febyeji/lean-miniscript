@@ -341,12 +341,12 @@ example : (disabledFixtures ++ [("RESERVED", "0x50"), ("VER", "0x62"),
       (parseCoreScriptSource source).toOption.isNone) = true := by
   native_decide
 
--- Original nonminimal pushes remain explicitly excluded, even before unreachable errors.
-example : (["0x4c0101 DROP 0 IF 0xff ENDIF 1", "RETURN 0x4c0101 0xff"] :
-    List String).all (fun script =>
-      match checkCoreFixture rejectingFixtureOracle (fixture "" script "OK" "MINIMALDATA") with
-      | .error .nonMinimalPushEncoding => true
-      | _ => false) = true := by
+-- Source-order execution distinguishes a nonminimal push from an earlier RETURN.
+example : ([("0x4c0101 DROP 0 IF 0xff ENDIF 1", "MINIMALDATA"),
+    ("RETURN 0x4c0101 0xff", "OP_RETURN")] : List (String × String)).all
+    (fun (script, error) =>
+      (checkCoreFixture rejectingFixtureOracle
+        (fixture "" script error "MINIMALDATA")).toOption == some true) = true := by
   native_decide
 
 -- The bounded raw fallback retains exact script-size and opcode-count exclusions.
