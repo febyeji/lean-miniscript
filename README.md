@@ -42,11 +42,15 @@ signature, annex, resource, decoding, and error-precedence regressions.
 supported fixtures against the result tags in the pinned Bitcoin Core fixture
 file. The report retains unsupported rows and their reasons.
 
-A separate legacy byte interpreter handles reserved and disabled opcodes,
-invalid bytes, and truncated pushes in source order. Its raw fallback excludes
-witness and P2SH evaluation, decoded signature operations, scripts over 10,000
-bytes or 201 counted opcodes, and nonminimal pushes under MINIMALDATA. Typed
-fixture execution retains its existing resource-free boundary. These fixture
+A legacy byte interpreter handles reserved and disabled opcodes, invalid bytes,
+and truncated pushes in source order. Fixture execution checks the original
+10,000-byte script limit, the 201-operation limit (including active multisig key
+counts and inactive opcodes), 520-byte pushes, and 1,000 combined stack items.
+Preparation excludes witness and P2SH evaluation, unmodeled operations and flags,
+nonminimal pushes under MINIMALDATA, and execution paths that reach a signature
+verifier. Zero-signature multisig and failures before a verifier call are
+compared. Admission and execution use the same concrete Lean hash functions;
+caller-supplied signature callbacks remain outside admitted paths. These fixture
 extensions preserve the canonical Tapscript API's OP_SUCCESSx boundary.
 
 ## Related Work

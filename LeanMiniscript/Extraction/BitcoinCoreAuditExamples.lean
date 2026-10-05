@@ -710,7 +710,7 @@ example : ((auditCoreScriptTests rejectingFixtureOracle
       audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
   native_decide
 
-private def threeDupUnsupportedCoreRows : List (List String) :=
+private def threeDupResourceErrorCoreRows : List (List String) :=
   [["1 2 3 4 5 " ++ rawThreeDups 165,
     "1 2 3 4 5 6 " ++ rawThreeDups 165, "P2SH,STRICTENC", "STACK_SIZE",
     ">1,000 stack size (0x6f is 3DUP)"],
@@ -720,17 +720,11 @@ private def threeDupUnsupportedCoreRows : List (List String) :=
    ["NOP", "0 " ++ coreMaxSizePubKey, "P2SH,STRICTENC", "SCRIPT_SIZE",
     "10,001-byte scriptPubKey"]]
 
--- The existing importer boundary still excludes resource-limit error tags.
+-- The fixture interpreter compares resource-limit errors in source order.
 example : ((auditCoreScriptTests rejectingFixtureOracle
-    (Lean.toJson threeDupUnsupportedCoreRows).compress).toOption.map
-    fun audit => audit.comparedRows == 0 && audit.unsupportedRows == 3) = some true := by
-  native_decide
-
-example : ((auditCoreScriptTests rejectingFixtureOracle
-    (Lean.toJson threeDupUnsupportedCoreRows).compress).toOption.map
-    fun audit => audit.unsupported.map (·.reason)) =
-    some [.expectedError "STACK_SIZE", .expectedError "STACK_SIZE",
-      .expectedError "SCRIPT_SIZE"] := by
+    (Lean.toJson threeDupResourceErrorCoreRows).compress).toOption.map
+    fun audit => audit.comparedRows == 3 && audit.matchedRows == 3 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
   native_decide
 
 end LeanMiniscript.Extraction

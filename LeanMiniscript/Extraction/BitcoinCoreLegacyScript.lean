@@ -16,8 +16,6 @@ Tapscript, which this fixture boundary does not model.
 inductive CoreLegacyUnsupported where
   | opcode (offset : Nat) (byte : UInt8)
   | signatureOpcode
-  | scriptSize (size : Nat)
-  | opcodeCount (count : Nat)
   deriving Repr, DecidableEq
 
 /-- One source instruction with original push minimality or a legacy failure.
@@ -28,9 +26,10 @@ inductive CoreLegacyInstruction where
   | failure (error : ScriptError) (activeOnly : Bool) (counted : Bool)
   deriving Repr
 
-/-- Decoded legacy instructions after script-size and opcode-count admission. -/
+/-- Decoded legacy instructions with the original byte length. -/
 structure CoreLegacyProgram where
   instructions : List CoreLegacyInstruction
+  byteSize : Nat := 0
   deriving Repr
 
 private def legacyDisabledByte (byte : Nat) : Bool :=
@@ -39,11 +38,6 @@ private def legacyDisabledByte (byte : Nat) : Bool :=
 
 private def legacyReservedByte (byte : Nat) : Bool :=
   [0x50, 0x62, 0x89, 0x8a].contains byte
-
-private def legacySignatureOpcode : Opcode → Bool
-  | .OP_CHECKSIG | .OP_CHECKSIGVERIFY | .OP_CHECKSIGADD |
-      .OP_CHECKMULTISIG | .OP_CHECKMULTISIGVERIFY => true
-  | _ => false
 
 /-- Exact minimal-push rule for the retained original opcode and payload. -/
 def coreLegacyMinimalPush (opcode : Nat) (data : ByteArray) : Bool :=
@@ -123,27 +117,24 @@ def decodeCoreLegacyList (bytes : List UInt8) (offset : Nat) :
       else
         match opcodeFromByte? value with
         | some opcode =>
-            if legacySignatureOpcode opcode then throw .signatureOpcode
             return .modeled (.op opcode) :: (← decodeCoreLegacyList rest (offset + 1))
         | none => throw (.opcode offset byte)
 termination_by bytes.length
 decreasing_by
   all_goals simp_wf <;> omega
 
-private def CoreLegacyInstruction.opcodeCount : CoreLegacyInstruction → Nat
+def CoreLegacyInstruction.opcodeCount : CoreLegacyInstruction → Nat
   | .modeled (.op opcode) _ => if (opcodeByte opcode).toNat > 0x60 then 1 else 0
   | .modeled _ _ => 0
   | .failure _ _ counted => if counted then 1 else 0
 
-/-- Admit bounded, signature-free legacy bytecode. Resource conditions whose
-Core errors are not represented here remain explicit unsupported cases. -/
+/-- Decode supported legacy instructions and preserve the exact serialized size.
+Script-size and opcode-count failures belong to execution, not admission. -/
 def decodeCoreLegacyScript (bytes : ByteArray) :
     Except CoreLegacyUnsupported CoreLegacyProgram := do
-  if bytes.size > 10000 then throw (.scriptSize bytes.size)
+  if bytes.size > 10000 then return ⟨[], bytes.size⟩
   let instructions ← decodeCoreLegacyList bytes.data.toList 0
-  let count := instructions.foldl (fun count instruction => count + instruction.opcodeCount) 0
-  if count > 201 then throw (.opcodeCount count)
-  return ⟨instructions⟩
+  return ⟨instructions, bytes.size⟩
 
 /-- The raw fixture preparer rejects nonminimal pushes whenever MINIMALDATA is
 requested, including pushes in inactive code, matching its conservative AST
@@ -214,12 +205,96 @@ theorem coreLegacyStep_inactiveFailure (oracle : CryptoOracle)
       checkRuntimeStack state := by
   simp [coreLegacyStep, inactive]
 
-/-- Each scriptSig/scriptPubKey execution starts with an empty alternate and
-condition stack, preserving only the main stack across the two boundaries. -/
+/-- The BASE limits count every opcode above OP_16, including inactive code.
+An active multisig adds its decoded public-key count before the remaining
+operands are checked. Malformed pushes and oversized elements precede counting. -/
+def coreLegacyNextCount (instruction : CoreLegacyInstruction) (state : RuntimeState)
+    (flags : ScriptFlags) (count : Nat) : Except ScriptError Nat := do
+  match instruction with
+  | .modeled element _ =>
+      if element.pushSize > maxScriptElementSize then throw .pushSize
+  | .failure .badOpcode false false => throw .badOpcode
+  | _ => pure ()
+  let next := count + instruction.opcodeCount
+  if next > 201 then throw .opCount
+  match instruction with
+  | .modeled (.op .OP_CHECKMULTISIG) _ | .modeled (.op .OP_CHECKMULTISIGVERIFY) _ =>
+      if state.conditions.all id then
+        let keyBytes ← match state.stack with
+          | [] => throw .stackUnderflow
+          | top :: _ => pure top
+        let keys ← decodeScriptNum keyBytes flags.minimalData maxArithmeticScriptNumBytes
+        if keys < 0 ∨ (maxPubKeysPerMultiSig : Int) < keys then throw .pubkeyCount
+        let total := next + keys.toNat
+        if total > 201 then throw .opCount
+        return total
+      else return next
+  | _ => return next
+
+/-- Source-order BASE execution with the per-script operation counter. -/
+def evaluateCoreLegacyWithLimits (oracle : CryptoOracle) :
+    List CoreLegacyInstruction → RuntimeState → ScriptFlags → TxContext → Nat →
+      Except ScriptError RuntimeState
+  | [], state, _, _, _ =>
+      if state.conditions.isEmpty then .ok state else .error .unbalancedConditional
+  | instruction :: rest, state, flags, ctx, count => do
+      let nextCount ← coreLegacyNextCount instruction state flags count
+      let next ← coreLegacyStep oracle instruction state flags ctx
+      evaluateCoreLegacyWithLimits oracle rest next flags ctx nextCount
+
+/-- Whether an active signature instruction reaches a cryptographic callback.
+Operand and first-pair encoding failures, and zero-signature multisig, are
+independent of that callback. Inactive instructions never call it. -/
+def coreLegacyNeedsVerifier (instruction : CoreLegacyInstruction)
+    (state : RuntimeState) (flags : ScriptFlags) : Bool :=
+  if !state.conditions.all id then false
+  else match instruction with
+  | .modeled (.op .OP_CHECKSIG) _ | .modeled (.op .OP_CHECKSIGVERIFY) _ =>
+      match state.stack with
+      | pubkey :: sig :: _ => (checkECDSAEncoding flags sig pubkey).isOk
+      | _ => false
+  | .modeled (.op .OP_CHECKMULTISIG) _ | .modeled (.op .OP_CHECKMULTISIGVERIFY) _ =>
+      match decodeCheckMultiSigOperands flags state.stack with
+      | .error _ => false
+      | .ok operands =>
+          match operands.signatures, operands.pubkeys with
+          | sig :: _, pubkey :: _ => (checkECDSAEncoding flags sig pubkey).isOk
+          | _, _ => false
+  | _ => false
+
+/-- Admission follows the same resource checks and stops at the first reached
+verifier call. The supplied oracle supplies only hashes on admitted paths. -/
+def evaluateCoreLegacyWithoutVerifier (oracle : CryptoOracle) :
+    List CoreLegacyInstruction → RuntimeState → ScriptFlags → TxContext → Nat →
+      Except CoreLegacyUnsupported (Except ScriptError RuntimeState)
+  | [], state, _, _, _ =>
+      .ok (if state.conditions.isEmpty then .ok state else .error .unbalancedConditional)
+  | instruction :: rest, state, flags, ctx, count =>
+      match coreLegacyNextCount instruction state flags count with
+      | .error error => .ok (.error error)
+      | .ok nextCount =>
+          if coreLegacyNeedsVerifier instruction state flags then .error .signatureOpcode
+          else match coreLegacyStep oracle instruction state flags ctx with
+          | .error error => .ok (.error error)
+          | .ok next => evaluateCoreLegacyWithoutVerifier oracle rest next flags ctx nextCount
+
+/-- Each scriptSig/scriptPubKey starts with empty alternate and condition
+stacks and a fresh operation counter. Only the main stack crosses the boundary.
+The original script-size check precedes every instruction. -/
 def runCoreLegacyScript (oracle : CryptoOracle) (program : CoreLegacyProgram)
     (stack : Stack) (flags : ScriptFlags) (ctx : TxContext) : Except ScriptError Stack := do
-  let result ← evaluateCoreLegacy oracle program.instructions
-    { stack := stack, altStack := [], conditions := [], weight := 0 } flags ctx
+  if program.byteSize > 10000 then throw .scriptSize
+  let result ← evaluateCoreLegacyWithLimits oracle program.instructions
+    { stack := stack, altStack := [], conditions := [], weight := 0 } flags ctx 0
   return result.stack
+
+/-- Run the same script boundary while admitting only verifier-independent paths. -/
+def checkCoreLegacyWithoutVerifier (oracle : CryptoOracle) (program : CoreLegacyProgram)
+    (stack : Stack) (flags : ScriptFlags) (ctx : TxContext) :
+    Except CoreLegacyUnsupported (Except ScriptError Stack) :=
+  if program.byteSize > 10000 then .ok (.error .scriptSize)
+  else (evaluateCoreLegacyWithoutVerifier oracle program.instructions
+    { stack := stack, altStack := [], conditions := [], weight := 0 } flags ctx 0).map
+      (fun result => result.map (·.stack))
 
 end LeanMiniscript.Extraction

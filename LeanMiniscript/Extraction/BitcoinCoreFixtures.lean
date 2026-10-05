@@ -360,27 +360,12 @@ structure SupportedCoreFixture where
   scriptSig : Script
   scriptPubKey : Script
   flags : ScriptFlags
-  /-- Raw legacy execution is prepared only when a source cannot enter Script. -/
+  /-- Original legacy bytes with source-order execution and resource accounting. -/
   rawPrograms : Option (CoreLegacyProgram × CoreLegacyProgram) := none
 
 private def coreFlagNames (source : String) : List String :=
   if source.trimAscii.isEmpty then []
   else (source.splitOn ",").map (fun flag => flag.trimAscii.toString)
-
-private def scriptContainsSignature (script : Script) : Bool :=
-  script.any fun
-    | .op .OP_CHECKSIG | .op .OP_CHECKSIGVERIFY | .op .OP_CHECKSIGADD |
-        .op .OP_CHECKMULTISIG | .op .OP_CHECKMULTISIGVERIFY => true
-    | _ => false
-
-private def scriptContainsOpcode (wanted : Opcode) (script : Script) : Bool :=
-  script.any fun
-    | .op opcode => opcode == wanted
-    | _ => false
-
-private def isP2SHScript : Script → Bool
-  | [.op .OP_HASH160, .pushData hash, .op .OP_EQUAL] => hash.size == 20
-  | _ => false
 
 /-- Accept flags whose effects are modeled or whose affected operations are
 excluded by the subsequent fixture admission checks. -/
@@ -400,11 +385,6 @@ private def flagsForCoreFixture (names : List String) : ScriptFlags where
   lowS := names.contains "LOW_S"
   discourageUpgradableNops := names.contains "DISCOURAGE_UPGRADABLE_NOPS"
 
-private def sourceUsesMinimalPushes (source : String) (script : Script) : Bool :=
-  match coreScriptSourceBytes source, serializeScript script with
-  | .ok sourceBytes, .ok canonicalBytes => sourceBytes == canonicalBytes
-  | _, _ => false
-
 /-- Bitcoin Core `ScriptErrorString` tag corresponding to each modeled
     evaluator failure. Several Lean errors intentionally share one Core tag. Boundary-only
     validation errors use explicit MODEL_ tags, not claimed Core errors. -/
@@ -413,6 +393,8 @@ def coreScriptErrorTag : ScriptError → String
   | .altStackUnderflow => "INVALID_ALTSTACK_OPERATION"
   | .stackSize => "STACK_SIZE"
   | .pushSize => "PUSH_SIZE"
+  | .scriptSize => "SCRIPT_SIZE"
+  | .opCount => "OP_COUNT"
   | .cleanStack => "CLEANSTACK"
   | .evalFalse => "EVAL_FALSE"
   | .scriptNumOverflow => "SCRIPTNUM"
@@ -453,7 +435,7 @@ def coreScriptErrorTag : ScriptError → String
   | .unbalancedConditional => "UNBALANCED_CONDITIONAL"
 
 private def supportedExpectedError : String → Bool
-  | "OK" | "EVAL_FALSE" | "BAD_OPCODE" | "OP_RETURN" | "DISABLED_OPCODE" |
+  | "SCRIPT_SIZE" | "OP_COUNT" | "PUSH_SIZE" | "STACK_SIZE" | "OK" | "EVAL_FALSE" | "BAD_OPCODE" | "OP_RETURN" | "DISABLED_OPCODE" |
       "DISCOURAGE_UPGRADABLE_NOPS" | "INVALID_STACK_OPERATION" |
       "INVALID_ALTSTACK_OPERATION" | "SCRIPTNUM" | "MINIMALDATA" |
       "PUBKEY_COUNT" | "SIG_COUNT" | "NEGATIVE_LOCKTIME" |
@@ -463,110 +445,6 @@ private def supportedExpectedError : String → Bool
       "UNSATISFIED_LOCKTIME" | "MINIMALIF" | "TAPSCRIPT_MINIMALIF" |
       "UNBALANCED_CONDITIONAL" => true
   | _ => false
-
-/-- No signature verifier is invoked while executing a signature-free prefix.
-    Conditional delimiters are conservatively excluded here because a split
-    prefix could manufacture an EOF error or lose a branch's execution state. -/
-private def errorBeforeFirstSignature (script : Script) (stack : Stack)
-    (flags : ScriptFlags) : Option ScriptError := Id.run do
-  let leadingScript := script.takeWhile fun element =>
-    match element with
-    | .op .OP_CHECKSIG | .op .OP_CHECKSIGVERIFY | .op .OP_CHECKSIGADD |
-        .op .OP_CHECKMULTISIG | .op .OP_CHECKMULTISIGVERIFY => false
-    | _ => true
-  if leadingScript.any (fun element =>
-      match element with
-      | .op .OP_IF | .op .OP_NOTIF | .op .OP_ELSE | .op .OP_ENDIF => true
-      | _ => false) then return none
-  let oracle := CryptoOracle.pureLeanHashes (fun _ _ _ => false)
-  let tx : TxContext :=
-    { version := 1, locktime := 0, sequence := 0xffffffff, sigHash := ⟨#[]⟩ }
-  match evaluate oracle leadingScript stack [] flags tx with
-  | .failure error => return some error
-  | .success stack _ =>
-      match script.drop leadingScript.length with
-      | .op .OP_CHECKSIG :: _ | .op .OP_CHECKSIGVERIFY :: _ =>
-          match stack with
-          | pubkey :: sig :: _ =>
-              match checkECDSAEncoding flags sig pubkey with
-              | .error error => return some error
-              | .ok () => return none
-          | _ => return some .stackUnderflow
-      | .op .OP_CHECKSIGADD :: _ => return some .badOpcode
-      | .op .OP_CHECKMULTISIG :: _ | .op .OP_CHECKMULTISIGVERIFY :: _ =>
-          match decodeCheckMultiSigOperands flags stack with
-          | .error error => return some error
-          | .ok operands =>
-              match operands.signatures, operands.pubkeys with
-              | [], _ =>
-                  match checkMultiSigDummy flags operands.dummy with
-                  | .error error => return some error
-                  | .ok () => return none
-              | sig :: _, pubkey :: _ =>
-                  match checkECDSAEncoding flags sig pubkey with
-                  | .error error => return some error
-                  | .ok () => return none
-              | _, _ => return none
-      | _ => return none
-
-/-- Admit a signature-opcode row only when execution fails before the first
-    verifier call. The expected tag does not itself establish independence:
-    a later malformed signature may be reached only after a successful match.
-    A signature-free scriptSig can be run in full, resetting its alt stack at
-    the scriptPubKey boundary as Core does. -/
-private def coreErrorBeforeSignature (scriptSig scriptPubKey : Script)
-    (flags : ScriptFlags) : Option ScriptError :=
-  if scriptContainsSignature scriptSig then
-    errorBeforeFirstSignature scriptSig [] flags
-  else
-    let oracle := CryptoOracle.pureLeanHashes (fun _ _ _ => false)
-    let tx : TxContext :=
-      { version := 1, locktime := 0, sequence := 0xffffffff, sigHash := ⟨#[]⟩ }
-    match evaluate oracle scriptSig [] [] flags tx with
-    | .failure error => some error
-    | .success stack _ => errorBeforeFirstSignature scriptPubKey stack flags
-
-/-- Conservatively prepare an upstream test. Flags are ignored only when their
-    affected semantics are absent: `P2SH` requires a non-P2SH scriptPubKey,
-    while a signature opcode is admitted only for an error that must occur
-    before its crypto callback. Every other unmodeled condition is reported. -/
-private def prepareTypedCoreFixture (test : CoreScriptTest)
-    (scriptSig scriptPubKey : Script) :
-    Except CoreFixtureUnsupported SupportedCoreFixture := do
-  if !supportedExpectedError test.expectedError then
-    throw (.expectedError test.expectedError)
-  let flagNames := coreFlagNames test.flagSource
-  if let some flag := firstUnsupportedFlag flagNames then
-    throw (.unsupportedFlag flag)
-  if flagNames.contains "P2SH" && isP2SHScript scriptPubKey then
-    throw .p2shEvaluation
-  if flagNames.contains "MINIMALDATA" &&
-      (!sourceUsesMinimalPushes test.scriptSigSource scriptSig ||
-        !sourceUsesMinimalPushes test.scriptPubKeySource scriptPubKey) then
-    throw .nonMinimalPushEncoding
-  if scriptContainsSignature scriptSig || scriptContainsSignature scriptPubKey then
-    match coreErrorBeforeSignature scriptSig scriptPubKey (flagsForCoreFixture flagNames) with
-    | none => throw .signatureOpcode
-    | some _ => pure ()
-  if (scriptContainsOpcode .OP_CHECKLOCKTIMEVERIFY scriptSig ||
-      scriptContainsOpcode .OP_CHECKLOCKTIMEVERIFY scriptPubKey) &&
-      !flagNames.contains "CHECKLOCKTIMEVERIFY" then
-    throw (.inactiveTimelockOpcode "CHECKLOCKTIMEVERIFY")
-  if (scriptContainsOpcode .OP_CHECKSEQUENCEVERIFY scriptSig ||
-      scriptContainsOpcode .OP_CHECKSEQUENCEVERIFY scriptPubKey) &&
-      !flagNames.contains "CHECKSEQUENCEVERIFY" then
-    throw (.inactiveTimelockOpcode "CHECKSEQUENCEVERIFY")
-  return {
-    source := test
-    scriptSig := scriptSig
-    scriptPubKey := scriptPubKey
-    flags := flagsForCoreFixture flagNames
-  }
-
-/-- Raw legacy execution supports source-order push and combined-stack errors.
-The typed fixture path retains its existing execution boundary. -/
-private def supportedRawExpectedError (tag : String) : Bool :=
-  supportedExpectedError tag || tag == "PUSH_SIZE" || tag == "STACK_SIZE"
 
 private def prepareRawCoreFixture (test : CoreScriptTest) :
     Except CoreFixtureUnsupported SupportedCoreFixture := do
@@ -588,6 +466,17 @@ private def prepareRawCoreFixture (test : CoreScriptTest) :
       scriptPubKey.containsOpcode .OP_CHECKSEQUENCEVERIFY) &&
       !flagNames.contains "CHECKSEQUENCEVERIFY" then
     throw (.inactiveTimelockOpcode "CHECKSEQUENCEVERIFY")
+  let oracle := CryptoOracle.pureLeanHashes (fun _ _ _ => false)
+  let flags := flagsForCoreFixture flagNames
+  let ctx : TxContext :=
+    { version := 1, locktime := 0, sequence := 0xffffffff, sigHash := ⟨#[]⟩ }
+  match ← (checkCoreLegacyWithoutVerifier oracle scriptSig [] flags ctx).mapError
+      (fun _ => CoreFixtureUnsupported.signatureOpcode) with
+  | .error _ => pure ()
+  | .ok stack =>
+      let _ ← (checkCoreLegacyWithoutVerifier oracle scriptPubKey stack flags ctx).mapError
+        (fun _ => CoreFixtureUnsupported.signatureOpcode)
+      pure ()
   return {
     source := test
     scriptSig := (parseCoreScriptSource test.scriptSigSource).toOption.getD []
@@ -596,17 +485,14 @@ private def prepareRawCoreFixture (test : CoreScriptTest) :
     rawPrograms := some (scriptSig, scriptPubKey)
   }
 
-/-- Prepare typed fixtures as before, with a separate raw legacy fallback for
-source-decode errors. Witness, P2SH, signature dependence, unsupported flags,
-and unmodeled legacy limits remain explicitly excluded. -/
+/-- Prepare original legacy bytes for resource-aware execution. Witness, P2SH,
+unsupported flags, and paths reaching a cryptographic verifier remain excluded. -/
 def prepareCoreFixture (test : CoreScriptTest) :
     Except CoreFixtureUnsupported SupportedCoreFixture := do
   if test.witness.isSome then throw .witnessCase
-  if !supportedRawExpectedError test.expectedError then
+  if !supportedExpectedError test.expectedError then
     throw (.expectedError test.expectedError)
-  match parseCoreScriptSource test.scriptSigSource, parseCoreScriptSource test.scriptPubKeySource with
-  | .ok scriptSig, .ok scriptPubKey => prepareTypedCoreFixture test scriptSig scriptPubKey
-  | _, _ => prepareRawCoreFixture test
+  prepareRawCoreFixture test
 
 /-- Observable result at Bitcoin Core's `VerifyScript` boundary. `none` is a
     successful execution whose final stack is empty or false. -/
@@ -631,9 +517,11 @@ def coreFixtureTxContext : TxContext where
 
 /-- Execute scriptSig and scriptPubKey as separate Script evaluations. The main
     stack is preserved, while the alternate stack is reset between them just
-    as it is at Core's two `EvalScript` boundaries. -/
+    as it is at Core's two `EvalScript` boundaries. Concrete hashes match the
+    admission preflight; caller-supplied signature callbacks remain available. -/
 def runCoreFixture (oracle : CryptoOracle)
     (fixture : SupportedCoreFixture) : CoreFixtureOutcome :=
+  let oracle := CryptoOracle.pureLeanHashes oracle.checkSig oracle.checkSchnorrSig
   match fixture.rawPrograms with
   | some (scriptSig, scriptPubKey) =>
       match runCoreLegacyScript oracle scriptSig [] fixture.flags coreFixtureTxContext with

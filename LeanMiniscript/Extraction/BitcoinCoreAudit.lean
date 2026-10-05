@@ -73,8 +73,6 @@ def CoreScriptSourceError.detailCategory : CoreScriptSourceError → String
 def CoreLegacyUnsupported.detailCategory : CoreLegacyUnsupported → String
   | .opcode _ byte => "unsupported-opcode-byte.0x" ++ byteHex byte
   | .signatureOpcode => "signature-result"
-  | .scriptSize _ => "script-size"
-  | .opcodeCount _ => "opcode-count"
 
 /-- Fine-grained category for prioritizing the next model extension. -/
 def CoreFixtureUnsupported.detailCategory : CoreFixtureUnsupported → String

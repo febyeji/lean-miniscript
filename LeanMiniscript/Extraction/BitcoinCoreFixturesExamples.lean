@@ -102,6 +102,8 @@ private def coreErrorTagFixtures : List (ScriptError × String) :=
    (.negativeLocktime, "NEGATIVE_LOCKTIME"),
    (.stackSize, "STACK_SIZE"),
    (.pushSize, "PUSH_SIZE"),
+   (.scriptSize, "SCRIPT_SIZE"),
+   (.opCount, "OP_COUNT"),
    (.cleanStack, "CLEANSTACK"),
    (.evalFalse, "EVAL_FALSE"),
    (.nullDummy, "SIG_NULLDUMMY"),

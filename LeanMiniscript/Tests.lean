@@ -1,3 +1,4 @@
+import LeanMiniscript.Extraction.BitcoinCoreLegacyLimitsExamples
 import LeanMiniscript.Extraction.TaprootExamples
 import LeanMiniscript.Extraction.TaprootBytesExamples
 import LeanMiniscript.Bitcoin.TaprootControlBlockExamples
