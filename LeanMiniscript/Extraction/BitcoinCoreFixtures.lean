@@ -223,7 +223,12 @@ def opcodeFromCoreName? : String → Option Opcode
   | "TUCK" => some .OP_TUCK
   | "TOALTSTACK" => some .OP_TOALTSTACK
   | "FROMALTSTACK" => some .OP_FROMALTSTACK
+  | "1ADD" => some .OP_1ADD
+  | "1SUB" => some .OP_1SUB
+  | "NEGATE" => some .OP_NEGATE
+  | "ABS" => some .OP_ABS
   | "ADD" => some .OP_ADD
+  | "SUB" => some .OP_SUB
   | "BOOLAND" => some .OP_BOOLAND
   | "BOOLOR" => some .OP_BOOLOR
   | "NOT" => some .OP_NOT
@@ -232,6 +237,11 @@ def opcodeFromCoreName? : String → Option Opcode
   | "EQUALVERIFY" => some .OP_EQUALVERIFY
   | "NUMEQUAL" => some .OP_NUMEQUAL
   | "NUMEQUALVERIFY" => some .OP_NUMEQUALVERIFY
+  | "NUMNOTEQUAL" => some .OP_NUMNOTEQUAL
+  | "LESSTHAN" => some .OP_LESSTHAN
+  | "GREATERTHAN" => some .OP_GREATERTHAN
+  | "LESSTHANOREQUAL" => some .OP_LESSTHANOREQUAL
+  | "GREATERTHANOREQUAL" => some .OP_GREATERTHANOREQUAL
   | "WITHIN" => some .OP_WITHIN
   | "SHA256" => some .OP_SHA256
   | "HASH256" => some .OP_HASH256

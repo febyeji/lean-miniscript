@@ -41,7 +41,12 @@ def opcodeByte : Opcode → UInt8
   | .OP_TUCK => 0x7d
   | .OP_TOALTSTACK => 0x6b
   | .OP_FROMALTSTACK => 0x6c
+  | .OP_1ADD => 0x8b
+  | .OP_1SUB => 0x8c
+  | .OP_NEGATE => 0x8f
+  | .OP_ABS => 0x90
   | .OP_ADD => 0x93
+  | .OP_SUB => 0x94
   | .OP_BOOLAND => 0x9a
   | .OP_BOOLOR => 0x9b
   | .OP_NOT => 0x91
@@ -50,6 +55,11 @@ def opcodeByte : Opcode → UInt8
   | .OP_EQUALVERIFY => 0x88
   | .OP_NUMEQUAL => 0x9c
   | .OP_NUMEQUALVERIFY => 0x9d
+  | .OP_NUMNOTEQUAL => 0x9e
+  | .OP_LESSTHAN => 0x9f
+  | .OP_GREATERTHAN => 0xa0
+  | .OP_LESSTHANOREQUAL => 0xa1
+  | .OP_GREATERTHANOREQUAL => 0xa2
   | .OP_WITHIN => 0xa5
   | .OP_SHA256 => 0xa8
   | .OP_HASH256 => 0xaa

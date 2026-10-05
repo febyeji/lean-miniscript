@@ -155,9 +155,12 @@ def Opcode.fixedMainStackInputs? : Opcode → Option Nat
   | .OP_2DROP | .OP_2DUP | .OP_NIP | .OP_OVER | .OP_SWAP | .OP_TUCK => some 2
   | .OP_TOALTSTACK => some 1
   | .OP_FROMALTSTACK => some 0
-  | .OP_ADD | .OP_BOOLAND | .OP_BOOLOR => some 2
+  | .OP_1ADD | .OP_1SUB | .OP_NEGATE | .OP_ABS => some 1
+  | .OP_ADD | .OP_SUB | .OP_BOOLAND | .OP_BOOLOR => some 2
   | .OP_NOT | .OP_0NOTEQUAL => some 1
   | .OP_EQUAL | .OP_EQUALVERIFY | .OP_NUMEQUAL | .OP_NUMEQUALVERIFY => some 2
+  | .OP_NUMNOTEQUAL | .OP_LESSTHAN | .OP_GREATERTHAN |
+      .OP_LESSTHANOREQUAL | .OP_GREATERTHANOREQUAL => some 2
   | .OP_SHA256 | .OP_HASH256 | .OP_RIPEMD160 | .OP_HASH160 => some 1
   | .OP_CHECKSIG | .OP_CHECKSIGVERIFY => some 2
   | .OP_2ROT => some 6
@@ -175,10 +178,18 @@ def Opcode.activeFixedMainStackInputs? (opcode : Opcode)
   | .OP_CHECKSIGADD => if version ≠ .tapscript then none else some 3
   | _ => opcode.fixedMainStackInputs?
 
-/-- Opcodes in the generated subset that decode both operands as Script
+/-- Modeled opcodes that decode both operands as Script
     numbers with the ordinary four-byte limit. -/
 def Opcode.usesBinaryScriptNums : Opcode → Bool
-  | .OP_ADD | .OP_BOOLAND | .OP_BOOLOR | .OP_NUMEQUAL | .OP_NUMEQUALVERIFY => true
+  | .OP_ADD | .OP_SUB | .OP_BOOLAND | .OP_BOOLOR | .OP_NUMEQUAL | .OP_NUMEQUALVERIFY |
+      .OP_NUMNOTEQUAL | .OP_LESSTHAN | .OP_GREATERTHAN |
+      .OP_LESSTHANOREQUAL | .OP_GREATERTHANOREQUAL => true
+  | _ => false
+
+/-- Unary arithmetic operations that replace a four-byte Script number with
+    the canonical encoding of their integer result. -/
+def Opcode.usesUnaryArithmetic : Opcode → Bool
+  | .OP_1ADD | .OP_1SUB | .OP_NEGATE | .OP_ABS => true
   | _ => false
 
 /-- Timelock opcodes decode one Script number with the extended five-byte

@@ -41,7 +41,12 @@ def opcodeFromByte? : Nat → Option Opcode
   | 0x7d => some .OP_TUCK
   | 0x6b => some .OP_TOALTSTACK
   | 0x6c => some .OP_FROMALTSTACK
+  | 0x8b => some .OP_1ADD
+  | 0x8c => some .OP_1SUB
+  | 0x8f => some .OP_NEGATE
+  | 0x90 => some .OP_ABS
   | 0x93 => some .OP_ADD
+  | 0x94 => some .OP_SUB
   | 0x9a => some .OP_BOOLAND
   | 0x9b => some .OP_BOOLOR
   | 0x91 => some .OP_NOT
@@ -50,6 +55,11 @@ def opcodeFromByte? : Nat → Option Opcode
   | 0x88 => some .OP_EQUALVERIFY
   | 0x9c => some .OP_NUMEQUAL
   | 0x9d => some .OP_NUMEQUALVERIFY
+  | 0x9e => some .OP_NUMNOTEQUAL
+  | 0x9f => some .OP_LESSTHAN
+  | 0xa0 => some .OP_GREATERTHAN
+  | 0xa1 => some .OP_LESSTHANOREQUAL
+  | 0xa2 => some .OP_GREATERTHANOREQUAL
   | 0xa5 => some .OP_WITHIN
   | 0xa8 => some .OP_SHA256
   | 0xaa => some .OP_HASH256

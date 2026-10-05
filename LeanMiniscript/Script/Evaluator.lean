@@ -210,6 +210,86 @@ def evaluate (oracle : CryptoOracle) (script : Script)
       | [] => .failure .altStackUnderflow
       | top :: altRest =>
           evaluate oracle rest (top :: stack) altRest flags ctx
+  | .op .OP_1ADD :: rest =>
+      match stack with
+      | [] => .failure .stackUnderflow
+      | operand :: stackRest =>
+          match decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+          | .error error => .failure error
+          | .ok value =>
+              evaluate oracle rest (scriptNum (value + 1) :: stackRest) altStack flags ctx
+  | .op .OP_1SUB :: rest =>
+      match stack with
+      | [] => .failure .stackUnderflow
+      | operand :: stackRest =>
+          match decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+          | .error error => .failure error
+          | .ok value =>
+              evaluate oracle rest (scriptNum (value - 1) :: stackRest) altStack flags ctx
+  | .op .OP_NEGATE :: rest =>
+      match stack with
+      | [] => .failure .stackUnderflow
+      | operand :: stackRest =>
+          match decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+          | .error error => .failure error
+          | .ok value =>
+              evaluate oracle rest (scriptNum (-value) :: stackRest) altStack flags ctx
+  | .op .OP_ABS :: rest =>
+      match stack with
+      | [] => .failure .stackUnderflow
+      | operand :: stackRest =>
+          match decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+          | .error error => .failure error
+          | .ok value =>
+              evaluate oracle rest (scriptNum (if value < 0 then -value else value) :: stackRest) altStack flags ctx
+  | .op .OP_SUB :: rest =>
+      match stack with
+      | top :: belowTop :: stackRest =>
+          match decodeBinaryScriptNums flags top belowTop with
+          | .error error => .failure error
+          | .ok (a, b) =>
+              evaluate oracle rest (scriptNum (b - a) :: stackRest) altStack flags ctx
+      | _ => .failure .stackUnderflow
+  | .op .OP_NUMNOTEQUAL :: rest =>
+      match stack with
+      | top :: belowTop :: stackRest =>
+          match decodeBinaryScriptNums flags top belowTop with
+          | .error error => .failure error
+          | .ok (a, b) =>
+              evaluate oracle rest (boolToElement (decide (a ≠ b)) :: stackRest) altStack flags ctx
+      | _ => .failure .stackUnderflow
+  | .op .OP_LESSTHAN :: rest =>
+      match stack with
+      | top :: belowTop :: stackRest =>
+          match decodeBinaryScriptNums flags top belowTop with
+          | .error error => .failure error
+          | .ok (a, b) =>
+              evaluate oracle rest (boolToElement (decide (b < a)) :: stackRest) altStack flags ctx
+      | _ => .failure .stackUnderflow
+  | .op .OP_GREATERTHAN :: rest =>
+      match stack with
+      | top :: belowTop :: stackRest =>
+          match decodeBinaryScriptNums flags top belowTop with
+          | .error error => .failure error
+          | .ok (a, b) =>
+              evaluate oracle rest (boolToElement (decide (b > a)) :: stackRest) altStack flags ctx
+      | _ => .failure .stackUnderflow
+  | .op .OP_LESSTHANOREQUAL :: rest =>
+      match stack with
+      | top :: belowTop :: stackRest =>
+          match decodeBinaryScriptNums flags top belowTop with
+          | .error error => .failure error
+          | .ok (a, b) =>
+              evaluate oracle rest (boolToElement (decide (b ≤ a)) :: stackRest) altStack flags ctx
+      | _ => .failure .stackUnderflow
+  | .op .OP_GREATERTHANOREQUAL :: rest =>
+      match stack with
+      | top :: belowTop :: stackRest =>
+          match decodeBinaryScriptNums flags top belowTop with
+          | .error error => .failure error
+          | .ok (a, b) =>
+              evaluate oracle rest (boolToElement (decide (b ≥ a)) :: stackRest) altStack flags ctx
+      | _ => .failure .stackUnderflow
   | .op .OP_ADD :: rest =>
       match stack with
       | top :: belowTop :: stackRest =>
@@ -908,6 +988,264 @@ theorem evaluate_within (oracle : CryptoOracle) (stack altStack : Stack)
       | _ => .failure .stackUnderflow := by
   rcases stack with _ | ⟨upper, _ | ⟨lower, _ | ⟨value, rest⟩⟩⟩ <;> simp [evaluate]
 
+/-- 1ADD decodes its input before evaluating the continuation. -/
+theorem evaluate_oneAdd_cons (oracle : CryptoOracle) (script : Script)
+    (operand : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_1ADD :: script) (operand :: stack) altStack flags ctx =
+      match decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+      | .error error => .failure error
+      | .ok value => evaluate oracle script (scriptNum (value + 1) :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- The exact single-instruction result includes underflow and decode failure. -/
+theorem evaluate_oneAdd (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_1ADD] stack altStack flags ctx =
+      match stack with
+      | [] => .failure .stackUnderflow
+      | operand :: rest =>
+          match decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+          | .error error => .failure error
+          | .ok value => .success (scriptNum (value + 1) :: rest) altStack := by
+  cases stack <;> simp [evaluate]
+
+/-- 1SUB decodes its input before evaluating the continuation. -/
+theorem evaluate_oneSub_cons (oracle : CryptoOracle) (script : Script)
+    (operand : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_1SUB :: script) (operand :: stack) altStack flags ctx =
+      match decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+      | .error error => .failure error
+      | .ok value => evaluate oracle script (scriptNum (value - 1) :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- The exact single-instruction result includes underflow and decode failure. -/
+theorem evaluate_oneSub (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_1SUB] stack altStack flags ctx =
+      match stack with
+      | [] => .failure .stackUnderflow
+      | operand :: rest =>
+          match decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+          | .error error => .failure error
+          | .ok value => .success (scriptNum (value - 1) :: rest) altStack := by
+  cases stack <;> simp [evaluate]
+
+/-- NEGATE decodes its input before evaluating the continuation. -/
+theorem evaluate_negate_cons (oracle : CryptoOracle) (script : Script)
+    (operand : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_NEGATE :: script) (operand :: stack) altStack flags ctx =
+      match decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+      | .error error => .failure error
+      | .ok value => evaluate oracle script (scriptNum (-value) :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- The exact single-instruction result includes underflow and decode failure. -/
+theorem evaluate_negate (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_NEGATE] stack altStack flags ctx =
+      match stack with
+      | [] => .failure .stackUnderflow
+      | operand :: rest =>
+          match decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+          | .error error => .failure error
+          | .ok value => .success (scriptNum (-value) :: rest) altStack := by
+  cases stack <;> simp [evaluate]
+
+/-- ABS decodes its input before evaluating the continuation. -/
+theorem evaluate_abs_cons (oracle : CryptoOracle) (script : Script)
+    (operand : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_ABS :: script) (operand :: stack) altStack flags ctx =
+      match decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+      | .error error => .failure error
+      | .ok value => evaluate oracle script (scriptNum (if value < 0 then -value else value) :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- The exact single-instruction result includes underflow and decode failure. -/
+theorem evaluate_abs (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_ABS] stack altStack flags ctx =
+      match stack with
+      | [] => .failure .stackUnderflow
+      | operand :: rest =>
+          match decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+          | .error error => .failure error
+          | .ok value => .success (scriptNum (if value < 0 then -value else value) :: rest) altStack := by
+  cases stack <;> simp [evaluate]
+
+/-- SUB decodes the below-top operand before the top operand. -/
+theorem evaluate_sub_cons (oracle : CryptoOracle) (script : Script)
+    (top belowTop : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_SUB :: script) (top :: belowTop :: stack) altStack flags ctx =
+      match decodeBinaryScriptNums flags top belowTop with
+      | .error error => .failure error
+      | .ok (a, b) => evaluate oracle script (scriptNum (b - a) :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- The exact single-instruction result includes underflow and decode failure. -/
+theorem evaluate_sub (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_SUB] stack altStack flags ctx =
+      match stack with
+      | top :: belowTop :: rest =>
+          match decodeBinaryScriptNums flags top belowTop with
+          | .error error => .failure error
+          | .ok (a, b) => .success (scriptNum (b - a) :: rest) altStack
+      | _ => .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨belowTop, rest⟩⟩ <;> simp [evaluate]
+
+/-- NUMNOTEQUAL decodes the below-top operand before the top operand. -/
+theorem evaluate_numNotEqual_cons (oracle : CryptoOracle) (script : Script)
+    (top belowTop : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_NUMNOTEQUAL :: script) (top :: belowTop :: stack) altStack flags ctx =
+      match decodeBinaryScriptNums flags top belowTop with
+      | .error error => .failure error
+      | .ok (a, b) => evaluate oracle script (boolToElement (decide (a ≠ b)) :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- The exact single-instruction result includes underflow and decode failure. -/
+theorem evaluate_numNotEqual (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_NUMNOTEQUAL] stack altStack flags ctx =
+      match stack with
+      | top :: belowTop :: rest =>
+          match decodeBinaryScriptNums flags top belowTop with
+          | .error error => .failure error
+          | .ok (a, b) => .success (boolToElement (decide (a ≠ b)) :: rest) altStack
+      | _ => .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨belowTop, rest⟩⟩ <;> simp [evaluate]
+
+/-- LESSTHAN decodes the below-top operand before the top operand. -/
+theorem evaluate_lessThan_cons (oracle : CryptoOracle) (script : Script)
+    (top belowTop : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_LESSTHAN :: script) (top :: belowTop :: stack) altStack flags ctx =
+      match decodeBinaryScriptNums flags top belowTop with
+      | .error error => .failure error
+      | .ok (a, b) => evaluate oracle script (boolToElement (decide (b < a)) :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- The exact single-instruction result includes underflow and decode failure. -/
+theorem evaluate_lessThan (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_LESSTHAN] stack altStack flags ctx =
+      match stack with
+      | top :: belowTop :: rest =>
+          match decodeBinaryScriptNums flags top belowTop with
+          | .error error => .failure error
+          | .ok (a, b) => .success (boolToElement (decide (b < a)) :: rest) altStack
+      | _ => .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨belowTop, rest⟩⟩ <;> simp [evaluate]
+
+/-- GREATERTHAN decodes the below-top operand before the top operand. -/
+theorem evaluate_greaterThan_cons (oracle : CryptoOracle) (script : Script)
+    (top belowTop : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_GREATERTHAN :: script) (top :: belowTop :: stack) altStack flags ctx =
+      match decodeBinaryScriptNums flags top belowTop with
+      | .error error => .failure error
+      | .ok (a, b) => evaluate oracle script (boolToElement (decide (b > a)) :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- The exact single-instruction result includes underflow and decode failure. -/
+theorem evaluate_greaterThan (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_GREATERTHAN] stack altStack flags ctx =
+      match stack with
+      | top :: belowTop :: rest =>
+          match decodeBinaryScriptNums flags top belowTop with
+          | .error error => .failure error
+          | .ok (a, b) => .success (boolToElement (decide (b > a)) :: rest) altStack
+      | _ => .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨belowTop, rest⟩⟩ <;> simp [evaluate]
+
+/-- LESSTHANOREQUAL decodes the below-top operand before the top operand. -/
+theorem evaluate_lessThanOrEqual_cons (oracle : CryptoOracle) (script : Script)
+    (top belowTop : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_LESSTHANOREQUAL :: script) (top :: belowTop :: stack) altStack flags ctx =
+      match decodeBinaryScriptNums flags top belowTop with
+      | .error error => .failure error
+      | .ok (a, b) => evaluate oracle script (boolToElement (decide (b ≤ a)) :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- The exact single-instruction result includes underflow and decode failure. -/
+theorem evaluate_lessThanOrEqual (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_LESSTHANOREQUAL] stack altStack flags ctx =
+      match stack with
+      | top :: belowTop :: rest =>
+          match decodeBinaryScriptNums flags top belowTop with
+          | .error error => .failure error
+          | .ok (a, b) => .success (boolToElement (decide (b ≤ a)) :: rest) altStack
+      | _ => .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨belowTop, rest⟩⟩ <;> simp [evaluate]
+
+/-- GREATERTHANOREQUAL decodes the below-top operand before the top operand. -/
+theorem evaluate_greaterThanOrEqual_cons (oracle : CryptoOracle) (script : Script)
+    (top belowTop : StackElement) (stack altStack : Stack) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    evaluate oracle (.op .OP_GREATERTHANOREQUAL :: script) (top :: belowTop :: stack) altStack flags ctx =
+      match decodeBinaryScriptNums flags top belowTop with
+      | .error error => .failure error
+      | .ok (a, b) => evaluate oracle script (boolToElement (decide (b ≥ a)) :: stack) altStack flags ctx := by
+  simp [evaluate]
+
+/-- The exact single-instruction result includes underflow and decode failure. -/
+theorem evaluate_greaterThanOrEqual (oracle : CryptoOracle) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    evaluate oracle [.op .OP_GREATERTHANOREQUAL] stack altStack flags ctx =
+      match stack with
+      | top :: belowTop :: rest =>
+          match decodeBinaryScriptNums flags top belowTop with
+          | .error error => .failure error
+          | .ok (a, b) => .success (boolToElement (decide (b ≥ a)) :: rest) altStack
+      | _ => .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨belowTop, rest⟩⟩ <;> simp [evaluate]
+
+/-- Unary arithmetic checks its fixed arity before decoding or evaluating the suffix. -/
+theorem evaluate_unaryArithmetic_underflow (oracle : CryptoOracle) (opcode : Opcode)
+    (script : Script) (altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (unary : opcode.usesUnaryArithmetic = true) :
+    evaluate oracle (.op opcode :: script) [] altStack flags ctx = .failure .stackUnderflow := by
+  cases opcode <;> simp_all [Opcode.usesUnaryArithmetic, evaluate]
+
+/-- A unary arithmetic decode error takes precedence over every continuation. -/
+theorem evaluate_unaryArithmetic_decode_failure (oracle : CryptoOracle) (opcode : Opcode)
+    (script : Script) (operand : StackElement) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) (error : ScriptError)
+    (unary : opcode.usesUnaryArithmetic = true)
+    (decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+      .error error) :
+    evaluate oracle (.op opcode :: script) (operand :: stack) altStack flags ctx =
+      .failure error := by
+  cases opcode <;> simp_all [Opcode.usesUnaryArithmetic, evaluate]
+
+/-- Every binary Script-number opcode checks both inputs before decoding either. -/
+theorem evaluate_binaryScriptNums_underflow (oracle : CryptoOracle) (opcode : Opcode)
+    (script : Script) (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (binary : opcode.usesBinaryScriptNums = true) (short : stack.length < 2) :
+    evaluate oracle (.op opcode :: script) stack altStack flags ctx =
+      .failure .stackUnderflow := by
+  rcases stack with _ | ⟨top, _ | ⟨belowTop, rest⟩⟩
+  all_goals try { simp at short; omega }
+  all_goals cases opcode <;> simp_all [Opcode.usesBinaryScriptNums, evaluate]
+
+/-- Binary numeric decode failure takes precedence over every continuation. -/
+theorem evaluate_binaryScriptNums_decode_failure (oracle : CryptoOracle) (opcode : Opcode)
+    (script : Script) (top belowTop : StackElement) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) (error : ScriptError)
+    (binary : opcode.usesBinaryScriptNums = true)
+    (decoded : decodeBinaryScriptNums flags top belowTop = .error error) :
+    evaluate oracle (.op opcode :: script) (top :: belowTop :: stack) altStack flags ctx =
+      .failure error := by
+  cases opcode <;> simp_all [Opcode.usesBinaryScriptNums, evaluate]
+
 /-- An oracle agreeing with the abstract model computes the result of every
     relational `Eval` derivation. -/
 theorem evaluate_eq_of_eval
@@ -925,7 +1263,7 @@ theorem evaluate_eq_of_eval
   induction evaluated <;>
     simp_all [evaluate, CryptoOracle.RefinesModel,
       Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
-      Opcode.usesTimelockScriptNum, minimalIfSatisfied,
+      Opcode.usesUnaryArithmetic, Opcode.usesTimelockScriptNum, minimalIfSatisfied,
       boolToElement, decodeCheckSigAddCount] <;>
     try omega <;>
     try grind
@@ -957,6 +1295,13 @@ theorem evaluate_eq_of_eval
     split <;> simp_all
   case checksigadd_encoding_failure =>
     split <;> simp_all
+  case unaryArithmetic_scriptnum_failure =>
+    rename_i opcode operand stackRest rest alt flags ctx error uses decoded
+    cases opcode <;>
+      simp_all only [Bool.false_eq_true]
+    all_goals
+      simp only [evaluate]
+      rw [decoded]
   case binary_scriptnum_failure =>
     rename_i opcode top belowTop stackRest rest alt flags ctx error uses decoded
     cases opcode <;>
