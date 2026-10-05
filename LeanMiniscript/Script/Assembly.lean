@@ -82,6 +82,10 @@ def opcodeAssembly : Opcode → String
   | .OP_CHECKSEQUENCEVERIFY => "CHECKSEQUENCEVERIFY"
   | .OP_CHECKLOCKTIMEVERIFY => "CHECKLOCKTIMEVERIFY"
   | .OP_VERIFY => "VERIFY"
+  | .OP_PICK => "PICK"
+  | .OP_ROLL => "ROLL"
+  | .OP_MIN => "MIN"
+  | .OP_MAX => "MAX"
   | .OP_SIZE => "SIZE"
 
 /-- Render one Script element in BIP-style assembly notation. -/

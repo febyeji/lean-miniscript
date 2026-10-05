@@ -73,6 +73,10 @@ def opcodeByte : Opcode → UInt8
   | .OP_CHECKSEQUENCEVERIFY => 0xb2
   | .OP_CHECKLOCKTIMEVERIFY => 0xb1
   | .OP_VERIFY => 0x69
+  | .OP_PICK => 0x79
+  | .OP_ROLL => 0x7a
+  | .OP_MIN => 0xa3
+  | .OP_MAX => 0xa4
   | .OP_SIZE => 0x82
 
 /-- Encode the low two bytes of a natural number in little-endian order. -/

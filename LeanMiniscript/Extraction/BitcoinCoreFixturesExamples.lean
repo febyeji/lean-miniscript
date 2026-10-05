@@ -24,7 +24,8 @@ private def coreOpcodeNameFixtures : List (String × Opcode) :=
    ("ENDIF", .OP_ENDIF), ("2DROP", .OP_2DROP), ("2DUP", .OP_2DUP),
    ("3DUP", .OP_3DUP), ("2OVER", .OP_2OVER), ("2ROT", .OP_2ROT),
    ("2SWAP", .OP_2SWAP), ("IFDUP", .OP_IFDUP),
-   ("DEPTH", .OP_DEPTH), ("DROP", .OP_DROP), ("DUP", .OP_DUP), ("NIP", .OP_NIP), ("OVER", .OP_OVER), ("ROT", .OP_ROT),
+   ("DEPTH", .OP_DEPTH), ("DROP", .OP_DROP), ("DUP", .OP_DUP), ("NIP", .OP_NIP), ("OVER", .OP_OVER),
+   ("PICK", .OP_PICK), ("ROLL", .OP_ROLL), ("ROT", .OP_ROT),
    ("SWAP", .OP_SWAP), ("TUCK", .OP_TUCK), ("TOALTSTACK", .OP_TOALTSTACK),
    ("FROMALTSTACK", .OP_FROMALTSTACK), ("ADD", .OP_ADD),
    ("1ADD", .OP_1ADD), ("1SUB", .OP_1SUB), ("NEGATE", .OP_NEGATE),
@@ -32,6 +33,7 @@ private def coreOpcodeNameFixtures : List (String × Opcode) :=
    ("LESSTHAN", .OP_LESSTHAN), ("GREATERTHAN", .OP_GREATERTHAN),
    ("LESSTHANOREQUAL", .OP_LESSTHANOREQUAL),
    ("GREATERTHANOREQUAL", .OP_GREATERTHANOREQUAL),
+   ("MIN", .OP_MIN), ("MAX", .OP_MAX),
    ("BOOLAND", .OP_BOOLAND), ("BOOLOR", .OP_BOOLOR),
    ("NOT", .OP_NOT), ("0NOTEQUAL", .OP_0NOTEQUAL), ("EQUAL", .OP_EQUAL),
    ("EQUALVERIFY", .OP_EQUALVERIFY), ("NUMEQUAL", .OP_NUMEQUAL),
@@ -269,13 +271,13 @@ private def parsesDrop : Bool :=
 example : parsesDrop = true := by
   native_decide
 
-private def rejectsPick : Bool :=
-  match parseCoreScriptSource "1 PICK" with
-  | .error (.unsupportedToken "PICK") => true
+private def rejectsSha1 : Bool :=
+  match parseCoreScriptSource "1 SHA1" with
+  | .error (.unsupportedToken "SHA1") => true
   | _ => false
 
 /-- An opcode outside the modeled subset is reported by token. -/
-example : rejectsPick = true := by
+example : rejectsSha1 = true := by
   native_decide
 
 private def rejectsTruncatedPush : Bool :=

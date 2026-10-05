@@ -82,6 +82,11 @@ theorem Eval.stackGrowth_le_allowance
   all_goals simp_all only [List.length_cons, true_implies,
     stackGrowthAllowance, ScriptElement.stackGrowthAllowance]
   all_goals try omega
+  case roll.refl =>
+    rename_i operand top index rest alt script flags ctx decoded tail ih
+    have removed := List.length_eraseIdx_le (top :: rest) index
+    simp only [List.length_cons] at removed
+    omega
   case checkmultisig_success.refl =>
     rename_i stack operands script alt flags ctx decoded checked dummy tail ih
     have remaining := decodeCheckMultiSigOperandsFor_rest_length_le decoded

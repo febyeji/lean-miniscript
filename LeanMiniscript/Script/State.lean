@@ -152,11 +152,11 @@ def Opcode.fixedMainStackInputs? : Opcode → Option Nat
   | .OP_ELSE | .OP_ENDIF => some 0
   | .OP_DEPTH => some 0
   | .OP_IFDUP | .OP_DROP | .OP_DUP => some 1
-  | .OP_2DROP | .OP_2DUP | .OP_NIP | .OP_OVER | .OP_SWAP | .OP_TUCK => some 2
+  | .OP_2DROP | .OP_2DUP | .OP_NIP | .OP_OVER | .OP_SWAP | .OP_TUCK | .OP_PICK | .OP_ROLL => some 2
   | .OP_TOALTSTACK => some 1
   | .OP_FROMALTSTACK => some 0
   | .OP_1ADD | .OP_1SUB | .OP_NEGATE | .OP_ABS => some 1
-  | .OP_ADD | .OP_SUB | .OP_BOOLAND | .OP_BOOLOR => some 2
+  | .OP_ADD | .OP_SUB | .OP_MIN | .OP_MAX | .OP_BOOLAND | .OP_BOOLOR => some 2
   | .OP_NOT | .OP_0NOTEQUAL => some 1
   | .OP_EQUAL | .OP_EQUALVERIFY | .OP_NUMEQUAL | .OP_NUMEQUALVERIFY => some 2
   | .OP_NUMNOTEQUAL | .OP_LESSTHAN | .OP_GREATERTHAN |
@@ -181,9 +181,14 @@ def Opcode.activeFixedMainStackInputs? (opcode : Opcode)
 /-- Modeled opcodes that decode both operands as Script
     numbers with the ordinary four-byte limit. -/
 def Opcode.usesBinaryScriptNums : Opcode → Bool
-  | .OP_ADD | .OP_SUB | .OP_BOOLAND | .OP_BOOLOR | .OP_NUMEQUAL | .OP_NUMEQUALVERIFY |
+  | .OP_ADD | .OP_SUB | .OP_MIN | .OP_MAX | .OP_BOOLAND | .OP_BOOLOR | .OP_NUMEQUAL | .OP_NUMEQUALVERIFY |
       .OP_NUMNOTEQUAL | .OP_LESSTHAN | .OP_GREATERTHAN |
       .OP_LESSTHANOREQUAL | .OP_GREATERTHANOREQUAL => true
+  | _ => false
+
+/-- Stack operations that decode a depth index after checking for two inputs. -/
+def Opcode.usesStackIndex : Opcode → Bool
+  | .OP_PICK | .OP_ROLL => true
   | _ => false
 
 /-- Unary arithmetic operations that replace a four-byte Script number with
@@ -384,9 +389,32 @@ theorem ArithmeticScriptNatSafe.decode {n : Nat}
   · exact safe.2.1
   · exact safe.2.2
 
-/-- Decode two ordinary numeric operands. `belowTop` is decoded first to match
-    Bitcoin Core's `stacktop(-2)` then `stacktop(-1)` evaluation order. The
-    returned pair remains in this repository's top-first stack order. -/
+/-- Decode a four-byte stack index and reject negative or out-of-range values. -/
+def decodeStackIndex (flags : ScriptFlags) (operand : StackElement) (depth : Nat) :
+    Except ScriptError Nat := do
+  let index ← decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes
+  if index < 0 ∨ depth ≤ index.toNat then .error .stackUnderflow
+  else .ok index.toNat
+
+/-- Successful index decoding guarantees an existing item at the selected depth. -/
+theorem decodeStackIndex_ok_lt {flags : ScriptFlags} {operand : StackElement}
+    {depth index : Nat} (decoded : decodeStackIndex flags operand depth = .ok index) :
+    index < depth := by
+  unfold decodeStackIndex at decoded
+  cases number : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes with
+  | error error =>
+      simp only [number] at decoded
+      change (Except.error error : Except ScriptError Nat) = .ok index at decoded
+      contradiction
+  | ok value =>
+      simp only [number] at decoded
+      change (if value < 0 ∨ depth ≤ value.toNat then .error .stackUnderflow
+        else .ok value.toNat : Except ScriptError Nat) = .ok index at decoded
+      split at decoded
+      · contradiction
+      · simp_all
+
+/-- Decode the lower binary operand before the top operand. -/
 def decodeBinaryScriptNums (flags : ScriptFlags) (top belowTop : StackElement) :
     Except ScriptError (Int × Int) := do
   let belowValue ← decodeScriptNum belowTop flags.minimalData

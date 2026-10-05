@@ -563,6 +563,15 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op opcode :: script) (top :: belowTop :: rest) altStack flags ctx
         (.failure error)
 
+  | stackindex_failure : (opcode : Opcode) →
+      (operand top : StackElement) → (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (error : ScriptError) →
+      opcode.usesStackIndex = true →
+      decodeStackIndex flags operand (top :: rest).length = .error error →
+      Eval (.op opcode :: script) (operand :: top :: rest) altStack flags ctx
+        (.failure error)
+
   | within_scriptnum_failure : (upperBytes lowerBytes valueBytes : StackElement) →
       (rest : Stack) → (script : Script) → (altStack : Stack) →
       (flags : ScriptFlags) → (ctx : TxContext) → (error : ScriptError) →
@@ -1088,6 +1097,26 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op .OP_GREATERTHANOREQUAL :: script) (aBytes :: bBytes :: rest)
         altStack flags ctx result
 
+  -- OP_MIN
+  | min : (aBytes bBytes : StackElement) → (a b : Int) →
+      (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b) →
+      Eval script (scriptNum (Min.min b a) :: rest) altStack flags ctx result →
+      Eval (.op .OP_MIN :: script) (aBytes :: bBytes :: rest)
+        altStack flags ctx result
+
+  -- OP_MAX
+  | max : (aBytes bBytes : StackElement) → (a b : Int) →
+      (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b) →
+      Eval script (scriptNum (Max.max b a) :: rest) altStack flags ctx result →
+      Eval (.op .OP_MAX :: script) (aBytes :: bBytes :: rest)
+        altStack flags ctx result
+
   -- OP_ADD
   | add : (aBytes bBytes : StackElement) → (a b : Int) →
       (rest : Stack) → (script : Script) →
@@ -1230,6 +1259,24 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
       Eval script (below :: top :: below :: rest) altStack flags ctx result →
       Eval (.op .OP_OVER :: script) (top :: below :: rest) altStack flags ctx result
+
+  -- OP_PICK decodes its index after the fixed two-item check.
+  | pick : (operand top : StackElement) → (index : Nat) →
+      (rest altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      decodeStackIndex flags operand (top :: rest).length = .ok index →
+      Eval script ((top :: rest)[index]?.getD ByteArray.empty :: (top :: rest))
+        altStack flags ctx result →
+      Eval (.op .OP_PICK :: script) (operand :: top :: rest) altStack flags ctx result
+
+  -- OP_ROLL decodes its index after the fixed two-item check.
+  | roll : (operand top : StackElement) → (index : Nat) →
+      (rest altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      decodeStackIndex flags operand (top :: rest).length = .ok index →
+      Eval script ((top :: rest)[index]?.getD ByteArray.empty :: (top :: rest).eraseIdx index)
+        altStack flags ctx result →
+      Eval (.op .OP_ROLL :: script) (operand :: top :: rest) altStack flags ctx result
 
   -- OP_TUCK: Core 9be056a8a72b624dae9623b2f7bded92c2a21c91,
   -- src/script/interpreter.cpp: insert a copy of stacktop(-1) at stack.end() - 2 after checking two inputs.
@@ -1500,7 +1547,7 @@ theorem Eval.fixedArityStackUnderflow_result
     (evaluated : Eval (.op opcode :: script) stack altStack flags ctx result) :
     result = .failure .stackUnderflow := by
   cases opcode <;> cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1511,7 +1558,7 @@ theorem Eval.fromAltStack_empty_result
     (evaluated : Eval (.op .OP_FROMALTSTACK :: script) stack [] flags ctx result) :
     result = .failure .altStackUnderflow := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1529,7 +1576,7 @@ theorem Eval.ifUnbalanced_result
         flags ctx selectedResult ∧
       result = finishUnclosedConditional selectedResult := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
       Opcode.usesTimelockScriptNum, minimalIfSatisfied] <;>
     try omega
   case if_unbalanced => exact ⟨_, by assumption, rfl⟩
@@ -1547,7 +1594,7 @@ theorem Eval.notifUnbalanced_result
         flags ctx selectedResult ∧
       result = finishUnclosedConditional selectedResult := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
       Opcode.usesTimelockScriptNum, minimalIfSatisfied] <;>
     try omega
   case notif_unbalanced => exact ⟨_, by assumption, rfl⟩
@@ -1559,7 +1606,7 @@ theorem Eval.elseUnbalanced_result
     (evaluated : Eval (.op .OP_ELSE :: script) stack altStack flags ctx result) :
     result = .failure .unbalancedConditional := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1570,7 +1617,7 @@ theorem Eval.endifUnbalanced_result
     (evaluated : Eval (.op .OP_ENDIF :: script) stack altStack flags ctx result) :
     result = .failure .unbalancedConditional := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1587,7 +1634,7 @@ theorem Eval.binaryScriptNumFailure_result
   cases opcode <;> simp_all [Opcode.usesBinaryScriptNums]
   all_goals
     cases evaluated <;>
-      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
+      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
         Opcode.usesTimelockScriptNum] <;>
       omega
 
@@ -1602,7 +1649,7 @@ theorem Eval.unaryScriptNumFailure_result
       altStack flags ctx result) :
     result = .failure error := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1617,7 +1664,7 @@ theorem Eval.checksigaddScriptNumFailure_result
       (pubkey :: countBytes :: sig :: rest) altStack flags ctx result) :
     result = .failure error := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
       Opcode.usesTimelockScriptNum, decodeCheckSigAddCount] <;>
     omega
 
@@ -1632,7 +1679,7 @@ theorem Eval.checkMultiSigOperandFailure_result
       result) :
     result = .failure error := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1651,7 +1698,7 @@ theorem Eval.checkMultiSigNullDummyFailure_result
       result) :
     result = .failure .nullDummy := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
       Opcode.usesTimelockScriptNum] <;>
     try omega <;> grind
 
@@ -1670,7 +1717,7 @@ theorem Eval.timelockScriptNumFailure_result
   cases opcode <;> simp_all [Opcode.usesTimelockScriptNum]
   all_goals
     cases evaluated <;>
-      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
+      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
         Opcode.usesTimelockScriptNum] <;>
       omega
 
@@ -1690,7 +1737,7 @@ theorem Eval.timelockNegativeFailure_result
   cases opcode <;> simp_all [Opcode.usesTimelockScriptNum]
   all_goals
     cases evaluated <;>
-      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
+      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
         Opcode.usesTimelockScriptNum] <;>
       omega
 
@@ -1708,7 +1755,7 @@ theorem Eval.checkSequenceVerifyFailure_result
       (operand :: rest) altStack flags ctx result) :
     result = .failure .checkSequenceVerify := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1726,10 +1773,11 @@ theorem Eval.checkLockTimeVerifyFailure_result
       (operand :: rest) altStack flags ctx result) :
     result = .failure .checkLockTimeVerify := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
+set_option maxHeartbeats 400000 in
 /-- Big-step evaluation has at most one result for fixed script, stacks, flags,
     and transaction context. -/
 theorem Eval.result_unique
@@ -1742,11 +1790,36 @@ theorem Eval.result_unique
   -- rule must reopen the corresponding determinism obligations.
   induction first generalizing secondResult <;> cases second
   all_goals
-    try simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
+    try simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
       Opcode.usesTimelockScriptNum, minimalIfSatisfied, decodeCheckSigAddCount]
     try omega
     try solve_by_elim
     try grind
+
+/-- Index decoding and range errors terminate either indexed stack operation. -/
+theorem Eval.stackIndexFailure
+    (opcode : Opcode) (operand top : StackElement) (rest : Stack)
+    (script : Script) (altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (error : ScriptError) (usesIndex : opcode.usesStackIndex = true)
+    (decoded : decodeStackIndex flags operand (top :: rest).length = .error error) :
+    Eval (.op opcode :: script) (operand :: top :: rest) altStack flags ctx
+      (.failure error) :=
+  .stackindex_failure opcode operand top rest script altStack flags ctx error
+    usesIndex decoded
+
+/-- An indexed stack operation's decoder error determines its terminal result. -/
+theorem Eval.stackIndexFailure_result
+    {opcode : Opcode} {operand top : StackElement} {rest : Stack}
+    {script : Script} {altStack : Stack} {flags : ScriptFlags}
+    {ctx : TxContext} {error : ScriptError} {result : ExecResult}
+    (usesIndex : opcode.usesStackIndex = true)
+    (decoded : decodeStackIndex flags operand (top :: rest).length = .error error)
+    (evaluated : Eval (.op opcode :: script) (operand :: top :: rest)
+      altStack flags ctx result) :
+    result = .failure error :=
+  evaluated.result_unique
+    (.stackindex_failure opcode operand top rest script altStack flags ctx
+      error usesIndex decoded)
 
 /-- A unary arithmetic decoder error determines the unique terminal result. -/
 theorem Eval.unaryArithmeticScriptNumFailure_result
@@ -2050,6 +2123,38 @@ theorem Eval.exists_result
                             ⟨result, evaluated⟩
                           exact ⟨result, .over top below stackRest altStack rest
                             flags ctx result evaluated⟩
+              | OP_PICK =>
+                  rcases stack with _ | ⟨operand, _ | ⟨top, stackRest⟩⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_PICK 2 rest _ altStack flags ctx rfl (by simp)⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_PICK 2 rest _ altStack flags ctx rfl (by simp)⟩
+                  · cases decoded : decodeStackIndex flags operand (top :: stackRest).length with
+                    | error error =>
+                        exact ⟨.failure error,
+                          .stackindex_failure .OP_PICK operand top stackRest rest altStack
+                            flags ctx error rfl decoded⟩
+                    | ok index =>
+                        rcases next ((top :: stackRest)[index]?.getD ByteArray.empty ::
+                            (top :: stackRest)) altStack with ⟨result, evaluated⟩
+                        exact ⟨result, .pick operand top index stackRest altStack rest
+                          flags ctx result decoded evaluated⟩
+              | OP_ROLL =>
+                  rcases stack with _ | ⟨operand, _ | ⟨top, stackRest⟩⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_ROLL 2 rest _ altStack flags ctx rfl (by simp)⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_ROLL 2 rest _ altStack flags ctx rfl (by simp)⟩
+                  · cases decoded : decodeStackIndex flags operand (top :: stackRest).length with
+                    | error error =>
+                        exact ⟨.failure error,
+                          .stackindex_failure .OP_ROLL operand top stackRest rest altStack
+                            flags ctx error rfl decoded⟩
+                    | ok index =>
+                        rcases next ((top :: stackRest)[index]?.getD ByteArray.empty ::
+                            (top :: stackRest).eraseIdx index) altStack with ⟨result, evaluated⟩
+                        exact ⟨result, .roll operand top index stackRest altStack rest
+                          flags ctx result decoded evaluated⟩
               | OP_TUCK =>
                   cases stack with
                   | nil =>
@@ -2244,6 +2349,50 @@ theorem Eval.exists_result
                               rcases next (scriptNum (b - a) :: stackRest) altStack
                                 with ⟨result, evaluated⟩
                               exact ⟨result, .sub top belowTop a b stackRest rest altStack
+                                flags ctx result decoded evaluated⟩
+              | OP_MIN =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_MIN 2 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_MIN 2 rest [top] altStack flags ctx rfl (by simp)⟩
+                      | cons belowTop stackRest =>
+                          cases decoded : decodeBinaryScriptNums flags top belowTop with
+                          | error error =>
+                              exact ⟨.failure error,
+                                .binary_scriptnum_failure .OP_MIN top belowTop stackRest
+                                  rest altStack flags ctx error rfl decoded⟩
+                          | ok pair =>
+                              rcases pair with ⟨a, b⟩
+                              rcases next (scriptNum (Min.min b a) :: stackRest) altStack
+                                with ⟨result, evaluated⟩
+                              exact ⟨result, .min top belowTop a b stackRest rest altStack
+                                flags ctx result decoded evaluated⟩
+              | OP_MAX =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_MAX 2 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_MAX 2 rest [top] altStack flags ctx rfl (by simp)⟩
+                      | cons belowTop stackRest =>
+                          cases decoded : decodeBinaryScriptNums flags top belowTop with
+                          | error error =>
+                              exact ⟨.failure error,
+                                .binary_scriptnum_failure .OP_MAX top belowTop stackRest
+                                  rest altStack flags ctx error rfl decoded⟩
+                          | ok pair =>
+                              rcases pair with ⟨a, b⟩
+                              rcases next (scriptNum (Max.max b a) :: stackRest) altStack
+                                with ⟨result, evaluated⟩
+                              exact ⟨result, .max top belowTop a b stackRest rest altStack
                                 flags ctx result decoded evaluated⟩
               | OP_NUMNOTEQUAL =>
                   cases stack with
@@ -3147,6 +3296,44 @@ theorem Eval.twoSwap_underflow_result {stack altStack : Stack} {script : Script}
     result = .failure .stackUnderflow :=
   evaluated.result_unique (.stack_underflow .OP_2SWAP 4 script stack altStack flags ctx rfl short)
 
+/-- A decoded in-range index determines the exact OP_PICK result. -/
+theorem Eval.pick_result (operand top : StackElement) (index : Nat)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeStackIndex flags operand (top :: stack).length = .ok index)
+    (result : ExecResult) :
+    Eval [.op .OP_PICK] (operand :: top :: stack) altStack flags ctx result ↔
+      result = .success ((top :: stack)[index]?.getD ByteArray.empty ::
+        (top :: stack)) altStack := by
+  have canonical : Eval [.op .OP_PICK] (operand :: top :: stack) altStack flags ctx
+      (.success ((top :: stack)[index]?.getD ByteArray.empty ::
+        (top :: stack)) altStack) :=
+    .pick operand top index stack altStack [] flags ctx _ decoded .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- A decoded in-range index determines the exact OP_ROLL result. -/
+theorem Eval.roll_result (operand top : StackElement) (index : Nat)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeStackIndex flags operand (top :: stack).length = .ok index)
+    (result : ExecResult) :
+    Eval [.op .OP_ROLL] (operand :: top :: stack) altStack flags ctx result ↔
+      result = .success ((top :: stack)[index]?.getD ByteArray.empty ::
+        (top :: stack).eraseIdx index) altStack := by
+  have canonical : Eval [.op .OP_ROLL] (operand :: top :: stack) altStack flags ctx
+      (.success ((top :: stack)[index]?.getD ByteArray.empty ::
+        (top :: stack).eraseIdx index) altStack) :=
+    .roll operand top index stack altStack [] flags ctx _ decoded .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
 /-- DEPTH has this exact relational result for every main/alternate stack. -/
 theorem Eval.depth_result (stack altStack : Stack) (flags : ScriptFlags)
     (ctx : TxContext) (result : ExecResult) :
@@ -3240,6 +3427,40 @@ theorem Eval.sub_result (aBytes bBytes : StackElement) (a b : Int)
   have canonical : Eval [.op .OP_SUB] (aBytes :: bBytes :: stack) altStack flags ctx
       (.success (scriptNum (b - a) :: stack) altStack) :=
     .sub aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- Decoded OP_MIN operands determine its exact relational result. -/
+theorem Eval.min_result (aBytes bBytes : StackElement) (a b : Int)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b))
+    (result : ExecResult) :
+    Eval [.op .OP_MIN] (aBytes :: bBytes :: stack) altStack flags ctx result ↔
+      result = .success (scriptNum (Min.min b a) :: stack) altStack := by
+  have canonical : Eval [.op .OP_MIN] (aBytes :: bBytes :: stack) altStack flags ctx
+      (.success (scriptNum (Min.min b a) :: stack) altStack) :=
+    .min aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- Decoded OP_MAX operands determine its exact relational result. -/
+theorem Eval.max_result (aBytes bBytes : StackElement) (a b : Int)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b))
+    (result : ExecResult) :
+    Eval [.op .OP_MAX] (aBytes :: bBytes :: stack) altStack flags ctx result ↔
+      result = .success (scriptNum (Max.max b a) :: stack) altStack := by
+  have canonical : Eval [.op .OP_MAX] (aBytes :: bBytes :: stack) altStack flags ctx
+      (.success (scriptNum (Max.max b a) :: stack) altStack) :=
+    .max aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
   constructor
   · intro evaluated
     exact evaluated.result_unique canonical

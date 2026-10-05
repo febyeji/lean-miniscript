@@ -7,6 +7,7 @@ import LeanMiniscript
 import LeanMiniscript.Bitcoin.TaprootSighashExamples
 import LeanMiniscript.Extraction.BitcoinCoreAuditExamples
 import LeanMiniscript.Extraction.BitcoinCoreNumericAuditExamples
+import LeanMiniscript.Extraction.BitcoinCoreSelectionAuditExamples
 import LeanMiniscript.Extraction.BitcoinCoreFixturesExamples
 import LeanMiniscript.Extraction.SignatureEncodingCoreExamples
 import LeanMiniscript.Miniscript.CompileExamples
@@ -37,6 +38,7 @@ import LeanMiniscript.Script.TwoOverExamples
 import LeanMiniscript.Script.ThreeDupExamples
 import LeanMiniscript.Script.TuckExamples
 import LeanMiniscript.Script.NumericOpcodeExamples
+import LeanMiniscript.Script.SelectionOpcodeExamples
 import LeanMiniscript.Script.NotExamples
 import LeanMiniscript.Script.WithinExamples
 import LeanMiniscript.Script.ScriptNumExamples
