@@ -110,6 +110,7 @@ inductive ScriptError where
   | evalFalse
   | scriptNumOverflow
   | scriptNumNonMinimal
+  | minimalData
   | pubkeyCount
   | signatureCount
   | negativeLocktime

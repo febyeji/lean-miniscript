@@ -42,13 +42,28 @@ signature, annex, resource, decoding, and error-precedence regressions.
 supported fixtures against the result tags in the pinned Bitcoin Core fixture
 file. The report retains unsupported rows and their reasons.
 
+CI runs `python3 scripts/check_core_fixture_audit.py` after `lake build`. The
+script downloads `src/test/data/script_tests.json` at Bitcoin Core revision
+`9be056a8a72b624dae9623b2f7bded92c2a21c91` and verifies SHA-256
+`bc23cb1dfa760d50042f534da23cbbe4b6fbb03d7def0b64f8de049453d6ead5` before
+execution. It requires 1,222 test rows, 51 documentation rows, zero mismatches,
+and at least 977 matching fixtures. CI retains the complete report, including
+unsupported categories and details, in the `core-fixture-audit` artifact. Raise
+`MINIMUM_MATCHED` in the script when support expands.
+
+For an offline run, build `lake build core_fixture_audit`, then pass a local
+copy with `python3 scripts/check_core_fixture_audit.py --fixture <script_tests.json>`.
+The local copy must have the same checksum. Run the gate's failure-path tests
+with `python3 -B -m unittest discover -s scripts -p 'test_check_core_fixture_audit.py' -v`.
+
 A legacy byte interpreter handles reserved and disabled opcodes, invalid bytes,
 and truncated pushes in source order. Fixture execution checks the original
 10,000-byte script limit, the 201-operation limit (including active multisig key
 counts and inactive opcodes), 520-byte pushes, and 1,000 combined stack items.
-Preparation excludes witness and P2SH evaluation, unmodeled operations and flags,
-nonminimal pushes under MINIMALDATA, and execution paths that reach a signature
-verifier. Zero-signature multisig and failures before a verifier call are
+Original push encodings enforce MINIMALDATA in active branches after the
+push-size check; inactive pushes retain their branch behavior. Preparation
+excludes witness and P2SH evaluation, unmodeled operations and flags, and
+execution paths that reach a signature verifier. Zero-signature multisig and failures before a verifier call are
 compared. Admission and execution use the same concrete Lean hash functions;
 caller-supplied signature callbacks remain outside admitted paths. These fixture
 extensions preserve the canonical Tapscript API's OP_SUCCESSx boundary.

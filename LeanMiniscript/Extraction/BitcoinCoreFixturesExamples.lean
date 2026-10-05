@@ -97,6 +97,7 @@ private def coreErrorTagFixtures : List (ScriptError × String) :=
    (.altStackUnderflow, "INVALID_ALTSTACK_OPERATION"),
    (.scriptNumOverflow, "SCRIPTNUM"),
    (.scriptNumNonMinimal, "SCRIPTNUM"),
+   (.minimalData, "MINIMALDATA"),
    (.pubkeyCount, "PUBKEY_COUNT"),
    (.signatureCount, "SIG_COUNT"),
    (.negativeLocktime, "NEGATIVE_LOCKTIME"),
@@ -297,22 +298,19 @@ private def rejectsTruncatedPush : Bool :=
 example : rejectsTruncatedPush = true := by
   native_decide
 
-private def rejectsNonMinimalPush : Bool :=
+private def rejectsNonMinimalPushAtExecution : Bool :=
   let test : CoreScriptTest := {
     witness := none
     scriptSigSource := "0x4c 0x01 0x07"
     scriptPubKeySource := "7 EQUAL"
     flagSource := "MINIMALDATA"
-    expectedError := "OK"
+    expectedError := "MINIMALDATA"
     comments := []
   }
-  match prepareCoreFixture test with
-  | .error .nonMinimalPushEncoding => true
-  | _ => false
+  (checkCoreFixture rejectingOracle test).toOption == some true
 
-/-- MINIMALDATA is accepted only when the original raw push encoding is
-    minimal. -/
-example : rejectsNonMinimalPush = true := by
+/-- MINIMALDATA rejects an executed push with its original nonminimal encoding. -/
+example : rejectsNonMinimalPushAtExecution = true := by
   native_decide
 
 private def acceptsMinimalDataFixture : Bool :=

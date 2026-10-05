@@ -399,6 +399,7 @@ def coreScriptErrorTag : ScriptError → String
   | .evalFalse => "EVAL_FALSE"
   | .scriptNumOverflow => "SCRIPTNUM"
   | .scriptNumNonMinimal => "SCRIPTNUM"
+  | .minimalData => "MINIMALDATA"
   | .pubkeyCount => "PUBKEY_COUNT"
   | .signatureCount => "SIG_COUNT"
   | .negativeLocktime => "NEGATIVE_LOCKTIME"
@@ -455,9 +456,6 @@ private def prepareRawCoreFixture (test : CoreScriptTest) :
   let flagNames := coreFlagNames test.flagSource
   if let some flag := firstUnsupportedFlag flagNames then throw (.unsupportedFlag flag)
   if flagNames.contains "P2SH" && scriptPubKey.isP2SH then throw .p2shEvaluation
-  if flagNames.contains "MINIMALDATA" &&
-      (scriptSig.hasNonMinimalPush || scriptPubKey.hasNonMinimalPush) then
-    throw .nonMinimalPushEncoding
   if (scriptSig.containsOpcode .OP_CHECKLOCKTIMEVERIFY ||
       scriptPubKey.containsOpcode .OP_CHECKLOCKTIMEVERIFY) &&
       !flagNames.contains "CHECKLOCKTIMEVERIFY" then
