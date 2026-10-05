@@ -21,7 +21,8 @@ private def rejectingOracle : CryptoOracle :=
 private def coreOpcodeNameFixtures : List (String × Opcode) :=
   [("NOP", .OP_NOP), ("IF", .OP_IF), ("NOTIF", .OP_NOTIF),
    ("ELSE", .OP_ELSE),
-   ("ENDIF", .OP_ENDIF), ("2DROP", .OP_2DROP), ("2DUP", .OP_2DUP), ("2ROT", .OP_2ROT), ("IFDUP", .OP_IFDUP),
+   ("ENDIF", .OP_ENDIF), ("2DROP", .OP_2DROP), ("2DUP", .OP_2DUP), ("2ROT", .OP_2ROT),
+   ("2SWAP", .OP_2SWAP), ("IFDUP", .OP_IFDUP),
    ("DEPTH", .OP_DEPTH), ("DROP", .OP_DROP), ("DUP", .OP_DUP), ("NIP", .OP_NIP), ("OVER", .OP_OVER), ("ROT", .OP_ROT),
    ("SWAP", .OP_SWAP), ("TUCK", .OP_TUCK), ("TOALTSTACK", .OP_TOALTSTACK),
    ("FROMALTSTACK", .OP_FROMALTSTACK), ("ADD", .OP_ADD),
@@ -54,6 +55,13 @@ private def coreOpcodeMappingsAgree : Bool :=
 
 /-- Text names and raw opcode bytes select the same modeled constructor. -/
 example : coreOpcodeMappingsAgree = true := by
+  native_decide
+
+-- Text and raw-byte fixtures select the same 2SWAP instruction.
+example : ["2SWAP", "0x72"].all (fun source =>
+    match parseCoreScriptSource source with
+    | .ok [.op .OP_2SWAP] => true
+    | _ => false) = true := by
   native_decide
 
 private def coreErrorTagFixtures : List (ScriptError × String) :=

@@ -1130,6 +1130,13 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval script (fifth :: sixth :: top :: second :: third :: fourth :: rest) altStack flags ctx result →
       Eval (.op .OP_2ROT :: script) (top :: second :: third :: fourth :: fifth :: sixth :: rest) altStack flags ctx result
 
+  -- OP_2SWAP: Core 9be056a8a72b624dae9623b2f7bded92c2a21c91,
+  -- src/script/interpreter.cpp: swap stacktop(-4) with stacktop(-2), then stacktop(-3) with stacktop(-1).
+  | twoSwap : (top second third fourth : StackElement) → (rest altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      Eval script (third :: fourth :: top :: second :: rest) altStack flags ctx result →
+      Eval (.op .OP_2SWAP :: script) (top :: second :: third :: fourth :: rest) altStack flags ctx result
+
   -- OP_SWAP
   | swap : (a b : StackElement) → (rest altStack : Stack) → (script : Script) →
       (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
@@ -1923,6 +1930,21 @@ theorem Eval.exists_result
                       altStack with ⟨result, evaluated⟩
                     exact ⟨result, .twoRot top second third fourth fifth sixth stackRest altStack
                       rest flags ctx result evaluated⟩
+              | OP_2SWAP =>
+                  rcases stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ |
+                    ⟨fourth, stackRest⟩⟩⟩⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_2SWAP 4 rest _ altStack flags ctx rfl (by simp)⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_2SWAP 4 rest _ altStack flags ctx rfl (by simp)⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_2SWAP 4 rest _ altStack flags ctx rfl (by simp)⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_2SWAP 4 rest _ altStack flags ctx rfl (by simp)⟩
+                  · rcases next (third :: fourth :: top :: second :: stackRest)
+                      altStack with ⟨result, evaluated⟩
+                    exact ⟨result, .twoSwap top second third fourth stackRest altStack
+                      rest flags ctx result evaluated⟩
               | OP_SWAP =>
                   cases stack with
                   | nil =>
@@ -2682,6 +2704,29 @@ theorem Eval.twoRot_underflow_result {stack altStack : Stack} {script : Script}
     (evaluated : Eval (.op .OP_2ROT :: script) stack altStack flags ctx result) :
     result = .failure .stackUnderflow :=
   evaluated.result_unique (.stack_underflow .OP_2ROT 6 script stack altStack flags ctx rfl short)
+
+/-- 2SWAP exchanges the top two pairs, preserving the lower stack and raw bytes. -/
+theorem Eval.twoSwap_result (top second third fourth : StackElement) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
+    Eval [.op .OP_2SWAP] (top :: second :: third :: fourth :: stack) altStack flags ctx result ↔
+      result = .success (third :: fourth :: top :: second :: stack) altStack := by
+  have canonical : Eval [.op .OP_2SWAP] (top :: second :: third :: fourth :: stack) altStack flags ctx
+      (.success (third :: fourth :: top :: second :: stack) altStack) :=
+    .twoSwap top second third fourth stack altStack [] flags ctx _ .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- With fewer than four main-stack items, 2SWAP terminates before any suffix. -/
+theorem Eval.twoSwap_underflow_result {stack altStack : Stack} {script : Script}
+    {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    (short : stack.length < 4)
+    (evaluated : Eval (.op .OP_2SWAP :: script) stack altStack flags ctx result) :
+    result = .failure .stackUnderflow :=
+  evaluated.result_unique (.stack_underflow .OP_2SWAP 4 script stack altStack flags ctx rfl short)
 
 /-- DEPTH has this exact relational result for every main/alternate stack. -/
 theorem Eval.depth_result (stack altStack : Stack) (flags : ScriptFlags)

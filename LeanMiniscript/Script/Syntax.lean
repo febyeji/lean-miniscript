@@ -17,6 +17,7 @@ inductive Opcode where
   | OP_2DROP
   | OP_2DUP
   | OP_2ROT
+  | OP_2SWAP
   | OP_IFDUP
   | OP_DEPTH
   | OP_DROP
