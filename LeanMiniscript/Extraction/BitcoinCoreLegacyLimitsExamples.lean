@@ -162,9 +162,9 @@ private def fixture (script : String) (expected : String) : CoreScriptTest :=
   { witness := none, scriptSigSource := "", scriptPubKeySource := script,
     flagSource := "", expectedError := expected, comments := [] }
 
--- A reached verifier remains unsupported even for an empty signature.
+-- The explicitly verifier-free preparation excludes a reached verifier even for an empty signature.
 example : (["0 0 CHECKSIG", "0 0 1 0 1 CHECKMULTISIG"] : List String).all
-    (fun script => match prepareCoreFixture (fixture script "OK") with
+    (fun script => match prepareCoreFixtureWithoutVerifier (fixture script "OK") with
       | .error .signatureOpcode => true
       | _ => false) = true := by native_decide
 

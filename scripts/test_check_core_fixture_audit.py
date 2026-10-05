@@ -57,6 +57,21 @@ class ReportTests(unittest.TestCase):
                 audit.validate_report(report)
 
 
+class CompleteCoverageTests(unittest.TestCase):
+    def test_complete_pinned_coverage(self):
+        audit.validate_report(
+            "tests=1222 compared=1222 matched=1222 mismatched=0 "
+            "unsupported=0 documentation=51\n"
+        )
+
+    def test_one_unsupported_row_fails_production_floor(self):
+        with self.assertRaisesRegex(ValueError, "coverage regressed"):
+            audit.validate_report(
+                "tests=1222 compared=1221 matched=1221 mismatched=0 "
+                "unsupported=1 documentation=51\nunsupported.witness=1\n"
+            )
+
+
 class RunnerTests(unittest.TestCase):
     def setUp(self):
         floor_patch = patch.object(audit, "MINIMUM_MATCHED", 866)

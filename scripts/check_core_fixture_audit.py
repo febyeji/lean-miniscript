@@ -21,8 +21,8 @@ FIXTURE_URL = (
 )
 EXPECTED_TESTS = 1222
 EXPECTED_DOCUMENTATION = 51
-# Raise this floor when an implementation adds supported fixtures.
-MINIMUM_MATCHED = 977
+# Every executable row in the pinned fixture must match.
+MINIMUM_MATCHED = EXPECTED_TESTS
 REPOSITORY = Path(__file__).resolve().parent.parent
 
 SUMMARY = re.compile(

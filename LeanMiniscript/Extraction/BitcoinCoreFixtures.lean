@@ -2,6 +2,9 @@ import Lean.Data.Json
 import LeanMiniscript.Extraction.RefInterp
 import LeanMiniscript.Script.Codec.Deserialization
 import LeanMiniscript.Extraction.BitcoinCoreLegacyScript
+import LeanMiniscript.Extraction.BitcoinCoreVerification
+import LeanMiniscript.Extraction.CoreFixtureWitnessData
+import LeanMiniscript.Extraction.CoreFixtureTemplates
 
 namespace LeanMiniscript.Extraction
 
@@ -14,8 +17,8 @@ open LeanMiniscript.Script
 Bitcoin Core's `script_tests.json` stores Script programs in the textual
 fixture syntax accepted by its test utilities. In particular, a `0x...` token
 inserts raw serialized Script bytes rather than pushing the decoded bytes as
-one stack element. This module reproduces that boundary for the opcode subset
-modeled by lean-miniscript and classifies unsupported semantics explicitly.
+one stack element. This module retains that byte boundary and prepares
+transaction-backed execution for all rows in the pinned fixture.
 -/
 
 /-- Bitcoin Core revision used by the checked Script fixture subset. -/
@@ -281,6 +284,8 @@ def deserializeCoreScriptBytes (bytes : ByteArray) :
 /-- Legacy-only source aliases compile to their literal bytes, while the
 shared Script AST continues to reject the corresponding unmodeled opcodes. -/
 private def coreLegacyOpcodeByteFromName? : String → Option UInt8
+  | "SHA1" => some 0xa7
+  | "CODESEPARATOR" => some 0xab
   | "RESERVED" => some 0x50
   | "VER" => some 0x62
   | "VERIF" => some 0x65
@@ -324,7 +329,7 @@ private def compileCoreToken : CoreSourceToken →
 
 /-- Compile Core's fixture tokens to the exact byte stream that its test
     utility feeds to the Script interpreter. -/
-private def coreScriptSourceBytes (source : String) :
+def coreScriptSourceBytes (source : String) :
     Except CoreScriptSourceError ByteArray := do
   let tokens ← tokenizeCoreSource source
   tokens.foldlM (fun bytes token => do
@@ -341,6 +346,7 @@ def parseCoreScriptSource (source : String) :
 /-- Reasons why a well-formed upstream row cannot yet be compared faithfully. -/
 inductive CoreFixtureUnsupported where
   | witnessCase
+  | witnessData (message : String)
   | scriptSig (error : CoreScriptSourceError)
   | scriptPubKey (error : CoreScriptSourceError)
   | legacyScriptSig (reason : CoreLegacyUnsupported)
@@ -353,8 +359,17 @@ inductive CoreFixtureUnsupported where
   | expectedError (error : String)
   deriving Repr, DecidableEq
 
-/-- A Core fixture whose execution and expected result fall entirely within
-    the current evaluator and error-tag model. -/
+/-- Original bytes, resolved witness, and verification flags for concrete
+transaction-backed fixture execution. Expected result tags are kept separately. -/
+structure CoreConcreteFixture where
+  scriptSig : ByteArray
+  scriptPubKey : ByteArray
+  witness : List ByteArray
+  amount : UInt64
+  flags : CoreVerificationFlags
+
+/-- Prepared input for concrete fixtures or the explicitly verifier-free
+    legacy compatibility boundary. -/
 structure SupportedCoreFixture where
   source : CoreScriptTest
   scriptSig : Script
@@ -362,6 +377,8 @@ structure SupportedCoreFixture where
   flags : ScriptFlags
   /-- Original legacy bytes with source-order execution and resource accounting. -/
   rawPrograms : Option (CoreLegacyProgram × CoreLegacyProgram) := none
+  /-- Full VerifyScript input, including actual transaction and witness semantics. -/
+  concrete : Option CoreConcreteFixture := none
 
 private def coreFlagNames (source : String) : List String :=
   if source.trimAscii.isEmpty then []
@@ -404,7 +421,7 @@ def coreScriptErrorTag : ScriptError → String
   | .signatureCount => "SIG_COUNT"
   | .negativeLocktime => "NEGATIVE_LOCKTIME"
   | .nullDummy => "SIG_NULLDUMMY"
-  | .sigNullFail => "SIG_NULLFAIL"
+  | .sigNullFail => "NULLFAIL"
   | .sigDer => "SIG_DER"
   | .sigHighS => "SIG_HIGH_S"
   | .sigHashType => "SIG_HASHTYPE"
@@ -440,7 +457,7 @@ private def supportedExpectedError : String → Bool
       "DISCOURAGE_UPGRADABLE_NOPS" | "INVALID_STACK_OPERATION" |
       "INVALID_ALTSTACK_OPERATION" | "SCRIPTNUM" | "MINIMALDATA" |
       "PUBKEY_COUNT" | "SIG_COUNT" | "NEGATIVE_LOCKTIME" |
-      "SIG_NULLDUMMY" | "SIG_NULLFAIL" | "SIG_DER" | "SIG_HIGH_S" |
+      "SIG_NULLDUMMY" | "NULLFAIL" | "SIG_DER" | "SIG_HIGH_S" |
       "SIG_HASHTYPE" | "PUBKEYTYPE" | "EQUALVERIFY" | "NUMEQUALVERIFY" |
       "CHECKSIGVERIFY" | "CHECKMULTISIGVERIFY" | "VERIFY" |
       "UNSATISFIED_LOCKTIME" | "MINIMALIF" | "TAPSCRIPT_MINIMALIF" |
@@ -485,18 +502,73 @@ private def prepareRawCoreFixture (test : CoreScriptTest) :
 
 /-- Prepare original legacy bytes for resource-aware execution. Witness, P2SH,
 unsupported flags, and paths reaching a cryptographic verifier remain excluded. -/
-def prepareCoreFixture (test : CoreScriptTest) :
+def prepareCoreFixtureWithoutVerifier (test : CoreScriptTest) :
     Except CoreFixtureUnsupported SupportedCoreFixture := do
   if test.witness.isSome then throw .witnessCase
   if !supportedExpectedError test.expectedError then
     throw (.expectedError test.expectedError)
   prepareRawCoreFixture test
 
+private def firstUnsupportedVerificationFlag (names : List String) : Option String :=
+  names.find? fun name =>
+    !["P2SH", "STRICTENC", "DERSIG", "LOW_S", "MINIMALDATA", "MINIMALIF",
+      "NULLDUMMY", "NULLFAIL", "CHECKLOCKTIMEVERIFY", "CHECKSEQUENCEVERIFY",
+      "DISCOURAGE_UPGRADABLE_NOPS", "SIGPUSHONLY", "CLEANSTACK", "WITNESS",
+      "WITNESS_PUBKEYTYPE", "TAPROOT", "DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM",
+      "DISCOURAGE_UPGRADABLE_TAPROOT_VERSION", "DISCOURAGE_OP_SUCCESS",
+      "DISCOURAGE_UPGRADABLE_PUBKEYTYPE", "CONST_SCRIPTCODE"].contains name
+
+/-- Core's test harness adds P2SH and WITNESS whenever CLEANSTACK is requested. -/
+def coreVerificationFlagsForFixture (names : List String) : CoreVerificationFlags where
+  script := { flagsForCoreFixture names with
+    witnessPubKeyType := names.contains "WITNESS_PUBKEYTYPE"
+    discourageUpgradablePubKeyType := names.contains "DISCOURAGE_UPGRADABLE_PUBKEYTYPE" }
+  p2sh := names.contains "P2SH" || names.contains "CLEANSTACK"
+  sigPushOnly := names.contains "SIGPUSHONLY"
+  cleanStack := names.contains "CLEANSTACK"
+  witness := names.contains "WITNESS" || names.contains "CLEANSTACK"
+  taproot := names.contains "TAPROOT"
+  checkLockTimeVerify := names.contains "CHECKLOCKTIMEVERIFY"
+  checkSequenceVerify := names.contains "CHECKSEQUENCEVERIFY"
+  discourageUpgradableWitnessProgram := names.contains "DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM"
+  discourageUpgradableTaprootVersion := names.contains "DISCOURAGE_UPGRADABLE_TAPROOT_VERSION"
+  discourageOpSuccess := names.contains "DISCOURAGE_OP_SUCCESS"
+  constScriptCode := names.contains "CONST_SCRIPTCODE"
+
+/-- Prepare exact original bytes and concrete witness/transaction inputs.
+Admission is independent of the expected result and signature verification;
+execution determines every cryptographic result and Script failure. -/
+def prepareCoreFixture (test : CoreScriptTest) :
+    Except CoreFixtureUnsupported SupportedCoreFixture := do
+  let witnessSource ← (parseCoreFixtureWitnessSource test.witness).mapError .witnessData
+  let templates ← (resolveCoreFixtureTemplates
+    (fun source => (coreScriptSourceBytes source).mapError (fun error => reprStr error))
+    witnessSource.elements).mapError .witnessData
+  let sigBytes ← (coreScriptSourceBytes test.scriptSigSource).mapError .scriptSig
+  let pubKeyBytes ← if test.scriptPubKeySource == "0x51 0x20 #TAPROOTOUTPUT#" then
+      (resolveCoreFixtureScriptPubKey
+        (fun source => (coreScriptSourceBytes source).mapError (fun error => reprStr error))
+        templates test.scriptPubKeySource).mapError .witnessData
+    else (coreScriptSourceBytes test.scriptPubKeySource).mapError .scriptPubKey
+  let names := coreFlagNames test.flagSource
+  if let some flag := firstUnsupportedVerificationFlag names then throw (.unsupportedFlag flag)
+  let flags := coreVerificationFlagsForFixture names
+  return {
+    source := test
+    scriptSig := (deserializeCoreScriptBytes sigBytes).toOption.getD []
+    scriptPubKey := (deserializeCoreScriptBytes pubKeyBytes).toOption.getD []
+    flags := flags.script
+    concrete := some {
+      scriptSig := sigBytes, scriptPubKey := pubKeyBytes,
+      witness := templates.witness, amount := witnessSource.amount, flags := flags }
+  }
+
 /-- Observable result at Bitcoin Core's `VerifyScript` boundary. `none` is a
     successful execution whose final stack is empty or false. -/
 inductive CoreFixtureOutcome where
   | accepted
   | rejected (error : Option ScriptError)
+  | verificationRejected (error : CoreVerificationError)
   deriving Repr, DecidableEq, BEq
 
 /-- Render an evaluator outcome using Bitcoin Core's fixture result tags. -/
@@ -504,6 +576,7 @@ def CoreFixtureOutcome.coreTag : CoreFixtureOutcome → String
   | .accepted => "OK"
   | .rejected none => "EVAL_FALSE"
   | .rejected (some error) => coreScriptErrorTag error
+  | .verificationRejected error => error.coreTag coreScriptErrorTag
 
 /-- Transaction fields described by the header of Core's `script_tests.json`.
     Signature cases are excluded before this simplified context is used. -/
@@ -517,7 +590,7 @@ def coreFixtureTxContext : TxContext where
     stack is preserved, while the alternate stack is reset between them just
     as it is at Core's two `EvalScript` boundaries. Concrete hashes match the
     admission preflight; caller-supplied signature callbacks remain available. -/
-def runCoreFixture (oracle : CryptoOracle)
+def runCoreFixtureWithoutVerifier (oracle : CryptoOracle)
     (fixture : SupportedCoreFixture) : CoreFixtureOutcome :=
   let oracle := CryptoOracle.pureLeanHashes oracle.checkSig oracle.checkSchnorrSig
   match fixture.rawPrograms with
@@ -540,7 +613,25 @@ def runCoreFixture (oracle : CryptoOracle)
           | .success (top :: _) _ =>
               if castToBool top then .accepted else .rejected none
 
-/-- Import, conservatively classify, execute, and compare one Core fixture. -/
+/-- Execute prepared fixtures with concrete hashes, ECDSA, Schnorr, transaction
+sighashes, P2SH and witness verification. The supplied abstract oracle remains
+available for manually constructed fixtures without concrete source inputs. -/
+def runCoreFixture (oracle : CryptoOracle) (fixture : SupportedCoreFixture) :
+    CoreFixtureOutcome :=
+  match fixture.concrete with
+  | none => runCoreFixtureWithoutVerifier oracle fixture
+  | some input =>
+      let transaction := coreFixtureTransaction input.scriptSig input.scriptPubKey input.amount
+      let execute := executeCoreFixtureScript transaction input.flags
+      let verifyWitness : CoreWitnessVerifier := fun witness version program wrapped =>
+        verifyCoreWitnessProgram execute input.flags witness version program wrapped
+          (checkCoreFixtureKeyPath transaction)
+      match verifyCoreScripts execute verifyWitness input.flags
+          input.scriptSig input.scriptPubKey input.witness with
+      | .ok () => .accepted
+      | .error error => .verificationRejected error
+
+/-- Prepare, execute, and compare one Core fixture against its expected tag. -/
 def checkCoreFixture (oracle : CryptoOracle) (test : CoreScriptTest) :
     Except CoreFixtureUnsupported Bool := do
   let fixture ← prepareCoreFixture test

@@ -1,3 +1,11 @@
+import LeanMiniscript.Bitcoin.ECDSAExamples
+import LeanMiniscript.Bitcoin.LegacySighashExamples
+import LeanMiniscript.Bitcoin.SHA1Examples
+import LeanMiniscript.Extraction.CoreFixtureTransactionExamples
+import LeanMiniscript.Extraction.BitcoinCoreVerificationExamples
+import LeanMiniscript.Extraction.BitcoinCoreWitnessExamples
+import LeanMiniscript.Extraction.CoreFixtureWitnessDataExamples
+import LeanMiniscript.Extraction.BitcoinCoreCompleteExamples
 import LeanMiniscript.Extraction.BitcoinCoreLegacyLimitsExamples
 import LeanMiniscript.Extraction.TaprootExamples
 import LeanMiniscript.Extraction.TaprootBytesExamples
