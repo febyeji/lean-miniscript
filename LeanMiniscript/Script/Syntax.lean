@@ -26,6 +26,8 @@ inductive Opcode where
   | OP_DUP
   | OP_NIP
   | OP_OVER
+  | OP_PICK
+  | OP_ROLL
   | OP_ROT
   | OP_SWAP
   | OP_TUCK
@@ -52,6 +54,8 @@ inductive Opcode where
   | OP_GREATERTHAN
   | OP_LESSTHANOREQUAL
   | OP_GREATERTHANOREQUAL
+  | OP_MIN
+  | OP_MAX
   | OP_WITHIN
   -- Cryptographic hash
   | OP_SHA256

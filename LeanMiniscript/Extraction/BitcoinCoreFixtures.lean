@@ -255,6 +255,10 @@ def opcodeFromCoreName? : String → Option Opcode
   | "CHECKSEQUENCEVERIFY" => some .OP_CHECKSEQUENCEVERIFY
   | "CHECKLOCKTIMEVERIFY" => some .OP_CHECKLOCKTIMEVERIFY
   | "VERIFY" => some .OP_VERIFY
+  | "PICK" => some .OP_PICK
+  | "ROLL" => some .OP_ROLL
+  | "MIN" => some .OP_MIN
+  | "MAX" => some .OP_MAX
   | "SIZE" => some .OP_SIZE
   | _ => none
 

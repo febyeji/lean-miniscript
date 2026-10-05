@@ -74,6 +74,10 @@ def opcodeFromByte? : Nat → Option Opcode
   | 0xb1 => some .OP_CHECKLOCKTIMEVERIFY
   | 0x69 => some .OP_VERIFY
   | 0x82 => some .OP_SIZE
+  | 0x79 => some .OP_PICK
+  | 0x7a => some .OP_ROLL
+  | 0xa3 => some .OP_MIN
+  | 0xa4 => some .OP_MAX
   | _ => none
 
 /-- Decode a byte list at the supplied source offset. Recursive calls consume
