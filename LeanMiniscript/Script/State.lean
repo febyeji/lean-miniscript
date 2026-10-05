@@ -38,6 +38,8 @@ structure ScriptFlags where
   witnessPubKeyType : Bool := false
   /-- Reject unknown Tapscript public-key versions when enabled. -/
   discourageUpgradablePubKeyType : Bool := false
+  /-- Policy flag rejecting active upgradeable NOP instructions. -/
+  discourageUpgradableNops : Bool := false
   deriving Repr
 
 /-- Script signature algorithms and opcode availability. Taproot key-path
@@ -126,6 +128,9 @@ inductive ScriptError where
   | tapscriptFlags
   | discourageUpgradablePubkeyType
   | badOpcode
+  | opReturn
+  | disabledOpcode
+  | discourageUpgradableNops
   | tapscriptCheckMultiSig
   | equalVerify
   | numEqualVerify
@@ -147,7 +152,8 @@ inductive ScriptError where
     zero; their structural and alternate-stack requirements are modeled
     separately. -/
 def Opcode.fixedMainStackInputs? : Opcode → Option Nat
-  | .OP_NOP => some 0
+  | .OP_NOP | .OP_RETURN | .OP_NOP1 | .OP_NOP4 | .OP_NOP5 | .OP_NOP6 |
+      .OP_NOP7 | .OP_NOP8 | .OP_NOP9 | .OP_NOP10 => some 0
   | .OP_IF | .OP_NOTIF => some 1
   | .OP_ELSE | .OP_ENDIF => some 0
   | .OP_DEPTH => some 0
@@ -177,6 +183,12 @@ def Opcode.activeFixedMainStackInputs? (opcode : Opcode)
   match opcode with
   | .OP_CHECKSIGADD => if version ≠ .tapscript then none else some 3
   | _ => opcode.fixedMainStackInputs?
+
+/-- Upgradeable NOPs controlled by DISCOURAGE_UPGRADABLE_NOPS policy. -/
+def Opcode.isUpgradeableNop : Opcode → Bool
+  | .OP_NOP1 | .OP_NOP4 | .OP_NOP5 | .OP_NOP6 |
+      .OP_NOP7 | .OP_NOP8 | .OP_NOP9 | .OP_NOP10 => true
+  | _ => false
 
 /-- Modeled opcodes that decode both operands as Script
     numbers with the ordinary four-byte limit. -/

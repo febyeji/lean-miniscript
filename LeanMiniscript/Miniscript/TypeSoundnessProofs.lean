@@ -41,7 +41,7 @@ theorem Eval.splitBalancedAppend_success
       generalize resultEq : ExecResult.success out outAlt = result at run
       cases run <;>
         simp_all [NonConditional] <;>
-        try grind [Eval]
+        try grind [Eval, Opcode.isUpgradeableNop]
       case within =>
         rename_i upperBytes lowerBytes valueBytes upper lower value rest decoded tail
         cases resultEq
@@ -51,7 +51,7 @@ theorem Eval.splitBalancedAppend_success
         simpa using tail
   | @ifThen body bodyBalanced bodyIH =>
       generalize resultEq : ExecResult.success out outAlt = result at run
-      cases run
+      cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
       case if_execute =>
           rename_i top rest frame split minimal selected
           cases resultEq
@@ -100,7 +100,7 @@ theorem Eval.splitBalancedAppend_success
 
   | @notifThen body bodyBalanced bodyIH =>
       generalize resultEq : ExecResult.success out outAlt = result at run
-      cases run
+      cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
       case notif_execute =>
           rename_i top rest frame split minimal selected
           cases resultEq
@@ -148,7 +148,7 @@ theorem Eval.splitBalancedAppend_success
       all_goals cases resultEq
   | @ifElse thenBranch elseBranch thenBalanced elseBalanced thenIH elseIH =>
       generalize resultEq : ExecResult.success out outAlt = result at run
-      cases run
+      cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
       case if_execute =>
           rename_i top rest frame split minimal selected
           cases resultEq
@@ -202,7 +202,7 @@ theorem Eval.splitBalancedAppend_success
       all_goals cases resultEq
   | @notifElse thenBranch elseBranch thenBalanced elseBalanced thenIH elseIH =>
       generalize resultEq : ExecResult.success out outAlt = result at run
-      cases run
+      cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
       case notif_execute =>
           rename_i top rest frame split minimal selected
           cases resultEq
@@ -267,7 +267,7 @@ private theorem Eval.ifThen_success_cases
       (castToBool selector = true ∧
         Eval body rest altStack flags ctx (.success out outAlt)) := by
   generalize resultEq : ExecResult.success out outAlt = result at run
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case if_execute =>
       rename_i frame split minimal selected
       cases resultEq
@@ -311,7 +311,7 @@ private theorem Eval.notifThen_success_cases
       (castToBool selector = false ∧
         Eval body rest altStack flags ctx (.success out outAlt)) := by
   generalize resultEq : ExecResult.success out outAlt = result at run
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case notif_execute =>
       rename_i frame split minimal selected
       cases resultEq
@@ -356,7 +356,7 @@ private theorem Eval.ifElse_success_cases
     Eval thenBranch rest altStack flags ctx (.success out outAlt) ∨
       Eval elseBranch rest altStack flags ctx (.success out outAlt) := by
   generalize resultEq : ExecResult.success out outAlt = result at run
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case if_execute =>
       rename_i frame split minimal selected
       cases resultEq
@@ -402,7 +402,7 @@ private theorem Eval.notifElse_success_cases
     Eval thenBranch rest altStack flags ctx (.success out outAlt) ∨
       Eval elseBranch rest altStack flags ctx (.success out outAlt) := by
   generalize resultEq : ExecResult.success out outAlt = result at run
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case notif_execute =>
       rename_i frame split minimal selected
       cases resultEq
@@ -1347,7 +1347,7 @@ private theorem Eval.checkSigAddSingle_success_shape
       (.success finalStack finalAlt)) :
     finalAlt = altStack ∧ ∃ result, finalStack = result :: rest := by
   generalize resultEq : ExecResult.success finalStack finalAlt = result at run
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case checksigadd_success =>
       rename_i countValue decoded checked next
       cases resultEq
@@ -1415,7 +1415,7 @@ private theorem Eval.unfuseEqualVerify_success
     Eval [.op .OP_EQUAL, .op .OP_VERIFY] stack altStack flags ctx
       (.success out outAlt) := by
   generalize resultEq : ExecResult.success out outAlt = result at run
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case equalverify_success =>
       rename_i first second rest equal next
       cases resultEq
@@ -1431,7 +1431,7 @@ private theorem Eval.unfuseCheckSigVerify_success
     Eval [.op .OP_CHECKSIG, .op .OP_VERIFY] stack altStack flags ctx
       (.success out outAlt) := by
   generalize resultEq : ExecResult.success out outAlt = result at run
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case checksigverify_success =>
       rename_i pubkey signature rest checked next
       cases resultEq
@@ -1447,7 +1447,7 @@ private theorem Eval.unfuseCheckMultiSigVerify_success
     Eval [.op .OP_CHECKMULTISIG, .op .OP_VERIFY] stack altStack flags ctx
       (.success out outAlt) := by
   generalize resultEq : ExecResult.success out outAlt = result at run
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case checkmultisigverify_success =>
       rename_i operands dummy checked decoded next
       cases resultEq
@@ -1463,7 +1463,7 @@ private theorem Eval.unfuseNumEqualVerify_success
     Eval [.op .OP_NUMEQUAL, .op .OP_VERIFY] stack altStack flags ctx
       (.success out outAlt) := by
   generalize resultEq : ExecResult.success out outAlt = result at run
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case numequalverify_success =>
       rename_i first second firstValue secondValue rest equal decoded next
       cases resultEq
@@ -1608,9 +1608,7 @@ private theorem Eval.compileCheckSigAddTail_success_shape
       cases stack with
       | nil =>
           cases checkRun <;>
-            simp_all [Opcode.activeFixedMainStackInputs?,
-              Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
-              Opcode.usesTimelockScriptNum]
+            simp_all [Opcode.isUpgradeableNop]
       | cons signature rest =>
           obtain ⟨checkAlt, nextAccumulator, checkEq⟩ :=
             Eval.checkSigAddSingle_success_shape checkRun
@@ -1922,10 +1920,10 @@ theorem refinedBaseTypeGuarantee_of_hasType
       | success finalStack finalAltStack =>
           simp only [compile, compileWithKeyHash] at evaluated
           cases stack with
-          | nil => grind [Eval]
+          | nil => grind [Eval, Opcode.isUpgradeableNop]
           | cons top rest =>
-              have altEq : finalAltStack = altStack := by grind [Eval]
-              have stackEq : finalStack = top :: rest := by grind [Eval]
+              have altEq : finalAltStack = altStack := by grind [Eval, Opcode.isUpgradeableNop]
+              have stackEq : finalStack = top :: rest := by grind [Eval, Opcode.isUpgradeableNop]
               rw [stackEq]
               exact ⟨altEq, .k _ [top] rest top
                 (by simp [ArgumentFrameMatches])⟩
@@ -1935,8 +1933,8 @@ theorem refinedBaseTypeGuarantee_of_hasType
       | failure error => trivial
       | success finalStack finalAltStack =>
           simp only [compile, compileWithKeyHash] at evaluated
-          have altEq : finalAltStack = altStack := by grind [Eval]
-          have stackEq : finalStack = scriptNum n :: stack := by grind [Eval]
+          have altEq : finalAltStack = altStack := by grind [Eval, Opcode.isUpgradeableNop]
+          have stackEq : finalStack = scriptNum n :: stack := by grind [Eval, Opcode.isUpgradeableNop]
           rw [stackEq]
           exact ⟨altEq, .b _ [] stack (scriptNum n)
             (by simp [ArgumentFrameMatches])⟩
@@ -1946,8 +1944,8 @@ theorem refinedBaseTypeGuarantee_of_hasType
       | failure error => trivial
       | success finalStack finalAltStack =>
           simp only [compile, compileWithKeyHash] at evaluated
-          have altEq : finalAltStack = altStack := by grind [Eval]
-          have stackEq : finalStack = scriptNum n :: stack := by grind [Eval]
+          have altEq : finalAltStack = altStack := by grind [Eval, Opcode.isUpgradeableNop]
+          have stackEq : finalStack = scriptNum n :: stack := by grind [Eval, Opcode.isUpgradeableNop]
           rw [stackEq]
           exact ⟨altEq, .b _ [] stack (scriptNum n)
             (by simp [ArgumentFrameMatches])⟩
@@ -1958,11 +1956,11 @@ theorem refinedBaseTypeGuarantee_of_hasType
       | success finalStack finalAltStack =>
           simp only [compile, compileWithKeyHash] at evaluated
           cases stack with
-          | nil => grind [Eval]
+          | nil => grind [Eval, Opcode.isUpgradeableNop]
           | cons preimage rest =>
-              have altEq : finalAltStack = altStack := by grind [Eval]
+              have altEq : finalAltStack = altStack := by grind [Eval, Opcode.isUpgradeableNop]
               obtain ⟨result, stackEq⟩ :
-                  ∃ result, finalStack = result :: rest := by grind [Eval]
+                  ∃ result, finalStack = result :: rest := by grind [Eval, Opcode.isUpgradeableNop]
               rw [stackEq]
               exact ⟨altEq, .b _ [preimage] rest result
                 (by simp [ArgumentFrameMatches])⟩
@@ -1973,11 +1971,11 @@ theorem refinedBaseTypeGuarantee_of_hasType
       | success finalStack finalAltStack =>
           simp only [compile, compileWithKeyHash] at evaluated
           cases stack with
-          | nil => grind [Eval]
+          | nil => grind [Eval, Opcode.isUpgradeableNop]
           | cons preimage rest =>
-              have altEq : finalAltStack = altStack := by grind [Eval]
+              have altEq : finalAltStack = altStack := by grind [Eval, Opcode.isUpgradeableNop]
               obtain ⟨result, stackEq⟩ :
-                  ∃ result, finalStack = result :: rest := by grind [Eval]
+                  ∃ result, finalStack = result :: rest := by grind [Eval, Opcode.isUpgradeableNop]
               rw [stackEq]
               exact ⟨altEq, .b _ [preimage] rest result
                 (by simp [ArgumentFrameMatches])⟩
@@ -1988,11 +1986,11 @@ theorem refinedBaseTypeGuarantee_of_hasType
       | success finalStack finalAltStack =>
           simp only [compile, compileWithKeyHash] at evaluated
           cases stack with
-          | nil => grind [Eval]
+          | nil => grind [Eval, Opcode.isUpgradeableNop]
           | cons preimage rest =>
-              have altEq : finalAltStack = altStack := by grind [Eval]
+              have altEq : finalAltStack = altStack := by grind [Eval, Opcode.isUpgradeableNop]
               obtain ⟨result, stackEq⟩ :
-                  ∃ result, finalStack = result :: rest := by grind [Eval]
+                  ∃ result, finalStack = result :: rest := by grind [Eval, Opcode.isUpgradeableNop]
               rw [stackEq]
               exact ⟨altEq, .b _ [preimage] rest result
                 (by simp [ArgumentFrameMatches])⟩
@@ -2003,11 +2001,11 @@ theorem refinedBaseTypeGuarantee_of_hasType
       | success finalStack finalAltStack =>
           simp only [compile, compileWithKeyHash] at evaluated
           cases stack with
-          | nil => grind [Eval]
+          | nil => grind [Eval, Opcode.isUpgradeableNop]
           | cons preimage rest =>
-              have altEq : finalAltStack = altStack := by grind [Eval]
+              have altEq : finalAltStack = altStack := by grind [Eval, Opcode.isUpgradeableNop]
               obtain ⟨result, stackEq⟩ :
-                  ∃ result, finalStack = result :: rest := by grind [Eval]
+                  ∃ result, finalStack = result :: rest := by grind [Eval, Opcode.isUpgradeableNop]
               rw [stackEq]
               exact ⟨altEq, .b _ [preimage] rest result
                 (by simp [ArgumentFrameMatches])⟩

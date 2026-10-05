@@ -78,6 +78,15 @@ def opcodeFromByte? : Nat → Option Opcode
   | 0x7a => some .OP_ROLL
   | 0xa3 => some .OP_MIN
   | 0xa4 => some .OP_MAX
+  | 0xb0 => some .OP_NOP1
+  | 0xb3 => some .OP_NOP4
+  | 0xb4 => some .OP_NOP5
+  | 0xb5 => some .OP_NOP6
+  | 0xb6 => some .OP_NOP7
+  | 0xb7 => some .OP_NOP8
+  | 0xb8 => some .OP_NOP9
+  | 0xb9 => some .OP_NOP10
+  | 0x6a => some .OP_RETURN
   | _ => none
 
 /-- Decode a byte list at the supplied source offset. Recursive calls consume

@@ -9,7 +9,10 @@ open LeanMiniscript.Miniscript
 inputs, normalized round trips, and representative compiler outputs. -/
 
 def opcodeSerializationFixtures : List (Opcode × UInt8) :=
-  [(.OP_NOP, 0x61), (.OP_IF, 0x63), (.OP_NOTIF, 0x64),
+  [(.OP_NOP1, 0xb0), (.OP_NOP4, 0xb3), (.OP_NOP5, 0xb4), (.OP_NOP6, 0xb5),
+   (.OP_NOP7, 0xb6), (.OP_NOP8, 0xb7), (.OP_NOP9, 0xb8), (.OP_NOP10, 0xb9),
+   (.OP_RETURN, 0x6a),
+   (.OP_NOP, 0x61), (.OP_IF, 0x63), (.OP_NOTIF, 0x64),
    (.OP_ELSE, 0x67), (.OP_ENDIF, 0x68),
    (.OP_2DROP, 0x6d), (.OP_2DUP, 0x6e), (.OP_3DUP, 0x6f), (.OP_2OVER, 0x70),
    (.OP_2ROT, 0x71), (.OP_2SWAP, 0x72),

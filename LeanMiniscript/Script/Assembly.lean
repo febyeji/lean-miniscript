@@ -86,6 +86,15 @@ def opcodeAssembly : Opcode → String
   | .OP_ROLL => "ROLL"
   | .OP_MIN => "MIN"
   | .OP_MAX => "MAX"
+  | .OP_NOP1 => "NOP1"
+  | .OP_NOP4 => "NOP4"
+  | .OP_NOP5 => "NOP5"
+  | .OP_NOP6 => "NOP6"
+  | .OP_NOP7 => "NOP7"
+  | .OP_NOP8 => "NOP8"
+  | .OP_NOP9 => "NOP9"
+  | .OP_NOP10 => "NOP10"
+  | .OP_RETURN => "RETURN"
   | .OP_SIZE => "SIZE"
 
 /-- Render one Script element in BIP-style assembly notation. -/

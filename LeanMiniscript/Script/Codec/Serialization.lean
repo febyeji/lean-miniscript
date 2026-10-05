@@ -77,6 +77,15 @@ def opcodeByte : Opcode → UInt8
   | .OP_ROLL => 0x7a
   | .OP_MIN => 0xa3
   | .OP_MAX => 0xa4
+  | .OP_NOP1 => 0xb0
+  | .OP_NOP4 => 0xb3
+  | .OP_NOP5 => 0xb4
+  | .OP_NOP6 => 0xb5
+  | .OP_NOP7 => 0xb6
+  | .OP_NOP8 => 0xb7
+  | .OP_NOP9 => 0xb8
+  | .OP_NOP10 => 0xb9
+  | .OP_RETURN => 0x6a
   | .OP_SIZE => 0x82
 
 /-- Encode the low two bytes of a natural number in little-endian order. -/

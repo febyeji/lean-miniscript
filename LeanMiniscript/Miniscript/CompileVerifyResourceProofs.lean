@@ -22,7 +22,7 @@ theorem EvalResources.fuseEqualVerify
       stack altStack flags ctx out outAlt resources) :
     EvalResources [.op .OP_EQUALVERIFY] stack altStack flags ctx
       out outAlt resources := by
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case step head tail =>
     rename_i nextStack nextAlt tailResources
     cases tail
@@ -34,7 +34,7 @@ theorem EvalResources.fuseEqualVerify
       have observed := EvalResources.step fused
         (EvalResources.empty out outAlt flags ctx)
       generalize headEq : ExecResult.success nextStack nextAlt = headResult at head
-      cases head
+      cases head <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
       case equal_true =>
         rename_i a b rest equal next
         cases next
@@ -68,14 +68,14 @@ theorem EvalResources.fuseCheckSigVerify
       stack altStack flags ctx out outAlt resources) :
     EvalResources [.op .OP_CHECKSIGVERIFY] stack altStack flags ctx
       out outAlt resources := by
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case step head tail =>
     rename_i nextStack nextAlt tailResources
     cases tail
     case step verify finish =>
       cases finish
       generalize headEq : ExecResult.success nextStack nextAlt = headResult at head
-      cases head
+      cases head <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
       case checksig_success =>
         rename_i pubkey sig rest checked next
         cases next
@@ -147,14 +147,14 @@ theorem EvalResources.fuseCheckMultiSigVerify
       stack altStack flags ctx out outAlt resources) :
     EvalResources [.op .OP_CHECKMULTISIGVERIFY] stack altStack flags ctx
       out outAlt resources := by
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case step head tail =>
     rename_i nextStack nextAlt tailResources
     cases tail
     case step verify finish =>
       cases finish
       generalize headEq : ExecResult.success nextStack nextAlt = headResult at head
-      cases head
+      cases head <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
       case checkmultisig_success =>
         rename_i operands dummy checked decoded next
         cases next
@@ -206,7 +206,7 @@ theorem EvalResources.fuseNumEqualVerify
       stack altStack flags ctx out outAlt resources) :
     EvalResources [.op .OP_NUMEQUALVERIFY] stack altStack flags ctx
       out outAlt resources := by
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case step head tail =>
     rename_i nextStack nextAlt tailResources
     cases tail
@@ -218,7 +218,7 @@ theorem EvalResources.fuseNumEqualVerify
       have observed := EvalResources.step fused
         (EvalResources.empty out outAlt flags ctx)
       generalize headEq : ExecResult.success nextStack nextAlt = headResult at head
-      cases head
+      cases head <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
       case numequal =>
         rename_i aBytes bBytes a b rest decoded next
         cases next
@@ -240,7 +240,7 @@ private theorem singletonIfSuccessFalse
     (run : Eval [.op .OP_IF] stack altStack flags ctx (.success out outAlt)) :
     False := by
   generalize resultEq : ExecResult.success out outAlt = result at run
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case if_execute split minimal selected =>
     have noSplit : splitConditional [] = none := rfl
     rw [noSplit] at split
@@ -254,7 +254,7 @@ private theorem singletonNotIfSuccessFalse
     (run : Eval [.op .OP_NOTIF] stack altStack flags ctx (.success out outAlt)) :
     False := by
   generalize resultEq : ExecResult.success out outAlt = result at run
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case notif_execute split minimal selected =>
     have noSplit : splitConditional [] = none := rfl
     rw [noSplit] at split
@@ -294,7 +294,7 @@ theorem EvalResources.replaceSuccessfulSuffix
         simp_all [NonConditional] <;>
         grind [EvalResources]
   | @ifThen body bodyBalanced bodyIH =>
-      cases run
+      cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
       case step head tail =>
           exact (singletonIfSuccessFalse head).elim
       case if_execute split minimal selected =>
@@ -325,7 +325,7 @@ theorem EvalResources.replaceSuccessfulSuffix
             simpa only [List.nil_append, List.cons_append, List.singleton_append,
               List.append_assoc] using rebuilt
   | @notifThen body bodyBalanced bodyIH =>
-      cases run
+      cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
       case step head tail =>
           exact (singletonNotIfSuccessFalse head).elim
       case notif_execute split minimal selected =>
@@ -356,7 +356,7 @@ theorem EvalResources.replaceSuccessfulSuffix
             simpa only [List.nil_append, List.cons_append, List.singleton_append,
               List.append_assoc] using rebuilt
   | @ifElse thenBranch elseBranch thenBalanced elseBalanced thenIH elseIH =>
-      cases run
+      cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
       case step head tail =>
           exact (singletonIfSuccessFalse head).elim
       case if_execute split minimal selected =>
@@ -389,7 +389,7 @@ theorem EvalResources.replaceSuccessfulSuffix
             simpa only [List.nil_append, List.cons_append, List.singleton_append,
               List.append_assoc] using rebuilt
   | @notifElse thenBranch elseBranch thenBalanced elseBalanced thenIH elseIH =>
-      cases run
+      cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
       case step head tail =>
           exact (singletonNotIfSuccessFalse head).elim
       case notif_execute split minimal selected =>

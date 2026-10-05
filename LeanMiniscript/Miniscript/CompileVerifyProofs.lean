@@ -41,7 +41,7 @@ theorem Eval.replaceSuccessfulSuffix
         simpa using tail
   | @ifThen body bodyBalanced bodyIH =>
       generalize resultEq : ExecResult.success out outAlt = result at run
-      cases run
+      cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
       case if_execute =>
           rename_i top rest frame split minimal selected
           cases resultEq
@@ -91,7 +91,7 @@ theorem Eval.replaceSuccessfulSuffix
 
   | @notifThen body bodyBalanced bodyIH =>
       generalize resultEq : ExecResult.success out outAlt = result at run
-      cases run
+      cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
       case notif_execute =>
           rename_i top rest frame split minimal selected
           cases resultEq
@@ -140,7 +140,7 @@ theorem Eval.replaceSuccessfulSuffix
       all_goals cases resultEq
   | @ifElse thenBranch elseBranch thenBalanced elseBalanced thenIH elseIH =>
       generalize resultEq : ExecResult.success out outAlt = result at run
-      cases run
+      cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
       case if_execute =>
           rename_i top rest frame split minimal selected
           cases resultEq
@@ -196,7 +196,7 @@ theorem Eval.replaceSuccessfulSuffix
       all_goals cases resultEq
   | @notifElse thenBranch elseBranch thenBalanced elseBalanced thenIH elseIH =>
       generalize resultEq : ExecResult.success out outAlt = result at run
-      cases run
+      cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
       case notif_execute =>
           rename_i top rest frame split minimal selected
           cases resultEq
@@ -272,13 +272,13 @@ theorem Eval.fuseEqualVerify
     Eval [.op .OP_EQUALVERIFY] stack altStack flags ctx
       (.success out outAlt) := by
   generalize resultEq : ExecResult.success out outAlt = result at run
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case equal_true =>
     rename_i a b rest equal next
-    cases next <;> simp_all <;> grind [Eval]
+    cases next <;> simp_all [Opcode.isUpgradeableNop] <;> grind [Eval]
   case equal_false =>
     rename_i a b rest notEqual next
-    cases next <;> simp_all <;> grind [Eval]
+    cases next <;> simp_all [Opcode.isUpgradeableNop] <;> grind [Eval]
   all_goals cases resultEq
 
 /-- A successful `CHECKSIG VERIFY` execution is preserved by
@@ -291,13 +291,13 @@ theorem Eval.fuseCheckSigVerify
     Eval [.op .OP_CHECKSIGVERIFY] stack altStack flags ctx
       (.success out outAlt) := by
   generalize resultEq : ExecResult.success out outAlt = result at run
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case checksig_success =>
     rename_i pubkey sig rest checked next
-    cases next <;> simp_all <;> grind [Eval]
+    cases next <;> simp_all [Opcode.isUpgradeableNop] <;> grind [Eval]
   case checksig_failure =>
     rename_i pubkey sig rest checked next
-    cases next <;> simp_all <;> grind [Eval]
+    cases next <;> simp_all [Opcode.isUpgradeableNop] <;> grind [Eval]
   all_goals cases resultEq
 
 /-- A successful `CHECKMULTISIG VERIFY` execution is preserved by
@@ -310,7 +310,7 @@ theorem Eval.fuseCheckMultiSigVerify
     Eval [.op .OP_CHECKMULTISIGVERIFY] stack altStack flags ctx
       (.success out outAlt) := by
   generalize resultEq : ExecResult.success out outAlt = result at run
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case checkmultisig_success =>
     rename_i operands dummy checked decoded next
     cases resultEq
@@ -342,10 +342,10 @@ theorem Eval.fuseNumEqualVerify
     Eval [.op .OP_NUMEQUALVERIFY] stack altStack flags ctx
       (.success out outAlt) := by
   generalize resultEq : ExecResult.success out outAlt = result at run
-  cases run
+  cases run <;> try { simp_all only [Opcode.isUpgradeableNop, Bool.false_eq_true]; done }
   case numequal =>
     rename_i aBytes bBytes a b rest decoded next
-    cases next <;> simp_all <;> grind [Eval]
+    cases next <;> simp_all [Opcode.isUpgradeableNop] <;> grind [Eval]
   all_goals cases resultEq
 
 /-- Folding a terminal `VERIFY` into a specialized opcode preserves every
