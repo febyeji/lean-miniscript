@@ -47,7 +47,7 @@ script downloads `src/test/data/script_tests.json` at Bitcoin Core revision
 `9be056a8a72b624dae9623b2f7bded92c2a21c91` and verifies SHA-256
 `bc23cb1dfa760d50042f534da23cbbe4b6fbb03d7def0b64f8de049453d6ead5` before
 execution. It requires 1,222 test rows, 51 documentation rows, zero mismatches,
-and at least 866 matching fixtures. CI retains the complete report, including
+and at least 907 matching fixtures. CI retains the complete report, including
 unsupported categories and details, in the `core-fixture-audit` artifact. Raise
 `MINIMUM_MATCHED` in the script when support expands.
 
