@@ -586,6 +586,16 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op .OP_0NOTEQUAL :: script) (operand :: rest) altStack flags ctx
         (.failure error)
 
+  | unaryArithmetic_scriptnum_failure : (opcode : Opcode) →
+      (operand : StackElement) → (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (error : ScriptError) →
+      opcode.usesUnaryArithmetic = true →
+      decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+        .error error →
+      Eval (.op opcode :: script) (operand :: rest) altStack flags ctx
+        (.failure error)
+
   | checksigadd_scriptnum_failure : (pubkey countBytes sig : StackElement) →
       (rest : Stack) → (script : Script) → (altStack : Stack) →
       (flags : ScriptFlags) → (ctx : TxContext) → (error : ScriptError) →
@@ -982,6 +992,102 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval (.op .OP_BOOLAND :: script) (aBytes :: bBytes :: rest)
         altStack flags ctx result
 
+  -- OP_1ADD
+  | oneAdd : (operand : StackElement) → (value : Int) →
+      (rest altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+        .ok value →
+      Eval script (scriptNum (value + 1) :: rest) altStack flags ctx result →
+      Eval (.op .OP_1ADD :: script) (operand :: rest) altStack flags ctx result
+
+  -- OP_1SUB
+  | oneSub : (operand : StackElement) → (value : Int) →
+      (rest altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+        .ok value →
+      Eval script (scriptNum (value - 1) :: rest) altStack flags ctx result →
+      Eval (.op .OP_1SUB :: script) (operand :: rest) altStack flags ctx result
+
+  -- OP_NEGATE
+  | negate : (operand : StackElement) → (value : Int) →
+      (rest altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+        .ok value →
+      Eval script (scriptNum (-value) :: rest) altStack flags ctx result →
+      Eval (.op .OP_NEGATE :: script) (operand :: rest) altStack flags ctx result
+
+  -- OP_ABS
+  | abs : (operand : StackElement) → (value : Int) →
+      (rest altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+        .ok value →
+      Eval script (scriptNum (if value < 0 then -value else value) :: rest) altStack flags ctx result →
+      Eval (.op .OP_ABS :: script) (operand :: rest) altStack flags ctx result
+
+  -- OP_SUB; the stack head is the right-hand operand.
+  | sub : (aBytes bBytes : StackElement) → (a b : Int) →
+      (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b) →
+      Eval script (scriptNum (b - a) :: rest) altStack flags ctx result →
+      Eval (.op .OP_SUB :: script) (aBytes :: bBytes :: rest)
+        altStack flags ctx result
+
+  -- OP_NUMNOTEQUAL; the stack head is the right-hand operand.
+  | numNotEqual : (aBytes bBytes : StackElement) → (a b : Int) →
+      (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b) →
+      Eval script (boolToElement (decide (a ≠ b)) :: rest) altStack flags ctx result →
+      Eval (.op .OP_NUMNOTEQUAL :: script) (aBytes :: bBytes :: rest)
+        altStack flags ctx result
+
+  -- OP_LESSTHAN; the stack head is the right-hand operand.
+  | lessThan : (aBytes bBytes : StackElement) → (a b : Int) →
+      (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b) →
+      Eval script (boolToElement (decide (b < a)) :: rest) altStack flags ctx result →
+      Eval (.op .OP_LESSTHAN :: script) (aBytes :: bBytes :: rest)
+        altStack flags ctx result
+
+  -- OP_GREATERTHAN; the stack head is the right-hand operand.
+  | greaterThan : (aBytes bBytes : StackElement) → (a b : Int) →
+      (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b) →
+      Eval script (boolToElement (decide (b > a)) :: rest) altStack flags ctx result →
+      Eval (.op .OP_GREATERTHAN :: script) (aBytes :: bBytes :: rest)
+        altStack flags ctx result
+
+  -- OP_LESSTHANOREQUAL; the stack head is the right-hand operand.
+  | lessThanOrEqual : (aBytes bBytes : StackElement) → (a b : Int) →
+      (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b) →
+      Eval script (boolToElement (decide (b ≤ a)) :: rest) altStack flags ctx result →
+      Eval (.op .OP_LESSTHANOREQUAL :: script) (aBytes :: bBytes :: rest)
+        altStack flags ctx result
+
+  -- OP_GREATERTHANOREQUAL; the stack head is the right-hand operand.
+  | greaterThanOrEqual : (aBytes bBytes : StackElement) → (a b : Int) →
+      (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b) →
+      Eval script (boolToElement (decide (b ≥ a)) :: rest) altStack flags ctx result →
+      Eval (.op .OP_GREATERTHANOREQUAL :: script) (aBytes :: bBytes :: rest)
+        altStack flags ctx result
+
   -- OP_ADD
   | add : (aBytes bBytes : StackElement) → (a b : Int) →
       (rest : Stack) → (script : Script) →
@@ -1347,6 +1453,19 @@ theorem Eval.binaryScriptNumFailure
   .binary_scriptnum_failure opcode top belowTop rest script altStack flags ctx
     error usesNumbers decoded
 
+/-- A malformed operand terminates unary arithmetic before the suffix executes. -/
+theorem Eval.unaryArithmeticScriptNumFailure
+    {opcode : Opcode} {operand : StackElement} {rest : Stack}
+    {script : Script} {altStack : Stack} {flags : ScriptFlags}
+    {ctx : TxContext} {error : ScriptError}
+    (usesNumber : opcode.usesUnaryArithmetic = true)
+    (decoded : decodeScriptNum operand flags.minimalData
+      maxArithmeticScriptNumBytes = .error error) :
+    Eval (.op opcode :: script) (operand :: rest) altStack flags ctx
+      (.failure error) :=
+  .unaryArithmetic_scriptnum_failure opcode operand rest script altStack flags ctx
+    error usesNumber decoded
+
 /-- A malformed CLTV/CSV operand terminates evaluation before the timelock
     predicate is consulted. -/
 theorem Eval.timelockScriptNumFailure
@@ -1381,7 +1500,7 @@ theorem Eval.fixedArityStackUnderflow_result
     (evaluated : Eval (.op opcode :: script) stack altStack flags ctx result) :
     result = .failure .stackUnderflow := by
   cases opcode <;> cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1392,7 +1511,7 @@ theorem Eval.fromAltStack_empty_result
     (evaluated : Eval (.op .OP_FROMALTSTACK :: script) stack [] flags ctx result) :
     result = .failure .altStackUnderflow := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1410,7 +1529,7 @@ theorem Eval.ifUnbalanced_result
         flags ctx selectedResult ∧
       result = finishUnclosedConditional selectedResult := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
       Opcode.usesTimelockScriptNum, minimalIfSatisfied] <;>
     try omega
   case if_unbalanced => exact ⟨_, by assumption, rfl⟩
@@ -1428,7 +1547,7 @@ theorem Eval.notifUnbalanced_result
         flags ctx selectedResult ∧
       result = finishUnclosedConditional selectedResult := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
       Opcode.usesTimelockScriptNum, minimalIfSatisfied] <;>
     try omega
   case notif_unbalanced => exact ⟨_, by assumption, rfl⟩
@@ -1440,7 +1559,7 @@ theorem Eval.elseUnbalanced_result
     (evaluated : Eval (.op .OP_ELSE :: script) stack altStack flags ctx result) :
     result = .failure .unbalancedConditional := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1451,7 +1570,7 @@ theorem Eval.endifUnbalanced_result
     (evaluated : Eval (.op .OP_ENDIF :: script) stack altStack flags ctx result) :
     result = .failure .unbalancedConditional := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1468,7 +1587,7 @@ theorem Eval.binaryScriptNumFailure_result
   cases opcode <;> simp_all [Opcode.usesBinaryScriptNums]
   all_goals
     cases evaluated <;>
-      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
         Opcode.usesTimelockScriptNum] <;>
       omega
 
@@ -1483,7 +1602,7 @@ theorem Eval.unaryScriptNumFailure_result
       altStack flags ctx result) :
     result = .failure error := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1498,7 +1617,7 @@ theorem Eval.checksigaddScriptNumFailure_result
       (pubkey :: countBytes :: sig :: rest) altStack flags ctx result) :
     result = .failure error := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
       Opcode.usesTimelockScriptNum, decodeCheckSigAddCount] <;>
     omega
 
@@ -1513,7 +1632,7 @@ theorem Eval.checkMultiSigOperandFailure_result
       result) :
     result = .failure error := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1532,7 +1651,7 @@ theorem Eval.checkMultiSigNullDummyFailure_result
       result) :
     result = .failure .nullDummy := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
       Opcode.usesTimelockScriptNum] <;>
     try omega <;> grind
 
@@ -1551,7 +1670,7 @@ theorem Eval.timelockScriptNumFailure_result
   cases opcode <;> simp_all [Opcode.usesTimelockScriptNum]
   all_goals
     cases evaluated <;>
-      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
         Opcode.usesTimelockScriptNum] <;>
       omega
 
@@ -1571,7 +1690,7 @@ theorem Eval.timelockNegativeFailure_result
   cases opcode <;> simp_all [Opcode.usesTimelockScriptNum]
   all_goals
     cases evaluated <;>
-      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
         Opcode.usesTimelockScriptNum] <;>
       omega
 
@@ -1589,7 +1708,7 @@ theorem Eval.checkSequenceVerifyFailure_result
       (operand :: rest) altStack flags ctx result) :
     result = .failure .checkSequenceVerify := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1607,7 +1726,7 @@ theorem Eval.checkLockTimeVerifyFailure_result
       (operand :: rest) altStack flags ctx result) :
     result = .failure .checkLockTimeVerify := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
       Opcode.usesTimelockScriptNum] <;>
     omega
 
@@ -1623,11 +1742,26 @@ theorem Eval.result_unique
   -- rule must reopen the corresponding determinism obligations.
   induction first generalizing secondResult <;> cases second
   all_goals
-    try simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums,
+    try simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic,
       Opcode.usesTimelockScriptNum, minimalIfSatisfied, decodeCheckSigAddCount]
     try omega
     try solve_by_elim
     try grind
+
+/-- A unary arithmetic decoder error determines the unique terminal result. -/
+theorem Eval.unaryArithmeticScriptNumFailure_result
+    {opcode : Opcode} {operand : StackElement} {rest : Stack}
+    {script : Script} {altStack : Stack} {flags : ScriptFlags}
+    {ctx : TxContext} {error : ScriptError} {result : ExecResult}
+    (usesNumber : opcode.usesUnaryArithmetic = true)
+    (decoded : decodeScriptNum operand flags.minimalData
+      maxArithmeticScriptNumBytes = .error error)
+    (evaluated : Eval (.op opcode :: script) (operand :: rest)
+      altStack flags ctx result) :
+    result = .failure error :=
+  evaluated.result_unique
+    (.unaryArithmetic_scriptnum_failure opcode operand rest script altStack flags ctx
+      error usesNumber decoded)
 
 /-- A checked CHECKSIG error is its unique terminal result. -/
 theorem Eval.checksigEncodingFailure_result
@@ -2025,6 +2159,202 @@ theorem Eval.exists_result
                       rcases next (top :: stack) altRest with ⟨result, evaluated⟩
                       exact ⟨result, .fromAltStack top stack altRest rest flags ctx
                         result evaluated⟩
+              | OP_1ADD =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_1ADD 1 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons operand stackRest =>
+                      cases decoded : decodeScriptNum operand flags.minimalData
+                          maxArithmeticScriptNumBytes with
+                      | error error =>
+                          exact ⟨.failure error, .unaryArithmetic_scriptnum_failure .OP_1ADD
+                            operand stackRest rest altStack flags ctx error rfl decoded⟩
+                      | ok value =>
+                          rcases next (scriptNum (value + 1) :: stackRest) altStack
+                            with ⟨result, evaluated⟩
+                          exact ⟨result, .oneAdd operand value stackRest altStack
+                            rest flags ctx result decoded evaluated⟩
+              | OP_1SUB =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_1SUB 1 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons operand stackRest =>
+                      cases decoded : decodeScriptNum operand flags.minimalData
+                          maxArithmeticScriptNumBytes with
+                      | error error =>
+                          exact ⟨.failure error, .unaryArithmetic_scriptnum_failure .OP_1SUB
+                            operand stackRest rest altStack flags ctx error rfl decoded⟩
+                      | ok value =>
+                          rcases next (scriptNum (value - 1) :: stackRest) altStack
+                            with ⟨result, evaluated⟩
+                          exact ⟨result, .oneSub operand value stackRest altStack
+                            rest flags ctx result decoded evaluated⟩
+              | OP_NEGATE =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_NEGATE 1 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons operand stackRest =>
+                      cases decoded : decodeScriptNum operand flags.minimalData
+                          maxArithmeticScriptNumBytes with
+                      | error error =>
+                          exact ⟨.failure error, .unaryArithmetic_scriptnum_failure .OP_NEGATE
+                            operand stackRest rest altStack flags ctx error rfl decoded⟩
+                      | ok value =>
+                          rcases next (scriptNum (-value) :: stackRest) altStack
+                            with ⟨result, evaluated⟩
+                          exact ⟨result, .negate operand value stackRest altStack
+                            rest flags ctx result decoded evaluated⟩
+              | OP_ABS =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_ABS 1 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons operand stackRest =>
+                      cases decoded : decodeScriptNum operand flags.minimalData
+                          maxArithmeticScriptNumBytes with
+                      | error error =>
+                          exact ⟨.failure error, .unaryArithmetic_scriptnum_failure .OP_ABS
+                            operand stackRest rest altStack flags ctx error rfl decoded⟩
+                      | ok value =>
+                          rcases next (scriptNum (if value < 0 then -value else value) :: stackRest) altStack
+                            with ⟨result, evaluated⟩
+                          exact ⟨result, .abs operand value stackRest altStack
+                            rest flags ctx result decoded evaluated⟩
+              | OP_SUB =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_SUB 2 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_SUB 2 rest [top] altStack flags ctx rfl (by simp)⟩
+                      | cons belowTop stackRest =>
+                          cases decoded : decodeBinaryScriptNums flags top belowTop with
+                          | error error =>
+                              exact ⟨.failure error,
+                                .binary_scriptnum_failure .OP_SUB top belowTop stackRest
+                                  rest altStack flags ctx error rfl decoded⟩
+                          | ok pair =>
+                              rcases pair with ⟨a, b⟩
+                              rcases next (scriptNum (b - a) :: stackRest) altStack
+                                with ⟨result, evaluated⟩
+                              exact ⟨result, .sub top belowTop a b stackRest rest altStack
+                                flags ctx result decoded evaluated⟩
+              | OP_NUMNOTEQUAL =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_NUMNOTEQUAL 2 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_NUMNOTEQUAL 2 rest [top] altStack flags ctx rfl (by simp)⟩
+                      | cons belowTop stackRest =>
+                          cases decoded : decodeBinaryScriptNums flags top belowTop with
+                          | error error =>
+                              exact ⟨.failure error,
+                                .binary_scriptnum_failure .OP_NUMNOTEQUAL top belowTop stackRest
+                                  rest altStack flags ctx error rfl decoded⟩
+                          | ok pair =>
+                              rcases pair with ⟨a, b⟩
+                              rcases next (boolToElement (decide (a ≠ b)) :: stackRest) altStack
+                                with ⟨result, evaluated⟩
+                              exact ⟨result, .numNotEqual top belowTop a b stackRest rest altStack
+                                flags ctx result decoded evaluated⟩
+              | OP_LESSTHAN =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_LESSTHAN 2 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_LESSTHAN 2 rest [top] altStack flags ctx rfl (by simp)⟩
+                      | cons belowTop stackRest =>
+                          cases decoded : decodeBinaryScriptNums flags top belowTop with
+                          | error error =>
+                              exact ⟨.failure error,
+                                .binary_scriptnum_failure .OP_LESSTHAN top belowTop stackRest
+                                  rest altStack flags ctx error rfl decoded⟩
+                          | ok pair =>
+                              rcases pair with ⟨a, b⟩
+                              rcases next (boolToElement (decide (b < a)) :: stackRest) altStack
+                                with ⟨result, evaluated⟩
+                              exact ⟨result, .lessThan top belowTop a b stackRest rest altStack
+                                flags ctx result decoded evaluated⟩
+              | OP_GREATERTHAN =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_GREATERTHAN 2 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_GREATERTHAN 2 rest [top] altStack flags ctx rfl (by simp)⟩
+                      | cons belowTop stackRest =>
+                          cases decoded : decodeBinaryScriptNums flags top belowTop with
+                          | error error =>
+                              exact ⟨.failure error,
+                                .binary_scriptnum_failure .OP_GREATERTHAN top belowTop stackRest
+                                  rest altStack flags ctx error rfl decoded⟩
+                          | ok pair =>
+                              rcases pair with ⟨a, b⟩
+                              rcases next (boolToElement (decide (b > a)) :: stackRest) altStack
+                                with ⟨result, evaluated⟩
+                              exact ⟨result, .greaterThan top belowTop a b stackRest rest altStack
+                                flags ctx result decoded evaluated⟩
+              | OP_LESSTHANOREQUAL =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_LESSTHANOREQUAL 2 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_LESSTHANOREQUAL 2 rest [top] altStack flags ctx rfl (by simp)⟩
+                      | cons belowTop stackRest =>
+                          cases decoded : decodeBinaryScriptNums flags top belowTop with
+                          | error error =>
+                              exact ⟨.failure error,
+                                .binary_scriptnum_failure .OP_LESSTHANOREQUAL top belowTop stackRest
+                                  rest altStack flags ctx error rfl decoded⟩
+                          | ok pair =>
+                              rcases pair with ⟨a, b⟩
+                              rcases next (boolToElement (decide (b ≤ a)) :: stackRest) altStack
+                                with ⟨result, evaluated⟩
+                              exact ⟨result, .lessThanOrEqual top belowTop a b stackRest rest altStack
+                                flags ctx result decoded evaluated⟩
+              | OP_GREATERTHANOREQUAL =>
+                  cases stack with
+                  | nil =>
+                      exact ⟨.failure .stackUnderflow,
+                        .stack_underflow .OP_GREATERTHANOREQUAL 2 rest [] altStack flags ctx rfl (by simp)⟩
+                  | cons top stackTail =>
+                      cases stackTail with
+                      | nil =>
+                          exact ⟨.failure .stackUnderflow,
+                            .stack_underflow .OP_GREATERTHANOREQUAL 2 rest [top] altStack flags ctx rfl (by simp)⟩
+                      | cons belowTop stackRest =>
+                          cases decoded : decodeBinaryScriptNums flags top belowTop with
+                          | error error =>
+                              exact ⟨.failure error,
+                                .binary_scriptnum_failure .OP_GREATERTHANOREQUAL top belowTop stackRest
+                                  rest altStack flags ctx error rfl decoded⟩
+                          | ok pair =>
+                              rcases pair with ⟨a, b⟩
+                              rcases next (boolToElement (decide (b ≥ a)) :: stackRest) altStack
+                                with ⟨result, evaluated⟩
+                              exact ⟨result, .greaterThanOrEqual top belowTop a b stackRest rest altStack
+                                flags ctx result decoded evaluated⟩
               | OP_ADD =>
                   cases stack with
                   | nil =>
@@ -2825,6 +3155,176 @@ theorem Eval.depth_result (stack altStack : Stack) (flags : ScriptFlags)
   have canonical : Eval [.op .OP_DEPTH] stack altStack flags ctx
       (.success (scriptNat stack.length :: stack) altStack) :=
     .depth stack altStack [] flags ctx _ .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- Successful OP_1ADD decoding determines its exact relational result. -/
+theorem Eval.oneAdd_result (operand : StackElement) (value : Int)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+      .ok value) (result : ExecResult) :
+    Eval [.op .OP_1ADD] (operand :: stack) altStack flags ctx result ↔
+      result = .success (scriptNum (value + 1) :: stack) altStack := by
+  have canonical : Eval [.op .OP_1ADD] (operand :: stack) altStack flags ctx
+      (.success (scriptNum (value + 1) :: stack) altStack) :=
+    .oneAdd operand value stack altStack [] flags ctx _ decoded .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- Successful OP_1SUB decoding determines its exact relational result. -/
+theorem Eval.oneSub_result (operand : StackElement) (value : Int)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+      .ok value) (result : ExecResult) :
+    Eval [.op .OP_1SUB] (operand :: stack) altStack flags ctx result ↔
+      result = .success (scriptNum (value - 1) :: stack) altStack := by
+  have canonical : Eval [.op .OP_1SUB] (operand :: stack) altStack flags ctx
+      (.success (scriptNum (value - 1) :: stack) altStack) :=
+    .oneSub operand value stack altStack [] flags ctx _ decoded .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- Successful OP_NEGATE decoding determines its exact relational result. -/
+theorem Eval.negate_result (operand : StackElement) (value : Int)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+      .ok value) (result : ExecResult) :
+    Eval [.op .OP_NEGATE] (operand :: stack) altStack flags ctx result ↔
+      result = .success (scriptNum (-value) :: stack) altStack := by
+  have canonical : Eval [.op .OP_NEGATE] (operand :: stack) altStack flags ctx
+      (.success (scriptNum (-value) :: stack) altStack) :=
+    .negate operand value stack altStack [] flags ctx _ decoded .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- Successful OP_ABS decoding determines its exact relational result. -/
+theorem Eval.abs_result (operand : StackElement) (value : Int)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
+      .ok value) (result : ExecResult) :
+    Eval [.op .OP_ABS] (operand :: stack) altStack flags ctx result ↔
+      result = .success (scriptNum (if value < 0 then -value else value) :: stack) altStack := by
+  have canonical : Eval [.op .OP_ABS] (operand :: stack) altStack flags ctx
+      (.success (scriptNum (if value < 0 then -value else value) :: stack) altStack) :=
+    .abs operand value stack altStack [] flags ctx _ decoded .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- Decoded OP_SUB operands determine its exact relational result. -/
+theorem Eval.sub_result (aBytes bBytes : StackElement) (a b : Int)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b))
+    (result : ExecResult) :
+    Eval [.op .OP_SUB] (aBytes :: bBytes :: stack) altStack flags ctx result ↔
+      result = .success (scriptNum (b - a) :: stack) altStack := by
+  have canonical : Eval [.op .OP_SUB] (aBytes :: bBytes :: stack) altStack flags ctx
+      (.success (scriptNum (b - a) :: stack) altStack) :=
+    .sub aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- Decoded OP_NUMNOTEQUAL operands determine its exact relational result. -/
+theorem Eval.numNotEqual_result (aBytes bBytes : StackElement) (a b : Int)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b))
+    (result : ExecResult) :
+    Eval [.op .OP_NUMNOTEQUAL] (aBytes :: bBytes :: stack) altStack flags ctx result ↔
+      result = .success (boolToElement (decide (a ≠ b)) :: stack) altStack := by
+  have canonical : Eval [.op .OP_NUMNOTEQUAL] (aBytes :: bBytes :: stack) altStack flags ctx
+      (.success (boolToElement (decide (a ≠ b)) :: stack) altStack) :=
+    .numNotEqual aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- Decoded OP_LESSTHAN operands determine its exact relational result. -/
+theorem Eval.lessThan_result (aBytes bBytes : StackElement) (a b : Int)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b))
+    (result : ExecResult) :
+    Eval [.op .OP_LESSTHAN] (aBytes :: bBytes :: stack) altStack flags ctx result ↔
+      result = .success (boolToElement (decide (b < a)) :: stack) altStack := by
+  have canonical : Eval [.op .OP_LESSTHAN] (aBytes :: bBytes :: stack) altStack flags ctx
+      (.success (boolToElement (decide (b < a)) :: stack) altStack) :=
+    .lessThan aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- Decoded OP_GREATERTHAN operands determine its exact relational result. -/
+theorem Eval.greaterThan_result (aBytes bBytes : StackElement) (a b : Int)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b))
+    (result : ExecResult) :
+    Eval [.op .OP_GREATERTHAN] (aBytes :: bBytes :: stack) altStack flags ctx result ↔
+      result = .success (boolToElement (decide (b > a)) :: stack) altStack := by
+  have canonical : Eval [.op .OP_GREATERTHAN] (aBytes :: bBytes :: stack) altStack flags ctx
+      (.success (boolToElement (decide (b > a)) :: stack) altStack) :=
+    .greaterThan aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- Decoded OP_LESSTHANOREQUAL operands determine its exact relational result. -/
+theorem Eval.lessThanOrEqual_result (aBytes bBytes : StackElement) (a b : Int)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b))
+    (result : ExecResult) :
+    Eval [.op .OP_LESSTHANOREQUAL] (aBytes :: bBytes :: stack) altStack flags ctx result ↔
+      result = .success (boolToElement (decide (b ≤ a)) :: stack) altStack := by
+  have canonical : Eval [.op .OP_LESSTHANOREQUAL] (aBytes :: bBytes :: stack) altStack flags ctx
+      (.success (boolToElement (decide (b ≤ a)) :: stack) altStack) :=
+    .lessThanOrEqual aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- Decoded OP_GREATERTHANOREQUAL operands determine its exact relational result. -/
+theorem Eval.greaterThanOrEqual_result (aBytes bBytes : StackElement) (a b : Int)
+    (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext)
+    (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b))
+    (result : ExecResult) :
+    Eval [.op .OP_GREATERTHANOREQUAL] (aBytes :: bBytes :: stack) altStack flags ctx result ↔
+      result = .success (boolToElement (decide (b ≥ a)) :: stack) altStack := by
+  have canonical : Eval [.op .OP_GREATERTHANOREQUAL] (aBytes :: bBytes :: stack) altStack flags ctx
+      (.success (boolToElement (decide (b ≥ a)) :: stack) altStack) :=
+    .greaterThanOrEqual aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
   constructor
   · intro evaluated
     exact evaluated.result_unique canonical

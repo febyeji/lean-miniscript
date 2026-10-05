@@ -32,7 +32,12 @@ inductive Opcode where
   | OP_TOALTSTACK
   | OP_FROMALTSTACK
   -- Arithmetic / Logic
+  | OP_1ADD
+  | OP_1SUB
+  | OP_NEGATE
+  | OP_ABS
   | OP_ADD
+  | OP_SUB
   | OP_BOOLAND
   | OP_BOOLOR
   | OP_NOT
@@ -42,6 +47,11 @@ inductive Opcode where
   | OP_EQUALVERIFY
   | OP_NUMEQUAL
   | OP_NUMEQUALVERIFY
+  | OP_NUMNOTEQUAL
+  | OP_LESSTHAN
+  | OP_GREATERTHAN
+  | OP_LESSTHANOREQUAL
+  | OP_GREATERTHANOREQUAL
   | OP_WITHIN
   -- Cryptographic hash
   | OP_SHA256

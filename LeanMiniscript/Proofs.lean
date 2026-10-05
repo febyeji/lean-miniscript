@@ -1,5 +1,6 @@
 import LeanMiniscript
 import LeanMiniscript.Script.RuntimeErasure
+import LeanMiniscript.Script.NumericRuntimeProofs
 import LeanMiniscript.Script.ExecutionResources
 import LeanMiniscript.Script.ScriptNumProofs
 import LeanMiniscript.Script.Codec.Proofs
