@@ -32,6 +32,8 @@ import LeanMiniscript.Script.TwoRotExamples
 import LeanMiniscript.Script.TwoSwapExamples
 import LeanMiniscript.Script.TwoDropExamples
 import LeanMiniscript.Script.TwoDupExamples
+import LeanMiniscript.Script.TwoOverExamples
+import LeanMiniscript.Script.ThreeDupExamples
 import LeanMiniscript.Script.TuckExamples
 import LeanMiniscript.Script.NotExamples
 import LeanMiniscript.Script.WithinExamples

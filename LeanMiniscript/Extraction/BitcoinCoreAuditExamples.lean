@@ -584,4 +584,153 @@ example : ((auditCoreScriptTests rejectingFixtureOracle twoSwapBoundaryFixtureJs
       audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
   native_decide
 
+private def twoOverFixtureJson : String := r#"
+[
+  ["1 2 3 5", "2OVER ADD ADD 8 EQUALVERIFY ADD ADD 6 EQUAL", "P2SH,STRICTENC", "OK"],
+  ["0 1 0 0", "2OVER", "P2SH,STRICTENC", "OK"],
+  ["NOP", "2OVER 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["1", "2 3 2OVER 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["1 1 1", "2OVER", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- All 5 verbatim 2OVER rows from bitcoinCoreScriptTestsCommit cover
+    copy order, arithmetic continuations, final truth and underflow. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle twoOverFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 5 && audit.matchedRows == 5 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def threeDupFixtureJson : String := r#"
+[
+  ["-1 0 1 2", "3DUP DEPTH 7 EQUALVERIFY ADD ADD 3 EQUALVERIFY 2DROP 0 EQUALVERIFY", "P2SH,STRICTENC", "OK"],
+  ["0 0 1", "3DUP", "P2SH,STRICTENC", "OK"],
+  ["NOP", "3DUP 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["1", "3DUP 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["1 2", "3DUP 1", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"],
+  ["1 1", "3DUP", "P2SH,STRICTENC", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- All 6 verbatim 3DUP rows from bitcoinCoreScriptTestsCommit cover
+    copy order, arithmetic continuations, final truth and underflow. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle threeDupFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 6 && audit.matchedRows == 6 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def twoOverBoundaryFixtureJson : String := r#"
+[
+  ["1 2 3 4", "0x70 2 EQUALVERIFY 1 EQUALVERIFY 4 EQUALVERIFY 3 EQUALVERIFY 2 EQUALVERIFY 1 EQUAL", "MINIMALDATA", "OK"],
+  ["9 1 2 3 4", "2OVER 2DROP 2DROP 2DROP 9 EQUAL", "MINIMALDATA", "OK"],
+  ["1 0 3 4", "2OVER", "MINIMALDATA", "EVAL_FALSE"],
+  ["1 2 3 4 2OVER", "2 EQUALVERIFY 1 EQUALVERIFY 4 EQUALVERIFY 3 EQUALVERIFY 2 EQUALVERIFY 1 EQUAL", "MINIMALDATA", "OK"],
+  ["1 0x01 0x80 3 4", "2OVER 0x01 0x80 EQUAL", "", "OK"],
+  ["1 0x01 0x80 3 4", "2OVER 0x01 0x80 EQUAL", "MINIMALDATA", "OK"],
+  ["1 0x02 0x0100 3 4", "2OVER 0x02 0x0100 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2147483648 3 4", "2OVER 2147483648 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2 3 4", "2OVER TOALTSTACK TOALTSTACK 4 EQUALVERIFY 3 EQUALVERIFY 2 EQUALVERIFY 1 EQUALVERIFY FROMALTSTACK 1 EQUALVERIFY FROMALTSTACK 2 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2OVER", "NOP", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["", "0 IF 2OVER ENDIF 1", "MINIMALDATA", "OK"],
+  ["", "2OVER 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1", "0 IF 2OVER ENDIF 1", "MINIMALDATA", "OK"],
+  ["1", "2OVER 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1 1", "0 IF 2OVER ENDIF 1", "MINIMALDATA", "OK"],
+  ["1 1", "2OVER 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1 1 1", "0 IF 2OVER ENDIF 1", "MINIMALDATA", "OK"],
+  ["1 1 1", "2OVER 1", "MINIMALDATA", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- Separate local Core-format rows check raw bytes, copy and lower-stack order,
+    numeric bytes without decoding, scriptSig, alternate stacks and all short inputs. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle twoOverBoundaryFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 18 && audit.matchedRows == 18 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def threeDupBoundaryFixtureJson : String := r#"
+[
+  ["1 2 3", "0x6f 3 EQUALVERIFY 2 EQUALVERIFY 1 EQUALVERIFY 3 EQUALVERIFY 2 EQUALVERIFY 1 EQUAL", "MINIMALDATA", "OK"],
+  ["9 1 2 3", "3DUP 2DROP 2DROP 2DROP 9 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2 0", "3DUP", "MINIMALDATA", "EVAL_FALSE"],
+  ["1 2 3 3DUP", "3 EQUALVERIFY 2 EQUALVERIFY 1 EQUALVERIFY 3 EQUALVERIFY 2 EQUALVERIFY 1 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2 0x01 0x80", "3DUP 0x01 0x80 EQUAL", "", "OK"],
+  ["1 2 0x01 0x80", "3DUP 0x01 0x80 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2 0x02 0x0100", "3DUP 0x02 0x0100 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2 2147483648", "3DUP 2147483648 EQUAL", "MINIMALDATA", "OK"],
+  ["1 2 3", "3DUP TOALTSTACK TOALTSTACK TOALTSTACK 3 EQUALVERIFY 2 EQUALVERIFY 1 EQUALVERIFY FROMALTSTACK 1 EQUALVERIFY FROMALTSTACK 2 EQUALVERIFY FROMALTSTACK 3 EQUAL", "MINIMALDATA", "OK"],
+  ["1 3DUP", "NOP", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["", "0 IF 3DUP ENDIF 1", "MINIMALDATA", "OK"],
+  ["", "3DUP 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1", "0 IF 3DUP ENDIF 1", "MINIMALDATA", "OK"],
+  ["1", "3DUP 1", "MINIMALDATA", "INVALID_STACK_OPERATION"],
+  ["1 1", "0 IF 3DUP ENDIF 1", "MINIMALDATA", "OK"],
+  ["1 1", "3DUP 1", "MINIMALDATA", "INVALID_STACK_OPERATION"]
+]
+"#
+
+/-- Separate local Core-format rows check raw bytes, copy and lower-stack order,
+    numeric bytes without decoding, scriptSig, alternate stacks and all short inputs. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle threeDupBoundaryFixtureJson).toOption.map
+    fun audit => audit.comparedRows == 16 && audit.matchedRows == 16 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+-- Repetition reconstructs the exact source strings at pinned Core rows 299–301
+-- and 831–833 while keeping the 520-byte payloads compact in this file.
+private def repeatedCoreSource (count : Nat) (source : String) : String :=
+  String.join (List.replicate count source)
+
+private def rawThreeDups (count : Nat) : String :=
+  "0x" ++ repeatedCoreSource count "6f"
+
+private def coreMaxPushPrefix : String :=
+  "'" ++ String.ofList (List.replicate 382 'a') ++ "' " ++
+    repeatedCoreSource 18 ("'" ++ String.ofList (List.replicate 520 'b') ++ "' ")
+
+private def coreMaxSizePubKey : String :=
+  coreMaxPushPrefix ++ rawThreeDups 119 ++ " 2DUP 0x" ++ repeatedCoreSource 81 "61"
+
+private def threeDupRawCoreRows : List (List String) :=
+  [["1 2 3 4 5 " ++ rawThreeDups 165,
+    "1 2 3 4 5 " ++ rawThreeDups 165, "P2SH,STRICTENC", "OK",
+    "1,000 stack size (0x6f is 3DUP)"],
+   ["1 TOALTSTACK 2 TOALTSTACK 3 4 5 " ++ rawThreeDups 165,
+    "1 2 3 4 5 6 7 " ++ rawThreeDups 165, "P2SH,STRICTENC", "OK",
+    "1,000 stack size (altstack cleared between scriptSig/scriptPubKey)"],
+   [coreMaxPushPrefix ++ rawThreeDups 201, coreMaxSizePubKey, "P2SH,STRICTENC", "OK",
+    "Max-size (10,000-byte), max-push(520 bytes), max-opcodes(201), max stack size(1,000 items). 0x6f is 3DUP, 0x61 is NOP"]]
+
+/-- The three pinned raw-byte success rows compare through the unbounded importer.
+    Runtime stack limits are checked separately in ThreeDupExamples. -/
+example : ((auditCoreScriptTests rejectingFixtureOracle
+    (Lean.toJson threeDupRawCoreRows).compress).toOption.map
+    fun audit => audit.comparedRows == 3 && audit.matchedRows == 3 &&
+      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
+  native_decide
+
+private def threeDupUnsupportedCoreRows : List (List String) :=
+  [["1 2 3 4 5 " ++ rawThreeDups 165,
+    "1 2 3 4 5 6 " ++ rawThreeDups 165, "P2SH,STRICTENC", "STACK_SIZE",
+    ">1,000 stack size (0x6f is 3DUP)"],
+   ["1 2 3 4 5 " ++ rawThreeDups 165,
+    "1 TOALTSTACK 2 TOALTSTACK 3 4 5 6 " ++ rawThreeDups 165,
+    "P2SH,STRICTENC", "STACK_SIZE", ">1,000 stack+altstack size"],
+   ["NOP", "0 " ++ coreMaxSizePubKey, "P2SH,STRICTENC", "SCRIPT_SIZE",
+    "10,001-byte scriptPubKey"]]
+
+-- The existing importer boundary still excludes resource-limit error tags.
+example : ((auditCoreScriptTests rejectingFixtureOracle
+    (Lean.toJson threeDupUnsupportedCoreRows).compress).toOption.map
+    fun audit => audit.comparedRows == 0 && audit.unsupportedRows == 3) = some true := by
+  native_decide
+
+example : ((auditCoreScriptTests rejectingFixtureOracle
+    (Lean.toJson threeDupUnsupportedCoreRows).compress).toOption.map
+    fun audit => audit.unsupported.map (·.reason)) =
+    some [.expectedError "STACK_SIZE", .expectedError "STACK_SIZE",
+      .expectedError "SCRIPT_SIZE"] := by
+  native_decide
+
 end LeanMiniscript.Extraction

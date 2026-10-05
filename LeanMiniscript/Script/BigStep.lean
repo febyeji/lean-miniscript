@@ -1102,6 +1102,22 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       Eval script (top :: below :: top :: below :: rest) altStack flags ctx result →
       Eval (.op .OP_2DUP :: script) (top :: below :: rest) altStack flags ctx result
 
+  -- OP_3DUP: Core 9be056a8a72b624dae9623b2f7bded92c2a21c91,
+  -- src/script/interpreter.cpp: copy stacktop(-3), stacktop(-2), then stacktop(-1).
+  | threeDup : (top second third : StackElement) → (rest altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      Eval script (top :: second :: third :: top :: second :: third :: rest)
+        altStack flags ctx result →
+      Eval (.op .OP_3DUP :: script) (top :: second :: third :: rest) altStack flags ctx result
+
+  -- OP_2OVER: Core 9be056a8a72b624dae9623b2f7bded92c2a21c91,
+  -- src/script/interpreter.cpp: copy stacktop(-4), then stacktop(-3), after checking four inputs.
+  | twoOver : (top second third fourth : StackElement) → (rest altStack : Stack) → (script : Script) →
+      (flags : ScriptFlags) → (ctx : TxContext) → (result : ExecResult) →
+      Eval script (third :: fourth :: top :: second :: third :: fourth :: rest)
+        altStack flags ctx result →
+      Eval (.op .OP_2OVER :: script) (top :: second :: third :: fourth :: rest) altStack flags ctx result
+
   -- OP_OVER: Core 9be056a8a72b624dae9623b2f7bded92c2a21c91,
   -- src/script/interpreter.cpp: copy stacktop(-2) after checking two inputs.
   | over : (top below : StackElement) → (rest altStack : Stack) → (script : Script) →
@@ -1857,6 +1873,33 @@ theorem Eval.exists_result
                             ⟨result, evaluated⟩
                           exact ⟨result, .twoDup top below stackRest altStack rest
                             flags ctx result evaluated⟩
+              | OP_3DUP =>
+                  rcases stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, stackRest⟩⟩⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_3DUP 3 rest _ altStack flags ctx rfl (by simp)⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_3DUP 3 rest _ altStack flags ctx rfl (by simp)⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_3DUP 3 rest _ altStack flags ctx rfl (by simp)⟩
+                  · rcases next (top :: second :: third :: top :: second :: third :: stackRest)
+                      altStack with ⟨result, evaluated⟩
+                    exact ⟨result, .threeDup top second third stackRest altStack
+                      rest flags ctx result evaluated⟩
+              | OP_2OVER =>
+                  rcases stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ |
+                    ⟨fourth, stackRest⟩⟩⟩⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_2OVER 4 rest _ altStack flags ctx rfl (by simp)⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_2OVER 4 rest _ altStack flags ctx rfl (by simp)⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_2OVER 4 rest _ altStack flags ctx rfl (by simp)⟩
+                  · exact ⟨.failure .stackUnderflow,
+                      .stack_underflow .OP_2OVER 4 rest _ altStack flags ctx rfl (by simp)⟩
+                  · rcases next (third :: fourth :: top :: second :: third :: fourth :: stackRest)
+                      altStack with ⟨result, evaluated⟩
+                    exact ⟨result, .twoOver top second third fourth stackRest altStack
+                      rest flags ctx result evaluated⟩
               | OP_OVER =>
                   cases stack with
                   | nil =>
@@ -2612,6 +2655,52 @@ theorem Eval.twoDup_underflow_result {stack altStack : Stack} {script : Script}
     (evaluated : Eval (.op .OP_2DUP :: script) stack altStack flags ctx result) :
     result = .failure .stackUnderflow :=
   evaluated.result_unique (.stack_underflow .OP_2DUP 2 script stack altStack flags ctx rfl short)
+
+/-- 3DUP copies the top three items in order above the unchanged original stack. -/
+theorem Eval.threeDup_result (top second third : StackElement) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
+    Eval [.op .OP_3DUP] (top :: second :: third :: stack) altStack flags ctx result ↔
+      result = .success (top :: second :: third :: top :: second :: third :: stack) altStack := by
+  have canonical : Eval [.op .OP_3DUP] (top :: second :: third :: stack) altStack flags ctx
+      (.success (top :: second :: third :: top :: second :: third :: stack) altStack) :=
+    .threeDup top second third stack altStack [] flags ctx _ .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- With fewer than three main-stack items, 3DUP terminates before any suffix. -/
+theorem Eval.threeDup_underflow_result {stack altStack : Stack} {script : Script}
+    {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    (short : stack.length < 3)
+    (evaluated : Eval (.op .OP_3DUP :: script) stack altStack flags ctx result) :
+    result = .failure .stackUnderflow :=
+  evaluated.result_unique (.stack_underflow .OP_3DUP 3 script stack altStack flags ctx rfl short)
+
+/-- 2OVER copies the third and fourth items above the unchanged original stack. -/
+theorem Eval.twoOver_result (top second third fourth : StackElement) (stack altStack : Stack)
+    (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
+    Eval [.op .OP_2OVER] (top :: second :: third :: fourth :: stack) altStack flags ctx result ↔
+      result = .success (third :: fourth :: top :: second :: third :: fourth :: stack) altStack := by
+  have canonical : Eval [.op .OP_2OVER] (top :: second :: third :: fourth :: stack) altStack flags ctx
+      (.success (third :: fourth :: top :: second :: third :: fourth :: stack) altStack) :=
+    .twoOver top second third fourth stack altStack [] flags ctx _ .done
+  constructor
+  · intro evaluated
+    exact evaluated.result_unique canonical
+  · intro equal
+    subst result
+    exact canonical
+
+/-- With fewer than four main-stack items, 2OVER terminates before any suffix. -/
+theorem Eval.twoOver_underflow_result {stack altStack : Stack} {script : Script}
+    {flags : ScriptFlags} {ctx : TxContext} {result : ExecResult}
+    (short : stack.length < 4)
+    (evaluated : Eval (.op .OP_2OVER :: script) stack altStack flags ctx result) :
+    result = .failure .stackUnderflow :=
+  evaluated.result_unique (.stack_underflow .OP_2OVER 4 script stack altStack flags ctx rfl short)
 
 /-- OVER copies precisely the second item above the unchanged original stack. -/
 theorem Eval.over_result (top below : StackElement) (stack altStack : Stack)
