@@ -104,6 +104,8 @@ inductive ScriptError where
   | altStackUnderflow
   | stackSize
   | pushSize
+  | scriptSize
+  | opCount
   | cleanStack
   | evalFalse
   | scriptNumOverflow

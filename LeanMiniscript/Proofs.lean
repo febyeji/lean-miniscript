@@ -1,3 +1,4 @@
+import LeanMiniscript.Extraction.BitcoinCoreLegacyLimitsProofs
 import LeanMiniscript
 import LeanMiniscript.Script.RuntimeErasure
 import LeanMiniscript.Script.NumericRuntimeProofs

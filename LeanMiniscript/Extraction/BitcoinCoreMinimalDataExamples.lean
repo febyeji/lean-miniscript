@@ -135,12 +135,39 @@ example : (checkCoreFixture rejectingFixtureOracle
       "0 IF 0x4c0101 ENDIF") "OK")).toOption = some true := by
   native_decide
 
--- The raw path conservatively excludes decoded signature operations, even
--- when a local prefix would reject or an inactive branch would skip them.
-example : (["0x4c0101 CHECKSIG", "0 IF 0x4c0101 CHECKSIG ENDIF 1"] : List String).all
+-- Preflight admits a minimality failure before a signature or a skipped signature.
+example : ([("0x4c0101 CHECKSIG", "MINIMALDATA"),
+    ("0 IF 0x4c0101 CHECKSIG ENDIF 1", "OK")] : List (String × String)).all
+    (fun (source, expected) =>
+      (checkCoreFixture rejectingFixtureOracle (fixture "" source expected)).toOption ==
+        some true) = true := by
+  native_decide
+
+-- A reached verifier remains unsupported even when another branch has a
+-- nonminimal push or a later push would fail MINIMALDATA.
+example : (["0 IF 0x4c0101 ENDIF 'sig' 'pubkey' CHECKSIG",
+    "'sig' 'pubkey' CHECKSIG 0x4c0101"] : List String).all
     (fun source => match prepareCoreFixture (fixture "" source "MINIMALDATA") with
-      | .error (.legacyScriptPubKey .signatureOpcode) => true
+      | .error .signatureOpcode => true
       | _ => false) = true := by
+  native_decide
+
+-- MINIMALDATA composes with operation and script limits in source order.
+private def nops (count : Nat) : String := String.join (List.replicate count "NOP ")
+
+private def combinedLimitFixtures : List CoreScriptTest := [
+  fixture "" (nops 201 ++ "0x4c0101") "MINIMALDATA",
+  fixture "" (nops 202 ++ "0x4c0101") "OP_COUNT",
+  fixture "" ("0x4c0101 " ++ nops 202) "MINIMALDATA",
+  fixture "" ("0 IF " ++ nops 199 ++ "0x4c0101 ENDIF 1") "OK",
+  fixture "" ("0 IF " ++ nops 200 ++ "0x4c0101 ENDIF 1") "OP_COUNT",
+  fixture "" (String.join (List.replicate 9998 "0 ") ++ "0x4c0101") "SCRIPT_SIZE",
+  fixture "0x4c0101" (String.join (List.replicate 10001 "0 ")) "MINIMALDATA"
+]
+
+example : combinedLimitFixtures.length = 7 := by native_decide
+example : combinedLimitFixtures.all (fun test =>
+    (checkCoreFixture rejectingFixtureOracle test).toOption == some true) = true := by
   native_decide
 
 -- Pushed bytes are payloads; the decoder does not execute their opcode values.

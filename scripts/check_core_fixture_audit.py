@@ -22,7 +22,7 @@ FIXTURE_URL = (
 EXPECTED_TESTS = 1222
 EXPECTED_DOCUMENTATION = 51
 # Raise this floor when an implementation adds supported fixtures.
-MINIMUM_MATCHED = 907
+MINIMUM_MATCHED = 977
 REPOSITORY = Path(__file__).resolve().parent.parent
 
 SUMMARY = re.compile(
