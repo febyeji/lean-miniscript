@@ -16,6 +16,8 @@ inductive Opcode where
   -- Stack manipulation
   | OP_2DROP
   | OP_2DUP
+  | OP_3DUP
+  | OP_2OVER
   | OP_2ROT
   | OP_2SWAP
   | OP_IFDUP

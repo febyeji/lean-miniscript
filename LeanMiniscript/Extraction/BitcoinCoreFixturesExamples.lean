@@ -21,7 +21,8 @@ private def rejectingOracle : CryptoOracle :=
 private def coreOpcodeNameFixtures : List (String × Opcode) :=
   [("NOP", .OP_NOP), ("IF", .OP_IF), ("NOTIF", .OP_NOTIF),
    ("ELSE", .OP_ELSE),
-   ("ENDIF", .OP_ENDIF), ("2DROP", .OP_2DROP), ("2DUP", .OP_2DUP), ("2ROT", .OP_2ROT),
+   ("ENDIF", .OP_ENDIF), ("2DROP", .OP_2DROP), ("2DUP", .OP_2DUP),
+   ("3DUP", .OP_3DUP), ("2OVER", .OP_2OVER), ("2ROT", .OP_2ROT),
    ("2SWAP", .OP_2SWAP), ("IFDUP", .OP_IFDUP),
    ("DEPTH", .OP_DEPTH), ("DROP", .OP_DROP), ("DUP", .OP_DUP), ("NIP", .OP_NIP), ("OVER", .OP_OVER), ("ROT", .OP_ROT),
    ("SWAP", .OP_SWAP), ("TUCK", .OP_TUCK), ("TOALTSTACK", .OP_TOALTSTACK),
@@ -61,6 +62,20 @@ example : coreOpcodeMappingsAgree = true := by
 example : ["2SWAP", "0x72"].all (fun source =>
     match parseCoreScriptSource source with
     | .ok [.op .OP_2SWAP] => true
+    | _ => false) = true := by
+  native_decide
+
+-- Text and raw-byte fixtures select the same 2OVER instruction.
+example : ["2OVER", "0x70"].all (fun source =>
+    match parseCoreScriptSource source with
+    | .ok [.op .OP_2OVER] => true
+    | _ => false) = true := by
+  native_decide
+
+-- Text and raw-byte fixtures select the same 3DUP instruction.
+example : ["3DUP", "0x6f"].all (fun source =>
+    match parseCoreScriptSource source with
+    | .ok [.op .OP_3DUP] => true
     | _ => false) = true := by
   native_decide
 

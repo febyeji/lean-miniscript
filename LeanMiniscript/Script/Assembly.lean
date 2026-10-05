@@ -35,6 +35,8 @@ def opcodeAssembly : Opcode → String
   | .OP_ENDIF => "ENDIF"
   | .OP_2DROP => "2DROP"
   | .OP_2DUP => "2DUP"
+  | .OP_3DUP => "3DUP"
+  | .OP_2OVER => "2OVER"
   | .OP_2ROT => "2ROT"
   | .OP_2SWAP => "2SWAP"
   | .OP_IFDUP => "IFDUP"

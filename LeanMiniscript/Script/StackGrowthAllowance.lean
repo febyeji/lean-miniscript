@@ -8,7 +8,8 @@ namespace LeanMiniscript.Script
     always shrinks the stack is independent of the useful fragment-level
     bound. -/
 def ScriptElement.stackGrowthAllowance : ScriptElement → Nat
-  | .op .OP_2DUP => 2
+  | .op .OP_2DUP | .op .OP_2OVER => 2
+  | .op .OP_3DUP => 3
   | .pushData _ | .pushNum _ => 1
   | .op .OP_IFDUP | .op .OP_DEPTH | .op .OP_DUP | .op .OP_OVER | .op .OP_TUCK | .op .OP_SIZE |
       .op .OP_CHECKMULTISIG | .op .OP_CHECKMULTISIGVERIFY => 1
@@ -29,7 +30,8 @@ theorem stackGrowthAllowance_append (left right : Script) :
   | cons element rest ih => simp [stackGrowthAllowance, ih, Nat.add_assoc]
 
 /-- The instruction-count bound applies when every source element is charged
-    at most one stack item. OP_2DUP requires the general weighted bound. -/
+    at most one stack item. OP_2DUP, OP_2OVER and OP_3DUP require the general
+    weighted bound. -/
 def OneItemGrowth (script : Script) : Prop :=
   ∀ element ∈ script, element.stackGrowthAllowance ≤ 1
 
@@ -47,9 +49,11 @@ theorem oneItemGrowth_append (left right : Script) :
     OneItemGrowth (left ++ right) ↔ OneItemGrowth left ∧ OneItemGrowth right := by
   simp [OneItemGrowth, List.mem_append, or_imp, forall_and]
 
-/-- All modeled elements except 2DUP have a one-item allowance. -/
+/-- All modeled elements except 2DUP, 2OVER and 3DUP have a one-item allowance. -/
 theorem ScriptElement.stackGrowthAllowance_le_one (element : ScriptElement)
-    (notTwoDup : element ≠ .op .OP_2DUP) :
+    (notTwoDup : element ≠ .op .OP_2DUP)
+    (notTwoOver : element ≠ .op .OP_2OVER)
+    (notThreeDup : element ≠ .op .OP_3DUP) :
     element.stackGrowthAllowance ≤ 1 := by
   cases element with
   | pushData data => simp [ScriptElement.stackGrowthAllowance]
