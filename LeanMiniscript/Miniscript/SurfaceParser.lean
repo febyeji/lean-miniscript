@@ -16,8 +16,8 @@ Parsing is split into two boundaries:
 2. elaboration into `SurfaceFragment`, which resolves key tokens, decodes hash
    literals, and checks the selected P2WSH or Tapscript context.
 
-Descriptor decoding and derivation remain outside this module. Callers provide
-the key resolver used at the elaboration boundary.
+Callers provide the key resolver used at the elaboration boundary.
+`DescriptorKey.lean` supplies concrete descriptor decoding and derivation.
 -/
 
 /-- Resolve one textual key token to public-key bytes. Context normalization

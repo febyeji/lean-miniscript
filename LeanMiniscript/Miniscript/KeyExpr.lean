@@ -23,8 +23,9 @@ structure KeyOrigin where
 
 /-- The key material accepted by descriptor key expressions.
 
-    Base58/WIF/xpub parsing is intentionally outside this AST layer; the bytes
-    here stand for already parsed key material. -/
+    The bytes here stand for already parsed key material. `DescriptorKey.lean`
+    supplies concrete Base58/WIF/BIP32 parsing and preserves compression and
+    network metadata in its executable key representation. -/
 inductive KeyMaterial where
   | publicKey : ByteArray → KeyMaterial
   | privateKey : ByteArray → KeyMaterial

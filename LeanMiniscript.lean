@@ -20,6 +20,7 @@ import LeanMiniscript.Miniscript.ValidationDecidable
 import LeanMiniscript.Miniscript.SurfaceNormalize
 import LeanMiniscript.Miniscript.SurfacePretty
 import LeanMiniscript.Miniscript.SurfaceParser
+import LeanMiniscript.Miniscript.DescriptorKey
 import LeanMiniscript.Miniscript.Metrics
 import LeanMiniscript.Miniscript.Types
 import LeanMiniscript.Miniscript.TypeInference

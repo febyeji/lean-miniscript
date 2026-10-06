@@ -14,6 +14,42 @@ Requires [Lean 4](https://lean-lang.org/) (see `lean-toolchain` for version).
 lake build
 ```
 
+## Descriptor keys in Miniscript
+
+`LeanMiniscript.Miniscript.parseSurfaceDescriptor` parses Miniscript expressions
+with validated public keys, WIF private keys, or BIP32 extended keys. For example:
+
+```lean
+import LeanMiniscript
+open LeanMiniscript.Miniscript
+
+#eval (parseSurfaceDescriptor .p2wsh
+  "pk([deadbeef/0h]0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798)").isOk
+```
+
+Key expressions support `[fingerprint/path]` origins, `/index` and `/indexh`
+derivation suffixes, and a final `/*` or `/*h`; apostrophes also mark hardened
+steps. Pass `(some childIndex)` as the final argument to select a wildcard child.
+Origin paths record metadata; derivation starts at the supplied extended key
+and follows only its suffix. Hardened xpub paths parse successfully and fail at
+resolution because they require private material. An invalid child returns an
+error at the requested index. Mainnet and testnet WIF and extended-key versions
+are accepted; WIF compression is preserved.
+
+`parseDescriptorKey` retains the origin and parsed key metadata, while
+`resolveDescriptorKey` is available for callers of `parseSurface`. SEC and
+x-only public keys are checked for curve membership. P2WSH requires compressed
+keys; Tapscript accepts x-only keys and normalizes compressed keys to x-only.
+`parseSurfaceHex` retains its byte-codec behavior and canonical round-trip proofs.
+This API covers keys inside Miniscript; output-descriptor wrappers, descriptor
+checksums, and multipath expressions are outside its grammar.
+
+`LeanMiniscript.Bitcoin.BIP32` also exposes master-key generation, import,
+serialization, neutering and exact-index child/path derivation. SHA512, HMAC,
+Base58Check and BIP32 have executable vector coverage. The descriptor parser
+inherits the existing context/type guarantee; cryptographic correctness remains
+unproved. Private-key derivation uses variable-time affine curve operations.
+
 ## Canonical Tapscript verification
 
 Import `LeanMiniscript.Extraction.TaprootBytes` to use

@@ -1,4 +1,9 @@
 import LeanMiniscript.Bitcoin.ECDSAExamples
+import LeanMiniscript.Bitcoin.KeyEncodingExamples
+import LeanMiniscript.Bitcoin.SHA512Examples
+import LeanMiniscript.Bitcoin.BIP32Examples
+import LeanMiniscript.Bitcoin.BIP32ReviewExamples
+import LeanMiniscript.Miniscript.DescriptorKeyReviewExamples
 import LeanMiniscript.Bitcoin.LegacySighashExamples
 import LeanMiniscript.Bitcoin.SHA1Examples
 import LeanMiniscript.Extraction.CoreFixtureTransactionExamples
