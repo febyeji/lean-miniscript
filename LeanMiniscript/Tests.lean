@@ -3,6 +3,10 @@ import LeanMiniscript.Bitcoin.KeyEncodingExamples
 import LeanMiniscript.Bitcoin.SHA512Examples
 import LeanMiniscript.Bitcoin.BIP32Examples
 import LeanMiniscript.Bitcoin.BIP32ReviewExamples
+import LeanMiniscript.Bitcoin.DescriptorChecksumExamples
+import LeanMiniscript.Miniscript.OutputDescriptorExamples
+import LeanMiniscript.Miniscript.DescriptorParserExamples
+import LeanMiniscript.Miniscript.DescriptorConformanceExamples
 import LeanMiniscript.Miniscript.DescriptorKeyReviewExamples
 import LeanMiniscript.Bitcoin.LegacySighashExamples
 import LeanMiniscript.Bitcoin.SHA1Examples

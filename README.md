@@ -41,14 +41,49 @@ are accepted; WIF compression is preserved.
 x-only public keys are checked for curve membership. P2WSH requires compressed
 keys; Tapscript accepts x-only keys and normalizes compressed keys to x-only.
 `parseSurfaceHex` retains its byte-codec behavior and canonical round-trip proofs.
-This API covers keys inside Miniscript; output-descriptor wrappers, descriptor
-checksums, and multipath expressions are outside its grammar.
+This API covers keys inside Miniscript. The output-descriptor API below adds
+wrappers and descriptor checksums; multipath expressions remain unsupported.
 
 `LeanMiniscript.Bitcoin.BIP32` also exposes master-key generation, import,
 serialization, neutering and exact-index child/path derivation. SHA512, HMAC,
 Base58Check and BIP32 have executable vector coverage. The descriptor parser
 inherits the existing context/type guarantee; cryptographic correctness remains
 unproved. Private-key derivation uses variable-time affine curve operations.
+
+## Output descriptors
+
+`LeanMiniscript.Miniscript.deriveOutputDescriptor` generates output scripts for
+`wsh(MINISCRIPT)`, `sh(wsh(MINISCRIPT))`, `tr(KEY)`, and `tr(KEY,TREE)`:
+
+```lean
+import LeanMiniscript
+open LeanMiniscript.Miniscript
+
+#eval (deriveOutputDescriptor
+  "wsh(pk(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798))").map
+  (fun result => LeanMiniscript.Script.byteArrayHex result.scriptPubKey)
+```
+
+The result contains `scriptPubKey`, plus `witnessScript` for either WSH form
+and `redeemScript` for the P2SH-wrapped form. Taproot results retain
+`taprootOutputKey` and an optional `taprootMerkleRoot`. A tree leaf is a
+Tapscript Miniscript expression; `{LEFT,RIGHT}` constructs a binary branch.
+The compiler preserves tree grouping, uses leaf version `0xc0`, and enforces
+the 128-branch path limit. `tr(KEY)` applies the key-only TapTweak.
+
+Pass `(some index)` as the second argument to select the same wildcard index
+for every key in the descriptor. A supplied `#checksum` is always verified
+against the exact original text. Pass `true` as the third argument to require
+a checksum. `LeanMiniscript.Bitcoin.DescriptorChecksum.addChecksum` creates a
+checksummed string, and `validate` verifies and removes the checksum envelope.
+
+`parseOutputDescriptor` returns a resolved AST. `compileOutputDescriptor`
+also accepts caller-constructed ASTs and checks every leaf's context, type B,
+and public-key curve membership. These checks do not establish spendability,
+wallet policy, or cryptographic correctness. The supported inner expressions
+are those of the existing Miniscript parser; address generation, multipath
+keys, `sortedmulti`, `sortedmulti_a`, and other output wrappers are outside
+this API. Taproot control blocks and witness construction remain separate.
 
 ## Canonical Tapscript verification
 

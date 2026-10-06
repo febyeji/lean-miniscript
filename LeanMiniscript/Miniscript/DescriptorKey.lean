@@ -8,8 +8,8 @@ open LeanMiniscript.Bitcoin
 /-! Concrete BIP380 key expressions with the BIP386 x-only key extension.
 Origin paths describe provenance; only the suffix after an extended key is
 derived. Parsing retains hardened xpub paths, whose resolution requires private
-material and therefore fails here. Full output-descriptor wrappers and their
-checksums are outside this Miniscript key boundary.
+material and therefore fails here. `DescriptorParser.lean` adds output wrappers
+and checksum validation around this Miniscript key boundary.
 -/
 
 /-- Concrete key material retains WIF compression and extended-key metadata. -/
