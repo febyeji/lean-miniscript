@@ -1,3 +1,4 @@
+import LeanMiniscript.Properties.ResourcePathBoundsProofs
 import LeanMiniscript.Properties.SatisfactionResourceProofs
 
 namespace LeanMiniscript.Properties

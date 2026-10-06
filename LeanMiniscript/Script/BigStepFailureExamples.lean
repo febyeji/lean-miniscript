@@ -1,5 +1,5 @@
 import LeanMiniscript.Miniscript.Compile
-import LeanMiniscript.Script.BigStep
+import LeanMiniscript.Script.BigStepProofs
 
 namespace LeanMiniscript.Script
 

@@ -1,3 +1,4 @@
+import LeanMiniscript.Miniscript.Soundness
 import LeanMiniscript.Miniscript.CompileConcreteProofs
 import LeanMiniscript.Miniscript.Sane
 import LeanMiniscript.Properties.ResourceBounds
@@ -7,6 +8,22 @@ namespace LeanMiniscript.Properties
 
 open LeanMiniscript.Miniscript
 open LeanMiniscript.Script
+
+/-- Contract for the first conservative final-state growth bound, proved by
+    `resourceBoundsSound` in `ResourceBoundsProofs`. Counting the main
+    and alt stacks together avoids treating `TOALTSTACK` as allocation. Each
+    executed compiler element may increase that total by at most one, so the
+    complete compiled script length is a conservative allowance independent of
+    which conditional branch runs. -/
+def ResourceBoundsSound : Prop :=
+  ∀ {ctx : ScriptContext} {fragment : CoreFragment} {ty : MiniType}
+      {initialStack initialAltStack finalStack finalAltStack : Stack}
+      {flags : ScriptFlags} {txCtx : TxContext},
+    ValidTypedFragment ctx fragment ty →
+    Eval (compile fragment) initialStack initialAltStack flags txCtx
+      (.success finalStack finalAltStack) →
+    finalStack.length + finalAltStack.length ≤
+      initialStack.length + initialAltStack.length + scriptElementCount fragment
 
 private inductive ElementSerializationShape where
   | op (opcode : Opcode)

@@ -1,4 +1,5 @@
 import LeanMiniscript.Extraction.BitcoinCoreVerificationTypes
+import LeanMiniscript.Extraction.BitcoinCoreRawScript
 import LeanMiniscript.Bitcoin.TaprootControlBlock
 
 namespace LeanMiniscript.Extraction
@@ -25,35 +26,19 @@ private def isCoreOpSuccess (byte : Nat) : Bool :=
 
 /-- Locate an OP_SUCCESS instruction before validating initial witness stack
 limits. Pushed bytes are skipped; a truncated push encountered first fails. -/
-private def scanCoreOpSuccess : Nat → List UInt8 → Except CoreVerificationError Bool
-  | _, [] => .ok false
-  | 0, _ :: _ => .error (.script .badOpcode)
-  | fuel + 1, byte :: rest => do
-      let value := byte.toNat
-      if isCoreOpSuccess value then return true
-      if value > 0x4e then return ← scanCoreOpSuccess fuel rest
-      let (size, payload) ←
-        if value ≤ 75 then pure (value, rest)
-        else if value = 0x4c then
-          match rest with
-          | size :: payload => pure (size.toNat, payload)
-          | _ => throw (.script .badOpcode)
-        else if value = 0x4d then
-          match rest with
-          | low :: high :: payload => pure (low.toNat + 256 * high.toNat, payload)
-          | _ => throw (.script .badOpcode)
-        else
-          match rest with
-          | a :: b :: c :: d :: payload =>
-              pure (a.toNat + 256 * b.toNat + 65536 * c.toNat + 16777216 * d.toNat, payload)
-          | _ => throw (.script .badOpcode)
-      if size > payload.length then throw (.script .badOpcode)
-      scanCoreOpSuccess fuel (payload.drop size)
+private def scanCoreOpSuccess (bytes : ByteArray) :
+    Nat → Nat → Except CoreVerificationError Bool
+  | 0, _ => .error (.script .badOpcode)
+  | fuel + 1, offset => do
+      if offset ≥ bytes.size then return false
+      let instruction ← (readCoreRawInstruction bytes offset).mapError .script
+      if isCoreOpSuccess instruction.opcode.toNat then return true
+      scanCoreOpSuccess bytes fuel instruction.nextOffset
 
 /-- A full source-order OP_SUCCESS scan; success overrides subsequent malformed
 bytes and stack limits, as required by ExecuteWitnessScript. -/
 def coreTapscriptHasOpSuccess (bytes : ByteArray) : Except CoreVerificationError Bool :=
-  scanCoreOpSuccess bytes.size bytes.data.toList
+  scanCoreOpSuccess bytes (bytes.size + 1) 0
 
 private def acceptWitnessStack : Stack → Except CoreVerificationError Unit
   | [top] => if castToBool top then .ok () else .error (.script .evalFalse)

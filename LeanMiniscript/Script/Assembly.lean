@@ -1,4 +1,4 @@
-import LeanMiniscript.Script.Syntax
+import LeanMiniscript.Script.ControlFlow
 
 namespace LeanMiniscript.Script
 
@@ -96,6 +96,10 @@ def opcodeAssembly : Opcode → String
   | .OP_NOP10 => "NOP10"
   | .OP_RETURN => "RETURN"
   | .OP_SIZE => "SIZE"
+
+/-- Resolve a modeled opcode mnemonic using the shared assembly spelling. -/
+def opcodeFromAssembly? (name : String) : Option Opcode :=
+  modeledOpcodes.find? (fun opcode => opcodeAssembly opcode == name)
 
 /-- Render one Script element in BIP-style assembly notation. -/
 def elementAssembly : ScriptElement → String

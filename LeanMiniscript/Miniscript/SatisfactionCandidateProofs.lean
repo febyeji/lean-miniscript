@@ -1,4 +1,4 @@
-import LeanMiniscript.Miniscript.Satisfaction
+import LeanMiniscript.Miniscript.SatisfactionLemmas
 
 namespace LeanMiniscript.Miniscript
 

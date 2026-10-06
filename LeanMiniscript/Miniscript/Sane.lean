@@ -1,5 +1,5 @@
 import LeanMiniscript.Miniscript.Checked
-import LeanMiniscript.Miniscript.Soundness
+import LeanMiniscript.Miniscript.Validity
 import LeanMiniscript.Miniscript.MalleabilityInference
 import LeanMiniscript.Properties.ResourceBounds
 
