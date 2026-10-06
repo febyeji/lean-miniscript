@@ -163,19 +163,45 @@ def DescriptorKey.resolve (key : DescriptorKey) (wildcardIndex : Option Nat := n
 def resolveDescriptorKey (wildcardIndex : Option Nat := none) : KeyResolver :=
   fun token => do (← parseDescriptorKey token).resolve wildcardIndex
 
+-- Descriptor inputs can contain WIF or extended private keys, including in
+-- malformed tokens. Retain error categories, positions and static diagnostics
+-- while removing every field that can copy text from the input.
+private def redactDescriptorError : SurfaceParseError → SurfaceParseError
+  | .unexpectedToken position expected _ => .unexpectedToken position expected "[redacted]"
+  | .trailingInput position _ => .trailingInput position "[redacted]"
+  | .unknownFragment position _ => .unknownFragment position "[redacted]"
+  | .unknownWrapper position _ => .unknownWrapper position "[redacted]"
+  | .invalidArity position _ expected actual =>
+      .invalidArity position "[redacted]" expected actual
+  | .invalidNumber position _ => .invalidNumber position "[redacted]"
+  | .invalidHex position role _ => .invalidHex position role "[redacted]"
+  | .keyResolution position _ message => .keyResolution position "[redacted]" message
+  | .keyContext position _ context => .keyContext position "[redacted]" context
+  | .contextMismatch position _ context => .contextMismatch position "[redacted]" context
+  | error => error
+
 /-- Parse Miniscript with concrete descriptor keys. The selected context checks
-compression and normalizes compressed Tapscript keys to their x-only form. -/
+compression and normalizes compressed Tapscript keys to their x-only form.
+Errors redact input tokens, which may contain private key material. -/
 def parseSurfaceDescriptor (context : ScriptContext) (input : String)
     (wildcardIndex : Option Nat := none) : Except SurfaceParseError SurfaceFragment :=
-  parseSurface context (resolveDescriptorKey wildcardIndex) input
+  match parseSurface context (resolveDescriptorKey wildcardIndex) input with
+  | .ok fragment => .ok fragment
+  | .error error => .error (redactDescriptorError error)
 
 /-- Descriptor resolution preserves the surface parser's context/type guarantee. -/
 theorem wellFormed_and_hasType_of_parseSurfaceDescriptor_eq_ok
     (context : ScriptContext) (input : String) (wildcardIndex : Option Nat)
     (fragment : SurfaceFragment)
     (h : parseSurfaceDescriptor context input wildcardIndex = .ok fragment) :
-    fragment.WellFormed context ∧ ∃ ty, HasType context (desugar fragment) ty :=
-  wellFormed_and_hasType_of_parseSurface_eq_ok context
-    (resolveDescriptorKey wildcardIndex) input fragment h
+    fragment.WellFormed context ∧ ∃ ty, HasType context (desugar fragment) ty := by
+  unfold parseSurfaceDescriptor at h
+  cases hParsed : parseSurface context (resolveDescriptorKey wildcardIndex) input with
+  | error error => simp [hParsed] at h
+  | ok parsed =>
+      simp [hParsed] at h
+      subst fragment
+      exact wellFormed_and_hasType_of_parseSurface_eq_ok context
+        (resolveDescriptorKey wildcardIndex) input parsed hParsed
 
 end LeanMiniscript.Miniscript

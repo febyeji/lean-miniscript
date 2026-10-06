@@ -40,6 +40,8 @@ are accepted; WIF compression is preserved.
 `resolveDescriptorKey` is available for callers of `parseSurface`. SEC and
 x-only public keys are checked for curve membership. P2WSH requires compressed
 keys; Tapscript accepts x-only keys and normalizes compressed keys to x-only.
+`parseSurfaceDescriptor` redacts input tokens in errors, preserving error
+categories, positions and static diagnostics for private-key inputs.
 `parseSurfaceHex` retains its byte-codec behavior and canonical round-trip proofs.
 This API covers keys inside Miniscript. The output-descriptor API below adds
 wrappers and descriptor checksums; multipath expressions remain unsupported.

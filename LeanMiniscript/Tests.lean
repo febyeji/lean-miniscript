@@ -6,6 +6,7 @@ import LeanMiniscript.Bitcoin.BIP32ReviewExamples
 import LeanMiniscript.Bitcoin.DescriptorChecksumExamples
 import LeanMiniscript.Miniscript.OutputDescriptorExamples
 import LeanMiniscript.Miniscript.DescriptorParserExamples
+import LeanMiniscript.Miniscript.DescriptorErrorExamples
 import LeanMiniscript.Miniscript.DescriptorConformanceExamples
 import LeanMiniscript.Miniscript.DescriptorKeyReviewExamples
 import LeanMiniscript.Bitcoin.LegacySighashExamples
