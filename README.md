@@ -38,35 +38,45 @@ signature, annex, resource, decoding, and error-precedence regressions.
 
 ## Bitcoin Core fixture audit
 
-`lake exe core_fixture_audit --show-details <script_tests.json>` compares
-supported fixtures against the result tags in the pinned Bitcoin Core fixture
-file. The report retains unsupported rows and their reasons.
+`lake exe core_fixture_audit --show-details <script_tests.json>` compares all
+1,222 executable rows against the exact result tags in the pinned Bitcoin Core
+fixture. The report also retains 51 documentation rows and reports unsupported
+syntax, flags, or malformed witness metadata in other input documents.
 
 CI runs `python3 scripts/check_core_fixture_audit.py` after `lake build`. The
 script downloads `src/test/data/script_tests.json` at Bitcoin Core revision
 `9be056a8a72b624dae9623b2f7bded92c2a21c91` and verifies SHA-256
 `bc23cb1dfa760d50042f534da23cbbe4b6fbb03d7def0b64f8de049453d6ead5` before
-execution. It requires 1,222 test rows, 51 documentation rows, zero mismatches,
-and at least 977 matching fixtures. CI retains the complete report, including
-unsupported categories and details, in the `core-fixture-audit` artifact. Raise
-`MINIMUM_MATCHED` in the script when support expands.
+execution. Every test row must match: 1,222 matches, zero mismatches and zero
+unsupported rows. CI retains the complete report in the `core-fixture-audit`
+artifact.
 
 For an offline run, build `lake build core_fixture_audit`, then pass a local
 copy with `python3 scripts/check_core_fixture_audit.py --fixture <script_tests.json>`.
 The local copy must have the same checksum. Run the gate's failure-path tests
 with `python3 -B -m unittest discover -s scripts -p 'test_check_core_fixture_audit.py' -v`.
 
-A legacy byte interpreter handles reserved and disabled opcodes, invalid bytes,
-and truncated pushes in source order. Fixture execution checks the original
-10,000-byte script limit, the 201-operation limit (including active multisig key
-counts and inactive opcodes), 520-byte pushes, and 1,000 combined stack items.
-Original push encodings enforce MINIMALDATA in active branches after the
-push-size check; inactive pushes retain their branch behavior. Preparation
-excludes witness and P2SH evaluation, unmodeled operations and flags, and
-execution paths that reach a signature verifier. Zero-signature multisig and failures before a verifier call are
-compared. Admission and execution use the same concrete Lean hash functions;
-caller-supplied signature callbacks remain outside admitted paths. These fixture
-extensions preserve the canonical Tapscript API's OP_SUCCESSx boundary.
+Fixture preparation preserves original script bytes, exact satoshi amounts,
+and wire-order witness elements. It constructs Core's crediting and spending
+transactions and expands the generated Taproot script/control/output templates.
+Expected result tags are used only after execution, when comparing outcomes.
+
+The raw execution boundary supports SHA1 and CODESEPARATOR, legacy resource
+limits, conditional execution, minimal pushes, timelock activation flags, P2SH,
+SIGPUSHONLY and CLEANSTACK. Native and P2SH-wrapped witness-v0 verification
+checks program commitments, witness shape, public-key policy and final stack
+acceptance. Taproot verification handles script commitments, annexes, signature
+budgets, OP_SUCCESS and key-path signatures. Each reached ECDSA or Schnorr check
+uses the transaction-derived digest for that signature's hash type. BASE
+FindAndDelete and separator handling preserve the original byte boundaries.
+
+The ECDSA, SHA1, legacy/BIP143 sighash and full verification implementations
+have executable vector and boundary coverage. The 1,222 fixture matches do not
+establish general consensus equivalence or cryptographic correctness. Existing
+AST and legacy-preflight theorems retain their stated scope. Four new general
+theorems cover script-size rejection and the precedence of SIGPUSHONLY,
+scriptSig and scriptPubKey failures. The canonical Tapscript API above retains
+its separate input and proof boundaries.
 
 ## Related Work
 

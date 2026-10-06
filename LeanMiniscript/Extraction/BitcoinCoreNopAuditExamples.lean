@@ -244,21 +244,15 @@ private def nopErrorFixtureJson : String := r#"
 private def nopErrorSourceIndices : List Nat :=
   [28, 31, 32, 56, 57, 58, 223, 224, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 397, 400, 401, 402, 403, 404, 405, 406, 616, 617, 618, 619, 622, 623, 624, 625, 626, 644, 645, 654, 655, 656, 657, 704, 705, 706, 707, 708, 709, 710, 711, 712, 713, 714, 715, 716, 717, 718, 719, 720, 730, 731, 732, 733, 734, 735, 736, 737, 738, 740, 741, 742, 743, 744, 745, 746, 747, 748, 749, 750, 751, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762, 763, 764, 765, 766, 767, 768, 769, 770, 771, 772, 773, 774, 775, 776, 777, 778, 779, 780, 781, 782, 783, 784, 785, 786, 787, 788, 789, 790, 791, 792, 793, 794, 795, 796, 797, 798, 799, 800, 801, 802, 803, 804, 805, 806, 807, 808, 809, 810, 811, 812, 813, 814, 815, 816, 817, 818, 819, 820, 821, 834, 835, 836, 837, 838, 839, 840, 841, 919, 920, 921, 1105, 1106, 1107, 1108]
 
-private def excludedSourceRows : List (Nat × String) :=
-  [(223, "inactive-timelock.CHECKLOCKTIMEVERIFY"), (224, "inactive-timelock.CHECKLOCKTIMEVERIFY"), (737, "inactive-timelock.CHECKLOCKTIMEVERIFY"), (738, "inactive-timelock.CHECKLOCKTIMEVERIFY"), (749, "p2sh"), (919, "expected-error.SIG_PUSHONLY"), (920, "p2sh"), (921, "p2sh"), (1106, "signature-result"), (1107, "expected-error.SIG_PUSHONLY"), (1108, "expected-error.SIG_PUSHONLY")]
-
 example : nopErrorSourceIndices.length = 225 ∧
     nopErrorSourceIndices.eraseDups.length = 225 := by
   native_decide
 
--- Every admitted row matches its upstream tag; explicit exclusions remain observable.
+-- Every upstream row in this group executes through the complete boundary.
 example : ((auditCoreScriptTests rejectingFixtureOracle nopErrorFixtureJson).toOption.map
-    fun audit => audit.testRows == 225 && audit.comparedRows == 214 &&
-      audit.matchedRows == 214 && audit.unsupportedRows == 11 &&
-      audit.allComparedRowsMatch &&
-      audit.unsupported.map (fun row =>
-        (nopErrorSourceIndices[row.index]?.getD 0, row.reason.detailCategory)) ==
-        excludedSourceRows) = some true := by
+    fun audit => audit.testRows == 225 && audit.comparedRows == 225 &&
+      audit.matchedRows == 225 && audit.unsupportedRows == 0 &&
+      audit.allComparedRowsMatch) = some true := by
   native_decide
 
 private def nopSourceFixtures : List (String × String × Opcode) :=
@@ -358,10 +352,10 @@ example : (checkCoreFixture rejectingFixtureOracle
     (fixture "" (String.join (List.replicate 10001 "0 ") ++ "0xff") "SCRIPT_SIZE")).toOption =
       some true := by native_decide
 
--- Witness semantics remain excluded; unreachable signature calls are admitted.
+-- Malformed witness metadata is rejected during preparation.
 example : (match checkCoreFixture rejectingFixtureOracle
     { (fixture "" "RETURN 0xff" "OP_RETURN") with witness := some (.arr #[]) } with
-    | .error .witnessCase => true
+    | .error (.witnessData _) => true
     | _ => false) = true := by
   native_decide
 
@@ -369,12 +363,11 @@ example : (checkCoreFixture rejectingFixtureOracle
     (fixture "" "RETURN CHECKSIG 0xff" "OP_RETURN")).toOption = some true := by
   native_decide
 
--- Valid unmodeled SHA1 and CODESEPARATOR bytes retain their unsupported byte and offset.
-example : ([("0xa7", 0xa7), ("0xab", 0xab)] : List (String × UInt8)).all
-    (fun (source, byte) => match checkCoreFixture rejectingFixtureOracle
-        (fixture "" source "BAD_OPCODE") with
-      | .error (.legacyScriptPubKey (.opcode offset actual)) => offset == 0 && actual == byte
-      | _ => false) = true := by
+-- SHA1 checks its input; CODESEPARATOR leaves an empty final stack.
+example : ([("0xa7", "INVALID_STACK_OPERATION"), ("0xab", "EVAL_FALSE")] :
+    List (String × String)).all
+    (fun (source, error) => (checkCoreFixture rejectingFixtureOracle
+        (fixture "" source error)).toOption == some true) = true := by
   native_decide
 
 -- A raw fallback executes PUSH_SIZE before an inactive opcode marker.
@@ -409,11 +402,9 @@ example : (checkCoreFixture rejectingFixtureOracle
 -- P2SH recognition requires the exact 23-byte encoding; PUSHDATA1 is ordinary Script.
 private def p2shHashBytes : String := String.join (List.replicate 20 "00")
 
-example : (match checkCoreFixture rejectingFixtureOracle
+example : (checkCoreFixture rejectingFixtureOracle
     (fixture "RETURN 0xff" ("HASH160 0x14 0x" ++ p2shHashBytes ++ " EQUAL")
-      "OP_RETURN" "P2SH") with
-    | .error .p2shEvaluation => true
-    | _ => false) = true := by
+      "OP_RETURN" "P2SH")).toOption = some true := by
   native_decide
 
 example : (checkCoreFixture rejectingFixtureOracle

@@ -108,7 +108,7 @@ private def coreErrorTagFixtures : List (ScriptError × String) :=
    (.cleanStack, "CLEANSTACK"),
    (.evalFalse, "EVAL_FALSE"),
    (.nullDummy, "SIG_NULLDUMMY"),
-   (.sigNullFail, "SIG_NULLFAIL"),
+   (.sigNullFail, "NULLFAIL"),
    (.sigDer, "SIG_DER"),
    (.sigHighS, "SIG_HIGH_S"),
    (.sigHashType, "SIG_HASHTYPE"),
@@ -280,13 +280,13 @@ private def parsesDrop : Bool :=
 example : parsesDrop = true := by
   native_decide
 
-private def rejectsSha1 : Bool :=
+private def typedDecoderRejectsSha1 : Bool :=
   match parseCoreScriptSource "1 SHA1" with
-  | .error (.unsupportedToken "SHA1") => true
+  | .error (.unsupportedOpcode 1 0xa7) => true
   | _ => false
 
-/-- An opcode outside the modeled subset is reported by token. -/
-example : rejectsSha1 = true := by
+/-- The typed AST decoder retains its opcode boundary; full fixtures execute raw bytes. -/
+example : typedDecoderRejectsSha1 = true := by
   native_decide
 
 private def rejectsTruncatedPush : Bool :=
@@ -335,12 +335,12 @@ private def rejectsUnmodeledFlag : Bool :=
     witness := none
     scriptSigSource := "1"
     scriptPubKeySource := ""
-    flagSource := "CLEANSTACK"
+    flagSource := "UNKNOWN_FLAG"
     expectedError := "OK"
     comments := []
   }
   match prepareCoreFixture test with
-  | .error (.unsupportedFlag "CLEANSTACK") => true
+  | .error (.unsupportedFlag "UNKNOWN_FLAG") => true
   | _ => false
 
 /-- Unmodeled verification flags are never ignored by the importer. -/
@@ -353,16 +353,14 @@ private def p2shFixture : CoreScriptTest where
   scriptPubKeySource :=
     "HASH160 0x14 0x0000000000000000000000000000000000000000 EQUAL"
   flagSource := "P2SH,STRICTENC"
-  expectedError := "OK"
+  expectedError := "INVALID_STACK_OPERATION"
   comments := []
 
-private def classifiesP2SH : Bool :=
-  match prepareCoreFixture p2shFixture with
-  | .error .p2shEvaluation => true
-  | _ => false
+private def executesP2SH : Bool :=
+  (checkCoreFixture rejectingOracle p2shFixture).toOption == some true
 
-/-- P2SH evaluation is not silently approximated by ordinary Script execution. -/
-example : classifiesP2SH = true := by
+/-- ScriptSig's empty stack reaches the actual HASH160 underflow. -/
+example : executesP2SH = true := by
   native_decide
 
 private def signatureFixture : CoreScriptTest where
@@ -370,16 +368,14 @@ private def signatureFixture : CoreScriptTest where
   scriptSigSource := "0x09 0x300602010102010101"
   scriptPubKeySource := "0x21 0x020101010101010101010101010101010101010101010101010101010101010101 CHECKSIG"
   flagSource := "STRICTENC"
-  expectedError := "OK"
+  expectedError := "EVAL_FALSE"
   comments := []
 
-private def classifiesSignature : Bool :=
-  match prepareCoreFixture signatureFixture with
-  | .error .signatureOpcode => true
-  | _ => false
+private def executesSignature : Bool :=
+  (checkCoreFixture rejectingOracle signatureFixture).toOption == some true
 
-/-- Signature fixtures wait for a concrete secp256k1-backed oracle. -/
-example : classifiesSignature = true := by
+/-- The supplied signature fails concrete verification after encoding checks. -/
+example : executesSignature = true := by
   native_decide
 
 private def negativeFixture : CoreScriptTest where
@@ -447,12 +443,10 @@ private def classifiesWitnessRow : Bool :=
   match parseCoreScriptTests
     "[[[\"00\", 0], \"\", \"1\", \"\", \"OK\"]]" with
   | .ok [.test test] =>
-      match prepareCoreFixture test with
-      | .error .witnessCase => true
-      | _ => false
+      (checkCoreFixture rejectingOracle test).toOption == some true
   | _ => false
 
-/-- Witness-form rows are parsed, retained, and classified separately. -/
+/-- Witness data is parsed and retained; the WITNESS flag controls its execution. -/
 example : classifiesWitnessRow = true := by
   native_decide
 

@@ -5,9 +5,8 @@ open LeanMiniscript.Script
 namespace LeanMiniscript.Extraction
 
 /-! Verbatim signature-encoding rejection rows from the pinned v31.1 file.
-    Rows requiring a real verifier are retained as explicit unsupported cases.
-    BIP66 example 7 (row 7) is explicitly excluded; the other 15 rows must
-    match with both accepting and rejecting oracles. -/
+    All 16 rows, including BIP66 example 7, use concrete transaction-backed
+    verification. Abstract callback choices cannot change their results. -/
 
 private def pinnedEncodingRows : String := "[
   [
@@ -127,17 +126,16 @@ private def pinnedEncodingRows : String := "[
 private def comparesPinnedEncodingRows : Bool :=
   match parseCoreScriptTests pinnedEncodingRows with
   | .error _ => false
-  | .ok rows => rows.zipIdx.all fun (row, index) =>
+  | .ok rows => rows.all fun row =>
       match row with
       | .comment _ => false
       | .test test =>
           match prepareCoreFixture test with
-          | .error .signatureOpcode => index == 7
           | .error _ => false
           | .ok fixture =>
               let rejecting := CryptoOracle.pureLeanHashes (fun _ _ _ => false)
               let accepting := CryptoOracle.pureLeanHashes (fun _ _ _ => true)
-              index != 7 && (runCoreFixture rejecting fixture).coreTag == test.expectedError &&
+              (runCoreFixture rejecting fixture).coreTag == test.expectedError &&
                 (runCoreFixture accepting fixture).coreTag == test.expectedError
 
 example : comparesPinnedEncodingRows = true := by native_decide
@@ -153,7 +151,7 @@ private def excludesVerifierDependentEncoding : Bool :=
     flagSource := "STRICTENC"
     expectedError := "SIG_DER"
     comments := [] }
-  match prepareCoreFixture test with
+  match prepareCoreFixtureWithoutVerifier test with
   | .error .signatureOpcode => true
   | _ => false
 

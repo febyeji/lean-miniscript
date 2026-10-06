@@ -42,6 +42,7 @@ structure CoreFixtureAudit where
 /-- Stable broad category used to summarize an unsupported fixture reason. -/
 def CoreFixtureUnsupported.category : CoreFixtureUnsupported → String
   | .witnessCase => "witness"
+  | .witnessData _ => "witness-data"
   | .scriptSig _ => "script-sig-source"
   | .scriptPubKey _ => "script-pubkey-source"
   | .legacyScriptSig _ => "legacy-script-sig"
@@ -77,6 +78,7 @@ def CoreLegacyUnsupported.detailCategory : CoreLegacyUnsupported → String
 /-- Fine-grained category for prioritizing the next model extension. -/
 def CoreFixtureUnsupported.detailCategory : CoreFixtureUnsupported → String
   | .witnessCase => "witness"
+  | .witnessData _ => "witness-data"
   | .scriptSig error =>
       "script-sig-source." ++ error.detailCategory
   | .scriptPubKey error =>
@@ -129,8 +131,8 @@ end CoreFixtureAudit
 
 /-- Executable hashes paired with signature callbacks that always reject.
 
-    This is suitable for the current pinned supported subset: its admitted
-    signature-opcode rows fail before callback results affect the outcome. -/
+    Prepared concrete fixtures use their transaction-backed verifiers.
+    This oracle remains useful for manually constructed abstract fixtures. -/
 def rejectingFixtureOracle : CryptoOracle :=
   CryptoOracle.pureLeanHashes
     (fun _sig _pubkey _sigHash => false)

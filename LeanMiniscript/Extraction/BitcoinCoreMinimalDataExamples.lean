@@ -143,11 +143,11 @@ example : ([("0x4c0101 CHECKSIG", "MINIMALDATA"),
         some true) = true := by
   native_decide
 
--- A reached verifier remains unsupported even when another branch has a
+-- The explicitly verifier-free preparation excludes a reached verifier even when another branch has a
 -- nonminimal push or a later push would fail MINIMALDATA.
 example : (["0 IF 0x4c0101 ENDIF 'sig' 'pubkey' CHECKSIG",
     "'sig' 'pubkey' CHECKSIG 0x4c0101"] : List String).all
-    (fun source => match prepareCoreFixture (fixture "" source "MINIMALDATA") with
+    (fun source => match prepareCoreFixtureWithoutVerifier (fixture "" source "MINIMALDATA") with
       | .error .signatureOpcode => true
       | _ => false) = true := by
   native_decide

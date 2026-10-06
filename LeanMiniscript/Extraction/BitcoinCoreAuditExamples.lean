@@ -10,7 +10,7 @@ private def auditFixtureJson : String := r#"
   ["1", "1 EQUAL", "P2SH,STRICTENC", "OK"],
   ["0", "VERIFY", "P2SH,STRICTENC", "VERIFY"],
   ["1", "1 EQUAL", "P2SH,STRICTENC", "EVAL_FALSE"],
-  ["1", "SHA1", "P2SH,STRICTENC", "OK"]
+  ["1", "UNKNOWN_OPCODE", "P2SH,STRICTENC", "OK"]
 ]
 "#
 
@@ -46,8 +46,8 @@ example : (auditFixture.bind fun audit => audit.unsupported.head?) =
     some {
       index := 4
       scriptSigSource := "1"
-      scriptPubKeySource := "SHA1"
-      reason := .scriptPubKey (.unsupportedToken "SHA1")
+      scriptPubKeySource := "UNKNOWN_OPCODE"
+      reason := .scriptPubKey (.unsupportedToken "UNKNOWN_OPCODE")
     } := by
   native_decide
 
@@ -56,7 +56,7 @@ example : auditFixture.map CoreFixtureAudit.unsupportedReasonCounts =
   native_decide
 
 example : auditFixture.map CoreFixtureAudit.unsupportedDetailCounts =
-    some [("script-pubkey-source.unsupported-token.SHA1", 1)] := by
+    some [("script-pubkey-source.unsupported-token.UNKNOWN_OPCODE", 1)] := by
   native_decide
 
 private def sourceErrorDetailFixtures :
@@ -65,7 +65,7 @@ private def sourceErrorDetailFixtures :
    (.quoteInsideToken, "quote-inside-token"),
    (.invalidHex "0xz", "invalid-hex"),
    (.oddHexLength "0x0", "odd-hex-length"),
-   (.unsupportedToken "SHA1", "unsupported-token.SHA1"),
+   (.unsupportedToken "UNKNOWN_OPCODE", "unsupported-token.UNKNOWN_OPCODE"),
    (.serialization (.pushDataTooLarge 4294967296),
       "serialization.push-data-too-large"),
    (.truncatedPushLength 0 2 1, "truncated-push-length"),
