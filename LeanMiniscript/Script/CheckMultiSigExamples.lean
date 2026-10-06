@@ -1,6 +1,6 @@
 import LeanMiniscript.Miniscript.Compile
-import LeanMiniscript.Script.BigStep
-import LeanMiniscript.Script.Evaluator
+import LeanMiniscript.Script.BigStepProofs
+import LeanMiniscript.Script.EvaluatorProofs
 
 namespace LeanMiniscript.Script
 

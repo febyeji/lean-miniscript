@@ -1,4 +1,4 @@
-import LeanMiniscript.Script.Evaluator
+import LeanMiniscript.Script.EvaluatorProofs
 import LeanMiniscript.Miniscript.Acceptance
 
 namespace LeanMiniscript.Script

@@ -1,3 +1,4 @@
+import LeanMiniscript.Properties.ResourcePathBoundsProofs
 import LeanMiniscript.Miniscript.SatisfactionGeneratedProofs
 import LeanMiniscript.Miniscript.Sane
 import LeanMiniscript.Miniscript.Soundness

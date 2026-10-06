@@ -1,3 +1,4 @@
+import LeanMiniscript.Extraction.BitcoinCoreRawScript
 import LeanMiniscript.Script.Codec.Deserialization
 import LeanMiniscript.Script.RuntimeLimits
 
@@ -32,23 +33,8 @@ structure CoreLegacyProgram where
   byteSize : Nat := 0
   deriving Repr
 
-private def legacyDisabledByte (byte : Nat) : Bool :=
-  [0x7e, 0x7f, 0x80, 0x81, 0x83, 0x84, 0x85, 0x86,
-    0x8d, 0x8e, 0x95, 0x96, 0x97, 0x98, 0x99].contains byte
-
 private def legacyReservedByte (byte : Nat) : Bool :=
   [0x50, 0x62, 0x89, 0x8a].contains byte
-
-/-- Exact minimal-push rule for the retained original opcode and payload. -/
-def coreLegacyMinimalPush (opcode : Nat) (data : ByteArray) : Bool :=
-  if data.size = 0 then opcode == 0
-  else if data.size = 1 && 1 ≤ (data.get! 0).toNat && (data.get! 0).toNat ≤ 16 then
-    opcode == (data.get! 0).toNat + 0x50
-  else if data.size = 1 && data.get! 0 == 0x81 then opcode == 0x4f
-  else if data.size ≤ 75 then opcode == data.size
-  else if data.size ≤ 255 then opcode == 0x4c
-  else if data.size ≤ 65535 then opcode == 0x4d
-  else true
 
 private def malformedLegacyPush : List CoreLegacyInstruction :=
   [.failure .badOpcode false false]
@@ -105,7 +91,7 @@ def decodeCoreLegacyList (bytes : List UInt8) (offset : Nat) :
       else if 0x51 ≤ value ∧ value ≤ 0x60 then
         return .modeled (.pushNum (value - 0x50)) ::
           (← decodeCoreLegacyList rest (offset + 1))
-      else if legacyDisabledByte value then
+      else if coreLegacyDisabledOpcode value then
         return .failure .disabledOpcode false true ::
           (← decodeCoreLegacyList rest (offset + 1))
       else if value = 0x65 ∨ value = 0x66 then

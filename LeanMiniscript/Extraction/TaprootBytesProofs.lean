@@ -1,3 +1,4 @@
+import LeanMiniscript.Extraction.TaprootProofs
 import LeanMiniscript.Extraction.TaprootBytes
 import LeanMiniscript.Script.Codec.VerificationProofs
 

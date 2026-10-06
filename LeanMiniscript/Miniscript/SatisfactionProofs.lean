@@ -1,7 +1,7 @@
 import LeanMiniscript.Miniscript.Acceptance
 import LeanMiniscript.Miniscript.Compile
 import LeanMiniscript.Miniscript.CompileVerifyProofs
-import LeanMiniscript.Miniscript.Satisfaction
+import LeanMiniscript.Miniscript.SatisfactionLemmas
 import LeanMiniscript.Miniscript.Structural
 
 namespace LeanMiniscript.Miniscript

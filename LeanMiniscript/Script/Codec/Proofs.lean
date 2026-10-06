@@ -1,6 +1,13 @@
+import LeanMiniscript.Script.Assembly
 import LeanMiniscript.Script.Codec.Deserialization
 
 namespace LeanMiniscript.Script
+
+/-- Every modeled opcode is recovered from its assembly mnemonic. -/
+theorem opcodeFromAssembly_opcodeAssembly (opcode : Opcode) :
+    opcodeFromAssembly? (opcodeAssembly opcode) = some opcode := by
+  cases opcode <;> rfl
+
 
 /-!
 # Bitcoin Script codec proofs

@@ -1,19 +1,19 @@
 import LeanMiniscript
 import LeanMiniscript.Script.BigStep
-import LeanMiniscript.Script.Evaluator
-import LeanMiniscript.Script.ValidationWeight
-import LeanMiniscript.Script.SmallStep
 import LeanMiniscript.Script.Equivalence
-import LeanMiniscript.Miniscript.Witness
+import LeanMiniscript.Script.Evaluator
+import LeanMiniscript.Script.SmallStep
+import LeanMiniscript.Script.ValidationWeight
 import LeanMiniscript.Miniscript.Acceptance
 import LeanMiniscript.Miniscript.Satisfaction
 import LeanMiniscript.Miniscript.Soundness
-import LeanMiniscript.Properties.ResourceBounds
+import LeanMiniscript.Miniscript.Witness
 import LeanMiniscript.Properties.NonMalleability
+import LeanMiniscript.Properties.ResourceBounds
+import LeanMiniscript.Extraction.BitcoinCoreFixtures
 import LeanMiniscript.Extraction.RefInterp
 import LeanMiniscript.Extraction.Taproot
 import LeanMiniscript.Extraction.TaprootBytes
-import LeanMiniscript.Extraction.BitcoinCoreFixtures
 
 /-!
 # Experimental lean-miniscript modules

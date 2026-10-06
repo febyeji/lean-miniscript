@@ -1,4 +1,4 @@
-import LeanMiniscript.Script.RuntimeLimits
+import LeanMiniscript.Script.RuntimeLimitsProofs
 import LeanMiniscript.Script.ControlFlow
 
 namespace LeanMiniscript.Script

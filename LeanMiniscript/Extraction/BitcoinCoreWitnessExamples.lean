@@ -1,7 +1,7 @@
 import LeanMiniscript.Extraction.BitcoinCoreWitness
 import LeanMiniscript.Extraction.CoreFixtureTemplates
 import LeanMiniscript.Script.Codec.Deserialization
-import LeanMiniscript.Script.RuntimeLimits
+import LeanMiniscript.Script.RuntimeLimitsProofs
 
 namespace LeanMiniscript.Extraction.BitcoinCoreWitnessExamples
 
@@ -123,6 +123,30 @@ example :
     coreTapscriptHasOpSuccess (hex "4c0250") = .error (.script .badOpcode) ∧
     coreTapscriptHasOpSuccess (hex "4d010050") = .ok false ∧
     coreTapscriptHasOpSuccess (hex "4e0100000050") = .ok false := by native_decide
+
+-- Empty scripts, zero-length pushes and long opcode sequences reach the end
+-- without reporting OP_SUCCESS or exhausting the scanner's fuel.
+example : ["", "00", "4c00", "4d0000", "4e00000000"].all (fun source =>
+    coreTapscriptHasOpSuccess (hex source) == .ok false) = true ∧
+    coreTapscriptHasOpSuccess ⟨(List.replicate 10000 0x61).toArray⟩ = .ok false := by
+  native_decide
+
+-- Every truncated length prefix and payload fails before a later success
+-- byte. An earlier OP_SUCCESS still takes precedence over that malformed tail.
+example : ["4c", "4d", "4d01", "4e", "4e01", "4e0100", "4e010000",
+    "0250", "4c0250", "4d020050", "4e0200000050", "4e0000000150"].all (fun source =>
+      coreTapscriptHasOpSuccess (hex source) == .error (.script .badOpcode) &&
+      coreTapscriptHasOpSuccess (hex "50" ++ hex source) == .ok true) = true := by
+  native_decide
+
+-- Success bytes inside multi-byte-length pushes remain data; scanning resumes
+-- at the first opcode after the full payload, including its high length bytes.
+example : [(hex "4d0001", 256), (hex "4e00000100", 65536)].all (fun (header, size) =>
+    let script := header ++ ⟨(List.replicate size 0x50).toArray⟩
+    coreTapscriptHasOpSuccess script == .ok false &&
+    coreTapscriptHasOpSuccess (script ++ hex "50") == .ok true &&
+    coreTapscriptHasOpSuccess (script ++ hex "4c") == .error (.script .badOpcode)) = true := by
+  native_decide
 
 -- OP_SUCCESS precedes both initial stack limits and subsequent decoding.
 example :

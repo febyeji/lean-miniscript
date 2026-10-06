@@ -1,5 +1,5 @@
 import LeanMiniscript.Miniscript.SurfacePretty
-import LeanMiniscript.Miniscript.SurfaceParser
+import LeanMiniscript.Miniscript.SurfaceParserProofs
 import LeanMiniscript.Miniscript.TypeInferenceProofs
 
 namespace LeanMiniscript.Miniscript

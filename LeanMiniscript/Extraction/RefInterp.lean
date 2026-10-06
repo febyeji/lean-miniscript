@@ -33,20 +33,6 @@ def execTapscriptTransaction (oracle : CryptoOracle) (script : Script)
   | .error _ => .failure .schnorrSigHashType
   | .ok ctx => evaluateTapscript oracle script witness flags ctx
 
-/-- Transaction-backed execution has the same result under every oracle
-    refining the abstract cryptographic boundary. -/
-theorem execTapscriptTransaction_eq_model
-    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
-    (script : Script) (witness : TapscriptWitness) (flags : ScriptFlags)
-    (transaction : Bitcoin.Transaction) (spentOutputs : Array Bitcoin.TxOutput)
-    (inputIndex : Nat) :
-    execTapscriptTransaction oracle script witness flags transaction spentOutputs inputIndex =
-      execTapscriptTransaction CryptoOracle.model script witness flags transaction spentOutputs inputIndex := by
-  unfold execTapscriptTransaction
-  split
-  · rfl
-  · exact evaluateTapscript_eq_model agreement script witness flags _
-
 -- Extraction.BitcoinCoreFixtures provides concrete ECDSA and original-byte
 -- execution for legacy, P2SH and witness rows in the pinned Core fixture.
 -- TODO(script-cli): Add a CLI for standalone Script-source execution.
