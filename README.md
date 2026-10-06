@@ -14,6 +14,79 @@ Requires [Lean 4](https://lean-lang.org/) (see `lean-toolchain` for version).
 lake build
 ```
 
+## Descriptor keys in Miniscript
+
+`LeanMiniscript.Miniscript.parseSurfaceDescriptor` parses Miniscript expressions
+with validated public keys, WIF private keys, or BIP32 extended keys. For example:
+
+```lean
+import LeanMiniscript
+open LeanMiniscript.Miniscript
+
+#eval (parseSurfaceDescriptor .p2wsh
+  "pk([deadbeef/0h]0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798)").isOk
+```
+
+Key expressions support `[fingerprint/path]` origins, `/index` and `/indexh`
+derivation suffixes, and a final `/*` or `/*h`; apostrophes also mark hardened
+steps. Pass `(some childIndex)` as the final argument to select a wildcard child.
+Origin paths record metadata; derivation starts at the supplied extended key
+and follows only its suffix. Hardened xpub paths parse successfully and fail at
+resolution because they require private material. An invalid child returns an
+error at the requested index. Mainnet and testnet WIF and extended-key versions
+are accepted; WIF compression is preserved.
+
+`parseDescriptorKey` retains the origin and parsed key metadata, while
+`resolveDescriptorKey` is available for callers of `parseSurface`. SEC and
+x-only public keys are checked for curve membership. P2WSH requires compressed
+keys; Tapscript accepts x-only keys and normalizes compressed keys to x-only.
+`parseSurfaceDescriptor` redacts input tokens in errors, preserving error
+categories, positions and static diagnostics for private-key inputs.
+`parseSurfaceHex` retains its byte-codec behavior and canonical round-trip proofs.
+This API covers keys inside Miniscript. The output-descriptor API below adds
+wrappers and descriptor checksums; multipath expressions remain unsupported.
+
+`LeanMiniscript.Bitcoin.BIP32` also exposes master-key generation, import,
+serialization, neutering and exact-index child/path derivation. SHA512, HMAC,
+Base58Check and BIP32 have executable vector coverage. The descriptor parser
+inherits the existing context/type guarantee; cryptographic correctness remains
+unproved. Private-key derivation uses variable-time affine curve operations.
+
+## Output descriptors
+
+`LeanMiniscript.Miniscript.deriveOutputDescriptor` generates output scripts for
+`wsh(MINISCRIPT)`, `sh(wsh(MINISCRIPT))`, `tr(KEY)`, and `tr(KEY,TREE)`:
+
+```lean
+import LeanMiniscript
+open LeanMiniscript.Miniscript
+
+#eval (deriveOutputDescriptor
+  "wsh(pk(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798))").map
+  (fun result => LeanMiniscript.Script.byteArrayHex result.scriptPubKey)
+```
+
+The result contains `scriptPubKey`, plus `witnessScript` for either WSH form
+and `redeemScript` for the P2SH-wrapped form. Taproot results retain
+`taprootOutputKey` and an optional `taprootMerkleRoot`. A tree leaf is a
+Tapscript Miniscript expression; `{LEFT,RIGHT}` constructs a binary branch.
+The compiler preserves tree grouping, uses leaf version `0xc0`, and enforces
+the 128-branch path limit. `tr(KEY)` applies the key-only TapTweak.
+
+Pass `(some index)` as the second argument to select the same wildcard index
+for every key in the descriptor. A supplied `#checksum` is always verified
+against the exact original text. Pass `true` as the third argument to require
+a checksum. `LeanMiniscript.Bitcoin.DescriptorChecksum.addChecksum` creates a
+checksummed string, and `validate` verifies and removes the checksum envelope.
+
+`parseOutputDescriptor` returns a resolved AST. `compileOutputDescriptor`
+also accepts caller-constructed ASTs and checks every leaf's context, type B,
+and public-key curve membership. These checks do not establish spendability,
+wallet policy, or cryptographic correctness. The supported inner expressions
+are those of the existing Miniscript parser; address generation, multipath
+keys, `sortedmulti`, `sortedmulti_a`, and other output wrappers are outside
+this API. Taproot control blocks and witness construction remain separate.
+
 ## Canonical Tapscript verification
 
 Import `LeanMiniscript.Extraction.TaprootBytes` to use
