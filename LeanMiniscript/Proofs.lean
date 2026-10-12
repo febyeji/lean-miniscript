@@ -38,6 +38,7 @@ import LeanMiniscript.Properties.ResourcePathProofs
 import LeanMiniscript.Properties.SaneExecutionResourceProofs
 import LeanMiniscript.Properties.SatisfactionExecutionResourceProofs
 import LeanMiniscript.Extraction.BitcoinCoreLegacyLimitsProofs
+import LeanMiniscript.Extraction.BitcoinCoreExecutionProofs
 import LeanMiniscript.Extraction.BitcoinCoreVerificationProofs
 import LeanMiniscript.Extraction.RefInterpProofs
 import LeanMiniscript.Extraction.TaprootBytesProofs
