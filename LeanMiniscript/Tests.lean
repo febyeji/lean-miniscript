@@ -75,6 +75,7 @@ import LeanMiniscript.Extraction.BitcoinCoreVerificationExamples
 import LeanMiniscript.Extraction.BitcoinCoreWitnessExamples
 import LeanMiniscript.Extraction.CoreFixtureTransactionExamples
 import LeanMiniscript.Extraction.CoreFixtureWitnessDataExamples
+import LeanMiniscript.Extraction.DescriptorMaterialExamples
 import LeanMiniscript.Extraction.SignatureEncodingCoreExamples
 import LeanMiniscript.Extraction.TaprootBytesExamples
 import LeanMiniscript.Extraction.TaprootExamples

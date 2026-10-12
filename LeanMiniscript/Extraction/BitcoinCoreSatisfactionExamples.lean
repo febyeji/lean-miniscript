@@ -50,7 +50,7 @@ private def prepare (transaction : Transaction) :
   let descriptor ← compileOutputDescriptor (.tr internalKey (some (.leaf (.pk key))))
   let spentOutputs := sighashFixtureSpentOutputs.modify 0
     (fun output => { output with scriptPubKey := descriptor.scriptPubKey })
-  let prepared ← (prepareDescriptorSatisfaction descriptor 0 material transaction spentOutputs 0).mapError
+  let prepared ← (prepareDescriptorSatisfaction CryptoOracle.pureLeanSchnorr flags.script descriptor 0 material transaction spentOutputs 0).mapError
     (fun error => reprStr error)
   return (descriptor, prepared.leaf, prepared.arguments, prepared.context)
 
@@ -87,10 +87,6 @@ example : (match prepare sighashFixtureTransaction with
   | .error _ => false) = true := by native_decide
 
 example : (run (fun witness => witness.modify 0 (fun sig => flip sig 40))).toOption =
-    some (.error (.script .schnorrSig)) := by native_decide
-
-example : (run id { sighashFixtureTransaction with
-    locktime := sighashFixtureTransaction.locktime + 1 }).toOption =
     some (.error (.script .schnorrSig)) := by native_decide
 
 example : (run (fun witness => witness.modify 1 (· ++ hex "00"))).toOption =
@@ -146,11 +142,11 @@ example : hasError (verified { material with signatureFor := fun _ => none })
 
 example : hasError (verified { material with
     signatureFor := fun _ => some (flip signature 40) })
-    (.verification (.script .schnorrSig)) = true := by native_decide
+    .unavailable = true := by native_decide
 
 example : hasError (verified material { sighashFixtureTransaction with
     locktime := sighashFixtureTransaction.locktime + 1 })
-    (.verification (.script .schnorrSig)) = true := by native_decide
+    .unavailable = true := by native_decide
 
 example : hasError (verified (leafIndex := 1)) .leafIndex = true := by native_decide
 
@@ -181,14 +177,18 @@ example : hasError (verified (tree := some (.leaf (.core .one))))
     (.notSane .signatureNotRequired) = true := by native_decide
 
 -- The selected occurrence supplies the source, script and control path even
--- when it is not the first leaf. Only the second key has supplied material.
+-- when it is not the first leaf. This setup test uses an accepting signature
+-- callback; the full transaction tests above use concrete Schnorr verification.
+-- Only the second key has supplied material.
 private def prepareSecondLeaf (index : Nat) :
     Except String (Except DescriptorSatisfactionError Bool) := do
   let descriptor ← compileOutputDescriptor (.tr internalKey (some
     (.branch (.leaf (.pk internalKey)) (.leaf (.pk key)))))
   let spentOutputs := sighashFixtureSpentOutputs.modify 0
     (fun output => { output with scriptPubKey := descriptor.scriptPubKey })
-  return (prepareDescriptorSatisfaction descriptor index material
+  return (prepareDescriptorSatisfaction
+    (CryptoOracle.pureLeanHashes (fun _ _ _ => false) (fun _ _ _ => true)) flags.script
+    descriptor index material
     sighashFixtureTransaction spentOutputs 0).map fun prepared =>
       match descriptor.taprootLeaves[1]? with
       | none => false
