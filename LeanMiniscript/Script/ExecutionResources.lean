@@ -1,4 +1,5 @@
 import LeanMiniscript.Script.BigStepProofs
+import LeanMiniscript.Script.ValidationWeightCore
 
 namespace LeanMiniscript.Script
 
@@ -19,6 +20,8 @@ structure ExecutionResources where
   /-- Sum of decoded public-key counts for executed `OP_CHECKMULTISIG` and
       `OP_CHECKMULTISIGVERIFY` instructions. -/
   executedMultiSigKeys : Nat
+  /-- Exact BIP342 debit for nonempty signatures on the executed path. -/
+  signatureWeight : Nat := 0
   deriving Repr, DecidableEq
 
 namespace ExecutionResources
@@ -28,17 +31,19 @@ def initial (stack altStack : Stack) : ExecutionResources :=
   { peakStackItems := stack.length + altStack.length
     executedMultiSigKeys := 0 }
 
-/-- Add the state and multisignature charge immediately before one executed
+/-- Add the state, multisignature charge and signature debit before one executed
     instruction to the observation of its continuation. -/
 def prepend (stack altStack : Stack) (multiSigKeys : Nat)
-    (tail : ExecutionResources) : ExecutionResources :=
+    (tail : ExecutionResources) (signatureWeight : Nat := 0) : ExecutionResources :=
   { peakStackItems := max (stack.length + altStack.length) tail.peakStackItems
-    executedMultiSigKeys := multiSigKeys + tail.executedMultiSigKeys }
+    executedMultiSigKeys := multiSigKeys + tail.executedMultiSigKeys
+    signatureWeight := signatureWeight + tail.signatureWeight }
 
 /-- Sequential composition of two successful execution observations. -/
 def seq (left right : ExecutionResources) : ExecutionResources :=
   { peakStackItems := max left.peakStackItems right.peakStackItems
-    executedMultiSigKeys := left.executedMultiSigKeys + right.executedMultiSigKeys }
+    executedMultiSigKeys := left.executedMultiSigKeys + right.executedMultiSigKeys
+    signatureWeight := left.signatureWeight + right.signatureWeight }
 
 @[simp] theorem initial_peakStackItems (stack altStack : Stack) :
     (initial stack altStack).peakStackItems = stack.length + altStack.length := rfl
@@ -47,13 +52,13 @@ def seq (left right : ExecutionResources) : ExecutionResources :=
     (initial stack altStack).executedMultiSigKeys = 0 := rfl
 
 @[simp] theorem prepend_peakStackItems (stack altStack : Stack) (multiSigKeys : Nat)
-    (tail : ExecutionResources) :
-    (prepend stack altStack multiSigKeys tail).peakStackItems =
+    (tail : ExecutionResources) (signatureWeight : Nat := 0) :
+    (prepend stack altStack multiSigKeys tail signatureWeight).peakStackItems =
       max (stack.length + altStack.length) tail.peakStackItems := rfl
 
 @[simp] theorem prepend_executedMultiSigKeys (stack altStack : Stack)
-    (multiSigKeys : Nat) (tail : ExecutionResources) :
-    (prepend stack altStack multiSigKeys tail).executedMultiSigKeys =
+    (multiSigKeys : Nat) (tail : ExecutionResources) (signatureWeight : Nat := 0) :
+    (prepend stack altStack multiSigKeys tail signatureWeight).executedMultiSigKeys =
       multiSigKeys + tail.executedMultiSigKeys := rfl
 
 @[simp] theorem seq_peakStackItems (left right : ExecutionResources) :
@@ -63,6 +68,16 @@ def seq (left right : ExecutionResources) : ExecutionResources :=
 @[simp] theorem seq_executedMultiSigKeys (left right : ExecutionResources) :
     (seq left right).executedMultiSigKeys =
       left.executedMultiSigKeys + right.executedMultiSigKeys := rfl
+
+@[simp] theorem initial_signatureWeight (stack alt : Stack) :
+    (initial stack alt).signatureWeight = 0 := rfl
+
+@[simp] theorem prepend_signatureWeight (stack alt : Stack) (multiSigKeys : Nat)
+    (tail : ExecutionResources) (charge : Nat := 0) :
+    (prepend stack alt multiSigKeys tail charge).signatureWeight = charge + tail.signatureWeight := rfl
+
+@[simp] theorem seq_signatureWeight (left right : ExecutionResources) :
+    (seq left right).signatureWeight = left.signatureWeight + right.signatureWeight := rfl
 
 theorem seq_assoc (first second third : ExecutionResources) :
     seq (seq first second) third = seq first (seq second third) := by
@@ -135,7 +150,8 @@ inductive EvalResources : Script → Stack → Stack → ScriptFlags → TxConte
       EvalResources (element :: rest) stack altStack flags ctx
         finalStack finalAlt
         (ExecutionResources.prepend stack altStack
-          (executedMultiSigKeyCharge element stack flags ctx) tailResources)
+          (executedMultiSigKeyCharge element stack flags ctx) tailResources
+          (executedSignatureWeight element stack ctx))
   | if_execute {top : StackElement} {rest altStack : Stack}
       {script : Script} {frame : ConditionalFrame}
       {flags : ScriptFlags} {ctx : TxContext} {finalStack finalAlt : Stack}
@@ -159,6 +175,25 @@ inductive EvalResources : Script → Stack → Stack → ScriptFlags → TxConte
         finalStack finalAlt
         (ExecutionResources.prepend (top :: rest) altStack 0 selectedResources)
 
+/-- A successful singleton execution cannot contain an unfinished branch. -/
+theorem Eval.singleton_nonConditional
+    {element : ScriptElement} {stack alt nextStack nextAlt : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (evaluated : Eval [element] stack alt flags ctx (.success nextStack nextAlt)) :
+    NonConditional element := by
+  have noUnclosed (result : ExecResult) :
+      finishUnclosedConditional result ≠ .success nextStack nextAlt := by
+    cases result <;> simp [finishUnclosedConditional]
+  have splitNil : splitConditional [] = none := rfl
+  generalize resultEq : ExecResult.success nextStack nextAlt = result at evaluated
+  cases element with
+  | pushData => trivial
+  | pushNum => trivial
+  | op opcode =>
+      cases opcode <;> try trivial
+      all_goals cases evaluated <;> simp_all [Opcode.isUpgradeableNop]
+      all_goals exact False.elim (noUnclosed _ rfl)
+
 namespace EvalResources
 
 /-- Erasing resource observations recovers the existing successful semantics. -/
@@ -175,6 +210,37 @@ theorem toEval
       exact .if_execute _ _ _ _ _ _ _ _ split minimal ih
   | notif_execute split minimal selected ih =>
       exact .notif_execute _ _ _ _ _ _ _ _ split minimal ih
+
+/-- Resource observations are determined by the script and initial state. -/
+theorem resources_unique
+    {script : Script} {stack alt finalStack finalAlt otherStack otherAlt : Stack}
+    {flags : ScriptFlags} {ctx : TxContext} {first second : ExecutionResources}
+    (left : EvalResources script stack alt flags ctx finalStack finalAlt first)
+    (right : EvalResources script stack alt flags ctx otherStack otherAlt second) :
+    first = second := by
+  induction left generalizing otherStack otherAlt second with
+  | empty => cases right; rfl
+  | step head tail ih =>
+      cases right with
+      | step otherHead otherTail =>
+          obtain ⟨rfl, rfl⟩ := ExecResult.success.inj (Eval.result_unique head otherHead)
+          rw [ih otherTail]
+      | if_execute => simpa [NonConditional] using head.singleton_nonConditional
+      | notif_execute => simpa [NonConditional] using head.singleton_nonConditional
+  | if_execute split minimal selected ih =>
+      cases right with
+      | step head => simpa [NonConditional] using head.singleton_nonConditional
+      | if_execute otherSplit otherMinimal otherSelected =>
+          have same := Option.some.inj (split.symm.trans otherSplit)
+          subst same
+          rw [ih otherSelected]
+  | notif_execute split minimal selected ih =>
+      cases right with
+      | step head => simpa [NonConditional] using head.singleton_nonConditional
+      | notif_execute otherSplit otherMinimal otherSelected =>
+          have same := Option.some.inj (split.symm.trans otherSplit)
+          subst same
+          rw [ih otherSelected]
 
 /-- Every successful big-step evaluation has an active-path resource
     observation. -/

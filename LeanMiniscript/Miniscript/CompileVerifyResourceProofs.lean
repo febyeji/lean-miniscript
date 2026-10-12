@@ -47,7 +47,7 @@ theorem EvalResources.fuseEqualVerify
                 (ExecutionResources.initial out outAlt) := by
           simp [ExecutionResources.prepend, ExecutionResources.initial]
           omega
-        simpa [executedMultiSigKeyCharge, resourcesEq] using observed
+        simpa [executedMultiSigKeyCharge, executedSignatureWeight, resourcesEq] using observed
       case equal_false =>
         rename_i a b rest notEqual next
         cases next
@@ -95,15 +95,15 @@ theorem EvalResources.fuseCheckSigVerify
             checked (.empty rest altStack flags ctx)
         have observed := EvalResources.step fused
           (EvalResources.empty rest altStack flags ctx)
-        have resourcesEq :
+        have resourcesEq (charge : Nat) :
             ExecutionResources.prepend (pubkey :: sig :: rest) altStack 0
                 (ExecutionResources.prepend (trueElement :: rest) altStack 0
-                  (ExecutionResources.initial rest altStack)) =
+                  (ExecutionResources.initial rest altStack)) charge =
               ExecutionResources.prepend (pubkey :: sig :: rest) altStack 0
-                (ExecutionResources.initial rest altStack) := by
+                (ExecutionResources.initial rest altStack) charge := by
           simp [ExecutionResources.prepend, ExecutionResources.initial]
           omega
-        simpa [executedMultiSigKeyCharge, resourcesEq] using observed
+        simpa [executedMultiSigKeyCharge, executedSignatureWeight, resourcesEq] using observed
       case checksig_failure =>
         rename_i pubkey sig rest checked next
         cases next
@@ -184,7 +184,7 @@ theorem EvalResources.fuseCheckMultiSigVerify
                 (ExecutionResources.initial operands.rest altStack) := by
           simp [ExecutionResources.prepend, ExecutionResources.initial]
           omega
-        simpa [executedMultiSigKeyCharge, decoded, resourcesEq] using observed
+        simpa [executedMultiSigKeyCharge, executedSignatureWeight, decoded, resourcesEq] using observed
       case checkmultisig_failure =>
         rename_i operands decoded checked nullFail dummy next
         cases next
@@ -232,7 +232,7 @@ theorem EvalResources.fuseNumEqualVerify
                 (ExecutionResources.initial out outAlt) := by
           simp [ExecutionResources.prepend, ExecutionResources.initial]
           omega
-        simpa [executedMultiSigKeyCharge, resourcesEq] using observed
+        simpa [executedMultiSigKeyCharge, executedSignatureWeight, resourcesEq] using observed
       all_goals cases headEq
 
 private theorem singletonIfSuccessFalse
