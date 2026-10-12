@@ -46,6 +46,7 @@ import LeanMiniscript.Extraction.BitcoinCoreLegacyLimitsProofs
 import LeanMiniscript.Extraction.BitcoinCoreExecutionProofs
 import LeanMiniscript.Extraction.BitcoinCoreSatisfactionProofs
 import LeanMiniscript.Extraction.BitcoinCoreVerificationProofs
+import LeanMiniscript.Extraction.DescriptorSatisfactionProofs
 import LeanMiniscript.Extraction.RefInterpProofs
 import LeanMiniscript.Extraction.TaprootBytesProofs
 import LeanMiniscript.Extraction.TaprootProofs
