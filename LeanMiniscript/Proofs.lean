@@ -15,6 +15,8 @@ import LeanMiniscript.Script.TapscriptExecutionProofs
 import LeanMiniscript.Script.ValidationWeightProofs
 import LeanMiniscript.Miniscript.AcceptanceProofs
 import LeanMiniscript.Miniscript.CompileConcreteProofs
+import LeanMiniscript.Miniscript.CompileAgreementProofs
+import LeanMiniscript.Miniscript.CompilePushBoundsProofs
 import LeanMiniscript.Miniscript.CompileVerifyResourceProofs
 import LeanMiniscript.Miniscript.Conformance
 import LeanMiniscript.Miniscript.DescriptorKeyProofs

@@ -56,7 +56,7 @@ private def prepare (transaction : Transaction) :
       preimageFor := fun _ => none
       nonPreimageFor := fun _ => ByteArray.empty
       txCtx := ctx }
-  let arguments ← match satisfyFinal (.c (.pk_k key)) env with
+  let arguments ← match satisfyFinal (desugar leaf.fragment) env with
     | some arguments => pure arguments
     | none => throw "No generated satisfaction"
   return (descriptor, leaf, arguments, ctx)
@@ -85,13 +85,15 @@ example : (run).toOption = some (.ok ()) := by native_decide
 
 -- This generated descriptor spend meets the new theorem's static resource
 -- premises, with the actual wire witness supplying the signature budget.
-example : (match prepare sighashFixtureTransaction, checkSane .tapscript (.c (.pk_k key)) with
-  | .ok (_, leaf, arguments, _), .ok sane =>
-      sane.compile.all (fun element => element.pushSize ≤ maxScriptElementSize) &&
-      arguments.all (fun item => item.size ≤ maxScriptElementSize) &&
-      staticValidationWeight sane.compile ≤
-        (serializeWitness (arguments ++ [leaf.script, leaf.controlBlock])).size + 50
-  | _, _ => false) = true := by native_decide
+example : (match prepare sighashFixtureTransaction with
+  | .ok (_, leaf, arguments, _) => match checkSaneSurface .tapscript leaf.fragment with
+    | .ok sane =>
+        sane.compile.all (fun element => element.pushSize ≤ maxScriptElementSize) &&
+        arguments.all (fun item => item.size ≤ maxScriptElementSize) &&
+        staticValidationWeight sane.compile ≤
+          (serializeWitness (arguments ++ [leaf.script, leaf.controlBlock])).size + 50
+    | .error _ => false
+  | .error _ => false) = true := by native_decide
 
 example : (run (fun witness => witness.modify 0 (fun sig => flip sig 40))).toOption =
     some (.error (.script .schnorrSig)) := by native_decide

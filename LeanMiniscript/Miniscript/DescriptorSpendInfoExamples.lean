@@ -66,6 +66,40 @@ example : (match deriveOutputDescriptor ("tr(" ++ keyText ++ ",{1,1})") with
         (result.taprootLeaves.map (fun leaf => byteArrayHex leaf.controlBlock)).eraseDups.length == 1
     | .error _ => false) = true := by native_decide
 
+-- Distinct surface forms can have identical bytes. Preserve both the original
+-- expression and each occurrence's position when generating spending data.
+example : (match resolveDescriptorKey none keyText with
+    | .error _ => false
+    | .ok key =>
+        let tree := DescriptorTree.branch (.leaf (.pk key))
+          (.branch (.leaf (.core (.c (.pk_k key)))) (.leaf (.pk key)))
+        match compileOutputDescriptor (.tr key (some tree)) with
+        | .error _ => false
+        | .ok result => match result.taprootLeaves with
+          | [first, second, third] =>
+              (match first.fragment, second.fragment, third.fragment with
+                | .pk a, .core (.c (.pk_k b)), .pk c => a == key && b == key && c == key
+                | _, _, _ => false) &&
+              first.script == second.script && second.script == third.script &&
+              result.taprootLeaves.map (fun leaf => leaf.merklePath.length) == [1, 2, 2] &&
+              result.taprootLeaves.all (fun leaf =>
+                (serializeScript (compileSurfaceConcrete leaf.fragment)).toOption == some leaf.script)
+          | _ => false) = true := by native_decide
+
+-- A hash-key leaf uses concrete HASH160 in the bytes retained with its source.
+example : (match resolveDescriptorKey none keyText with
+    | .error _ => false
+    | .ok key => match compileOutputDescriptor (.tr key (some (.leaf (.pkh key)))) with
+      | .error _ => false
+      | .ok result => match result.taprootLeaves with
+        | [leaf] =>
+            (match leaf.fragment with
+              | .pkh sourceKey => sourceKey == key
+              | _ => false) &&
+            leaf.script == ByteArray.mk #[0x76, 0xa9, 0x14] ++
+              LeanHash160.hash160 key.bytes ++ ByteArray.mk #[0x88, 0xac]
+        | _ => false) = true := by native_decide
+
 -- Output wrappers without script-path leaves expose an empty list.
 example : [s!"tr({keyText})", s!"wsh(pk(02{keyText}))",
     s!"sh(wsh(pk(02{keyText})))"].all (fun text =>

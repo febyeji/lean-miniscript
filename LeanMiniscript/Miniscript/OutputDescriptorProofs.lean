@@ -182,4 +182,132 @@ theorem compileOutputDescriptor_taprootScriptPubKey
           simp
         · cases compiled
 
+/-- Successful descriptor validation returns the concrete serialized script. -/
+theorem compileDescriptorFragment_serialized
+    {ctx : ScriptContext} {fragment : SurfaceFragment} {bytes : ByteArray}
+    (compiled : compileDescriptorFragment ctx fragment = .ok bytes) :
+    LeanMiniscript.Script.serializeScript (compileSurfaceConcrete fragment) = .ok bytes := by
+  cases checkedEq : CheckedSurfaceFragment.ofRaw? ctx fragment with
+  | none => simp [compileDescriptorFragment, checkedEq] at compiled
+  | some checked =>
+      simp only [compileDescriptorFragment, checkedEq, bind, Except.bind,
+        pure, Except.pure] at compiled
+      split at compiled
+      · cases compiled
+      · split at compiled
+        · cases compiled
+        · cases serialized : LeanMiniscript.Script.serializeScript (compileSurfaceConcrete fragment) with
+          | error error => simp [serialized] at compiled
+          | ok result =>
+              simp only [serialized, Except.ok.injEq] at compiled
+              exact congrArg Except.ok compiled
+
+/-- Successful descriptor validation certifies the retained source's
+context-specific well-formedness. -/
+theorem compileDescriptorFragment_wellFormed
+    {ctx : ScriptContext} {fragment : SurfaceFragment} {bytes : ByteArray}
+    (compiled : compileDescriptorFragment ctx fragment = .ok bytes) :
+    fragment.WellFormed ctx := by
+  by_cases valid : fragment.WellFormed ctx
+  · exact valid
+  · simp [compileDescriptorFragment, CheckedSurfaceFragment.ofRaw?, valid] at compiled
+
+/-- Compiled leaves retain source order and multiplicity. -/
+theorem DescriptorTree.compile_fragments
+    {tree : DescriptorTree} {maxDepth : Nat} {info : DescriptorTreeInfo}
+    (compiled : tree.compile maxDepth = .ok info) :
+    info.leaves.map (·.fragment) = tree.fragments := by
+  induction tree generalizing maxDepth info with
+  | leaf fragment =>
+      simp only [DescriptorTree.compile, bind, Except.bind] at compiled
+      split at compiled
+      · cases compiled
+      · cases compiled
+        rfl
+  | branch left right leftIH rightIH =>
+      cases maxDepth with
+      | zero => cases compiled
+      | succ depth =>
+          cases leftEq : left.compile depth with
+          | error error => simp [DescriptorTree.compile, leftEq, bind, Except.bind] at compiled
+          | ok leftInfo =>
+              cases rightEq : right.compile depth with
+              | error error => simp [DescriptorTree.compile, leftEq, rightEq, bind, Except.bind] at compiled
+              | ok rightInfo =>
+                  simp only [DescriptorTree.compile, leftEq, rightEq, bind, Except.bind,
+                    pure, Except.pure, Except.ok.injEq] at compiled
+                  subst info
+                  simp [DescriptorTreeInfo.branch, DescriptorLeafInfo.withSibling,
+                    List.map_append, List.map_map, Function.comp_def, DescriptorTree.fragments,
+                    leftIH leftEq, rightIH rightEq]
+
+/-- Each compiled leaf records the expression whose concrete serialization
+produced its script, even when different expressions serialize identically. -/
+theorem DescriptorTree.compile_leafSources
+    {tree : DescriptorTree} {maxDepth : Nat} {info : DescriptorTreeInfo}
+    (compiled : tree.compile maxDepth = .ok info) :
+    ∀ leaf ∈ info.leaves,
+      leaf.fragment.WellFormed .tapscript ∧
+      LeanMiniscript.Script.serializeScript (compileSurfaceConcrete leaf.fragment) = .ok leaf.script := by
+  induction tree generalizing maxDepth info with
+  | leaf fragment =>
+      cases scriptEq : compileDescriptorFragment .tapscript fragment with
+      | error error => simp [DescriptorTree.compile, scriptEq, bind, Except.bind] at compiled
+      | ok script =>
+          simp only [DescriptorTree.compile, scriptEq, bind, Except.bind,
+            pure, Except.pure, Except.ok.injEq] at compiled
+          subst info
+          intro leaf member
+          simp only [List.mem_singleton] at member
+          subst leaf
+          exact ⟨compileDescriptorFragment_wellFormed scriptEq,
+            compileDescriptorFragment_serialized scriptEq⟩
+  | branch left right leftIH rightIH =>
+      cases maxDepth with
+      | zero => cases compiled
+      | succ depth =>
+          cases leftEq : left.compile depth with
+          | error error => simp [DescriptorTree.compile, leftEq, bind, Except.bind] at compiled
+          | ok leftInfo =>
+              cases rightEq : right.compile depth with
+              | error error => simp [DescriptorTree.compile, leftEq, rightEq, bind, Except.bind] at compiled
+              | ok rightInfo =>
+                  simp only [DescriptorTree.compile, leftEq, rightEq, bind, Except.bind,
+                    pure, Except.pure, Except.ok.injEq] at compiled
+                  subst info
+                  intro leaf member
+                  simp only [DescriptorTreeInfo.branch, List.mem_append, List.mem_map] at member
+                  rcases member with ⟨original, member, rfl⟩ | ⟨original, member, rfl⟩
+                  · exact leftIH leftEq original member
+                  · exact rightIH rightEq original member
+
+/-- Taproot spending entries retain exactly the original descriptor leaves
+and the concrete serialization of each source expression. -/
+theorem compileOutputDescriptor_taprootSources
+    {key : PubKey} {tree : DescriptorTree} {result : CompiledDescriptor}
+    (compiled : compileOutputDescriptor (.tr key (some tree)) = .ok result) :
+    result.taprootLeaves.map (·.fragment) = tree.fragments ∧
+      ∀ leaf ∈ result.taprootLeaves,
+        leaf.fragment.WellFormed .tapscript ∧
+        LeanMiniscript.Script.serializeScript (compileSurfaceConcrete leaf.fragment) = .ok leaf.script := by
+  simp only [compileOutputDescriptor, bind, Except.bind] at compiled
+  split at compiled
+  · cases compiled
+  · cases treeEq : tree.compile with
+    | error error => simp [treeEq, Functor.map, Except.map] at compiled
+    | ok info =>
+        simp only [treeEq, Functor.map, Except.map] at compiled
+        split at compiled
+        · simp only [pure, Except.pure, Except.ok.injEq] at compiled
+          subst result
+          constructor
+          · simpa [DescriptorLeafInfo.spendInfo, List.map_map, Function.comp_def] using
+              DescriptorTree.compile_fragments treeEq
+          · intro leaf member
+            simp only [Option.toList_some, List.flatMap_cons, List.flatMap_nil,
+              List.append_nil, List.mem_map] at member
+            obtain ⟨original, member, rfl⟩ := member
+            exact DescriptorTree.compile_leafSources treeEq original member
+        · cases compiled
+
 end LeanMiniscript.Miniscript
