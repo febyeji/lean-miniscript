@@ -2,6 +2,7 @@ import LeanMiniscript.Miniscript.Sane
 import LeanMiniscript.Properties.ResourceCompilerMetricProofs
 import LeanMiniscript.Properties.ResourcePathProofs
 import LeanMiniscript.Properties.SatisfactionExecutionResourceProofs
+import LeanMiniscript.Script.RuntimeCompletenessProofs
 
 namespace LeanMiniscript.Properties
 
@@ -115,5 +116,30 @@ theorem tapscript_satisfyFinal_executionStack_le
     simpa [SaneFragment.compile, compileChecked] using evaluated
   exact ⟨result, resources, evaluatedSane, truth,
     Int.ofNat_le.mp (Int.le_trans peakLe summaryPeak)⟩
+
+/-- A sane Tapscript satisfaction completes with a truthy singleton under
+source push bounds and a static signature budget. The sane-fragment stack
+summary supplies both the runtime peak and the initial witness-count bound. -/
+theorem tapscript_satisfyFinal_runtime_complete
+    (sane : SaneFragment .tapscript) {env : SatEnv} {witness : Witness}
+    {flags : ScriptFlags} {oracle : CryptoOracle}
+    (sound : env.Sound)
+    (encodings : env.EncodingSound flags)
+    (version : ModeledContextVersion .tapscript env.txCtx)
+    (modeled : ModeledContextFlags .tapscript flags)
+    (generated : satisfyFinal sane.checked.fragment env = some witness)
+    (agreement : oracle.RefinesModel)
+    (pushes : ∀ element ∈ sane.compile, element.pushSize ≤ maxScriptElementSize)
+    (weight : Nat) (budget : staticValidationWeight sane.compile ≤ weight) :
+    ∃ top remaining,
+      evaluateWithRuntimeLimits oracle sane.compile witness.toInitialStack []
+        flags env.txCtx weight = .success [top] [] remaining ∧
+      castToBool top = true ∧ witness.length ≤ maxStackSize ∧
+      weight ≤ remaining + staticValidationWeight sane.compile := by
+  obtain ⟨top, resources, observed, truth, peak⟩ :=
+    sane.tapscript_satisfyFinal_executionStack_le sound encodings version modeled generated
+  obtain ⟨remaining, completed, spent⟩ := observed.runtime_complete agreement pushes peak weight budget
+  refine ⟨top, remaining, completed, truth, ?_, spent⟩
+  simpa [Witness.toInitialStack, MAX_STACK_SIZE] using Nat.le_trans observed.initial_le_peak peak
 
 end LeanMiniscript.Miniscript.SaneFragment

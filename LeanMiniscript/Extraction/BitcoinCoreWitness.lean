@@ -18,7 +18,9 @@ def decodeCoreWitnessProgram? (bytes : ByteArray) : Option (Nat × ByteArray) :=
     if bytes[1]!.toNat + 2 != bytes.size then none
     else some (version, bytes.extract 2 bytes.size)
 
-private def isCoreOpSuccess (byte : Nat) : Bool :=
+namespace CoreWitnessScan
+
+def isCoreOpSuccess (byte : Nat) : Bool :=
   byte == 80 || byte == 98 ||
   (126 ≤ byte && byte ≤ 129) || (131 ≤ byte && byte ≤ 134) ||
   (137 ≤ byte && byte ≤ 138) || (141 ≤ byte && byte ≤ 142) ||
@@ -26,7 +28,7 @@ private def isCoreOpSuccess (byte : Nat) : Bool :=
 
 /-- Locate an OP_SUCCESS instruction before validating initial witness stack
 limits. Pushed bytes are skipped; a truncated push encountered first fails. -/
-private def scanCoreOpSuccess (bytes : ByteArray) :
+def scanCoreOpSuccess (bytes : ByteArray) :
     Nat → Nat → Except CoreVerificationError Bool
   | 0, _ => .error (.script .badOpcode)
   | fuel + 1, offset => do
@@ -35,10 +37,12 @@ private def scanCoreOpSuccess (bytes : ByteArray) :
       if isCoreOpSuccess instruction.opcode.toNat then return true
       scanCoreOpSuccess bytes fuel instruction.nextOffset
 
+end CoreWitnessScan
+
 /-- A full source-order OP_SUCCESS scan; success overrides subsequent malformed
 bytes and stack limits, as required by ExecuteWitnessScript. -/
 def coreTapscriptHasOpSuccess (bytes : ByteArray) : Except CoreVerificationError Bool :=
-  scanCoreOpSuccess bytes (bytes.size + 1) 0
+  CoreWitnessScan.scanCoreOpSuccess bytes (bytes.size + 1) 0
 
 private def acceptWitnessStack : Stack → Except CoreVerificationError Unit
   | [top] => if castToBool top then .ok () else .error (.script .evalFalse)

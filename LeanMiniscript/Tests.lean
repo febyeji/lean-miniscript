@@ -25,6 +25,7 @@ import LeanMiniscript.Script.NumericOpcodeExamples
 import LeanMiniscript.Script.OverExamples
 import LeanMiniscript.Script.RotExamples
 import LeanMiniscript.Script.RuntimeLimitsExamples
+import LeanMiniscript.Script.RuntimeCompletenessExamples
 import LeanMiniscript.Script.SchnorrExecutionExamples
 import LeanMiniscript.Script.ScriptNumExamples
 import LeanMiniscript.Script.SelectionOpcodeExamples
@@ -69,6 +70,7 @@ import LeanMiniscript.Extraction.BitcoinCoreMinimalDataExamples
 import LeanMiniscript.Extraction.BitcoinCoreNopAuditExamples
 import LeanMiniscript.Extraction.BitcoinCoreNumericAuditExamples
 import LeanMiniscript.Extraction.BitcoinCoreSelectionAuditExamples
+import LeanMiniscript.Extraction.BitcoinCoreSatisfactionExamples
 import LeanMiniscript.Extraction.BitcoinCoreVerificationExamples
 import LeanMiniscript.Extraction.BitcoinCoreWitnessExamples
 import LeanMiniscript.Extraction.CoreFixtureTransactionExamples

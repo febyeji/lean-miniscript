@@ -37,6 +37,28 @@ instance (instruction : CoreRawInstruction) (element : ScriptElement) :
     Decidable (instruction.Encodes element) := by
   cases element <;> unfold CoreRawInstruction.Encodes encodesPush <;> infer_instance
 
+/-- Modeled encodings contain only pushes, numeric constants, and AST opcodes. -/
+theorem CoreRawInstruction.Encodes.opcodeCases
+    {instruction : CoreRawInstruction} {element : ScriptElement}
+    (encoded : instruction.Encodes element) :
+    instruction.opcode.toNat ≤ 0x4e ∨ instruction.opcode.toNat = 0x4f ∨
+      (0x51 ≤ instruction.opcode.toNat ∧ instruction.opcode.toNat ≤ 0x60) ∨
+      ∃ opcode, instruction.opcode = opcodeByte opcode := by
+  cases element with
+  | op opcode => exact Or.inr (Or.inr (Or.inr ⟨opcode, encoded.1⟩))
+  | pushData | pushNum =>
+      simp only [CoreRawInstruction.Encodes, encodesPush] at encoded
+      split at encoded
+      · exact Or.inl (by assumption)
+      · split at encoded
+        · rename_i numeric
+          simp only [Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true,
+            decide_eq_true_eq] at numeric
+          rcases numeric with number | range
+          · exact Or.inr (Or.inl number)
+          · exact Or.inr (Or.inr (Or.inl range))
+        · contradiction
+
 /-- Complete source-order decoding, with strictly advancing offsets and no
 trailing bytes. This is a decidable, input-only certificate. -/
 def CoreTapscriptEncoding (bytes : ByteArray) : Nat → Script → Prop
@@ -157,7 +179,7 @@ def coreRuntimeResult : WeightedResult → Except CoreVerificationError Stack
   | .success stack _ _ => .ok stack
   | .failure error => .error (.script error)
 
-private theorem CoreTapscriptEncoding.length_bound {bytes : ByteArray}
+theorem CoreTapscriptEncoding.length_bound {bytes : ByteArray}
     {offset : Nat} {script : Script} (encoded : CoreTapscriptEncoding bytes offset script) :
     offset + script.length ≤ bytes.size := by
   induction script generalizing offset with
