@@ -39,7 +39,7 @@ example (x : StackElement) :
     .dup x [] [] [] resourceFlags resourceContext _
       (.empty [x, x] [] resourceFlags resourceContext)
   simpa [ExecutionResources.prepend, ExecutionResources.initial,
-    executedMultiSigKeyCharge] using
+    executedMultiSigKeyCharge, executedSignatureWeight, resourceContext] using
     EvalResources.step head
       (EvalResources.empty [x, x] [] resourceFlags resourceContext)
 
@@ -64,7 +64,7 @@ example (x : StackElement) :
       resourceContext [x, x] []
       { peakStackItems := 2, executedMultiSigKeys := 0 } := by
     simpa [ExecutionResources.prepend, ExecutionResources.initial,
-      executedMultiSigKeyCharge] using
+      executedMultiSigKeyCharge, executedSignatureWeight, resourceContext] using
       EvalResources.step selectedHead
         (EvalResources.empty [x, x] [] resourceFlags resourceContext)
   have selected' : EvalResources
@@ -101,7 +101,7 @@ example
     (EvalResources.empty [trueElement] [] resourceFlags resourceContext)
   rw [charged] at observed
   simpa [ExecutionResources.prepend, ExecutionResources.initial,
-    oneOfTwoStack, oneOfTwoOperands] using observed
+    oneOfTwoStack, oneOfTwoOperands, executedSignatureWeight, resourceContext] using observed
 
 /-- A false CHECKMULTISIG result still continues and charges the decoded keys. -/
 example
@@ -126,7 +126,7 @@ example
     (EvalResources.empty [falseElement] [] noNullFailFlags resourceContext)
   rw [charged] at observed
   simpa [ExecutionResources.prepend, ExecutionResources.initial,
-    oneOfTwoStack, oneOfTwoOperands] using observed
+    oneOfTwoStack, oneOfTwoOperands, executedSignatureWeight, resourceContext] using observed
 
 /-- The VERIFY form consumes the true result while retaining the same key
     charge. -/
@@ -151,7 +151,7 @@ example
     (EvalResources.empty [] [] resourceFlags resourceContext)
   rw [charged] at observed
   simpa [ExecutionResources.prepend, ExecutionResources.initial,
-    oneOfTwoStack, oneOfTwoOperands] using observed
+    oneOfTwoStack, oneOfTwoOperands, executedSignatureWeight, resourceContext] using observed
 
 /-- CHECKSIG followed by VERIFY and CHECKSIGVERIFY have the same stack peak
     and dynamic multisignature charge on success. -/
@@ -178,12 +178,12 @@ example (pubkey signature : StackElement)
       resourceContext _ verified (.empty [] [] resourceFlags resourceContext)
   constructor
   · simpa [ExecutionResources.prepend, ExecutionResources.initial,
-      executedMultiSigKeyCharge] using
+      executedMultiSigKeyCharge, executedSignatureWeight, resourceContext] using
       EvalResources.step checkHead
         (EvalResources.step verifyHead
           (EvalResources.empty [] [] resourceFlags resourceContext))
   · simpa [ExecutionResources.prepend, ExecutionResources.initial,
-      executedMultiSigKeyCharge] using
+      executedMultiSigKeyCharge, executedSignatureWeight, resourceContext] using
       EvalResources.step fusedHead
         (EvalResources.empty [] [] resourceFlags resourceContext)
 

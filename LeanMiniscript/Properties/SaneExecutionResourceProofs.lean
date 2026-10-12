@@ -2,6 +2,7 @@ import LeanMiniscript.Miniscript.Sane
 import LeanMiniscript.Properties.ResourceCompilerMetricProofs
 import LeanMiniscript.Properties.ResourcePathProofs
 import LeanMiniscript.Properties.SatisfactionExecutionResourceProofs
+import LeanMiniscript.Properties.SatisfactionSignatureBudgetProofs
 import LeanMiniscript.Script.RuntimeCompletenessProofs
 
 namespace LeanMiniscript.Properties
@@ -116,6 +117,63 @@ theorem tapscript_satisfyFinal_executionStack_le
     simpa [SaneFragment.compile, compileChecked] using evaluated
   exact ⟨result, resources, evaluatedSane, truth,
     Int.ofNat_le.mp (Int.le_trans peakLe summaryPeak)⟩
+
+/-- A generated sane satisfaction completes when the budget covers an exact
+resource observation. Sane-fragment correctness supplies the stack limit and
+truthy singleton; uniqueness transfers them to the supplied observation. -/
+theorem tapscript_satisfyFinal_runtime_complete_exact
+    (sane : SaneFragment .tapscript) {env : SatEnv} {witness : Witness}
+    {flags : ScriptFlags} {oracle : CryptoOracle}
+    {top : StackElement} {resources : ExecutionResources}
+    (sound : env.Sound) (encodings : env.EncodingSound flags)
+    (version : ModeledContextVersion .tapscript env.txCtx)
+    (modeled : ModeledContextFlags .tapscript flags)
+    (generated : satisfyFinal sane.checked.fragment env = some witness)
+    (observed : EvalResources sane.compile witness.toInitialStack [] flags env.txCtx
+      [top] [] resources)
+    (agreement : oracle.RefinesModel)
+    (pushes : ∀ element ∈ sane.compile, element.pushSize ≤ maxScriptElementSize)
+    (weight : Nat) (budget : resources.signatureWeight ≤ weight) :
+    ∃ remaining,
+      evaluateWithRuntimeLimits oracle sane.compile witness.toInitialStack []
+        flags env.txCtx weight = .success [top] [] remaining ∧
+      castToBool top = true ∧ witness.length ≤ maxStackSize ∧
+      remaining + resources.signatureWeight = weight := by
+  obtain ⟨generatedTop, generatedResources, generatedRun, truth, peak⟩ :=
+    sane.tapscript_satisfyFinal_executionStack_le sound encodings version modeled generated
+  have sameResources := observed.resources_unique generatedRun
+  have sameResult := Eval.result_unique observed.toEval generatedRun.toEval
+  have topEq : top = generatedTop := by simpa using (ExecResult.success.inj sameResult).1
+  rw [← sameResources] at peak
+  obtain ⟨remaining, completed, spent⟩ := observed.runtime_complete_exact agreement pushes peak weight budget
+  refine ⟨remaining, completed, topEq ▸ truth, ?_, spent⟩
+  simpa [Witness.toInitialStack, MAX_STACK_SIZE] using Nat.le_trans observed.initial_le_peak peak
+
+/-- A sane generated Tapscript satisfaction completes with the budget computed
+from its full serialized witness. The generated contract supplies the active
+debit bound; serialization supplies enough budget for those argument bytes. -/
+theorem tapscript_satisfyFinal_runtime_complete_witness
+    (sane : SaneFragment .tapscript) {env : SatEnv} {witness fullWitness : Witness}
+    {flags : ScriptFlags} {oracle : CryptoOracle}
+    (sound : env.Sound) (encodings : env.EncodingSound flags)
+    (version : ModeledContextVersion .tapscript env.txCtx)
+    (modeled : ModeledContextFlags .tapscript flags)
+    (generated : satisfyFinal sane.checked.fragment env = some witness)
+    (agreement : oracle.RefinesModel)
+    (pushes : ∀ element ∈ sane.compile, element.pushSize ≤ maxScriptElementSize)
+    (included : witness.Sublist fullWitness) :
+    ∃ top remaining,
+      evaluateWithRuntimeLimits oracle sane.compile witness.toInitialStack [] flags env.txCtx
+        (initialValidationWeight fullWitness) = .success [top] [] remaining ∧
+      castToBool top = true ∧ witness.length ≤ maxStackSize := by
+  obtain ⟨top, resources, observed, truth, peak⟩ :=
+    sane.tapscript_satisfyFinal_executionStack_le sound encodings version modeled generated
+  have funded := satisfyFinal_signatureWeight_le_payload sane.validMiniscript sound encodings
+    version modeled generated observed
+  obtain ⟨remaining, completed, _⟩ := runtime_complete_of_witness_funding agreement
+    observed pushes peak included funded
+  refine ⟨top, remaining, completed, truth, ?_⟩
+  simpa [Witness.toInitialStack, MAX_STACK_SIZE] using Nat.le_trans observed.initial_le_peak peak
 
 /-- A sane Tapscript satisfaction completes with a truthy singleton under
 source push bounds and a static signature budget. The sane-fragment stack

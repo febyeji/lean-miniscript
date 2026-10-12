@@ -12,12 +12,12 @@ open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
 /-!
 Generated no-annex satisfactions for compiled Taproot descriptors reach Core's
 complete script-pair verifier. The sane-fragment theorem derives runtime
-completion from the stack summary, source push bounds and a static signature
-budget. The concrete-hash descriptor theorem derives byte agreement, source
-push bounds and initial item sizes from the retained source and existing
-contracts. Context agreement, oracle refinement, verification flags, a truthy
-output key and the signature budget remain explicit. Satisfaction correctness supplies the
-final singleton and truth value; descriptor correctness supplies the commitment.
+completion from the stack summary, source push bounds and the signature debit
+funded by the generated witness. The concrete-hash descriptor theorem derives
+byte agreement, source push bounds and initial item sizes from the retained
+source and existing contracts. Context agreement, oracle refinement,
+verification flags and a truthy output key remain explicit. Satisfaction correctness supplies the final
+singleton and truth value; descriptor correctness supplies the commitment.
 The generated-satisfaction step inherits the existing satisfaction proofs'
 `native_decide` dependencies.
 -/
@@ -101,10 +101,9 @@ theorem verifyCoreScripts_of_descriptor_satisfaction
   · simpa only [← context, stackEq, Witness.toInitialStack] using executed
   · exact truth
 
-/-- A sane descriptor satisfaction passes the complete Core verifier under
-static resource conditions. Runtime completion and initial witness count are
-derived. The budget counts all source signature opcodes, including skipped
-branches, so it is sufficient but may exceed the actual debit. -/
+/-- A sane descriptor satisfaction passes the complete Core verifier. Runtime
+completion, initial witness count and the active-path signature budget are
+derived from the generated witness and the sane-fragment contract. -/
 theorem verifyCoreScripts_of_sane_descriptor_satisfaction
     (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
@@ -127,9 +126,7 @@ theorem verifyCoreScripts_of_sane_descriptor_satisfaction
       (coreTaprootRequest arguments leaf.script leaf.controlBlock))
     (agreement : (oracles .tapscript leaf.script).RefinesModel)
     (sizes : arguments.ItemsBounded)
-    (pushes : ∀ element ∈ sane.compile, element.pushSize ≤ maxScriptElementSize)
-    (budget : staticValidationWeight sane.compile ≤
-      (coreTaprootRequest arguments leaf.script leaf.controlBlock).validationWeight) :
+    (pushes : ∀ element ∈ sane.compile, element.pushSize ≤ maxScriptElementSize) :
     verifyCoreScripts (executeCoreScript flags ctx oracles)
       (fun witness version program isP2SH => verifyCoreWitnessProgram
         (executeCoreScript flags ctx oracles) flags witness version program isP2SH keyPath)
@@ -137,12 +134,15 @@ theorem verifyCoreScripts_of_sane_descriptor_satisfaction
       (arguments ++ [leaf.script, leaf.controlBlock]) = .ok () := by
   have version : ModeledContextVersion .tapscript env.txCtx := by
     simp [ModeledContextVersion, context, coreTapscriptContext]
-  obtain ⟨top, remaining, completed, _, count, _⟩ :=
-    sane.tapscript_satisfyFinal_runtime_complete sound encodings version modeled generated
-      agreement pushes _ budget
+  obtain ⟨top, remaining, completed, _, count⟩ :=
+    sane.tapscript_satisfyFinal_runtime_complete_witness sound encodings version modeled generated
+      agreement pushes (fullWitness := arguments ++ [leaf.script, leaf.controlBlock])
+      (List.sublist_append_left _ _)
   exact verifyCoreScripts_of_descriptor_satisfaction flags ctx oracles keyPath compiled
     member selected outputTruth enabled taproot locktime sequence sane.validMiniscript
-    sound encodings modeled generated encoded context agreement count sizes completed
+    sound encodings modeled generated encoded context agreement count sizes
+    (by simpa [SaneFragment.compile, compileChecked, coreTaprootRequest, initialValidationWeight,
+      validationWeightOffset, Nat.add_comm] using completed)
 
 /-- A compiled descriptor leaf's retained source determines the bytes read
 by the Core decoder. Well-formed concrete compilation supplies the direct-push
@@ -164,8 +164,9 @@ theorem CoreTapscriptEncoding.of_descriptor_leaf
 passes native no-annex Taproot verification with concrete hashes. Oracle
 refinement supplies compiler HASH160 agreement; source validity and generated
 satisfaction contracts supply byte encoding and all push/item size bounds.
-Context, flags, output-key truth and the conservative signature budget remain
-explicit. Signature callbacks still require the stated refinement contract. -/
+The generated witness funds the active signature debit. Context, flags and
+output-key truth remain explicit; signature callbacks require the stated
+refinement contract. -/
 theorem verifyCoreScripts_of_compiled_descriptor_satisfaction
     (flags : CoreVerificationFlags) (ctx : TxContext)
     (verifyECDSA verifySchnorr : StackElement → StackElement → ByteArray → Bool)
@@ -186,9 +187,7 @@ theorem verifyCoreScripts_of_compiled_descriptor_satisfaction
     (generated : satisfyFinal sane.checked.fragment env = some arguments)
     (context : env.txCtx = coreTapscriptContext ctx
       (coreTaprootRequest arguments leaf.script leaf.controlBlock))
-    (agreement : (CryptoOracle.pureLeanHashes verifyECDSA verifySchnorr).RefinesModel)
-    (budget : staticValidationWeight sane.compile ≤
-      (coreTaprootRequest arguments leaf.script leaf.controlBlock).validationWeight) :
+    (agreement : (CryptoOracle.pureLeanHashes verifyECDSA verifySchnorr).RefinesModel) :
     let oracles := fun (_ : SignatureVersion) (_ : ByteArray) =>
       CryptoOracle.pureLeanHashes verifyECDSA verifySchnorr
     verifyCoreScripts (executeCoreScript flags ctx oracles)
@@ -217,6 +216,6 @@ theorem verifyCoreScripts_of_compiled_descriptor_satisfaction
     version modeled generated
   exact verifyCoreScripts_of_sane_descriptor_satisfaction flags ctx _ keyPath sane
     compiled member selected outputTruth enabled taproot locktime sequence sound
-    encodings modeled generated encoded context agreement sizes pushes budget
+    encodings modeled generated encoded context agreement sizes pushes
 
 end LeanMiniscript.Extraction

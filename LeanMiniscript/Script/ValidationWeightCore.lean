@@ -19,6 +19,21 @@ its refinement and erasure properties.
 def validationWeightOffset : Nat := 50
 def validationWeightPerSigop : Nat := 50
 
+/-- BIP342 charges only nonempty signatures. -/
+def signatureValidationWeight (signature : StackElement) : Nat :=
+  if signature.size = 0 then 0 else validationWeightPerSigop
+
+/-- Signature debit observed at a successfully executed instruction. Operand
+errors, including CHECKSIGADD's count error, are handled by execution itself. -/
+def executedSignatureWeight (element : ScriptElement) (stack : Stack)
+    (ctx : TxContext) : Nat :=
+  if ctx.sigVersion ≠ .tapscript then 0
+  else match element, stack with
+    | .op .OP_CHECKSIG, _ :: signature :: _
+    | .op .OP_CHECKSIGVERIFY, _ :: signature :: _
+    | .op .OP_CHECKSIGADD, _ :: _ :: signature :: _ => signatureValidationWeight signature
+    | _, _ => 0
+
 def initialValidationWeight (fullWitness : List ByteArray) : Nat :=
   validationWeightOffset + (Bitcoin.serializeWitness fullWitness).size
 

@@ -56,6 +56,7 @@ theorem single
     let tail := ExecutionResources.initial (outputs ++ rest) altStack
     let resources := ExecutionResources.prepend (inputs ++ rest) altStack
       (executedMultiSigKeyCharge element (inputs ++ rest) flags ctx) tail
+      (executedSignatureWeight element (inputs ++ rest) ctx)
     refine ⟨resources, EvalResources.step (executed rest altStack)
       (EvalResources.empty (outputs ++ rest) altStack flags ctx), ?_, ?_⟩
     · simp only [resources, tail, ExecutionResources.prepend_peakStackItems,
