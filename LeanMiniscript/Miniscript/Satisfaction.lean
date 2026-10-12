@@ -172,7 +172,7 @@ mutual
       if candidateThresholdValid threshold fragments.length then
         let children := satisfactionCandidatesList fragments env
         let states := CandidatePair.countCandidates children
-        { sat := CandidatePair.selectExactly threshold children
+        { sat := states.getD threshold .impossible
           dsat := CandidatePair.thresholdDissatisfaction threshold states }
       else
         {}
@@ -187,9 +187,10 @@ mutual
       { sat := (satisfactionCandidates fragment env).sat.withSelector trueElement
         dsat := .usable [falseElement] false }
   | .j fragment, env =>
-      { sat := (satisfactionCandidates fragment env).sat
+      let candidates := satisfactionCandidates fragment env
+      { sat := candidates.sat
         dsat := (CandidateResult.usable [falseElement] false).select
-          ((satisfactionCandidates fragment env).dsat
+          (candidates.dsat
             |>.requireNonemptyRuntimeTop
             |>.markNonCanonical) }
 

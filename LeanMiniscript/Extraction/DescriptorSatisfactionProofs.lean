@@ -1,3 +1,4 @@
+import LeanMiniscript.Extraction.DescriptorSatisfaction
 import LeanMiniscript.Extraction.DescriptorSatisfactionMaterialProofs
 import LeanMiniscript.Extraction.BitcoinCoreSatisfactionProofs
 

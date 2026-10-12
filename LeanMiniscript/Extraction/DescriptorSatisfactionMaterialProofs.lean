@@ -1,4 +1,4 @@
-import LeanMiniscript.Extraction.DescriptorSatisfaction
+import LeanMiniscript.Extraction.DescriptorSatisfactionMaterial
 
 namespace LeanMiniscript.Extraction.DescriptorSatisfactionMaterial
 

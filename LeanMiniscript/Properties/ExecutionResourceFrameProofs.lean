@@ -1,9 +1,10 @@
 import LeanMiniscript.Properties.ResourceBounds
-import LeanMiniscript.Script.ExecutionResources
+import LeanMiniscript.Miniscript.CompileVerifyResourceProofs
+import LeanMiniscript.Miniscript.ExecutionFrameProofs
 
 namespace LeanMiniscript.Properties
 
-open LeanMiniscript.Script
+open LeanMiniscript.Miniscript LeanMiniscript.Script
 
 /-!
 # Composable resource execution frames
@@ -33,6 +34,55 @@ structure ExecutesResourceFrame (script : Script) (inputs outputs : Stack)
     resources.executedMultiSigKeys ≤ dynamic
 
 namespace ExecutesResourceFrame
+
+/-- Determinism aligns a bounded resource frame with any exact execution of
+    the same script and input frame. -/
+theorem alignOutputs
+    {script : Script} {inputs sourceOutputs targetOutputs : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    {trace : StackTraceBound} {dynamic : Nat}
+    (source : ExecutesResourceFrame script inputs sourceOutputs flags ctx
+      trace dynamic)
+    (target : ExecutesStackFrame script inputs targetOutputs flags ctx) :
+    ExecutesResourceFrame script inputs targetOutputs flags ctx trace dynamic := by
+  obtain ⟨resources, observed, _, _⟩ := source.run [] []
+  have sameResult := Eval.result_unique observed.toEval (target [] [])
+  have outputEq : sourceOutputs = targetOutputs := by simpa using sameResult
+  subst targetOutputs
+  exact source
+
+/-- Terminal VERIFY fusion preserves an already established resource frame. -/
+theorem compileVerify
+    {script : Script} {inputs outputs : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    {trace : StackTraceBound} {dynamic : Nat}
+    (balanced : BalancedControlFlow script)
+    (executed : ExecutesResourceFrame (script ++ [.op .OP_VERIFY])
+      inputs outputs flags ctx trace dynamic) :
+    ExecutesResourceFrame (LeanMiniscript.Miniscript.compileVerify script)
+      inputs outputs flags ctx trace dynamic := by
+  refine ⟨executed.netDiff_le, ?_⟩
+  intro rest altStack
+  obtain ⟨resources, observed, peak, charge⟩ := executed.run rest altStack
+  exact ⟨resources, EvalResources.compileVerify_success balanced observed,
+    peak, charge⟩
+
+/-- Every realizable frame trace has a nonnegative execution coordinate. -/
+theorem exec_nonneg
+    {script : Script} {inputs outputs : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    {trace : StackTraceBound} {dynamic : Nat}
+    (executed : ExecutesResourceFrame script inputs outputs flags ctx
+      trace dynamic) : 0 ≤ trace.exec := by
+  obtain ⟨resources, observed, peak, _⟩ := executed.run [] []
+  have final := observed.final_le_peak
+  simp only [List.append_nil, List.length_nil, Nat.add_zero] at peak final
+  have castFinal := Int.ofNat_le.mpr final
+  change Int.ofNat outputs.length ≤
+    Int.ofNat resources.peakStackItems at castFinal
+  change Int.ofNat resources.peakStackItems ≤
+    Int.ofNat outputs.length + trace.exec at peak
+  omega
 
 /-- Lift one exact single-instruction execution into a bounded resource frame. -/
 theorem single
@@ -242,6 +292,69 @@ theorem withSuffix
     refine ⟨resources, ?_, ?_, charge⟩
     · simpa [List.append_assoc] using observed
     · simpa [List.append_assoc] using peak
+
+/-- Lift a selected branch through an entry step that consumes its selector
+    and preserves its dynamic multisignature charge. -/
+private theorem prependSelector
+    {script selectedScript : Script} {selector : StackElement}
+    {inputs outputs : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    {trace : StackTraceBound} {dynamic : Nat}
+    (selected : ExecutesResourceFrame selectedScript inputs outputs flags ctx
+      trace dynamic)
+    (enter : ∀ rest altStack resources,
+      EvalResources selectedScript (inputs ++ rest) altStack flags ctx
+        (outputs ++ rest) altStack resources →
+      EvalResources script ((selector :: inputs) ++ rest) altStack flags ctx
+        (outputs ++ rest) altStack
+        (ExecutionResources.prepend ((selector :: inputs) ++ rest) altStack 0 resources)) :
+    ExecutesResourceFrame script (selector :: inputs) outputs flags ctx
+      (StackTraceBound.branch.sequential trace) dynamic := by
+  constructor
+  · have net := selected.netDiff_le
+    simp only [List.length_cons, StackTraceBound.sequential, StackTraceBound.branch,
+      Int.ofNat_eq_natCast, Int.natCast_add] at net ⊢
+    omega
+  · intro rest altStack
+    obtain ⟨resources, observed, peak, charge⟩ := selected.run rest altStack
+    refine ⟨_, enter rest altStack resources observed, ?_, ?_⟩
+    · have net := selected.netDiff_le
+      simp only [ExecutionResources.prepend_peakStackItems,
+        List.length_append, List.length_cons, StackTraceBound.sequential,
+        StackTraceBound.branch, Int.ofNat_eq_natCast, Int.natCast_add] at net peak ⊢
+      omega
+    · simpa using charge
+
+/-- Entering the selected `OP_IF` branch adds the selector-pop trace before
+    the selected branch trace. -/
+theorem ifSelected
+    {script : Script} {frame : ConditionalFrame} {selector : StackElement}
+    {inputs outputs : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    {trace : StackTraceBound} {dynamic : Nat}
+    (split : splitConditional script = some frame)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
+    (selected : ExecutesResourceFrame
+      (frame.select (castToBool selector)) inputs outputs flags ctx
+      trace dynamic) :
+    ExecutesResourceFrame (.op .OP_IF :: script) (selector :: inputs)
+      outputs flags ctx (StackTraceBound.branch.sequential trace) dynamic := by
+  exact prependSelector selected fun _ _ _ observed =>
+    EvalResources.if_execute split minimal observed
+
+/-- Entering the selected `OP_NOTIF` branch adds the selector-pop trace before
+    the selected branch trace. -/
+theorem notifSelected
+    {script : Script} {frame : ConditionalFrame} {selector : StackElement}
+    {inputs outputs : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    {trace : StackTraceBound} {dynamic : Nat}
+    (split : splitConditional script = some frame)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
+    (selected : ExecutesResourceFrame
+      (frame.select (!castToBool selector)) inputs outputs flags ctx
+      trace dynamic) :
+    ExecutesResourceFrame (.op .OP_NOTIF :: script) (selector :: inputs)
+      outputs flags ctx (StackTraceBound.branch.sequential trace) dynamic := by
+  exact prependSelector selected fun _ _ _ observed =>
+    EvalResources.notif_execute split minimal observed
 
 end ExecutesResourceFrame
 
