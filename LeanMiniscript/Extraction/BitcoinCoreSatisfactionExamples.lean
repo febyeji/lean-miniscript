@@ -4,6 +4,7 @@ import LeanMiniscript.Miniscript.Satisfaction
 import LeanMiniscript.Bitcoin.TaprootSighashExamples
 import LeanMiniscript.Miniscript.Sane
 import LeanMiniscript.Script.RuntimeCompletenessProofs
+import LeanMiniscript.Extraction.DescriptorSatisfaction
 
 namespace LeanMiniscript.Extraction.BitcoinCoreSatisfactionExamples
 
@@ -39,27 +40,19 @@ private def flags : CoreVerificationFlags :=
     checkLockTimeVerify := true, checkSequenceVerify := true
     discourageOpSuccess := true, discourageUpgradableTaprootVersion := true }
 
+private def material : DescriptorSatisfactionMaterial :=
+  { signatureFor := fun selected => if selected.bytes == key.bytes then some signature else none
+    preimageFor := fun _ => none
+    nonPreimageFor := fun _ => ByteArray.empty }
+
 private def prepare (transaction : Transaction) :
     Except String (CompiledDescriptor × TaprootLeafSpendInfo × Witness × TxContext) := do
   let descriptor ← compileOutputDescriptor (.tr internalKey (some (.leaf (.pk key))))
-  let leaf ← match descriptor.taprootLeaves with
-    | [leaf] => pure leaf
-    | _ => throw "Expected one descriptor leaf"
   let spentOutputs := sighashFixtureSpentOutputs.modify 0
     (fun output => { output with scriptPubKey := descriptor.scriptPubKey })
-  let ctx ← (TxContext.fromTaproot
-    { transaction, spentOutputs, inputIndex := 0
-      spendPath := .scriptPath leaf.script 0xc0 0xffffffff }).mapError
-        (fun _ => "Invalid transaction context")
-  let env : SatEnv :=
-    { signatureFor := fun selected => if selected.bytes == key.bytes then some signature else none
-      preimageFor := fun _ => none
-      nonPreimageFor := fun _ => ByteArray.empty
-      txCtx := ctx }
-  let arguments ← match satisfyFinal (desugar leaf.fragment) env with
-    | some arguments => pure arguments
-    | none => throw "No generated satisfaction"
-  return (descriptor, leaf, arguments, ctx)
+  let prepared ← (prepareDescriptorSatisfaction descriptor 0 material transaction spentOutputs 0).mapError
+    (fun error => reprStr error)
+  return (descriptor, prepared.leaf, prepared.arguments, prepared.context)
 
 private def run (mutate : Witness → Witness := id)
     (transaction : Transaction := sighashFixtureTransaction)
@@ -119,5 +112,97 @@ example : (run (List.replicate 999 ByteArray.empty ++ ·)).toOption =
 
 example : (run id sighashFixtureTransaction (hex "51")).toOption =
     some (.error .witnessMalleated) := by native_decide
+
+-- Exercise the complete generation/verification entry with the same real
+-- signature, including setup failures before cryptographic verification.
+private def verified
+    (supplied : DescriptorSatisfactionMaterial := material)
+    (transaction : Transaction := sighashFixtureTransaction)
+    (leafIndex : Nat := 0) (inputIndex : Nat := 0)
+    (mutateOutputs : Array TxOutput → Array TxOutput := id)
+    (verifyFlags : CoreVerificationFlags := flags)
+    (tree : Option DescriptorTree := some (.leaf (.pk key))) :
+    Except String (Except DescriptorSatisfactionError Witness) := do
+  let descriptor ← compileOutputDescriptor (.tr internalKey tree)
+  let spentOutputs := mutateOutputs (sighashFixtureSpentOutputs.modify 0
+    (fun output => { output with scriptPubKey := descriptor.scriptPubKey }))
+  return (satisfyDescriptorTransaction CryptoOracle.pureLeanSchnorr verifyFlags
+    descriptor leafIndex supplied transaction spentOutputs inputIndex).map (·.witness)
+
+private def hasError (result : Except String (Except DescriptorSatisfactionError Witness))
+    (expected : DescriptorSatisfactionError) : Bool :=
+  match result with
+  | .ok (.error actual) => decide (actual = expected)
+  | _ => false
+
+example : (match verified with
+  | .ok (.ok witness) => witness == [signature,
+      hex "20f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9ac",
+      hex "c02f8bde4d1a07209355b4a7250a5c5128e88b84bddc619ab7cba8d569b240efe4"]
+  | _ => false) = true := by native_decide
+
+example : hasError (verified { material with signatureFor := fun _ => none })
+    .unavailable = true := by native_decide
+
+example : hasError (verified { material with
+    signatureFor := fun _ => some (flip signature 40) })
+    (.verification (.script .schnorrSig)) = true := by native_decide
+
+example : hasError (verified material { sighashFixtureTransaction with
+    locktime := sighashFixtureTransaction.locktime + 1 })
+    (.verification (.script .schnorrSig)) = true := by native_decide
+
+example : hasError (verified (leafIndex := 1)) .leafIndex = true := by native_decide
+
+example : hasError (verified (inputIndex := sighashFixtureTransaction.inputs.size))
+    (.context .inputIndex) = true := by native_decide
+
+example : hasError (verified (mutateOutputs := fun _ => #[]))
+    (.context .spentOutputCount) = true := by native_decide
+
+example : hasError (verified (mutateOutputs := fun outputs => outputs.modify 0
+    (fun output => { output with scriptPubKey := ByteArray.empty })))
+    .spentOutputMismatch = true := by native_decide
+
+example : hasError (verified (transaction := { sighashFixtureTransaction with
+    inputs := sighashFixtureTransaction.inputs.modify 0
+      (fun input => { input with scriptSig := hex "51" }) }))
+    .nonemptyScriptSig = true := by native_decide
+
+example : hasError (verified (verifyFlags := { flags with witness := false }))
+    .witnessDisabled = true := by native_decide
+
+example : hasError (verified (verifyFlags := { flags with taproot := false }))
+    .taprootDisabled = true := by native_decide
+
+example : hasError (verified (tree := none)) .leafIndex = true := by native_decide
+
+example : hasError (verified (tree := some (.leaf (.core .one))))
+    (.notSane .signatureNotRequired) = true := by native_decide
+
+-- The selected occurrence supplies the source, script and control path even
+-- when it is not the first leaf. Only the second key has supplied material.
+private def prepareSecondLeaf (index : Nat) :
+    Except String (Except DescriptorSatisfactionError Bool) := do
+  let descriptor ← compileOutputDescriptor (.tr internalKey (some
+    (.branch (.leaf (.pk internalKey)) (.leaf (.pk key)))))
+  let spentOutputs := sighashFixtureSpentOutputs.modify 0
+    (fun output => { output with scriptPubKey := descriptor.scriptPubKey })
+  return (prepareDescriptorSatisfaction descriptor index material
+    sighashFixtureTransaction spentOutputs 0).map fun prepared =>
+      match descriptor.taprootLeaves[1]? with
+      | none => false
+      | some leaf => prepared.leaf.script == leaf.script &&
+          prepared.leaf.controlBlock == leaf.controlBlock &&
+          prepared.witness == [signature, leaf.script, leaf.controlBlock] &&
+          leaf.controlBlock.size == 65
+
+example : (match prepareSecondLeaf 1 with
+  | .ok (.ok result) => result
+  | _ => false) = true := by native_decide
+
+example : (match prepareSecondLeaf 0 with
+  | .ok (.error .unavailable) => true
+  | _ => false) = true := by native_decide
 
 end LeanMiniscript.Extraction.BitcoinCoreSatisfactionExamples
