@@ -75,6 +75,22 @@ theorem satisfactionCorrectnessSurface : SatisfactionCorrectnessSurface := by
     satisfactionCorrectnessCore valid sound encodings version modeled
       generated
 
+/-- Every item in a final generated satisfaction obeys the Script element
+size limit under the existing validity and environment contracts. -/
+theorem satisfyFinal_itemsBounded
+    {ctx : ScriptContext} {fragment : CoreFragment} {env : SatEnv}
+    {witness : Witness} {flags : ScriptFlags}
+    (valid : ValidMiniscript ctx fragment)
+    (sound : env.Sound) (encodings : env.EncodingSound flags)
+    (version : ModeledContextVersion ctx env.txCtx)
+    (modeled : ModeledContextFlags ctx flags)
+    (generated : satisfyFinal fragment env = some witness) :
+    witness.ItemsBounded := by
+  rcases valid with ⟨mods, wellFormed, typed⟩
+  exact ((supportsGeneratedContract_of_wellFormed_hasType version modeled sound
+    encodings typed wellFormed).satisfyContract
+      (satisfyFinal_some_satisfy generated)).input.bounded
+
 /-- Surface compilation inherits final HASSIG-filtered satisfaction
     correctness through desugaring. -/
 theorem satisfyFinalCorrectnessSurface

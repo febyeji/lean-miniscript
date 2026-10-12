@@ -16,6 +16,11 @@ inductive DescriptorTree where
   | branch (left right : DescriptorTree)
   deriving Repr
 
+/-- Source leaves in descriptor order, retaining repeated occurrences. -/
+def DescriptorTree.fragments : DescriptorTree → List SurfaceFragment
+  | .leaf fragment => [fragment]
+  | .branch left right => left.fragments ++ right.fragments
+
 /-- Supported output wrappers after resolving descriptor keys. -/
 inductive OutputDescriptor where
   | wsh (fragment : SurfaceFragment)
@@ -23,8 +28,10 @@ inductive OutputDescriptor where
   | tr (internalKey : PubKey) (tree : Option DescriptorTree)
   deriving Repr
 
-/-- One compiled leaf occurrence. Siblings run from the leaf toward the root. -/
+/-- One compiled leaf occurrence with its original surface expression.
+Siblings run from the leaf toward the root. -/
 structure DescriptorLeafInfo where
+  fragment : SurfaceFragment
   script : ByteArray
   merklePath : List ByteArray := []
   deriving Repr
@@ -80,7 +87,8 @@ private def validCurveKey (ctx : ScriptContext) (key : PubKey) : Bool :=
   | .tapscript => key.size == 32 &&
       (Secp256k1.liftX (Secp256k1.decodeBE key.bytes)).isSome
 
-private def compileDescriptorFragment (ctx : ScriptContext)
+/-- Validate a descriptor leaf and serialize its concrete compilation. -/
+def compileDescriptorFragment (ctx : ScriptContext)
     (fragment : SurfaceFragment) : Except String ByteArray := do
   let some checked := CheckedSurfaceFragment.ofRaw? ctx fragment
     | throw "Descriptor fragment must be well-formed and typed in its script context"
@@ -99,7 +107,7 @@ def DescriptorTree.compile (tree : DescriptorTree) (maxDepth : Nat := 128) :
   match tree, maxDepth with
   | .leaf fragment, _ => do
       let script ← compileDescriptorFragment .tapscript fragment
-      return { merkleRoot := tapleafHash script 0xc0, leaves := [{ script }] }
+      return { merkleRoot := tapleafHash script 0xc0, leaves := [{ fragment, script }] }
   | .branch _ _, 0 => .error "Taproot tree exceeds the branch depth budget"
   | .branch left right, remaining + 1 => do
       let leftInfo ← left.compile remaining
