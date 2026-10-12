@@ -1,4 +1,4 @@
-import LeanMiniscript.Extraction.DescriptorSatisfaction
+import LeanMiniscript.Extraction.DescriptorSatisfactionMaterialProofs
 import LeanMiniscript.Extraction.BitcoinCoreSatisfactionProofs
 
 namespace LeanMiniscript.Extraction
@@ -17,15 +17,17 @@ private theorem checkSane_source {ctx : ScriptContext} {fragment : CoreFragment}
 the source match and the generated-satisfaction equation. It also binds the
 context to the supplied transaction and selected script. -/
 theorem prepareDescriptorSatisfaction_spec
+    {oracle : CryptoOracle} {flags : ScriptFlags}
     {descriptor : CompiledDescriptor} {leafIndex : Nat}
     {material : DescriptorSatisfactionMaterial} {transaction : Transaction}
     {spentOutputs : Array TxOutput} {inputIndex : Nat}
     {prepared : PreparedDescriptorSatisfaction}
-    (preparation : prepareDescriptorSatisfaction descriptor leafIndex material
+    (preparation : prepareDescriptorSatisfaction oracle flags descriptor leafIndex material
       transaction spentOutputs inputIndex = .ok prepared) :
     descriptor.taprootLeaves[leafIndex]? = some prepared.leaf ∧
     prepared.sane.checked.fragment = desugar prepared.leaf.fragment ∧
-    satisfyFinal prepared.sane.checked.fragment (material.toEnv prepared.context) =
+    satisfyFinal prepared.sane.checked.fragment
+      ((material.validated oracle flags prepared.context).toEnv prepared.context) =
       some prepared.arguments ∧
     TxContext.fromTaproot
       { transaction, spentOutputs, inputIndex
@@ -53,7 +55,8 @@ theorem prepareDescriptorSatisfaction_spec
           | error error => simp [sane] at preparation
           | ok saneFragment =>
             simp only [sane] at preparation
-            cases generated : satisfyFinal saneFragment.checked.fragment (material.toEnv ctx) with
+            cases generated : satisfyFinal saneFragment.checked.fragment
+                ((material.validated oracle flags ctx).toEnv ctx) with
             | none => simp [generated] at preparation
             | some arguments =>
               simp only [generated, Except.ok.injEq] at preparation
@@ -84,7 +87,8 @@ theorem descriptorSatisfaction_context
     rfl
 
 /-- Generated descriptor witnesses satisfy Core verification under the
-existing material, encoding and oracle contracts. Successful preparation
+existing nonpreimage and oracle contracts. Filtering supplies signature and
+preimage validity and signature encoding. Successful preparation
 supplies leaf membership, source agreement, generation and context agreement.
 The inherited satisfaction proofs retain their native_decide dependencies. -/
 theorem verify_of_prepareDescriptorSatisfaction
@@ -95,24 +99,30 @@ theorem verify_of_prepareDescriptorSatisfaction
     {transaction : Transaction} {spentOutputs : Array TxOutput} {inputIndex : Nat}
     {prepared : PreparedDescriptorSatisfaction} {output : ByteArray}
     (compiled : compileOutputDescriptor (.tr key (some tree)) = .ok descriptor)
-    (preparation : prepareDescriptorSatisfaction descriptor leafIndex material
+    (preparation : prepareDescriptorSatisfaction
+      (CryptoOracle.pureLeanHashes verifyECDSA verifySchnorr) flags.script descriptor leafIndex material
       transaction spentOutputs inputIndex = .ok prepared)
     (selected : descriptor.taprootOutputKey = some output)
     (outputTruth : castToBool output = true)
     (enabled : flags.witness = true) (taproot : flags.taproot = true)
     (locktime : flags.checkLockTimeVerify = true)
     (sequence : flags.checkSequenceVerify = true)
-    (sound : (material.toEnv prepared.context).Sound)
-    (encodings : (material.toEnv prepared.context).EncodingSound flags.script)
+    (nonPreimages : ∀ lock : HashLock, lock.Mismatches (material.nonPreimageFor lock))
     (modeled : ModeledContextFlags .tapscript flags.script)
     (agreement : (CryptoOracle.pureLeanHashes verifyECDSA verifySchnorr).RefinesModel) :
     prepared.verify (CryptoOracle.pureLeanHashes verifyECDSA verifySchnorr)
       flags descriptor = .ok () := by
   obtain ⟨leaf, source, generated, context, _, _⟩ := prepareDescriptorSatisfaction_spec preparation
+  have contextEq := descriptorSatisfaction_context context prepared.arguments
+  have version : prepared.context.sigVersion = .tapscript :=
+    congrArg TxContext.sigVersion contextEq
+  have sound := material.validated_sound _ flags.script prepared.context agreement version nonPreimages
+  have encodings := material.validated_encodingSound
+    (CryptoOracle.pureLeanHashes verifyECDSA verifySchnorr) flags.script prepared.context
   exact verifyCoreScripts_of_compiled_descriptor_satisfaction flags prepared.context
     verifyECDSA verifySchnorr _ prepared.sane compiled
     (List.mem_of_getElem? leaf) source selected outputTruth enabled taproot locktime sequence
-    sound encodings modeled generated (descriptorSatisfaction_context context _) agreement
+    sound encodings modeled generated contextEq agreement
 
 /-- The combined entry returns a witness exactly when preparation and Core
 verification succeed with witness and Taproot verification enabled. This
@@ -126,12 +136,13 @@ theorem satisfyDescriptorTransaction_ok_iff
     satisfyDescriptorTransaction oracle flags descriptor leafIndex material
       transaction spentOutputs inputIndex = .ok prepared ↔
     flags.witness = true ∧ flags.taproot = true ∧
-    prepareDescriptorSatisfaction descriptor leafIndex material transaction spentOutputs inputIndex =
+    prepareDescriptorSatisfaction oracle flags.script descriptor leafIndex material
+      transaction spentOutputs inputIndex =
       .ok prepared ∧ prepared.verify oracle flags descriptor = .ok () := by
   unfold satisfyDescriptorTransaction
   cases witness : flags.witness <;> cases taproot : flags.taproot <;>
     simp [throw, bind, Except.bind]
-  cases preparation : prepareDescriptorSatisfaction descriptor leafIndex material
+  cases preparation : prepareDescriptorSatisfaction oracle flags.script descriptor leafIndex material
       transaction spentOutputs inputIndex with
   | error error => simp
   | ok result =>
@@ -148,7 +159,7 @@ theorem satisfyDescriptorTransaction_ok_iff
       subst prepared
       exact verified
 
-/-- Material soundness and the existing verification contracts suffice for
+/-- The remaining nonpreimage and verification contracts suffice for
 the combined transaction entry to return the prepared witness. Context and
 source agreement are derived from preparation. -/
 theorem satisfyDescriptorTransaction_of_preparation
@@ -159,15 +170,15 @@ theorem satisfyDescriptorTransaction_of_preparation
     {transaction : Transaction} {spentOutputs : Array TxOutput} {inputIndex : Nat}
     {prepared : PreparedDescriptorSatisfaction} {output : ByteArray}
     (compiled : compileOutputDescriptor (.tr key (some tree)) = .ok descriptor)
-    (preparation : prepareDescriptorSatisfaction descriptor leafIndex material
+    (preparation : prepareDescriptorSatisfaction
+      (CryptoOracle.pureLeanHashes verifyECDSA verifySchnorr) flags.script descriptor leafIndex material
       transaction spentOutputs inputIndex = .ok prepared)
     (selected : descriptor.taprootOutputKey = some output)
     (outputTruth : castToBool output = true)
     (enabled : flags.witness = true) (taproot : flags.taproot = true)
     (locktime : flags.checkLockTimeVerify = true)
     (sequence : flags.checkSequenceVerify = true)
-    (sound : (material.toEnv prepared.context).Sound)
-    (encodings : (material.toEnv prepared.context).EncodingSound flags.script)
+    (nonPreimages : ∀ lock : HashLock, lock.Mismatches (material.nonPreimageFor lock))
     (modeled : ModeledContextFlags .tapscript flags.script)
     (agreement : (CryptoOracle.pureLeanHashes verifyECDSA verifySchnorr).RefinesModel) :
     satisfyDescriptorTransaction (CryptoOracle.pureLeanHashes verifyECDSA verifySchnorr)
@@ -175,7 +186,7 @@ theorem satisfyDescriptorTransaction_of_preparation
   apply (satisfyDescriptorTransaction_ok_iff _ _ _ _ _ _ _ _ _).mpr
   exact ⟨enabled, taproot, preparation,
     verify_of_prepareDescriptorSatisfaction flags verifyECDSA verifySchnorr compiled
-      preparation selected outputTruth enabled taproot locktime sequence sound encodings
+      preparation selected outputTruth enabled taproot locktime sequence nonPreimages
       modeled agreement⟩
 
 end LeanMiniscript.Extraction
