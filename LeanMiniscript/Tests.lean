@@ -62,6 +62,7 @@ import LeanMiniscript.Miniscript.TypeInferenceExamples
 import LeanMiniscript.Properties.ResourceBoundsExamples
 import LeanMiniscript.Extraction.BitcoinCoreAuditExamples
 import LeanMiniscript.Extraction.BitcoinCoreCompleteExamples
+import LeanMiniscript.Extraction.BitcoinCoreExecutionExamples
 import LeanMiniscript.Extraction.BitcoinCoreFixturesExamples
 import LeanMiniscript.Extraction.BitcoinCoreLegacyLimitsExamples
 import LeanMiniscript.Extraction.BitcoinCoreMinimalDataExamples

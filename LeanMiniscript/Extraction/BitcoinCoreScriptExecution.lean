@@ -7,12 +7,16 @@ namespace LeanMiniscript.Extraction
 
 open LeanMiniscript.Script
 
-private def removeSignatures (bytes : ByteArray) (signatures : Stack) : ByteArray × Nat :=
+/- The execution internals are named so separate proof modules can relate the
+raw byte loop to the typed runtime evaluator. -/
+namespace CoreScriptExecution
+
+def removeSignatures (bytes : ByteArray) (signatures : Stack) : ByteArray × Nat :=
   signatures.foldl (fun (scriptCode, count) signature =>
     let (next, removed) := coreFindAndDelete scriptCode (coreSignaturePush signature)
     (next, count + removed)) (bytes, 0)
 
-private structure CoreRawState where
+structure CoreRawState where
   runtime : RuntimeState
   offset : Nat := 0
   opcodePosition : Nat := 0
@@ -20,7 +24,7 @@ private structure CoreRawState where
   codeSeparatorOffset : Nat := 0
   codeSeparatorPosition : UInt32 := 0xffffffff
 
-private def instructionContext (ctx : TxContext) (request : CoreScriptExecutionRequest)
+def instructionContext (ctx : TxContext) (request : CoreScriptExecutionRequest)
     (state : CoreRawState) : TxContext :=
   { ctx with
     sigVersion := request.sigVersion
@@ -30,7 +34,7 @@ private def instructionContext (ctx : TxContext) (request : CoreScriptExecutionR
         spendPath := .scriptPath request.scriptBytes request.leafVersion state.codeSeparatorPosition }
       else none }
 
-private def instructionSignatures (opcode : Opcode) (state : RuntimeState)
+def instructionSignatures (opcode : Opcode) (state : RuntimeState)
     (flags : ScriptFlags) : Stack :=
   match opcode with
   | .OP_CHECKSIG | .OP_CHECKSIGVERIFY =>
@@ -43,7 +47,7 @@ private def instructionSignatures (opcode : Opcode) (state : RuntimeState)
       | .error _ => []
   | _ => []
 
-private def coreRawStep (flags : CoreVerificationFlags) (ctx : TxContext)
+def coreRawStep (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracleForScript : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (state : CoreRawState)
     (instruction : CoreRawInstruction) : Except CoreVerificationError CoreRawState := do
@@ -113,7 +117,7 @@ private def coreRawStep (flags : CoreVerificationFlags) (ctx : TxContext)
         let runtime ← (runtimeStep oracle (.op opcode) state.runtime flags.script ctx).mapError .script
         return { next with runtime := runtime }
 
-private def executeCoreRawLoop (flags : CoreVerificationFlags) (ctx : TxContext)
+def executeCoreRawLoop (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracleForScript : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) : Nat → CoreRawState → Except CoreVerificationError Stack
   | 0, _ => .error (.unsupported "raw script decoder fuel exhausted")
@@ -126,6 +130,9 @@ private def executeCoreRawLoop (flags : CoreVerificationFlags) (ctx : TxContext)
         let next ← coreRawStep flags ctx oracleForScript request state instruction
         executeCoreRawLoop flags ctx oracleForScript request fuel next
 
+end CoreScriptExecution
+
+open CoreScriptExecution in
 /-- Execute original bytes under the requested signature version. The witness
 boundary performs Tapscript OP_SUCCESS scanning and initial witness limits.
 BASE and witness-v0 retain script-size and operation-count limits. -/
