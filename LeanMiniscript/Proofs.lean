@@ -8,6 +8,7 @@ import LeanMiniscript.Script.NopRuntimeProofs
 import LeanMiniscript.Script.NumericRuntimeProofs
 import LeanMiniscript.Script.RuntimeErasure
 import LeanMiniscript.Script.RuntimeLimitsProofs
+import LeanMiniscript.Script.RuntimeCompletenessProofs
 import LeanMiniscript.Script.ScriptNumProofs
 import LeanMiniscript.Script.SelectionRuntimeProofs
 import LeanMiniscript.Script.TapscriptExecutionProofs
@@ -39,6 +40,7 @@ import LeanMiniscript.Properties.SaneExecutionResourceProofs
 import LeanMiniscript.Properties.SatisfactionExecutionResourceProofs
 import LeanMiniscript.Extraction.BitcoinCoreLegacyLimitsProofs
 import LeanMiniscript.Extraction.BitcoinCoreExecutionProofs
+import LeanMiniscript.Extraction.BitcoinCoreSatisfactionProofs
 import LeanMiniscript.Extraction.BitcoinCoreVerificationProofs
 import LeanMiniscript.Extraction.RefInterpProofs
 import LeanMiniscript.Extraction.TaprootBytesProofs

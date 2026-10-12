@@ -157,4 +157,29 @@ theorem compileOutputDescriptor_taprootCommitments
           exact verified
         · cases compiled
 
+/-- The selected Taproot output key is exactly the 32-byte native witness
+program embedded in the compiled scriptPubKey. -/
+theorem compileOutputDescriptor_taprootScriptPubKey
+    {key : PubKey} {tree : DescriptorTree} {result : CompiledDescriptor}
+    {output : ByteArray}
+    (compiled : compileOutputDescriptor (.tr key (some tree)) = .ok result)
+    (selected : result.taprootOutputKey = some output) :
+    result.scriptPubKey = ByteArray.mk #[0x51, 0x20] ++ output ∧ output.size = 32 := by
+  simp only [compileOutputDescriptor, bind, Except.bind] at compiled
+  split at compiled
+  · cases compiled
+  · cases treeEq : tree.compile with
+    | error error => simp [treeEq, Functor.map, Except.map] at compiled
+    | ok info =>
+        simp only [treeEq, Functor.map, Except.map] at compiled
+        split at compiled
+        · simp only [pure, Except.pure, Except.ok.injEq] at compiled
+          subst result
+          simp only [Option.some.injEq] at selected
+          subst output
+          refine ⟨rfl, ?_⟩
+          change ((List.range 32).toArray.map _).size = 32
+          simp
+        · cases compiled
+
 end LeanMiniscript.Miniscript

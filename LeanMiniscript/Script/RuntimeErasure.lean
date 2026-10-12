@@ -9,7 +9,9 @@ semantics. The proof removes one open conditional at a time, then inducts over
 the source program. Resource failures need not agree with the older evaluator.
 -/
 
-private theorem runtime_success_cons
+namespace RuntimeProjection
+
+theorem runtime_success_cons
     {oracle : CryptoOracle} {element : ScriptElement} {rest : Script}
     {state : RuntimeState} {flags : ScriptFlags} {ctx : TxContext}
     {stack alt : Stack} {weight : Nat}
@@ -30,7 +32,7 @@ private theorem runtime_success_cons
           simp only [executed, bind, Except.bind] at step
           exact congrArg Except.ok (checkRuntimeStack_ok step).1.symm
 
-private theorem runtime_cons_success
+theorem runtime_cons_success
     {oracle : CryptoOracle} {element : ScriptElement} {rest : Script}
     {state next : RuntimeState} {flags : ScriptFlags} {ctx : TxContext}
     {stack alt : Stack} {weight : Nat}
@@ -41,7 +43,7 @@ private theorem runtime_cons_success
   simpa [evaluateRuntime, runtimeStep, executed, checkRuntimeStack,
     Nat.not_lt_of_le bounded, bind, Except.bind] using tail
 
-private theorem execute_ordinary (element : ScriptElement) (ordinary : NonConditional element)
+theorem execute_ordinary (element : ScriptElement) (ordinary : NonConditional element)
     (oracle : CryptoOracle) (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
     executeRuntimeElement oracle element state flags ctx = (do
       if element.pushSize > maxScriptElementSize then throw .pushSize
@@ -56,7 +58,7 @@ private theorem execute_ordinary (element : ScriptElement) (ordinary : NonCondit
   | pushNum => rfl
   | op opcode => cases opcode <;> first | contradiction | rfl
 
-private theorem select_ordinary (element : ScriptElement) (ordinary : NonConditional element)
+theorem select_ordinary (element : ScriptElement) (ordinary : NonConditional element)
     (depth : Nat) (selected : Bool) (rest : Script) :
     selectConditionalTail depth selected (element :: rest) =
       (selectConditionalTail depth selected rest).map
@@ -74,7 +76,7 @@ private theorem execute_push_bound
   intro exceeded
   simp [executeRuntimeElement, exceeded, bind, Except.bind, pure, Except.pure] at executed
 
-private theorem ordinary_conditions
+theorem ordinary_conditions
     {oracle : CryptoOracle} {element : ScriptElement} {state next : RuntimeState}
     {flags : ScriptFlags} {ctx : TxContext} (conditions : List Bool)
     (ordinary : NonConditional element)
@@ -103,7 +105,7 @@ private theorem ordinary_conditions
     cases executed
     exact ⟨rfl, rfl⟩
 
-private theorem execute_branch (element : ScriptElement) (branch : element.isBranch = true)
+theorem execute_branch (element : ScriptElement) (branch : element.isBranch = true)
     (oracle : CryptoOracle) (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
     executeRuntimeElement oracle element state flags ctx = (do
       if state.conditions.all id then
@@ -123,7 +125,7 @@ private theorem execute_branch (element : ScriptElement) (branch : element.isBra
       simp_all [ScriptElement.isBranch, executeRuntimeElement, ScriptElement.pushSize,
         maxScriptElementSize, pure, Except.pure] <;> rfl
 
-private theorem select_branch (element : ScriptElement) (branch : element.isBranch = true)
+theorem select_branch (element : ScriptElement) (branch : element.isBranch = true)
     (depth : Nat) (selected : Bool) (rest : Script) :
     selectConditionalTail depth selected (element :: rest) =
       (selectConditionalTail (depth + 1) selected rest).map
@@ -133,7 +135,7 @@ private theorem select_branch (element : ScriptElement) (branch : element.isBran
   | pushNum => contradiction
   | op opcode => cases opcode <;> first | contradiction | rfl
 
-private theorem branch_conditions
+theorem branch_conditions
     {oracle : CryptoOracle} {element : ScriptElement} {state next : RuntimeState}
     {flags : ScriptFlags} {ctx : TxContext} (conditions : List Bool)
     (branch : element.isBranch = true)
@@ -281,6 +283,10 @@ private theorem runtime_select_frame
       simp only [split, Option.map_some, Option.some.injEq] at projected
       subst selected
       exact ⟨frame, rfl, by simpa using result⟩
+
+end RuntimeProjection
+
+open RuntimeProjection
 
 /-- Adding source-order runtime limits cannot introduce a successful result.
     Every successful run has exactly the same stacks and remaining signature
