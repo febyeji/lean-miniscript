@@ -23,14 +23,55 @@ inductive OutputDescriptor where
   | tr (internalKey : PubKey) (tree : Option DescriptorTree)
   deriving Repr
 
-/-- Output bytes and scripts committed to by a descriptor. A Taproot result
-retains the output key and optional tree root; spending data is a separate API. -/
+/-- One compiled leaf occurrence. Siblings run from the leaf toward the root. -/
+structure DescriptorLeafInfo where
+  script : ByteArray
+  merklePath : List ByteArray := []
+  deriving Repr
+
+/-- A checked tree's root and leaves in left-to-right descriptor order.
+Repeated scripts retain one entry for each occurrence in the tree. -/
+structure DescriptorTreeInfo where
+  merkleRoot : ByteArray
+  leaves : List DescriptorLeafInfo
+  deriving Repr
+
+/-- Add a parent branch's sibling after the leaf's existing path. -/
+def DescriptorLeafInfo.withSibling (leaf : DescriptorLeafInfo)
+    (sibling : ByteArray) : DescriptorLeafInfo :=
+  { leaf with merklePath := leaf.merklePath ++ [sibling] }
+
+/-- Combine checked subtrees while retaining their leaf order and multiplicity. -/
+def DescriptorTreeInfo.branch (left right : DescriptorTreeInfo) : DescriptorTreeInfo :=
+  { merkleRoot := tapbranchHash left.merkleRoot right.merkleRoot
+    leaves := left.leaves.map (·.withSibling right.merkleRoot) ++
+      right.leaves.map (·.withSibling left.merkleRoot) }
+
+/-- A version-0xc0 leaf occurrence and its serialized control block.
+The script and control block are the final two script-path witness items
+when no annex is present; the satisfaction stack is supplied separately. -/
+structure TaprootLeafSpendInfo extends DescriptorLeafInfo where
+  controlBlock : ByteArray
+  deriving Repr
+
+/-- Serialize spending data for a compiled leaf with a validated 32-byte
+internal key, the tweaked output's parity, and at most 128 sibling hashes. -/
+def DescriptorLeafInfo.spendInfo (leaf : DescriptorLeafInfo)
+    (internalKey : ByteArray) (outputParity : Bool) : TaprootLeafSpendInfo :=
+  { toDescriptorLeafInfo := leaf
+    controlBlock := leaf.merklePath.foldl (· ++ ·)
+      (ByteArray.mk #[if outputParity then 0xc1 else 0xc0] ++ internalKey) }
+
+/-- Output bytes and scripts committed to by a descriptor. Taproot leaves
+include script-path spending data in left-to-right order, including duplicates.
+Key-only Taproot and WSH descriptors have no Taproot leaf entries. -/
 structure CompiledDescriptor where
   scriptPubKey : ByteArray
   redeemScript : Option ByteArray := none
   witnessScript : Option ByteArray := none
   taprootOutputKey : Option ByteArray := none
   taprootMerkleRoot : Option ByteArray := none
+  taprootLeaves : List TaprootLeafSpendInfo := []
   deriving Repr
 
 private def validCurveKey (ctx : ScriptContext) (key : PubKey) : Bool :=
@@ -51,14 +92,19 @@ private def compileDescriptorFragment (ctx : ScriptContext)
   | .ok bytes => return bytes
   | .error _ => throw "Descriptor script cannot be serialized"
 
-private def descriptorTreeRoot : Nat → DescriptorTree → Except String ByteArray
-  | _, .leaf fragment => do
-      return tapleafHash (← compileDescriptorFragment .tapscript fragment) 0xc0
-  | 0, .branch _ _ => .error "Taproot tree exceeds 128 branch levels"
-  | remaining + 1, .branch left right => do
-      let leftHash ← descriptorTreeRoot remaining left
-      let rightHash ← descriptorTreeRoot remaining right
-      return tapbranchHash leftHash rightHash
+/-- Compile leaves and build their Merkle paths. The depth budget counts
+branches, so a single leaf uses zero. Output descriptors use a budget of 128. -/
+def DescriptorTree.compile (tree : DescriptorTree) (maxDepth : Nat := 128) :
+    Except String DescriptorTreeInfo :=
+  match tree, maxDepth with
+  | .leaf fragment, _ => do
+      let script ← compileDescriptorFragment .tapscript fragment
+      return { merkleRoot := tapleafHash script 0xc0, leaves := [{ script }] }
+  | .branch _ _, 0 => .error "Taproot tree exceeds the branch depth budget"
+  | .branch left right, remaining + 1 => do
+      let leftInfo ← left.compile remaining
+      let rightInfo ← right.compile remaining
+      return leftInfo.branch rightInfo
 
 private def descriptorInternalKey (key : PubKey) : Except String ByteArray := do
   if key.size == 32 then
@@ -92,9 +138,10 @@ def compileOutputDescriptor (descriptor : OutputDescriptor) :
       | _ => return { scriptPubKey := program, witnessScript := some witnessScript }
   | .tr internalKey tree =>
       let internalBytes ← descriptorInternalKey internalKey
-      let root ← match tree with
+      let treeInfo ← match tree with
         | none => pure none
-        | some tree => some <$> descriptorTreeRoot 128 tree
+        | some tree => some <$> tree.compile
+      let root := treeInfo.map (·.merkleRoot)
       let tweak := taggedHash "TapTweak" (internalBytes ++ root.getD ByteArray.empty)
       let point ← match taprootTweakPoint internalBytes tweak with
         | .ok point => pure point
@@ -103,6 +150,8 @@ def compileOutputDescriptor (descriptor : OutputDescriptor) :
       return {
         scriptPubKey := ByteArray.mk #[0x51, 0x20] ++ outputKey
         taprootOutputKey := some outputKey
-        taprootMerkleRoot := root }
+        taprootMerkleRoot := root
+        taprootLeaves := (treeInfo.toList.flatMap (·.leaves)).map
+          (·.spendInfo internalBytes (point.2 % 2 == 1)) }
 
 end LeanMiniscript.Miniscript

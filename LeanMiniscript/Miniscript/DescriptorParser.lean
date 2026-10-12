@@ -118,7 +118,9 @@ def parseOutputDescriptor (input : String) (wildcardIndex : Option Nat := none)
       | _ => throw "tr requires an internal key and an optional script tree"
   | _ => throw "Supported output descriptors are wsh, sh(wsh), and tr"
 
-/-- Parse a descriptor and compile its output and associated spend scripts. -/
+/-- Parse a descriptor and compile its output and associated spend scripts.
+Taproot results include each leaf's script, Merkle path, and control block in
+left-to-right tree order, retaining repeated leaf occurrences. -/
 def deriveOutputDescriptor (input : String) (wildcardIndex : Option Nat := none)
     (requireChecksum : Bool := false) : Except String CompiledDescriptor := do
   compileOutputDescriptor (← parseOutputDescriptor input wildcardIndex requireChecksum)

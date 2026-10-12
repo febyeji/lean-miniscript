@@ -18,6 +18,7 @@ import LeanMiniscript.Miniscript.CompileVerifyResourceProofs
 import LeanMiniscript.Miniscript.Conformance
 import LeanMiniscript.Miniscript.DescriptorKeyProofs
 import LeanMiniscript.Miniscript.MalleabilityInferenceProofs
+import LeanMiniscript.Miniscript.OutputDescriptorProofs
 import LeanMiniscript.Miniscript.SatisfactionCandidateProofs
 import LeanMiniscript.Miniscript.SatisfactionCorrectnessProofs
 import LeanMiniscript.Miniscript.SatisfactionGeneratedProofs

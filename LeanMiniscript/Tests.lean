@@ -49,6 +49,7 @@ import LeanMiniscript.Miniscript.DescriptorConformanceExamples
 import LeanMiniscript.Miniscript.DescriptorErrorExamples
 import LeanMiniscript.Miniscript.DescriptorKeyReviewExamples
 import LeanMiniscript.Miniscript.DescriptorParserExamples
+import LeanMiniscript.Miniscript.DescriptorSpendInfoExamples
 import LeanMiniscript.Miniscript.MalleabilityExamples
 import LeanMiniscript.Miniscript.OutputDescriptorExamples
 import LeanMiniscript.Miniscript.SaneExamples
