@@ -66,5 +66,8 @@ preservation, and runtime prefix-bound guarantees without adding their proof
 graph to the stable executable facade. Generated final satisfactions also
 expose one concrete resource observation bounded by the jointly selected stack
 and dynamic paths, including the context-specific limits certified by sane
-fragments.
+fragments. Raw satisfier candidates exist exactly when a valid fragment is
+structurally satisfiable under the environment's atom material, and the policy
+layer proves its text round trip and that compiled policies preserve the
+policy's meaning.
 -/
