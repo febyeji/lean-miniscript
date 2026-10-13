@@ -28,6 +28,7 @@ import LeanMiniscript.Miniscript.SatisfactionCorrectnessProofs
 import LeanMiniscript.Miniscript.SatisfactionGeneratedProofs
 import LeanMiniscript.Miniscript.SatisfactionGeneratedRecursiveProofs
 import LeanMiniscript.Miniscript.SatisfactionLemmas
+import LeanMiniscript.Miniscript.SatisfactionPossibilityProofs
 import LeanMiniscript.Miniscript.SatisfactionProofs
 import LeanMiniscript.Miniscript.Structural
 import LeanMiniscript.Miniscript.SurfaceParserProofs

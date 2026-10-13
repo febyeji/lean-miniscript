@@ -12,6 +12,7 @@ import LeanMiniscript.Script.SignatureEncoding
 import LeanMiniscript.Script.State
 import LeanMiniscript.Script.Syntax
 import LeanMiniscript.Script.TapscriptWitnessPolicy
+import LeanMiniscript.Miniscript.AtomMaterial
 import LeanMiniscript.Miniscript.Checked
 import LeanMiniscript.Miniscript.Compile
 import LeanMiniscript.Miniscript.CompileConcrete
