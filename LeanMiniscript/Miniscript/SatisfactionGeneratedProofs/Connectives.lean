@@ -16,6 +16,17 @@ open LeanMiniscript.Script
 
 /-! ## Compositional connective contracts -/
 
+/-- Correctness modifiers that `andor first second third` derives from its
+    children (`n` keeps its default `false`). Proof-internal shorthand: public
+    statements spell the record out. -/
+abbrev andorModifiers (firstMods secondMods thirdMods : CorrectnessModifiers) :
+    CorrectnessModifiers where
+  z := firstMods.z && secondMods.z && thirdMods.z
+  o := (firstMods.z && secondMods.o && thirdMods.o) ||
+    (firstMods.o && secondMods.z && thirdMods.z)
+  d := thirdMods.d
+  u := secondMods.u && thirdMods.u
+
 namespace GeneratedContract
 
 private theorem andVInput
@@ -455,13 +466,8 @@ private theorem andorTrueInput
     {firstMods secondMods thirdMods : CorrectnessModifiers}
     (first : GeneratedInput firstWitness true firstMods)
     (second : GeneratedInput secondWitness expected secondMods) :
-    GeneratedInput (Witness.combine firstWitness secondWitness) expected {
-      z := firstMods.z && secondMods.z && thirdMods.z
-      o := (firstMods.z && secondMods.o && thirdMods.o) ||
-        (firstMods.o && secondMods.z && thirdMods.z)
-      d := thirdMods.d
-      u := secondMods.u && thirdMods.u
-    } := by
+    GeneratedInput (Witness.combine firstWitness secondWitness) expected
+      (andorModifiers firstMods secondMods thirdMods) := by
   apply first.combine second
   · intro enabled
     simp only [Bool.and_eq_true] at enabled
@@ -478,13 +484,8 @@ private theorem andorFalseInput
     {firstMods secondMods thirdMods : CorrectnessModifiers}
     (first : GeneratedInput firstWitness false firstMods)
     (third : GeneratedInput thirdWitness expected thirdMods) :
-    GeneratedInput (Witness.combine firstWitness thirdWitness) expected {
-      z := firstMods.z && secondMods.z && thirdMods.z
-      o := (firstMods.z && secondMods.o && thirdMods.o) ||
-        (firstMods.o && secondMods.z && thirdMods.z)
-      d := thirdMods.d
-      u := secondMods.u && thirdMods.u
-    } := by
+    GeneratedInput (Witness.combine firstWitness thirdWitness) expected
+      (andorModifiers firstMods secondMods thirdMods) := by
   apply first.combine third
   · intro enabled
     simp only [Bool.and_eq_true] at enabled

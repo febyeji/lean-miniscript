@@ -106,23 +106,13 @@ private theorem choiceFrames_snoc_inv
   cases choices with
   | nil => simp at pairsEq
   | @snocSat otherPairs otherTruths otherFrames otherPair frame prior selected =>
-      have lengths : pairs.length = otherPairs.length := by
-        have := congrArg List.length pairsEq
-        simpa using this
-      obtain ⟨pairsEq, singletonEq⟩ := List.append_inj pairsEq lengths
-      have pairEq : pair = otherPair := by simpa using singletonEq
-      subst otherPairs
-      subst otherPair
+      obtain ⟨rfl, singletonEq⟩ := List.append_inj' pairsEq rfl
+      cases singletonEq
       exact ⟨otherTruths, otherFrames, true, frame, rfl, rfl, prior,
         Or.inl ⟨rfl, selected⟩⟩
   | @snocDsat otherPairs otherTruths otherFrames otherPair frame prior selected =>
-      have lengths : pairs.length = otherPairs.length := by
-        have := congrArg List.length pairsEq
-        simpa using this
-      obtain ⟨pairsEq, singletonEq⟩ := List.append_inj pairsEq lengths
-      have pairEq : pair = otherPair := by simpa using singletonEq
-      subst otherPairs
-      subst otherPair
+      obtain ⟨rfl, singletonEq⟩ := List.append_inj' pairsEq rfl
+      cases singletonEq
       exact ⟨otherTruths, otherFrames, false, frame, rfl, rfl, prior,
         Or.inr ⟨rfl, selected⟩⟩
 
