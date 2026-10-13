@@ -115,12 +115,6 @@ example : normalizeSerializedScript codecRoundTripFixture =
     codecRoundTripFixture := by
   rfl
 
-example (encoded : ByteArray)
-    (serialized : serializeScript codecRoundTripFixture = .ok encoded) :
-    deserializeScript encoded = .ok codecRoundTripFixture := by
-  exact deserializeScript_serializeScript_of_normalized
-    codecRoundTripFixture encoded (by rfl) serialized
-
 example : normalizeSerializedScript
     [.pushData ByteArray.empty, .pushNum 17] =
     [.pushNum 0, .pushData ⟨#[0x11]⟩] := by

@@ -1,20 +1,47 @@
+<p align="center">
+  <img src="assets/lean-miniscript-logo.svg" alt="lean-miniscript logo" width="180">
+</p>
+
 # lean-miniscript
 
-Lean 4 models, executable verification, and proofs for Bitcoin Miniscript.
+- Lean 4 models, executable verification, and proofs for Bitcoin Miniscript.
+- The codebase covers:
+  - Miniscript syntax, parsing, pretty-printing, normalization, type inference, and validation.
+  - Miniscript compilation, concrete compilation, malleability analysis, satisfaction availability, and metrics.
+  - Bitcoin Script execution, control flow, signatures, Taproot, timelocks, and runtime limits.
+  - Bitcoin transaction, descriptor, ECDSA, Schnorr, and Taproot serialization utilities.
 
-Install the Lean version in `lean-toolchain`, then run:
+## Getting started
 
-```sh
-lake build
-python3 scripts/check_core_fixture_audit.py
-```
+- Install the Lean version pinned in [`lean-toolchain`](lean-toolchain).
+- Build the libraries, proofs, examples, and tests:
 
-The build checks proofs and regression tests. The audit downloads checksum-pinned
-Bitcoin Core fixtures and requires all 1,222 tests to match.
+  ```sh
+  lake build
+  ```
 
-Proofs establish the contracts stated in their Lean declarations. Fixture
-matches provide regression coverage; general consensus equivalence and
-cryptographic correctness remain outside those results. Private-key derivation
-uses variable-time arithmetic.
+- Run the Bitcoin Core fixture audit:
 
-Licensed under [MIT](LICENSE).
+  ```sh
+  python3 scripts/check_core_fixture_audit.py
+  ```
+
+- The audit downloads checksum-pinned Bitcoin Core fixtures and checks all 1,222 cases.
+
+## Repository layout
+
+- `LeanMiniscript/` — Lean libraries, executable models, examples, and proofs.
+- `LeanMiniscript.lean` — public module that imports the main library surface.
+- `scripts/` — fixture generation and audit helpers.
+- `assets/` — project artwork, including the repository logo.
+
+## Verification scope
+
+- Proofs establish the contracts stated by their Lean declarations.
+- Fixture matches provide regression coverage against the pinned Bitcoin Core data.
+- General consensus equivalence and cryptographic correctness are outside those results.
+- Private-key derivation uses variable-time arithmetic.
+
+## License
+
+- [MIT](LICENSE)

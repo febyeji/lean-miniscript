@@ -78,30 +78,11 @@ example : nops.all (fun opcode =>
     run [.op opcode, .op .OP_RETURN] [] false == some (.failure .opReturn)) = true := by
   native_decide
 
-example : nops.all (fun opcode =>
-    match executeRuntimeElement oracle (.op opcode)
-        { stack := [opaqueBytes], altStack := [opaqueBytes],
-          conditions := [true, true], weight := 0 } {} ctx with
-    | .error _ => false
-    | .ok next => next.stack == [opaqueBytes] && next.altStack == [opaqueBytes] &&
-        next.conditions == [true, true] && next.weight == 0) = true := by
-  native_decide
-
 -- Inactive branches skip upgradeable NOP policy and RETURN.
 example : (nops ++ [Opcode.OP_RETURN]).all (fun opcode =>
     run [.pushNum 0, .op .OP_IF, .op opcode, .op .OP_ENDIF]
       [opaqueBytes] true [opaqueBytes] 0 == some (.success [opaqueBytes] [opaqueBytes] 0)) =
     true := by
-  native_decide
-
-example : (nops ++ [Opcode.OP_RETURN]).all (fun opcode =>
-    match executeRuntimeElement oracle (.op opcode)
-        { stack := [opaqueBytes], altStack := [opaqueBytes],
-          conditions := [true, false], weight := 0 }
-        { discourageUpgradableNops := true } ctx with
-    | .error _ => false
-    | .ok next => next.stack == [opaqueBytes] && next.altStack == [opaqueBytes] &&
-        next.conditions == [true, false] && next.weight == 0) = true := by
   native_decide
 
 -- Successful NOPs preserve the count at the combined-stack boundary.

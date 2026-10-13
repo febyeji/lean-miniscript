@@ -23,7 +23,7 @@ theorem of_validTimelockArg {n : Nat} {flags : ScriptFlags}
   rcases valid with ⟨positive, bound⟩
   constructor
   · apply decodeScriptNum_mono (small := maxArithmeticScriptNumBytes)
-    · native_decide
+    · decide
     · apply decodeScriptNum_scriptNat_of_lt
       simpa [validTimelockArg, MAX_BIP_LOCK_VALUE,
         maxArithmeticScriptNatExclusive] using bound
@@ -235,10 +235,10 @@ theorem selectedNonPreimage_size_le
   omega
 
 theorem falseElement_size_le :
-    falseElement.size ≤ maxScriptElementSize := by native_decide
+    falseElement.size ≤ maxScriptElementSize := by decide
 
 theorem trueElement_size_le :
-    trueElement.size ≤ maxScriptElementSize := by native_decide
+    trueElement.size ≤ maxScriptElementSize := by decide
 
 theorem selectedSignature_size_ne_zero
     {key : PubKey} {env : SatEnv} {signature : StackElement}
@@ -837,7 +837,7 @@ theorem candidateThresholdValid_scriptNat_ne_zero
   intro encodedEq
   have thresholdDecoded := valid.2.2.decode false
   have zeroDecoded := decodeScriptNum_scriptNat_of_lt
-    (n := 0) (by native_decide) false
+    (n := 0) (by decide) false
   rw [encodedEq, zeroDecoded] at thresholdDecoded
   simp only [Except.ok.injEq] at thresholdDecoded
   apply valid.1
@@ -980,7 +980,7 @@ theorem generated_zero (scriptCtx : ScriptContext) (env : SatEnv)
   refine ⟨.zero, CandidateResult.supports_impossible _, ?_⟩
   apply CandidateResult.supports_usable
   exact .b ⟨falseElement, by simpa using zero_execution flags env.txCtx,
-    by native_decide⟩
+    by decide⟩
 
 /-- The `1` row has only its canonical empty satisfaction. -/
 theorem generated_one (scriptCtx : ScriptContext) (env : SatEnv)
@@ -990,7 +990,7 @@ theorem generated_one (scriptCtx : ScriptContext) (env : SatEnv)
   refine ⟨.one, ?_, CandidateResult.supports_impossible _⟩
   apply CandidateResult.supports_usable
   exact .b ⟨trueElement, by simpa using one_execution flags env.txCtx,
-    by native_decide⟩
+    by decide⟩
 
 /-- Strong generated contract for `0`. -/
 theorem generatedContract_zero (scriptCtx : ScriptContext) (env : SatEnv)
@@ -1332,7 +1332,7 @@ private theorem generated_hash_sat
       apply CandidateResult.supports_usable
       exact .b ⟨trueElement,
         hash_satisfaction_execution (sound.preimageMatches selected),
-        by native_decide⟩
+        by decide⟩
 
 private theorem generated_hash_dsat
     (lock : HashLock) (env : SatEnv) (flags : ScriptFlags) :
@@ -1637,7 +1637,7 @@ theorem d
           · intro _
             exact ⟨trueElement, by simp [childShape]⟩
           · intro _ _
-            exact ⟨trueElement, [], by simp [childShape], by native_decide⟩
+            exact ⟨trueElement, [], by simp [childShape], by decide⟩
         · exact BooleanResultFacts.canonical true _ flags
         · simpa [childShape, boolToElement] using childExec.d
   · apply CandidateResult.supports_usable
@@ -2863,7 +2863,7 @@ theorem thresh
     · exact BooleanResultFacts.canonical false _ flags
     · rw [trace.toInitialStack]
       exact generated.thresholdExecution firstUnit restTyped
-        (ArithmeticScriptNatSafe.of_lt (by native_decide)) sumEq
+        (ArithmeticScriptNatSafe.of_lt (by decide)) sumEq
         (by simp [candidateThresholdValid_scriptNat_ne_zero valid])
 
 end CandidatePair.SupportsGeneratedContract

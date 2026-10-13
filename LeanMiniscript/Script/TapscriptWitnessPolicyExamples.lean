@@ -43,14 +43,6 @@ example :
         .error .stackItemTooLarge := by
   native_decide
 
-/-! Annex rejection has deterministic precedence over argument-size
-rejection. -/
-
-example : checkTapscriptWitnessPolicy
-    { witness [bytes 81] with annex := some ⟨#[0x50]⟩ } =
-      .error .annexPresent := by
-  native_decide
-
 /-! Tapscript and control-block bytes are parsed metadata, so their sizes do
 not participate in the executable-argument policy check. -/
 

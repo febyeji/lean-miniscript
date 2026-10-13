@@ -90,8 +90,7 @@ theorem descriptorSatisfaction_context
 /-- Generated descriptor witnesses satisfy Core verification under the
 existing nonpreimage and oracle contracts. Filtering supplies signature and
 preimage validity and signature encoding. Successful preparation
-supplies leaf membership, source agreement, generation and context agreement.
-The inherited satisfaction proofs retain their native_decide dependencies. -/
+supplies leaf membership, source agreement, generation and context agreement. -/
 theorem verify_of_prepareDescriptorSatisfaction
     (flags : CoreVerificationFlags)
     (verifyECDSA verifySchnorr : StackElement → StackElement → ByteArray → Bool)

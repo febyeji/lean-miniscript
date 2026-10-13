@@ -18,8 +18,6 @@ byte agreement, source push bounds and initial item sizes from the retained
 source and existing contracts. Context agreement, oracle refinement,
 verification flags and a truthy output key remain explicit. Satisfaction correctness supplies the final
 singleton and truth value; descriptor correctness supplies the commitment.
-The generated-satisfaction step inherits the existing satisfaction proofs'
-`native_decide` dependencies.
 -/
 
 /-- Generated satisfaction correctness determines the final main stack of any
