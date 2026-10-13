@@ -18,6 +18,50 @@ submodules can use them; treat them as internal proof helpers, not stable API.
 
 /-! ## Successful execution decomposition -/
 
+/-- `splitConditional_balanced_ifThen` stated for the `List.append` chain that
+    appears after inverting an IF/NOTIF step on an IF/ENDIF script. -/
+private theorem splitConditional_ifThen_appended
+    {body suffix : Script} (balanced : BalancedControlFlow body) :
+    splitConditional
+        (((([] : Script).append body).append [.op .OP_ENDIF]).append suffix) =
+      some { branches := [body], after := suffix } := by
+  simpa [List.append_assoc] using
+    splitConditional_balanced_ifThen balanced (suffix := suffix)
+
+/-- `splitConditional_balanced_ifElse` stated for the `List.append` chain that
+    appears after inverting an IF/NOTIF step on an IF/ELSE/ENDIF script. -/
+private theorem splitConditional_ifElse_appended
+    {thenBranch elseBranch suffix : Script}
+    (thenBalanced : BalancedControlFlow thenBranch)
+    (elseBalanced : BalancedControlFlow elseBranch) :
+    splitConditional
+        (((((([] : Script).append thenBranch).append [.op .OP_ELSE]).append
+          elseBranch).append [.op .OP_ENDIF]).append suffix) =
+      some { branches := [thenBranch, elseBranch], after := suffix } := by
+  simpa [List.append_assoc] using
+    splitConditional_balanced_ifElse thenBalanced elseBalanced
+      (suffix := suffix)
+
+/-- A balanced single-branch conditional body closed by ENDIF splits into that
+    branch with nothing after it. -/
+private theorem splitConditional_ifThen_closed
+    {body : Script} (balanced : BalancedControlFlow body) :
+    splitConditional (body ++ [.op .OP_ENDIF]) =
+      some { branches := [body], after := [] } := by
+  simpa using splitConditional_balanced_ifThen balanced (suffix := [])
+
+/-- A balanced two-branch conditional body closed by ENDIF splits into its two
+    branches with nothing after them. -/
+private theorem splitConditional_ifElse_closed
+    {thenBranch elseBranch : Script}
+    (thenBalanced : BalancedControlFlow thenBranch)
+    (elseBalanced : BalancedControlFlow elseBranch) :
+    splitConditional
+        (thenBranch ++ [.op .OP_ELSE] ++ elseBranch ++ [.op .OP_ENDIF]) =
+      some { branches := [thenBranch, elseBranch], after := [] } := by
+  simpa using
+    splitConditional_balanced_ifElse thenBalanced elseBalanced (suffix := [])
+
 /-- A successful execution across a balanced prefix decomposes at the exact
     prefix boundary. Balanced control flow ensures that a conditional opened
     in the prefix cannot consume delimiters from the suffix. -/
@@ -57,13 +101,7 @@ theorem Eval.splitBalancedAppend_success
       case if_execute =>
           rename_i top rest frame split minimal selected
           cases resultEq
-          have expectedSplit := splitConditional_balanced_ifThen bodyBalanced
-            (suffix := suffix)
-          have scriptEq :
-              ((([] : Script).append body).append [.op .OP_ENDIF]).append suffix =
-                body ++ [.op .OP_ENDIF] ++ suffix := by
-            simp [List.append_assoc]
-          rw [scriptEq, expectedSplit] at split
+          rw [splitConditional_ifThen_appended bodyBalanced] at split
           cases split
           cases selectedBool : castToBool top
           case false =>
@@ -71,8 +109,7 @@ theorem Eval.splitBalancedAppend_success
               selectedBool] at selected
             refine ⟨rest, altStack, ?_, selected⟩
             apply Eval.if_execute (frame := { branches := [body], after := [] })
-            · simpa using splitConditional_balanced_ifThen bodyBalanced
-                (suffix := [])
+            · exact splitConditional_ifThen_closed bodyBalanced
             · exact minimal
             · simpa [ConditionalFrame.select, selectConditionalBranches,
                 selectedBool] using
@@ -83,20 +120,13 @@ theorem Eval.splitBalancedAppend_success
             obtain ⟨middle, middleAlt, bodyRun, suffixRun⟩ := bodyIH selected
             refine ⟨middle, middleAlt, ?_, suffixRun⟩
             apply Eval.if_execute (frame := { branches := [body], after := [] })
-            · simpa using splitConditional_balanced_ifThen bodyBalanced
-                (suffix := [])
+            · exact splitConditional_ifThen_closed bodyBalanced
             · exact minimal
             · simpa [ConditionalFrame.select, selectConditionalBranches,
                 selectedBool] using bodyRun
       case if_unbalanced =>
           rename_i top rest selectedResult split minimal selected
-          have expectedSplit := splitConditional_balanced_ifThen bodyBalanced
-            (suffix := suffix)
-          have scriptEq :
-              ((([] : Script).append body).append [.op .OP_ENDIF]).append suffix =
-                body ++ [.op .OP_ENDIF] ++ suffix := by
-            simp [List.append_assoc]
-          rw [scriptEq, expectedSplit] at split
+          rw [splitConditional_ifThen_appended bodyBalanced] at split
           cases split
       all_goals cases resultEq
 
@@ -106,13 +136,7 @@ theorem Eval.splitBalancedAppend_success
       case notif_execute =>
           rename_i top rest frame split minimal selected
           cases resultEq
-          have expectedSplit := splitConditional_balanced_ifThen bodyBalanced
-            (suffix := suffix)
-          have scriptEq :
-              ((([] : Script).append body).append [.op .OP_ENDIF]).append suffix =
-                body ++ [.op .OP_ENDIF] ++ suffix := by
-            simp [List.append_assoc]
-          rw [scriptEq, expectedSplit] at split
+          rw [splitConditional_ifThen_appended bodyBalanced] at split
           cases split
           cases selectedBool : castToBool top
           case false =>
@@ -121,8 +145,7 @@ theorem Eval.splitBalancedAppend_success
             obtain ⟨middle, middleAlt, bodyRun, suffixRun⟩ := bodyIH selected
             refine ⟨middle, middleAlt, ?_, suffixRun⟩
             apply Eval.notif_execute (frame := { branches := [body], after := [] })
-            · simpa using splitConditional_balanced_ifThen bodyBalanced
-                (suffix := [])
+            · exact splitConditional_ifThen_closed bodyBalanced
             · exact minimal
             · simpa [ConditionalFrame.select, selectConditionalBranches,
                 selectedBool] using bodyRun
@@ -131,21 +154,14 @@ theorem Eval.splitBalancedAppend_success
               selectedBool] at selected
             refine ⟨rest, altStack, ?_, selected⟩
             apply Eval.notif_execute (frame := { branches := [body], after := [] })
-            · simpa using splitConditional_balanced_ifThen bodyBalanced
-                (suffix := [])
+            · exact splitConditional_ifThen_closed bodyBalanced
             · exact minimal
             · simpa [ConditionalFrame.select, selectConditionalBranches,
                 selectedBool] using
                 (Eval.done (stack := rest) (altStack := altStack))
       case notif_unbalanced =>
           rename_i top rest selectedResult split minimal selected
-          have expectedSplit := splitConditional_balanced_ifThen bodyBalanced
-            (suffix := suffix)
-          have scriptEq :
-              ((([] : Script).append body).append [.op .OP_ENDIF]).append suffix =
-                body ++ [.op .OP_ENDIF] ++ suffix := by
-            simp [List.append_assoc]
-          rw [scriptEq, expectedSplit] at split
+          rw [splitConditional_ifThen_appended bodyBalanced] at split
           cases split
       all_goals cases resultEq
   | @ifElse thenBranch elseBranch thenBalanced elseBalanced thenIH elseIH =>
@@ -154,15 +170,8 @@ theorem Eval.splitBalancedAppend_success
       case if_execute =>
           rename_i top rest frame split minimal selected
           cases resultEq
-          have expectedSplit := splitConditional_balanced_ifElse
-            thenBalanced elseBalanced (suffix := suffix)
-          have scriptEq :
-              ((((([] : Script).append thenBranch).append [.op .OP_ELSE]).append
-                elseBranch).append [.op .OP_ENDIF]).append suffix =
-                thenBranch ++ [.op .OP_ELSE] ++ elseBranch ++
-                  [.op .OP_ENDIF] ++ suffix := by
-            simp [List.append_assoc]
-          rw [scriptEq, expectedSplit] at split
+          rw [splitConditional_ifElse_appended thenBalanced elseBalanced]
+            at split
           cases split
           cases selectedBool : castToBool top
           case false =>
@@ -172,8 +181,7 @@ theorem Eval.splitBalancedAppend_success
             refine ⟨middle, middleAlt, ?_, suffixRun⟩
             apply Eval.if_execute (frame :=
               { branches := [thenBranch, elseBranch], after := [] })
-            · simpa using splitConditional_balanced_ifElse thenBalanced elseBalanced
-                (suffix := [])
+            · exact splitConditional_ifElse_closed thenBalanced elseBalanced
             · exact minimal
             · simpa [ConditionalFrame.select, selectConditionalBranches,
                 selectedBool] using branchRun
@@ -184,22 +192,14 @@ theorem Eval.splitBalancedAppend_success
             refine ⟨middle, middleAlt, ?_, suffixRun⟩
             apply Eval.if_execute (frame :=
               { branches := [thenBranch, elseBranch], after := [] })
-            · simpa using splitConditional_balanced_ifElse thenBalanced elseBalanced
-                (suffix := [])
+            · exact splitConditional_ifElse_closed thenBalanced elseBalanced
             · exact minimal
             · simpa [ConditionalFrame.select, selectConditionalBranches,
                 selectedBool] using branchRun
       case if_unbalanced =>
           rename_i top rest selectedResult split minimal selected
-          have expectedSplit := splitConditional_balanced_ifElse
-            thenBalanced elseBalanced (suffix := suffix)
-          have scriptEq :
-              ((((([] : Script).append thenBranch).append [.op .OP_ELSE]).append
-                elseBranch).append [.op .OP_ENDIF]).append suffix =
-                thenBranch ++ [.op .OP_ELSE] ++ elseBranch ++
-                  [.op .OP_ENDIF] ++ suffix := by
-            simp [List.append_assoc]
-          rw [scriptEq, expectedSplit] at split
+          rw [splitConditional_ifElse_appended thenBalanced elseBalanced]
+            at split
           cases split
       all_goals cases resultEq
   | @notifElse thenBranch elseBranch thenBalanced elseBalanced thenIH elseIH =>
@@ -208,15 +208,8 @@ theorem Eval.splitBalancedAppend_success
       case notif_execute =>
           rename_i top rest frame split minimal selected
           cases resultEq
-          have expectedSplit := splitConditional_balanced_ifElse
-            thenBalanced elseBalanced (suffix := suffix)
-          have scriptEq :
-              ((((([] : Script).append thenBranch).append [.op .OP_ELSE]).append
-                elseBranch).append [.op .OP_ENDIF]).append suffix =
-                thenBranch ++ [.op .OP_ELSE] ++ elseBranch ++
-                  [.op .OP_ENDIF] ++ suffix := by
-            simp [List.append_assoc]
-          rw [scriptEq, expectedSplit] at split
+          rw [splitConditional_ifElse_appended thenBalanced elseBalanced]
+            at split
           cases split
           cases selectedBool : castToBool top
           case false =>
@@ -226,8 +219,7 @@ theorem Eval.splitBalancedAppend_success
             refine ⟨middle, middleAlt, ?_, suffixRun⟩
             apply Eval.notif_execute (frame :=
               { branches := [thenBranch, elseBranch], after := [] })
-            · simpa using splitConditional_balanced_ifElse thenBalanced elseBalanced
-                (suffix := [])
+            · exact splitConditional_ifElse_closed thenBalanced elseBalanced
             · exact minimal
             · simpa [ConditionalFrame.select, selectConditionalBranches,
                 selectedBool] using branchRun
@@ -238,22 +230,14 @@ theorem Eval.splitBalancedAppend_success
             refine ⟨middle, middleAlt, ?_, suffixRun⟩
             apply Eval.notif_execute (frame :=
               { branches := [thenBranch, elseBranch], after := [] })
-            · simpa using splitConditional_balanced_ifElse thenBalanced elseBalanced
-                (suffix := [])
+            · exact splitConditional_ifElse_closed thenBalanced elseBalanced
             · exact minimal
             · simpa [ConditionalFrame.select, selectConditionalBranches,
                 selectedBool] using branchRun
       case notif_unbalanced =>
           rename_i top rest selectedResult split minimal selected
-          have expectedSplit := splitConditional_balanced_ifElse
-            thenBalanced elseBalanced (suffix := suffix)
-          have scriptEq :
-              ((((([] : Script).append thenBranch).append [.op .OP_ELSE]).append
-                elseBranch).append [.op .OP_ENDIF]).append suffix =
-                thenBranch ++ [.op .OP_ELSE] ++ elseBranch ++
-                  [.op .OP_ENDIF] ++ suffix := by
-            simp [List.append_assoc]
-          rw [scriptEq, expectedSplit] at split
+          rw [splitConditional_ifElse_appended thenBalanced elseBalanced]
+            at split
           cases split
       all_goals cases resultEq
 
@@ -274,10 +258,7 @@ theorem Eval.ifThen_success_cases
       rename_i frame split minimal selected
       cases resultEq
       change splitConditional (body ++ [.op .OP_ENDIF]) = some frame at split
-      rw [show splitConditional (body ++ [.op .OP_ENDIF]) =
-        some { branches := [body], after := [] } by
-          simpa using splitConditional_balanced_ifThen balanced
-            (suffix := [])] at split
+      rw [splitConditional_ifThen_closed balanced] at split
       cases split
       cases selectedBool : castToBool selector
       · left
@@ -294,10 +275,7 @@ theorem Eval.ifThen_success_cases
   case if_unbalanced =>
       rename_i selectedResult split minimal selected
       change splitConditional (body ++ [.op .OP_ENDIF]) = none at split
-      rw [show splitConditional (body ++ [.op .OP_ENDIF]) =
-        some { branches := [body], after := [] } by
-          simpa using splitConditional_balanced_ifThen balanced
-            (suffix := [])] at split
+      rw [splitConditional_ifThen_closed balanced] at split
       contradiction
   all_goals cases resultEq
 
@@ -318,10 +296,7 @@ theorem Eval.notifThen_success_cases
       rename_i frame split minimal selected
       cases resultEq
       change splitConditional (body ++ [.op .OP_ENDIF]) = some frame at split
-      rw [show splitConditional (body ++ [.op .OP_ENDIF]) =
-        some { branches := [body], after := [] } by
-          simpa using splitConditional_balanced_ifThen balanced
-            (suffix := [])] at split
+      rw [splitConditional_ifThen_closed balanced] at split
       cases split
       cases selectedBool : castToBool selector
       · right
@@ -338,10 +313,7 @@ theorem Eval.notifThen_success_cases
   case notif_unbalanced =>
       rename_i selectedResult split minimal selected
       change splitConditional (body ++ [.op .OP_ENDIF]) = none at split
-      rw [show splitConditional (body ++ [.op .OP_ENDIF]) =
-        some { branches := [body], after := [] } by
-          simpa using splitConditional_balanced_ifThen balanced
-            (suffix := [])] at split
+      rw [splitConditional_ifThen_closed balanced] at split
       contradiction
   all_goals cases resultEq
 
@@ -365,11 +337,7 @@ theorem Eval.ifElse_success_cases
       change splitConditional
         (thenBranch ++ [.op .OP_ELSE] ++ elseBranch ++ [.op .OP_ENDIF]) =
           some frame at split
-      rw [show splitConditional
-        (thenBranch ++ [.op .OP_ELSE] ++ elseBranch ++ [.op .OP_ENDIF]) =
-          some { branches := [thenBranch, elseBranch], after := [] } by
-            simpa using splitConditional_balanced_ifElse thenBalanced
-              elseBalanced (suffix := [])] at split
+      rw [splitConditional_ifElse_closed thenBalanced elseBalanced] at split
       cases split
       cases selectedBool : castToBool selector
       · right
@@ -383,11 +351,7 @@ theorem Eval.ifElse_success_cases
       change splitConditional
         (thenBranch ++ [.op .OP_ELSE] ++ elseBranch ++ [.op .OP_ENDIF]) =
           none at split
-      rw [show splitConditional
-        (thenBranch ++ [.op .OP_ELSE] ++ elseBranch ++ [.op .OP_ENDIF]) =
-          some { branches := [thenBranch, elseBranch], after := [] } by
-            simpa using splitConditional_balanced_ifElse thenBalanced
-              elseBalanced (suffix := [])] at split
+      rw [splitConditional_ifElse_closed thenBalanced elseBalanced] at split
       contradiction
   all_goals cases resultEq
 
@@ -411,11 +375,7 @@ theorem Eval.notifElse_success_cases
       change splitConditional
         (thenBranch ++ [.op .OP_ELSE] ++ elseBranch ++ [.op .OP_ENDIF]) =
           some frame at split
-      rw [show splitConditional
-        (thenBranch ++ [.op .OP_ELSE] ++ elseBranch ++ [.op .OP_ENDIF]) =
-          some { branches := [thenBranch, elseBranch], after := [] } by
-            simpa using splitConditional_balanced_ifElse thenBalanced
-              elseBalanced (suffix := [])] at split
+      rw [splitConditional_ifElse_closed thenBalanced elseBalanced] at split
       cases split
       cases selectedBool : castToBool selector
       · left
@@ -429,11 +389,7 @@ theorem Eval.notifElse_success_cases
       change splitConditional
         (thenBranch ++ [.op .OP_ELSE] ++ elseBranch ++ [.op .OP_ENDIF]) =
           none at split
-      rw [show splitConditional
-        (thenBranch ++ [.op .OP_ELSE] ++ elseBranch ++ [.op .OP_ENDIF]) =
-          some { branches := [thenBranch, elseBranch], after := [] } by
-            simpa using splitConditional_balanced_ifElse thenBalanced
-              elseBalanced (suffix := [])] at split
+      rw [splitConditional_ifElse_closed thenBalanced elseBalanced] at split
       contradiction
   all_goals cases resultEq
 

@@ -17,6 +17,28 @@ Some helper lemmas here were `private` in the former single-file
 submodules can use them; treat them as internal proof helpers, not stable API.
 -/
 
+/-- A successful run cannot share its input state with a failing run. -/
+private theorem Eval.success_failure_absurd
+    {script : Script} {stack altStack out outAlt : Stack}
+    {flags : ScriptFlags} {ctx : TxContext} {error : ScriptError}
+    (run : Eval script stack altStack flags ctx (.success out outAlt))
+    (failed : Eval script stack altStack flags ctx (.failure error)) :
+    False := by
+  cases Eval.result_unique run failed
+
+/-- A successful run has the one-result shape of a canonical run on the same
+    input that leaves one element above `rest` and preserves the alternate
+    stack. -/
+private theorem Eval.oneResult_of_canonical
+    {script : Script} {stack altStack rest finalStack finalAlt : Stack}
+    {flags : ScriptFlags} {ctx : TxContext} {result : StackElement}
+    (run : Eval script stack altStack flags ctx (.success finalStack finalAlt))
+    (canonical : Eval script stack altStack flags ctx
+      (.success (result :: rest) altStack)) :
+    finalAlt = altStack ∧ ∃ result, finalStack = result :: rest := by
+  cases Eval.result_unique run canonical
+  exact ⟨rfl, result, rfl⟩
+
 /-- A successful standalone CHECKSIG consumes its key/signature pair, leaves
     one boolean result, and preserves the alternate stack. -/
 theorem Eval.checkSigSingle_success_shape
@@ -28,30 +50,17 @@ theorem Eval.checkSigSingle_success_shape
   cases checked : checkSigWithEncoding checkSig checkSchnorrSig flags ctx
       signature key with
   | error error =>
-      have failed : Eval [.op .OP_CHECKSIG] (key :: signature :: rest)
-          altStack flags ctx (.failure error) :=
-        Eval.checksig_encoding_failure key signature rest [] altStack flags ctx
-          error checked
-      have equal := Eval.result_unique run failed
-      contradiction
+      exact (Eval.success_failure_absurd run
+        (Eval.checksig_encoding_failure key signature rest [] altStack flags
+          ctx error checked)).elim
   | ok valid =>
       cases valid with
       | false =>
-          have canonical : Eval [.op .OP_CHECKSIG]
-              (key :: signature :: rest) altStack flags ctx
-              (.success (falseElement :: rest) altStack) :=
-            Eval.checksigFalse checked Eval.done
-          have equal := Eval.result_unique run canonical
-          cases equal
-          exact ⟨rfl, ⟨falseElement, rfl⟩⟩
+          exact Eval.oneResult_of_canonical run
+            (Eval.checksigFalse checked Eval.done)
       | true =>
-          have canonical : Eval [.op .OP_CHECKSIG]
-              (key :: signature :: rest) altStack flags ctx
-              (.success (trueElement :: rest) altStack) :=
-            Eval.checksigTrue checked Eval.done
-          have equal := Eval.result_unique run canonical
-          cases equal
-          exact ⟨rfl, ⟨trueElement, rfl⟩⟩
+          exact Eval.oneResult_of_canonical run
+            (Eval.checksigTrue checked Eval.done)
 
 /-- A successful standalone 0NOTEQUAL leaves one normalized boolean and
     preserves the alternate stack. -/
@@ -64,20 +73,13 @@ theorem Eval.zeroNotEqualSingle_success_shape
   cases decoded : decodeScriptNum operand flags.minimalData
       maxArithmeticScriptNumBytes with
   | error error =>
-      have failed : Eval [.op .OP_0NOTEQUAL] (operand :: rest) altStack
-          flags ctx (.failure error) :=
-        Eval.unary_scriptnum_failure operand rest [] altStack flags ctx error
-          decoded
-      have equal := Eval.result_unique run failed
-      contradiction
+      exact (Eval.success_failure_absurd run
+        (Eval.unary_scriptnum_failure operand rest [] altStack flags ctx error
+          decoded)).elim
   | ok value =>
-      have canonical : Eval [.op .OP_0NOTEQUAL] (operand :: rest) altStack
-          flags ctx (.success (boolToElement (value != 0) :: rest) altStack) :=
-        Eval.zeroNotEqual operand value rest altStack [] flags ctx _ decoded
-          Eval.done
-      have equal := Eval.result_unique run canonical
-      cases equal
-      exact ⟨rfl, ⟨boolToElement (value != 0), rfl⟩⟩
+      exact Eval.oneResult_of_canonical run
+        (Eval.zeroNotEqual operand value rest altStack [] flags ctx _ decoded
+          Eval.done)
 
 /-- Successful standalone VERIFY consumes its true operand and preserves the
     alternate stack. -/
@@ -89,15 +91,9 @@ theorem Eval.verifySingle_success_shape
     finalStack = rest ∧ finalAlt = altStack := by
   cases truth : castToBool operand with
   | false =>
-      have failed : Eval [.op .OP_VERIFY] (operand :: rest) altStack flags ctx
-          (.failure .verify) := Eval.verifyFalse truth
-      have equal := Eval.result_unique run failed
-      contradiction
+      exact (Eval.success_failure_absurd run (Eval.verifyFalse truth)).elim
   | true =>
-      have canonical : Eval [.op .OP_VERIFY] (operand :: rest) altStack
-          flags ctx (.success rest altStack) := Eval.verifyTrue truth Eval.done
-      have equal := Eval.result_unique run canonical
-      cases equal
+      cases Eval.result_unique run (Eval.verifyTrue truth Eval.done)
       exact ⟨rfl, rfl⟩
 
 /-- Successful standalone BOOLAND execution leaves one boolean and preserves
@@ -110,24 +106,12 @@ theorem Eval.boolAndSingle_success_shape
     finalAlt = altStack ∧ ∃ result, finalStack = result :: rest := by
   cases decoded : decodeBinaryScriptNums flags first second with
   | error error =>
-      have failed : Eval [.op .OP_BOOLAND] (first :: second :: rest)
-          altStack flags ctx (.failure error) :=
-        Eval.binaryScriptNumFailure (opcode := .OP_BOOLAND) rfl decoded
-      have equal := Eval.result_unique run failed
-      contradiction
+      exact (Eval.success_failure_absurd run
+        (Eval.binaryScriptNumFailure (opcode := .OP_BOOLAND) rfl decoded)).elim
   | ok values =>
-      obtain ⟨firstValue, secondValue⟩ := values
-      have canonical : Eval [.op .OP_BOOLAND] (first :: second :: rest)
-          altStack flags ctx
-          (.success
-            (boolToElement
-              ((firstValue != 0) && (secondValue != 0)) :: rest)
-            altStack) :=
-        Eval.booland first second firstValue secondValue rest [] altStack flags
-          ctx _ decoded Eval.done
-      have equal := Eval.result_unique run canonical
-      cases equal
-      exact ⟨rfl, ⟨_, rfl⟩⟩
+      exact Eval.oneResult_of_canonical run
+        (Eval.booland first second values.1 values.2 rest [] altStack flags
+          ctx _ decoded Eval.done)
 
 /-- Successful standalone BOOLOR execution leaves one boolean and preserves
     the alternate stack. -/
@@ -139,24 +123,12 @@ theorem Eval.boolOrSingle_success_shape
     finalAlt = altStack ∧ ∃ result, finalStack = result :: rest := by
   cases decoded : decodeBinaryScriptNums flags first second with
   | error error =>
-      have failed : Eval [.op .OP_BOOLOR] (first :: second :: rest)
-          altStack flags ctx (.failure error) :=
-        Eval.binaryScriptNumFailure (opcode := .OP_BOOLOR) rfl decoded
-      have equal := Eval.result_unique run failed
-      contradiction
+      exact (Eval.success_failure_absurd run
+        (Eval.binaryScriptNumFailure (opcode := .OP_BOOLOR) rfl decoded)).elim
   | ok values =>
-      obtain ⟨firstValue, secondValue⟩ := values
-      have canonical : Eval [.op .OP_BOOLOR] (first :: second :: rest)
-          altStack flags ctx
-          (.success
-            (boolToElement
-              ((firstValue != 0) || (secondValue != 0)) :: rest)
-            altStack) :=
-        Eval.boolor first second firstValue secondValue rest [] altStack flags
-          ctx _ decoded Eval.done
-      have equal := Eval.result_unique run canonical
-      cases equal
-      exact ⟨rfl, ⟨_, rfl⟩⟩
+      exact Eval.oneResult_of_canonical run
+        (Eval.boolor first second values.1 values.2 rest [] altStack flags
+          ctx _ decoded Eval.done)
 
 /-- Successful standalone ADD execution leaves one accumulator and preserves
     the alternate stack. -/
@@ -168,21 +140,12 @@ theorem Eval.addSingle_success_shape
     finalAlt = altStack ∧ ∃ result, finalStack = result :: rest := by
   cases decoded : decodeBinaryScriptNums flags first second with
   | error error =>
-      have failed : Eval [.op .OP_ADD] (first :: second :: rest)
-          altStack flags ctx (.failure error) :=
-        Eval.binaryScriptNumFailure (opcode := .OP_ADD) rfl decoded
-      have equal := Eval.result_unique run failed
-      contradiction
+      exact (Eval.success_failure_absurd run
+        (Eval.binaryScriptNumFailure (opcode := .OP_ADD) rfl decoded)).elim
   | ok values =>
-      obtain ⟨firstValue, secondValue⟩ := values
-      have canonical : Eval [.op .OP_ADD] (first :: second :: rest)
-          altStack flags ctx
-          (.success (scriptNum (firstValue + secondValue) :: rest) altStack) :=
-        Eval.add first second firstValue secondValue rest [] altStack flags ctx
-          _ decoded Eval.done
-      have equal := Eval.result_unique run canonical
-      cases equal
-      exact ⟨rfl, ⟨_, rfl⟩⟩
+      exact Eval.oneResult_of_canonical run
+        (Eval.add first second values.1 values.2 rest [] altStack flags ctx
+          _ decoded Eval.done)
 
 /-- Pushing a threshold and comparing it with an accumulator leaves one
     boolean result. -/
@@ -195,22 +158,10 @@ theorem Eval.pushNumEqual_success_shape
       (.success finalStack finalAlt)) :
     finalAlt = altStack ∧ ∃ result, finalStack = result :: rest := by
   by_cases equal : scriptNum threshold = accumulator
-  · have canonical : Eval [.pushNum threshold, .op .OP_EQUAL]
-        (accumulator :: rest) altStack flags ctx
-        (.success (trueElement :: rest) altStack) := by
-      apply Eval.pushNum
-      exact Eval.equal_true _ _ _ [] _ _ _ _ equal Eval.done
-    have resultEq := Eval.result_unique run canonical
-    cases resultEq
-    exact ⟨rfl, ⟨trueElement, rfl⟩⟩
-  · have canonical : Eval [.pushNum threshold, .op .OP_EQUAL]
-        (accumulator :: rest) altStack flags ctx
-        (.success (falseElement :: rest) altStack) := by
-      apply Eval.pushNum
-      exact Eval.equal_false _ _ _ [] _ _ _ _ equal Eval.done
-    have resultEq := Eval.result_unique run canonical
-    cases resultEq
-    exact ⟨rfl, ⟨falseElement, rfl⟩⟩
+  · exact Eval.oneResult_of_canonical run (Eval.pushNum _ _ _ _ _ _ _
+      (Eval.equal_true _ _ _ [] _ _ _ _ equal Eval.done))
+  · exact Eval.oneResult_of_canonical run (Eval.pushNum _ _ _ _ _ _ _
+      (Eval.equal_false _ _ _ [] _ _ _ _ equal Eval.done))
 
 /-- Successful standalone CHECKSIGADD leaves one updated accumulator. -/
 private theorem Eval.checkSigAddSingle_success_shape
@@ -263,24 +214,12 @@ theorem Eval.pushNumNumEqual_success_shape
   cases decoded : decodeBinaryScriptNums flags (scriptNum threshold)
       accumulator with
   | error error =>
-      have failed : Eval [.op .OP_NUMEQUAL]
-          (scriptNum threshold :: accumulator :: rest) altStack flags ctx
-          (.failure error) :=
-        Eval.binaryScriptNumFailure (opcode := .OP_NUMEQUAL) rfl decoded
-      have equal := Eval.result_unique compareRun failed
-      contradiction
+      exact (Eval.success_failure_absurd compareRun
+        (Eval.binaryScriptNumFailure (opcode := .OP_NUMEQUAL) rfl decoded)).elim
   | ok values =>
-      obtain ⟨thresholdValue, accumulatorValue⟩ := values
-      have canonical : Eval [.op .OP_NUMEQUAL]
-          (scriptNum threshold :: accumulator :: rest) altStack flags ctx
-          (.success
-            (boolToElement (thresholdValue == accumulatorValue) :: rest)
-            altStack) :=
-        Eval.numequal _ _ thresholdValue accumulatorValue rest [] altStack
-          flags ctx _ decoded Eval.done
-      have equal := Eval.result_unique compareRun canonical
-      cases equal
-      exact ⟨rfl, ⟨_, rfl⟩⟩
+      exact Eval.oneResult_of_canonical compareRun
+        (Eval.numequal _ _ values.1 values.2 rest [] altStack flags ctx _
+          decoded Eval.done)
 
 /-- Expand a successful EQUALVERIFY back into EQUAL followed by VERIFY. -/
 private theorem Eval.unfuseEqualVerify_success
@@ -659,8 +598,7 @@ theorem Eval.legacyMulti_success_shape
           (.failure error) :=
         Eval.checkmultisig_operand_failure opcodeStack [] altStack flags ctx
           error decodedEq
-      have equal := Eval.result_unique checkRun failed
-      contradiction
+      exact (Eval.success_failure_absurd checkRun failed).elim
   | ok operands =>
       cases checkedEq : checkMultiSigFor checkSig flags ctx
           operands.signatures operands.pubkeys with
@@ -669,8 +607,7 @@ theorem Eval.legacyMulti_success_shape
               flags ctx (.failure error) :=
             Eval.checkmultisig_encoding_failure opcodeStack operands []
               altStack flags ctx error decodedEq checkedEq
-          have equal := Eval.result_unique checkRun failed
-          contradiction
+          exact (Eval.success_failure_absurd checkRun failed).elim
       | ok checked =>
           cases checked with
           | false =>
@@ -682,8 +619,7 @@ theorem Eval.legacyMulti_success_shape
                       Eval.checkmultisig_dummy_failure opcodeStack operands []
                         altStack flags ctx false error decodedEq checkedEq
                         (Or.inr nullFail) dummyEq
-                    have equal := Eval.result_unique checkRun failed
-                    contradiction
+                    exact (Eval.success_failure_absurd checkRun failed).elim
                 | ok successValue =>
                     cases successValue
                     have canonical : Eval [.op .OP_CHECKMULTISIG] opcodeStack
@@ -706,8 +642,7 @@ theorem Eval.legacyMulti_success_shape
                     altStack flags ctx (.failure .sigNullFail) :=
                   Eval.checkmultisig_nullfail_failure opcodeStack operands []
                     altStack flags ctx decodedEq checkedEq nullFail
-                have equal := Eval.result_unique checkRun failed
-                contradiction
+                exact (Eval.success_failure_absurd checkRun failed).elim
           | true =>
               cases dummyEq : checkMultiSigDummy flags operands.dummy with
               | error error =>
@@ -716,8 +651,7 @@ theorem Eval.legacyMulti_success_shape
                     Eval.checkmultisig_dummy_failure opcodeStack operands []
                       altStack flags ctx true error decodedEq checkedEq
                       (Or.inl rfl) dummyEq
-                  have equal := Eval.result_unique checkRun failed
-                  contradiction
+                  exact (Eval.success_failure_absurd checkRun failed).elim
               | ok successValue =>
                   cases successValue
                   have canonical : Eval [.op .OP_CHECKMULTISIG] opcodeStack
