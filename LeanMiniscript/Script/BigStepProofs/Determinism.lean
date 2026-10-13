@@ -385,6 +385,16 @@ theorem Eval.result_unique
     try solve_by_elim
     try grind
 
+/-- One derivation determines every result: the evaluation relation holds for
+    `result` exactly when `result` is the canonically derived one. -/
+theorem Eval.result_iff_of_canonical
+    {script : Script} {stack altStack : Stack} {flags : ScriptFlags}
+    {ctx : TxContext} {canonicalResult result : ExecResult}
+    (canonical : Eval script stack altStack flags ctx canonicalResult) :
+    Eval script stack altStack flags ctx result ↔ result = canonicalResult :=
+  ⟨fun evaluated => evaluated.result_unique canonical,
+    fun equal => equal ▸ canonical⟩
+
 /-- Index decoding and range errors terminate either indexed stack operation. -/
 theorem Eval.stackIndexFailure
     (opcode : Opcode) (operand top : StackElement) (rest : Stack)
