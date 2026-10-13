@@ -1,4 +1,5 @@
 import LeanMiniscript
+import LeanMiniscript.Bitcoin.DeserializationProofs
 import LeanMiniscript.Script.BigStepProofs
 import LeanMiniscript.Script.Codec.Proofs
 import LeanMiniscript.Script.Codec.VerificationProofs
@@ -53,6 +54,10 @@ import LeanMiniscript.Extraction.DescriptorSatisfactionProofs
 import LeanMiniscript.Extraction.RefInterpProofs
 import LeanMiniscript.Extraction.TaprootBytesProofs
 import LeanMiniscript.Extraction.TaprootProofs
+import LeanMiniscript.Psbt.CodecProofs
+import LeanMiniscript.Psbt.ParseProofs
+import LeanMiniscript.Psbt.CombinerProofs
+import LeanMiniscript.Psbt.FinalizerProofs
 
 /-!
 # Proof-oriented lean-miniscript modules
@@ -69,5 +74,7 @@ and dynamic paths, including the context-specific limits certified by sane
 fragments. Raw satisfier candidates exist exactly when a valid fragment is
 structurally satisfiable under the environment's atom material, and the policy
 layer proves its text round trip and that compiled policies preserve the
-policy's meaning.
+policy's meaning. PSBT proofs cover exact framing round trips in both
+directions, combiner algebra, and finalizer witnesses produced by the existing
+descriptor satisfaction and Core verification entry points.
 -/

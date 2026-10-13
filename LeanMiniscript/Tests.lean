@@ -1,4 +1,5 @@
 import LeanMiniscript
+import LeanMiniscript.Bitcoin.Base64Examples
 import LeanMiniscript.Bitcoin.BIP32Examples
 import LeanMiniscript.Bitcoin.BIP32ReviewExamples
 import LeanMiniscript.Bitcoin.DescriptorChecksumExamples
@@ -81,6 +82,8 @@ import LeanMiniscript.Extraction.DescriptorMaterialExamples
 import LeanMiniscript.Extraction.SignatureEncodingCoreExamples
 import LeanMiniscript.Extraction.TaprootBytesExamples
 import LeanMiniscript.Extraction.TaprootExamples
+import LeanMiniscript.Psbt.CodecExamples
+import LeanMiniscript.Psbt.RoleExamples
 
 /-! Build-checked external conformance, executable boundary, and semantic
 regression fixtures. General theorem applications belong in

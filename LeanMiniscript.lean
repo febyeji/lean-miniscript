@@ -1,3 +1,5 @@
+import LeanMiniscript.Bitcoin.Base64
+import LeanMiniscript.Bitcoin.Deserialization
 import LeanMiniscript.Bitcoin.Schnorr
 import LeanMiniscript.Bitcoin.TaggedHash
 import LeanMiniscript.Bitcoin.TaprootControlBlock
@@ -38,3 +40,5 @@ import LeanMiniscript.Policy.Compiler
 import LeanMiniscript.Policy.Semantics
 import LeanMiniscript.Policy.Syntax
 import LeanMiniscript.Policy.Text
+import LeanMiniscript.Psbt.Codec
+import LeanMiniscript.Psbt.Fields
