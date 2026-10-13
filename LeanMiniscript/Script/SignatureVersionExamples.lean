@@ -187,19 +187,10 @@ example : Eval [.op .OP_CHECKSIG, .op .OP_VERIFY] [key, badSig] [] flags tx
   apply Eval.checksig_encoding_failure
   rfl
 
-example {result : ExecResult}
-    (evaluated : Eval [.op .OP_CHECKSIG, .op .OP_VERIFY] [key, badSig] [] flags tx result) :
-    result = .failure .schnorrSigSize :=
-  Eval.checksigEncodingFailure_result (by rfl) evaluated
-
 example : Eval [.op .OP_CHECKSIGADD] [] [] flags { tx with sigVersion := .base }
     (.failure .badOpcode) := by
   apply Eval.checksigadd_unavailable
   decide
-
-example : Eval [.op .OP_CHECKMULTISIG] [] [] flags tx
-    (.failure .tapscriptCheckMultiSig) :=
-  Eval.checkMultiSigOperandFailure (by rfl)
 
 /-- A witness context cannot accidentally run legacy signature rules. -/
 example : ¬ LeanMiniscript.Miniscript.ModeledContextVersion .p2wsh

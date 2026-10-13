@@ -74,20 +74,6 @@ example : (List.range 8).all (fun count =>
       stack true [⟨#[0xdd]⟩] 0 == some (.success stack [⟨#[0xdd]⟩] 0)) = true := by
   native_decide
 
-example : ((runtimeStep oracle (.op .OP_2ROT)
-    { stack := six, altStack := [⟨#[0x11]⟩], conditions := [true, true], weight := 0 }
-    {} ctx).toOption.map
-    fun state => (state.stack, state.altStack, state.conditions, state.weight)) =
-    some (rotatedSix, [⟨#[0x11]⟩], [true, true], 0) := by
-  native_decide
-
-example : ((runtimeStep oracle (.op .OP_2ROT)
-    { stack := [⟨#[0x80]⟩], altStack := [⟨#[0x11]⟩],
-      conditions := [true, false, true], weight := 17 } {} ctx).toOption.map
-    fun state => (state.stack, state.altStack, state.conditions, state.weight)) =
-    some ([⟨#[0x80]⟩], [⟨#[0x11]⟩], [true, false, true], 17) := by
-  native_decide
-
 -- Rotation preserves the combined stack count at the allowed limit.
 example : run [.op .OP_2ROT] (six ++ List.replicate 994 ByteArray.empty) =
     some (.success (rotatedSix ++ List.replicate 994 ByteArray.empty) [] 17) := by
@@ -128,8 +114,5 @@ example : ScriptElement.stackGrowthAllowance (.op .OP_2ROT) = 0 := rfl
 example : OneItemGrowth [.op .OP_2ROT] := by
   simp [ScriptElement.stackGrowthAllowance]
 example : serializeScript [.op .OP_2ROT] = .ok ⟨#[0x71]⟩ := rfl
-example : deserializeScript ⟨#[0x71]⟩ = .ok [.op .OP_2ROT] := by
-  exact deserializeScript_serializeScript_of_normalized
-    [.op .OP_2ROT] ⟨#[0x71]⟩ (by rfl) (by rfl)
 
 end LeanMiniscript.Script

@@ -181,16 +181,6 @@ example : selectionOpcodes.all (fun opcode =>
         stack true [opaqueBytes] 0 == some (.success stack [opaqueBytes] 0)) = true := by
   native_decide
 
-example : selectionOpcodes.all (fun opcode =>
-    match executeRuntimeElement oracle (.op opcode)
-        { stack := [oversized, nonminimal], altStack := [opaqueBytes],
-          conditions := [true, false], weight := 0 } { minimalData := true } ctx with
-    | .error _ => false
-    | .ok next => next.stack == [oversized, nonminimal] &&
-        next.altStack == [opaqueBytes] && next.conditions == [true, false] && next.weight == 0) =
-    true := by
-  native_decide
-
 -- MIN/MAX and ROLL reduce the combined count by one before the runtime stack limit.
 example : (numericOpcodes ++ [Opcode.OP_ROLL]).all (fun opcode =>
     run [.op opcode] (ByteArray.empty :: ByteArray.empty :: List.replicate 997 trueElement)

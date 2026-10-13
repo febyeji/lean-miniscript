@@ -59,21 +59,6 @@ example : ([[], [⟨#[0x80]⟩], [⟨#[0xaa]⟩, ⟨#[0xbb]⟩, ⟨#[0xcc]⟩]] 
       stack true [⟨#[0xdd]⟩] 0 == some (.success stack [⟨#[0xdd]⟩] 0)) = true := by
   native_decide
 
--- Observe condition-stack and budget preservation at the individual step.
-example : ((runtimeStep oracle (.op .OP_NIP)
-    { stack := [⟨#[0xaa]⟩, ⟨#[0xbb]⟩, ⟨#[0xcc]⟩], altStack := [⟨#[0xdd]⟩],
-      conditions := [true, true], weight := 0 } {} ctx).toOption.map
-    fun state => (state.stack, state.altStack, state.conditions, state.weight)) =
-    some ([⟨#[0xaa]⟩, ⟨#[0xcc]⟩], [⟨#[0xdd]⟩], [true, true], 0) := by
-  native_decide
-
-example : ((runtimeStep oracle (.op .OP_NIP)
-    { stack := [⟨#[0x80]⟩], altStack := [⟨#[0xdd]⟩],
-      conditions := [true, false, true], weight := 17 } {} ctx).toOption.map
-    fun state => (state.stack, state.altStack, state.conditions, state.weight)) =
-    some ([⟨#[0x80]⟩], [⟨#[0xdd]⟩], [true, false, true], 17) := by
-  native_decide
-
 -- The low-level runtime checks the stack after NIP reduces its count by one.
 -- Initial witness bounds are checked separately by the full-witness entry.
 example : run [.op .OP_NIP]

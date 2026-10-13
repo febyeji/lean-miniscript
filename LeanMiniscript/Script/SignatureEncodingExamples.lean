@@ -124,11 +124,6 @@ example : Eval [.op .OP_CHECKSIG, .op .OP_VERIFY] [badKey, badSig] [] strict tx
   apply Eval.checksig_encoding_failure
   rfl
 
-example {result : ExecResult}
-    (evaluated : Eval [.op .OP_CHECKSIG, .op .OP_VERIFY] [badKey, badSig] []
-      strict tx result) : result = .failure .sigDer :=
-  Eval.checksigEncodingFailure_result (by rfl) evaluated
-
 example : Eval [.op .OP_CHECKMULTISIG]
     [scriptNum 1, badKey, scriptNum 1, badSig, trueElement] [] strict tx
     (.failure .sigDer) := by

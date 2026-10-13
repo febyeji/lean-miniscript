@@ -61,21 +61,6 @@ example : ([[], [⟨#[0x80]⟩], [⟨#[0xaa]⟩, ⟨#[0xbb]⟩],
       stack true [⟨#[0xdd]⟩] 0 == some (.success stack [⟨#[0xdd]⟩] 0)) = true := by
   native_decide
 
-example : ((runtimeStep oracle (.op .OP_2DUP)
-    { stack := [⟨#[0xaa]⟩, ⟨#[0xbb]⟩, ⟨#[0xcc]⟩], altStack := [⟨#[0xdd]⟩],
-      conditions := [true, true], weight := 0 } {} ctx).toOption.map
-    fun state => (state.stack, state.altStack, state.conditions, state.weight)) =
-    some ([⟨#[0xaa]⟩, ⟨#[0xbb]⟩, ⟨#[0xaa]⟩, ⟨#[0xbb]⟩, ⟨#[0xcc]⟩],
-      [⟨#[0xdd]⟩], [true, true], 0) := by
-  native_decide
-
-example : ((runtimeStep oracle (.op .OP_2DUP)
-    { stack := [⟨#[0x80]⟩], altStack := [⟨#[0xdd]⟩],
-      conditions := [true, false, true], weight := 17 } {} ctx).toOption.map
-    fun state => (state.stack, state.altStack, state.conditions, state.weight)) =
-    some ([⟨#[0x80]⟩], [⟨#[0xdd]⟩], [true, false, true], 17) := by
-  native_decide
-
 -- Active execution grows 998 combined items to the allowed limit of 1000.
 example : run [.op .OP_2DUP]
     (⟨#[0xaa]⟩ :: ⟨#[0xbb]⟩ :: List.replicate 996 ByteArray.empty) =

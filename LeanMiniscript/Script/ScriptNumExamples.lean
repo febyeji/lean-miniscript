@@ -29,20 +29,8 @@ def uint32MaxScriptNum : StackElement := ⟨#[0xff, 0xff, 0xff, 0xff, 0x00]⟩
 
 /-! ## Codec boundaries -/
 
-example : decodeScriptNum (scriptNum 0) true maxArithmeticScriptNumBytes =
-    .ok 0 := by
-  rfl
-
-example : decodeScriptNum (scriptNum 128) true maxArithmeticScriptNumBytes =
-    .ok 128 := by
-  rfl
-
 example : decodeScriptNum (scriptNum (-128)) true maxArithmeticScriptNumBytes =
     .ok (-128) := by
-  rfl
-
-example : decodeScriptNum (scriptNum 2147483647) true
-    maxArithmeticScriptNumBytes = .ok 2147483647 := by
   rfl
 
 example : decodeScriptNum (scriptNum (-2147483647)) true

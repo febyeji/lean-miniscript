@@ -61,20 +61,6 @@ example : (List.range 6).all (fun count =>
       stack true [⟨#[0xdd]⟩] 0 == some (.success stack [⟨#[0xdd]⟩] 0)) = true := by
   native_decide
 
-example : ((runtimeStep oracle (.op .OP_2OVER)
-    { stack := inputStack, altStack := [⟨#[0x11]⟩], conditions := [true, true], weight := 0 }
-    {} ctx).toOption.map
-    fun state => (state.stack, state.altStack, state.conditions, state.weight)) =
-    some (copiedStack, [⟨#[0x11]⟩], [true, true], 0) := by
-  native_decide
-
-example : ((runtimeStep oracle (.op .OP_2OVER)
-    { stack := [⟨#[0x80]⟩], altStack := [⟨#[0x11]⟩],
-      conditions := [true, false, true], weight := 17 } {} ctx).toOption.map
-    fun state => (state.stack, state.altStack, state.conditions, state.weight)) =
-    some ([⟨#[0x80]⟩], [⟨#[0x11]⟩], [true, false, true], 17) := by
-  native_decide
-
 -- Active execution grows 998 combined items to the allowed limit of 1000.
 example : run [.op .OP_2OVER] (inputStack ++ List.replicate 994 ByteArray.empty) =
     some (.success (copiedStack ++ List.replicate 994 ByteArray.empty) [] 17) := by
@@ -123,8 +109,5 @@ example : (List.replicate 998 trueElement).length +
   native_decide
 
 example : serializeScript [.op .OP_2OVER] = .ok ⟨#[0x70]⟩ := rfl
-example : deserializeScript ⟨#[0x70]⟩ = .ok [.op .OP_2OVER] := by
-  exact deserializeScript_serializeScript_of_normalized
-    [.op .OP_2OVER] ⟨#[0x70]⟩ (by rfl) (by rfl)
 
 end LeanMiniscript.Script

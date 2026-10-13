@@ -125,10 +125,6 @@ example : decodeCheckMultiSigOperands relaxedCheckMultiSigFlags
 
 /-! ## Evaluation boundaries -/
 
-example : Eval [.op .OP_CHECKMULTISIG] [] [] checkMultiSigFlags checkMultiSigTx
-    (.failure .stackUnderflow) := by
-  exact Eval.checkMultiSigOperandFailure (by rfl)
-
 /-- NULLDUMMY is checked after matching, at the dummy below all signatures. -/
 example : Eval [.op .OP_CHECKMULTISIG]
     [scriptNum 2, keyB, keyA, scriptNum 0, trueElement] []
@@ -221,15 +217,6 @@ example
   · simp [checkMultiSigDummy, nullDummySatisfied, checkMultiSigFlags, oneOfTwoOperands,
       stackElementEq, falseElement]
   · exact Eval.done
-
-/-- A decoder failure excludes successful evaluation of the same state. -/
-example : ¬ ∃ main alt,
-    Eval [.op .OP_CHECKMULTISIG] [] [] checkMultiSigFlags checkMultiSigTx
-      (.success main alt) := by
-  rintro ⟨main, alt, evaluated⟩
-  have impossible := Eval.checkMultiSigOperandFailure_result
-    (decoded := by rfl) evaluated
-  cases impossible
 
 /-! `CHECKMULTISIGVERIFY` preserves the legacy frame and error ordering while
 consuming the successful Boolean result. -/

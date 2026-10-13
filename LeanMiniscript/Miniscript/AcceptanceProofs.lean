@@ -52,7 +52,7 @@ example : Accepts .p2wsh [.pushNum 1] []
     contractExampleFlags contractExampleTxCtx := by
   refine ⟨?_, rfl, ?_⟩
   · simp [ModeledContextFlags, contractExampleFlags]
-  · refine ⟨trueElement, [], ?_, by native_decide⟩
+  · refine ⟨trueElement, [], ?_, by decide⟩
     simpa [Executes, Witness.toInitialStack, scriptNum_one] using
       (Eval.pushNum 1 [] [] [] contractExampleFlags contractExampleTxCtx
         (.success [scriptNum 1] [])
@@ -65,7 +65,7 @@ example : Accepts .p2wsh
     contractExampleFlags contractExampleTxCtx := by
   refine ⟨?_, rfl, ?_⟩
   · simp [ModeledContextFlags, contractExampleFlags]
-  · refine ⟨scriptNum 1, [scriptNum 1], ?_, by native_decide⟩
+  · refine ⟨scriptNum 1, [scriptNum 1], ?_, by decide⟩
     simpa [Executes, Witness.toInitialStack] using
       (Eval.pushNum 1 [.op .OP_TOALTSTACK, .pushNum 1] [] []
         contractExampleFlags contractExampleTxCtx
@@ -82,7 +82,7 @@ example : Dissatisfies .p2wsh [.pushNum 0] []
     contractExampleFlags contractExampleTxCtx := by
   refine ⟨?_, rfl, ?_⟩
   · simp [ModeledContextFlags, contractExampleFlags]
-  · refine ⟨falseElement, [], ?_, by native_decide⟩
+  · refine ⟨falseElement, [], ?_, by decide⟩
     simpa [Executes, Witness.toInitialStack, scriptNum_zero] using
       (Eval.pushNum 0 [] [] [] contractExampleFlags contractExampleTxCtx
         (.success [scriptNum 0] [])

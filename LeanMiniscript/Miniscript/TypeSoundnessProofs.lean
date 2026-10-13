@@ -2987,4 +2987,30 @@ theorem typeSoundnessCore : TypeSoundnessCore :=
 theorem typeSoundnessSurface : TypeSoundnessSurface :=
   typeSoundnessSurface_of_core typeSoundnessCore
 
+/-- Total core type soundness: the complete type contract together with a
+    unique, terminating outcome for every input state. -/
+def TotalTypeSoundnessCore : Prop :=
+  ∀ {ctx : ScriptContext} {m : CoreFragment} {ty : MiniType},
+    ValidTypedFragment ctx m ty →
+    TotalBaseTypeGuarantee m ty.base ∧ MiniTypeGuarantee ctx m ty
+
+/-- Total surface type soundness after core desugaring. -/
+def TotalTypeSoundnessSurface : Prop :=
+  ∀ {ctx : ScriptContext} {m : SurfaceFragment} {ty : MiniType},
+    ValidTypedSurfaceFragment ctx m ty →
+    TotalBaseTypeGuarantee (desugar m) ty.base ∧
+      MiniTypeGuarantee ctx (desugar m) ty
+
+/-- Every valid, correctly typed core fragment has exactly one outcome on every
+    input state and satisfies its complete type contract. -/
+theorem totalTypeSoundnessCore : TotalTypeSoundnessCore := by
+  intro ctx m ty valid
+  have guarantee := typeSoundnessCore valid
+  exact ⟨guarantee.base.total, guarantee⟩
+
+/-- Total type soundness for surface Miniscript fragments after desugaring. -/
+theorem totalTypeSoundnessSurface : TotalTypeSoundnessSurface := by
+  intro ctx m ty valid
+  exact totalTypeSoundnessCore valid
+
 end LeanMiniscript.Miniscript

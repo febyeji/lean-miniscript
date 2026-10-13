@@ -651,21 +651,21 @@ theorem falseElement_nullFailSatisfied (flags : ScriptFlags) :
   rfl
 
 theorem falseElement_minimalIfArg : minimalIfArg falseElement = true :=
-  by native_decide
+  by decide
 
 theorem trueElement_minimalIfArg : minimalIfArg trueElement = true :=
-  by native_decide
+  by decide
 
 /-- A concrete non-minimal truthy element used by MINIMALIF regression tests. -/
 def nonMinimalTruthyElement : StackElement := ⟨#[0x02]⟩
 
 theorem nonMinimalTruthyElement_truthy :
     castToBool nonMinimalTruthyElement = true := by
-  native_decide
+  decide
 
 theorem nonMinimalTruthyElement_not_minimalIfArg :
     minimalIfArg nonMinimalTruthyElement = false := by
-  native_decide
+  decide
 
 /-- Abstract SHA256 function.
     Opaque in the formal model — we only reason about its properties. -/

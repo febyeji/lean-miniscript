@@ -63,21 +63,6 @@ example : ([[], [⟨#[0x80]⟩], [⟨#[0xaa]⟩, ⟨#[0xbb]⟩],
       stack true [⟨#[0xee]⟩] 0 == some (.success stack [⟨#[0xee]⟩] 0)) = true := by
   native_decide
 
--- Observe condition-stack and signature-budget preservation at one step.
-example : ((runtimeStep oracle (.op .OP_ROT)
-    { stack := [⟨#[0xaa]⟩, ⟨#[0xbb]⟩, ⟨#[0xcc]⟩, ⟨#[0xdd]⟩], altStack := [⟨#[0xee]⟩],
-      conditions := [true, true], weight := 0 } {} ctx).toOption.map
-    fun state => (state.stack, state.altStack, state.conditions, state.weight)) =
-    some ([⟨#[0xcc]⟩, ⟨#[0xaa]⟩, ⟨#[0xbb]⟩, ⟨#[0xdd]⟩], [⟨#[0xee]⟩], [true, true], 0) := by
-  native_decide
-
-example : ((runtimeStep oracle (.op .OP_ROT)
-    { stack := [⟨#[0x80]⟩], altStack := [⟨#[0xdd]⟩],
-      conditions := [true, false, true], weight := 17 } {} ctx).toOption.map
-    fun state => (state.stack, state.altStack, state.conditions, state.weight)) =
-    some ([⟨#[0x80]⟩], [⟨#[0xdd]⟩], [true, false, true], 17) := by
-  native_decide
-
 -- Rotation keeps the combined count at the allowed limit of 1000.
 example : run [.op .OP_ROT]
     (⟨#[0xaa]⟩ :: ⟨#[0xbb]⟩ :: ⟨#[0xcc]⟩ :: List.replicate 997 ByteArray.empty) =

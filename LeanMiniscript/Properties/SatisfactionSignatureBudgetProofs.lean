@@ -8,8 +8,7 @@ open LeanMiniscript.Miniscript LeanMiniscript.Script
 /-- Every generated final Tapscript satisfaction funds its active signature
 debit from its argument payload. Resource uniqueness makes the bound apply to
 any observation of the generated execution. The recursive contract reserves
-pending K signatures and composes payload budgets in witness order.
-This theorem inherits the existing generated-satisfaction native_decide facts. -/
+pending K signatures and composes payload budgets in witness order. -/
 theorem satisfyFinal_signatureWeight_le_payload
     {fragment : CoreFragment} {env : SatEnv} {witness : Witness}
     {flags : ScriptFlags} {top : StackElement} {resources : ExecutionResources}

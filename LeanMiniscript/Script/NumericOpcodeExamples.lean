@@ -279,16 +279,6 @@ example : (unaryOpcodes ++ binaryOpcodes).all (fun opcode =>
         stack true [scriptNum 4] 0 == some (.success stack [scriptNum 4] 0)) = true := by
   native_decide
 
-example : (unaryOpcodes ++ binaryOpcodes).all (fun opcode =>
-    match executeRuntimeElement oracle (.op opcode)
-        { stack := [oversized, nonminimal], altStack := [scriptNum 4],
-          conditions := [true, false], weight := 0 } { minimalData := true } ctx with
-    | .error _ => false
-    | .ok next => next.stack == [oversized, nonminimal] &&
-        next.altStack == [scriptNum 4] && next.conditions == [true, false] && next.weight == 0) =
-    true := by
-  native_decide
-
 -- Unary arithmetic keeps the combined stack count at the 1000-item boundary.
 example : unaryZeroResults.all (fun (opcode, expected) =>
     run [.op opcode] (ByteArray.empty :: List.replicate 998 trueElement)

@@ -56,6 +56,30 @@ def BaseTypeGuarantee (m : CoreFragment) (base : BaseType) : Prop :=
         finalAltStack = altStack ∧ BaseStackEffect base stack finalStack
     | .failure _ => True
 
+/-- Total arbitrary-input contract for a base type. Every modeled input state
+    has exactly one evaluation outcome, so the compiled fragment never gets
+    stuck or diverges, and a successful outcome has the base type's exact
+    stack-frame effect. -/
+def TotalBaseTypeGuarantee (m : CoreFragment) (base : BaseType) : Prop :=
+  ∀ (stack altStack : Stack) (flags : ScriptFlags) (ctx : TxContext),
+    ∃ outcome, Eval (compile m) stack altStack flags ctx outcome ∧
+      (∀ other, Eval (compile m) stack altStack flags ctx other →
+        other = outcome) ∧
+      match outcome with
+      | .success finalStack finalAltStack =>
+          finalAltStack = altStack ∧ BaseStackEffect base stack finalStack
+      | .failure _ => True
+
+/-- Big-step totality and determinism upgrade the safety contract to its total
+    form. -/
+theorem BaseTypeGuarantee.total {m : CoreFragment} {base : BaseType}
+    (guarantee : BaseTypeGuarantee m base) : TotalBaseTypeGuarantee m base := by
+  intro stack altStack flags ctx
+  rcases Eval.existsUnique_result (compile m) stack altStack flags ctx with
+    ⟨outcome, evaluated, unique⟩
+  exact ⟨outcome, evaluated, unique,
+    guarantee stack altStack flags ctx outcome evaluated⟩
+
 /-- Candidate-level meaning of the `d` modifier: a raw dissatisfaction exists
     for every material environment. The raw projection intentionally includes
     canonical `DONTUSE` rows such as hashlock dissatisfactions, before the later
@@ -101,7 +125,7 @@ theorem and_v_v_zero_pk_k_soundness (key : PubKey) :
   refine ⟨.verify, ?_⟩
   apply Eval.pushNum
   apply Eval.verify_failure
-  native_decide
+  decide
 
 /-- What a B-type fragment with 'o' modifier guarantees:
     Consumes exactly one witness element from the stack and pushes

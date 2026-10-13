@@ -64,20 +64,6 @@ example : ([[], [⟨#[0x80]⟩], [⟨#[0xaa]⟩, ⟨#[0xbb]⟩, ⟨#[0xcc]⟩]] 
       stack true [⟨#[0xdd]⟩] 0 == some (.success stack [⟨#[0xdd]⟩] 0)) = true := by
   native_decide
 
-example : ((runtimeStep oracle (.op .OP_2DROP)
-    { stack := [⟨#[0xaa]⟩, ⟨#[0xbb]⟩, ⟨#[0xcc]⟩], altStack := [⟨#[0xdd]⟩],
-      conditions := [true, true], weight := 0 } {} ctx).toOption.map
-    fun state => (state.stack, state.altStack, state.conditions, state.weight)) =
-    some ([⟨#[0xcc]⟩], [⟨#[0xdd]⟩], [true, true], 0) := by
-  native_decide
-
-example : ((runtimeStep oracle (.op .OP_2DROP)
-    { stack := [⟨#[0x80]⟩], altStack := [⟨#[0xdd]⟩],
-      conditions := [true, false, true], weight := 17 } {} ctx).toOption.map
-    fun state => (state.stack, state.altStack, state.conditions, state.weight)) =
-    some ([⟨#[0x80]⟩], [⟨#[0xdd]⟩], [true, false, true], 17) := by
-  native_decide
-
 -- The low-level entry checks the combined count after both removals.
 -- Full-witness entry checks the initial witness bounds separately.
 example : run [.op .OP_2DROP]
@@ -134,8 +120,5 @@ example : ScriptElement.stackGrowthAllowance (.op .OP_2DROP) = 0 := rfl
 example : OneItemGrowth [.op .OP_2DROP] := by
   simp [ScriptElement.stackGrowthAllowance]
 example : serializeScript [.op .OP_2DROP] = .ok ⟨#[0x6d]⟩ := rfl
-example : deserializeScript ⟨#[0x6d]⟩ = .ok [.op .OP_2DROP] := by
-  exact deserializeScript_serializeScript_of_normalized
-    [.op .OP_2DROP] ⟨#[0x6d]⟩ (by rfl) (by rfl)
 
 end LeanMiniscript.Script

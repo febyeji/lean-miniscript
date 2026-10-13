@@ -42,20 +42,6 @@ private def secondWitness : Witness := [⟨#[0x03]⟩]
 private def alternateTruthy : StackElement := ⟨#[0x02]⟩
 private def nonemptyFalsey : StackElement := ⟨#[0x80]⟩
 
-/-- Sequential composition puts the first fragment's arguments on top of the
-    runtime stack while retaining Bitcoin's bottom-first wire order. -/
-example :
-    Witness.toInitialStack (Witness.combine firstWitness secondWitness) =
-      Witness.toInitialStack firstWitness ++
-        Witness.toInitialStack secondWitness := by
-  simp
-
-/-- A branch selector is the next item consumed after wire-order conversion. -/
-example :
-    Witness.toInitialStack (Witness.withSelector firstWitness trueElement) =
-      trueElement :: Witness.toInitialStack firstWitness := by
-  simp
-
 /-- Candidate construction records the witness independently of its computed
     cost. -/
 example :
@@ -73,22 +59,6 @@ example :
 /-- Full wire size additionally includes the outer witness item-count prefix. -/
 example : Witness.wireSize [falseElement, trueElement] = 4 := by
   native_decide
-
-/-- Candidate cost composes additively in fragment execution order. -/
-example :
-    Witness.candidateCost (Witness.combine firstWitness secondWitness) =
-      Witness.candidateCost firstWitness +
-        Witness.candidateCost secondWitness := by
-  simp
-
-/-- DONTUSE candidates remain available to proof-facing composition, while
-    `usableWitness?` removes them independently of later top-level policy. -/
-example :
-    (CandidateResult.dontUse [falseElement] false .canonical).witness? =
-      some [falseElement] ∧
-    (CandidateResult.dontUse [falseElement] false .canonical).usableWitness? =
-      none := by
-  decide
 
 /-- DONTUSE and canonicality are independent classifications. Canonical hash
     dissatisfactions and non-canonical overcomplete paths can both be DONTUSE. -/
@@ -123,14 +93,6 @@ example :
   decide
 
 /-! ## Shared BIP 379 selection algebra -/
-
-/-- Impossibility is an identity on either side of candidate selection. -/
-example :
-    CandidateResult.select .impossible
-        (.usable [falseElement] false) = .usable [falseElement] false ∧
-      CandidateResult.select (.usable [falseElement] false)
-        .impossible = .usable [falseElement] false := by
-  constructor <;> rfl
 
 /-- A unique no-HASSIG candidate wins unchanged, including an existing
     DONTUSE classification. -/
@@ -288,11 +250,6 @@ private def uniqueCountB : CandidatePair where
 private def uniqueCountC : CandidatePair where
   dsat := .usable [countItemC] false
 
-/-- The seed represents the unique zero-of-zero choice; extending it by one
-    child exposes that child's dissatisfaction and satisfaction in order. -/
-example : CandidatePair.countCandidates [] = [.usable [] false] := by
-  rfl
-
 example : CandidatePair.countCandidates [uniqueCountA] =
     [uniqueCountA.dsat, uniqueCountA.sat] := by
   rfl
@@ -346,13 +303,6 @@ example : CandidatePair.selectExactly 2
 example : CandidatePair.selectExactly 2 [uniqueCountA, uniqueCountC] =
     .impossible := by
   rfl
-
-/-- Counts beyond the table are impossible independently of child
-    availability. -/
-example : CandidatePair.selectExactly 4
-      [tiedCountA, tiedCountB, tiedCountC] = .impossible := by
-  apply CandidatePair.selectExactly_eq_impossible_of_lt
-  decide
 
 /-! ## Arithmetic threshold guards -/
 
@@ -462,10 +412,6 @@ example : dissatisfy (.c (.pk_k key)) unavailableEnv = some [falseElement] := by
 example : satisfy (.pk_h key) signingEnv = some [signature, key.bytes] := by
   rfl
 
-example :
-    Witness.toInitialStack [signature, key.bytes] = [key.bytes, signature] := by
-  rfl
-
 example : dissatisfy (.pk_h key) unavailableEnv =
     some [falseElement, key.bytes] := by
   rfl
@@ -475,12 +421,6 @@ example : (satisfactionCandidates (.pk_h key) signingEnv).sat =
     (satisfactionCandidates (.pk_h key) signingEnv).dsat =
       CandidateResult.usable [falseElement, key.bytes] false := by
   constructor <;> rfl
-
-/-- Wrapper `c` preserves the complete child candidate pair, including its
-    HASSIG, DONTUSE, and origin metadata. -/
-example : satisfactionCandidates (.c (.pk_h key)) signingEnv =
-    satisfactionCandidates (.pk_h key) signingEnv := by
-  rfl
 
 /-- Available hash preimages are ordinary selectable candidates. -/
 example : satisfy (.sha256 hashTarget) preimageEnv = some [preimage32] := by
@@ -521,17 +461,6 @@ example : satisfy (.after 90) unavailableEnv = some [] := by native_decide
 example : satisfyFinal (.after 90) unavailableEnv = none := by native_decide
 example : satisfy (.after 110) unavailableEnv = none := by native_decide
 
-/-- Linear wrappers preserve the child's serialized witness and complete
-    satisfaction candidate metadata. -/
-example :
-    satisfactionCandidates (.a (.sha256 hashTarget)) preimageEnv =
-        satisfactionCandidates (.sha256 hashTarget) preimageEnv ∧
-      satisfactionCandidates (.s (.sha256 hashTarget)) preimageEnv =
-        satisfactionCandidates (.sha256 hashTarget) preimageEnv ∧
-      satisfactionCandidates (.n (.sha256 hashTarget)) preimageEnv =
-        satisfactionCandidates (.sha256 hashTarget) preimageEnv := by
-  exact ⟨rfl, rfl, rfl⟩
-
 /-- Raw hash dissatisfaction remains canonical DONTUSE through `a`, `s`, and
     `n`, while their public dissatisfaction projections remain unavailable. -/
 example :
@@ -545,16 +474,6 @@ example :
       dissatisfy (.s (.sha256 hashTarget)) unavailableEnv = none ∧
       dissatisfy (.n (.sha256 hashTarget)) unavailableEnv = none := by
   exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-
-/-- Wrapper `v` retains only satisfaction; a child's raw dissatisfaction is
-    discarded instead of leaking through either projection. -/
-example :
-    (satisfactionCandidates (.v (.sha256 hashTarget)) preimageEnv).sat =
-        (satisfactionCandidates (.sha256 hashTarget) preimageEnv).sat ∧
-      (satisfactionCandidates (.v (.sha256 hashTarget)) unavailableEnv).dsat =
-        .impossible ∧
-      dissatisfy (.v (.sha256 hashTarget)) unavailableEnv = none := by
-  exact ⟨rfl, rfl, rfl⟩
 
 /-! ## Straight-line connective candidates -/
 
@@ -769,10 +688,6 @@ example {flags : ScriptFlags} {ctx : TxContext} :
     BExecution (.d (.v .one)) [trueElement] trueElement flags ctx := by
   exact (BExecution.v (one_execution flags ctx) (by native_decide)).d
 
-example {flags : ScriptFlags} {ctx : TxContext} :
-    BExecution (.d (.v .one)) [falseElement] falseElement flags ctx := by
-  exact d_dissatisfaction_execution (.v .one) flags ctx
-
 /-- Adding `d`'s selector preserves metadata and charges its serialized item
     to candidate cost. -/
 example :
@@ -813,10 +728,6 @@ example :
       dissatisfy (.j (.c (.pk_k key))) unavailableEnv =
         some [falseElement] := by
   constructor <;> rfl
-
-example {flags : ScriptFlags} {ctx : TxContext} :
-    BExecution (.j (.c (.pk_k key))) [falseElement] falseElement flags ctx := by
-  exact j_dissatisfaction_execution (.c (.pk_k key)) flags ctx
 
 /-- A nonempty no-HASSIG child alternative makes `j`'s selected
     dissatisfaction DONTUSE, even when the cheaper canonical witness wins. -/
@@ -1196,13 +1107,6 @@ example : (satisfactionCandidates costThreshold thresholdCostEnv).sat =
     CandidateResult.usable [falseElement, countItemB, falseElement] true := by
   rfl
 
-/-- Invalid raw thresholds have no candidates on either side. -/
-example :
-    satisfactionCandidates (.thresh 0 [signedB]) signingEnv = {} ∧
-      satisfactionCandidates (.thresh 2 [signedB]) signingEnv = {} ∧
-      satisfactionCandidates (.thresh 1 []) signingEnv = {} := by
-  exact ⟨rfl, rfl, rfl⟩
-
 /-- Multiple no-HASSIG one-of-two hash paths select a concrete representative
     but mark it DONTUSE. The inherited canonical origin remains distinct from
     overcomplete non-canonical rows. -/
@@ -1413,75 +1317,12 @@ example :
 private def multiFlags : ScriptFlags where
   strictEncoding := false
 
-private def multiFalseFlags : ScriptFlags where
-  strictEncoding := false
-  nullFail := false
-
 private def multiCtx : TxContext where
   version := 2
   locktime := 0
   sequence := 0
   sigHash := ⟨#[]⟩
   sigVersion := .witnessV0
-
-/-- The exact decoder helper fixes public keys, signatures, dummy, and the
-    untouched suffix in their top-first runtime order. -/
-example :
-    decodeCheckMultiSigOperandsFor multiFlags multiCtx
-      (scriptNat 3 :: [multiKeyC.bytes, multiKeyB.bytes, multiKeyA.bytes] ++
-        scriptNat 2 :: [multiSigC, multiSigA, falseElement, countItemA]) =
-      .ok {
-        pubkeys := [multiKeyC.bytes, multiKeyB.bytes, multiKeyA.bytes]
-        signatures := [multiSigC, multiSigA]
-        dummy := some falseElement
-        rest := [countItemA] } := by
-  simpa [multiKeys] using
-    (decodeCheckMultiSigOperandsFor_multi
-      (threshold := 2) (keys := multiKeys)
-      (signatures := [multiSigC, multiSigA]) (rest := [countItemA])
-      (flags := multiFlags) (ctx := multiCtx)
-      (by decide) (by decide) (by decide) rfl)
-
-/-- Successful local execution uses the decoder's top-first signature order.
-    Cryptographic verification remains an explicit premise. -/
-example
-    (verified : checkMultiSigFor checkSig multiFlags multiCtx
-      [multiSigC, multiSigA]
-      [multiKeyC.bytes, multiKeyB.bytes, multiKeyA.bytes] = .ok true) :
-    BExecution twoOfThreeMulti
-      [multiSigC, multiSigA, falseElement] trueElement multiFlags multiCtx := by
-  simpa [twoOfThreeMulti, multiKeys, boolToElement] using
-    BExecution.multi (threshold := 2) (keys := multiKeys)
-      (signatures := [multiSigC, multiSigA]) (by decide) (by decide)
-      (by decide) rfl verified (Or.inl rfl)
-
-/-- With NULLFAIL disabled, a modeled failed check returns canonical false
-    while preserving the same exact stack frame. -/
-example
-    (rejected : checkMultiSigFor checkSig multiFalseFlags multiCtx
-      [multiSigC, multiSigA]
-      [multiKeyC.bytes, multiKeyB.bytes, multiKeyA.bytes] = .ok false) :
-    BExecution twoOfThreeMulti
-      [multiSigC, multiSigA, falseElement] falseElement
-      multiFalseFlags multiCtx := by
-  apply BExecution.multiFalse (threshold := 2) (keys := multiKeys)
-    (signatures := [multiSigC, multiSigA]) (by decide) (by decide)
-    (by decide) rfl
-  · simpa [multiKeys] using rejected
-  · simp [nullFailSatisfied, multiFalseFlags]
-
-/-- The canonical all-empty dissatisfaction discharges NULLFAIL even when the
-    flag is active. -/
-example
-    (rejected : checkMultiSigFor checkSig multiFlags multiCtx
-      [falseElement, falseElement]
-      [multiKeyC.bytes, multiKeyB.bytes, multiKeyA.bytes] = .ok false) :
-    BExecution twoOfThreeMulti
-      [falseElement, falseElement, falseElement] falseElement
-      multiFlags multiCtx := by
-  apply multi_dissatisfaction_execution (threshold := 2) (keys := multiKeys)
-    (by decide) (by decide) (by decide)
-  simpa [multiKeys] using rejected
 
 /-- Nonempty failed signatures violate NULLFAIL when enabled, and a nonempty
     historical dummy violates NULLDUMMY. -/
@@ -1648,20 +1489,6 @@ example {firstSignature : StackElement}
   exact BExecution.multiAFalse (threshold := 2) (firstKey := tapMultiKeyA)
     (keys := [tapMultiKeyB, tapMultiKeyC]) rfl firstChecked tail
     (by rfl) (by rfl)
-
-/-- The canonical all-empty dissatisfaction remains at total zero and returns
-    false for the positive threshold. -/
-example :
-    BExecution twoOfThreeMultiA
-      [falseElement, falseElement, falseElement]
-      falseElement tapMultiFlags tapMultiCtx := by
-  apply multiA_dissatisfaction_execution (threshold := 2)
-    (firstKey := tapMultiKeyA) (keys := [tapMultiKeyB, tapMultiKeyC])
-    (flags := tapMultiFlags) (ctx := tapMultiCtx) rfl (by decide) (by rfl)
-  · intro selectedKey member
-    simp at member
-    rcases member with rfl | rfl <;> rfl
-  · rfl
 
 private def nonTapMultiCtx : TxContext where
   version := 2

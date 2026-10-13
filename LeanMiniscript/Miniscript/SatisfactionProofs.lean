@@ -240,7 +240,7 @@ theorem BExecutionOutcome.s
 /-- Canonical boolean stack elements round-trip through Script truthiness. -/
 @[simp] theorem castToBool_boolToElement (value : Bool) :
     castToBool (boolToElement value) = value := by
-  cases value <;> native_decide
+  cases value <;> decide
 
 /-- Wrapper `n` executes `OP_0NOTEQUAL` on the child's exact result. The
     explicit four-byte decode premise is required because B truthiness alone
@@ -589,7 +589,7 @@ theorem BExecution.or_i_left
   simpa [BExecution, compile, compileWithKeyHash, List.append_assoc] using
     ExecutesStackFrame.ifElse_first
       (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by native_decide) executed
+      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by decide) executed
 
 /-- The canonical false selector chooses the second B branch of `or_i`. -/
 theorem BExecution.or_i_right
@@ -600,7 +600,7 @@ theorem BExecution.or_i_right
   simpa [BExecution, compile, compileWithKeyHash, List.append_assoc] using
     ExecutesStackFrame.ifElse_second
       (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by native_decide) executed
+      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by decide) executed
 
 theorem KExecution.or_i_left
     {first second : CoreFragment} {args : Stack} {key : StackElement}
@@ -610,7 +610,7 @@ theorem KExecution.or_i_left
   simpa [KExecution, compile, compileWithKeyHash, List.append_assoc] using
     ExecutesStackFrame.ifElse_first
       (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by native_decide) executed
+      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by decide) executed
 
 theorem KExecution.or_i_right
     {first second : CoreFragment} {args : Stack} {key : StackElement}
@@ -620,7 +620,7 @@ theorem KExecution.or_i_right
   simpa [KExecution, compile, compileWithKeyHash, List.append_assoc] using
     ExecutesStackFrame.ifElse_second
       (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by native_decide) executed
+      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by decide) executed
 
 theorem VExecution.or_i_left
     {first second : CoreFragment} {args : Stack}
@@ -630,7 +630,7 @@ theorem VExecution.or_i_left
   simpa [VExecution, compile, compileWithKeyHash, List.append_assoc] using
     ExecutesStackFrame.ifElse_first
       (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by native_decide) executed
+      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by decide) executed
 
 theorem VExecution.or_i_right
     {first second : CoreFragment} {args : Stack}
@@ -640,7 +640,7 @@ theorem VExecution.or_i_right
   simpa [VExecution, compile, compileWithKeyHash, List.append_assoc] using
     ExecutesStackFrame.ifElse_second
       (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by native_decide) executed
+      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by decide) executed
 
 theorem BExecutionOutcome.or_i_left
     {first second : CoreFragment} {args : Stack} {expected : Bool}
@@ -793,7 +793,7 @@ theorem VExecution.d
     BExecution (.d fragment) [trueElement] trueElement flags ctx := by
   intro rest altStack
   have childExec := executed (trueElement :: rest) altStack
-  have truth : castToBool trueElement = true := by native_decide
+  have truth : castToBool trueElement = true := by decide
   have split :
       splitConditional (compile fragment ++ [.op .OP_ENDIF]) =
         some { branches := [compile fragment], after := [] } := by
@@ -820,7 +820,7 @@ theorem d_dissatisfaction_execution
     (fragment : CoreFragment) (flags : ScriptFlags) (ctx : TxContext) :
     BExecution (.d fragment) [falseElement] falseElement flags ctx := by
   intro rest altStack
-  have falsehood : castToBool falseElement = false := by native_decide
+  have falsehood : castToBool falseElement = false := by decide
   have split :
       splitConditional (compile fragment ++ [.op .OP_ENDIF]) =
         some { branches := [compile fragment], after := [] } := by
@@ -859,7 +859,7 @@ theorem BExecution.j
       boolToElement (Int.ofNat top.size != 0) = trueElement := by
     rw [nonzero]
     rfl
-  have truth : castToBool trueElement = true := by native_decide
+  have truth : castToBool trueElement = true := by decide
   have split :
       splitConditional (compile fragment ++ [.op .OP_ENDIF]) =
         some { branches := [compile fragment], after := [] } := by
@@ -917,12 +917,12 @@ theorem j_dissatisfaction_execution
     change decodeScriptNum falseElement flags.minimalData
       maxArithmeticScriptNumBytes = .ok 0
     cases h : flags.minimalData <;> rfl
-  have zero : (Int.ofNat falseElement.size != 0) = false := by native_decide
+  have zero : (Int.ofNat falseElement.size != 0) = false := by decide
   have branchFalse :
       boolToElement (Int.ofNat falseElement.size != 0) = falseElement := by
     rw [zero]
     rfl
-  have falsehood : castToBool falseElement = false := by native_decide
+  have falsehood : castToBool falseElement = false := by decide
   have split :
       splitConditional (compile fragment ++ [.op .OP_ENDIF]) =
         some { branches := [compile fragment], after := [] } := by
@@ -1706,7 +1706,7 @@ theorem satisfy_basic_execution
       simp [satisfy] at generated
       subst witness
       exact ⟨trueElement, by simpa using one_execution flags env.txCtx,
-        by native_decide⟩
+        by decide⟩
   | cPkK key =>
       cases signatureFor : env.signatureFor key with
       | none => simp [satisfy, keyCandidates, signatureFor] at generated
@@ -1716,7 +1716,7 @@ theorem satisfy_basic_execution
           have verified := sound.signatureValid signatureFor
           have checked := checkSigWithEncoding_true
             (encodings key signature signatureFor) verified
-          refine ⟨trueElement, ?_, by native_decide⟩
+          refine ⟨trueElement, ?_, by decide⟩
           change BExecution (.c (.pk_k key)) [signature]
             trueElement flags env.txCtx
           simpa [boolToElement] using
@@ -1730,7 +1730,7 @@ theorem satisfy_basic_execution
           have verified := sound.signatureValid signatureFor
           have checked := checkSigWithEncoding_true
             (encodings key signature signatureFor) verified
-          refine ⟨trueElement, ?_, by native_decide⟩
+          refine ⟨trueElement, ?_, by decide⟩
           change BExecution (.c (.pk_h key)) [key.bytes, signature]
             trueElement flags env.txCtx
           simpa [boolToElement] using
@@ -1743,7 +1743,7 @@ theorem satisfy_basic_execution
           subst witness
           exact ⟨trueElement,
             hash_satisfaction_execution (sound.preimageMatches preimageFor),
-            by native_decide⟩
+            by decide⟩
   | hash256 hash =>
       cases preimageFor : env.preimageFor (.hash256 hash) with
       | none => simp [satisfy, hashCandidates, preimageFor] at generated
@@ -1752,7 +1752,7 @@ theorem satisfy_basic_execution
           subst witness
           exact ⟨trueElement,
             hash_satisfaction_execution (sound.preimageMatches preimageFor),
-            by native_decide⟩
+            by decide⟩
   | ripemd160 hash =>
       cases preimageFor : env.preimageFor (.ripemd160 hash) with
       | none => simp [satisfy, hashCandidates, preimageFor] at generated
@@ -1761,7 +1761,7 @@ theorem satisfy_basic_execution
           subst witness
           exact ⟨trueElement,
             hash_satisfaction_execution (sound.preimageMatches preimageFor),
-            by native_decide⟩
+            by decide⟩
   | hash160 hash =>
       cases preimageFor : env.preimageFor (.hash160 hash) with
       | none => simp [satisfy, hashCandidates, preimageFor] at generated
@@ -1770,7 +1770,7 @@ theorem satisfy_basic_execution
           subst witness
           exact ⟨trueElement,
             hash_satisfaction_execution (sound.preimageMatches preimageFor),
-            by native_decide⟩
+            by decide⟩
 
 /-- Every witness returned for a supported basic fragment is accepted by its
     compiled script under the environment transaction and modeled flags,
@@ -1880,12 +1880,12 @@ theorem dissatisfy_basic_execution
   · simp [dissatisfy] at generated
     subst witness
     exact ⟨falseElement, by simpa using zero_execution flags env.txCtx,
-      by native_decide⟩
+      by decide⟩
   · simp [dissatisfy, keyCandidates] at generated
     subst witness
     have rejected := sound.emptySignatureInvalid key
     have checked := checkSigWithEncoding_empty (keys key (Or.inl rfl)) rejected
-    refine ⟨falseElement, ?_, by native_decide⟩
+    refine ⟨falseElement, ?_, by decide⟩
     change BExecution (.c (.pk_k key)) [falseElement] falseElement flags env.txCtx
     simpa [boolToElement] using
       (KExecution.c (pk_k_execution key flags env.txCtx) checked)
@@ -1893,7 +1893,7 @@ theorem dissatisfy_basic_execution
     subst witness
     have rejected := sound.emptySignatureInvalid key
     have checked := checkSigWithEncoding_empty (keys key (Or.inr rfl)) rejected
-    refine ⟨falseElement, ?_, by native_decide⟩
+    refine ⟨falseElement, ?_, by decide⟩
     change BExecution (.c (.pk_h key)) [key.bytes, falseElement]
       falseElement flags env.txCtx
     simpa [boolToElement] using

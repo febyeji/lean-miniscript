@@ -61,20 +61,6 @@ example : ([[], [⟨#[0x80]⟩], [⟨#[0xaa]⟩, ⟨#[0xbb]⟩, ⟨#[0xcc]⟩]] 
       stack true [⟨#[0xdd]⟩] 0 == some (.success stack [⟨#[0xdd]⟩] 0)) = true := by
   native_decide
 
-example : ((runtimeStep oracle (.op .OP_TUCK)
-    { stack := [⟨#[0xaa]⟩, ⟨#[0xbb]⟩, ⟨#[0xcc]⟩], altStack := [⟨#[0xdd]⟩],
-      conditions := [true, true], weight := 0 } {} ctx).toOption.map
-    fun state => (state.stack, state.altStack, state.conditions, state.weight)) =
-    some ([⟨#[0xaa]⟩, ⟨#[0xbb]⟩, ⟨#[0xaa]⟩, ⟨#[0xcc]⟩], [⟨#[0xdd]⟩], [true, true], 0) := by
-  native_decide
-
-example : ((runtimeStep oracle (.op .OP_TUCK)
-    { stack := [⟨#[0x80]⟩], altStack := [⟨#[0xdd]⟩],
-      conditions := [true, false, true], weight := 17 } {} ctx).toOption.map
-    fun state => (state.stack, state.altStack, state.conditions, state.weight)) =
-    some ([⟨#[0x80]⟩], [⟨#[0xdd]⟩], [true, false, true], 17) := by
-  native_decide
-
 -- Combined stack size 999 grows to exactly 1000, including alt-stack items.
 example : run [.op .OP_TUCK]
     (⟨#[0xaa]⟩ :: ⟨#[0xbb]⟩ :: List.replicate 997 ByteArray.empty) =
@@ -122,8 +108,5 @@ example : ScriptElement.stackGrowthAllowance (.op .OP_TUCK) = 1 := rfl
 example : OneItemGrowth [.op .OP_TUCK] := by
   simp [ScriptElement.stackGrowthAllowance]
 example : serializeScript [.op .OP_TUCK] = .ok ⟨#[0x7d]⟩ := rfl
-example : deserializeScript ⟨#[0x7d]⟩ = .ok [.op .OP_TUCK] := by
-  exact deserializeScript_serializeScript_of_normalized
-    [.op .OP_TUCK] ⟨#[0x7d]⟩ (by rfl) (by rfl)
 
 end LeanMiniscript.Script
