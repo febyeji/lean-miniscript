@@ -15,6 +15,60 @@ Resource-aware `GeneratedResourceContract` composition for the combinators that
 select a branch with `IF`.
 -/
 
+/-- The resource frame and selected summaries carried by a contract whose base
+    type can sit inside a branch (`B`, `K`, or `V`). -/
+private theorem resourceFrame
+    {fragment : CoreFragment} {witness : Witness} {expected : Bool}
+    {base : BaseType} {mods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (contract : GeneratedResourceContract fragment witness expected flags txCtx
+      ⟨base, mods⟩) (branch : branchBase base) :
+    ∃ outputs trace dynamic,
+      ExecutesResourceFrame (compile fragment) witness.toInitialStack outputs
+        flags txCtx trace dynamic ∧
+      selectedStackSummary fragment expected = some trace ∧
+      selectedOpSummary fragment expected = some dynamic := by
+  cases contract with
+  | b _ _ _ resources stackSelected opSelected =>
+      exact ⟨_, _, _, resources, stackSelected, opSelected⟩
+  | v _ _ _ resources stackSelected opSelected =>
+      exact ⟨_, _, _, resources, stackSelected, opSelected⟩
+  | k _ _ _ _ _ _ _ resources stackSelected opSelected =>
+      exact ⟨_, _, _, resources, stackSelected, opSelected⟩
+  | w => simp [branchBase] at branch
+
+/-- Attach resource evidence to a standard `B`, `K`, or `V` generated
+    contract: any resource frame from the witness stack aligns with the exact
+    outputs of the standard execution. -/
+private theorem ofGeneratedContract
+    {fragment : CoreFragment} {witness : Witness} {expected : Bool}
+    {base : BaseType} {mods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    {outputs : Stack} {trace : StackTraceBound} {dynamic : Nat}
+    (standard : GeneratedContract fragment witness expected flags txCtx
+      ⟨base, mods⟩) (branch : branchBase base)
+    (resources : ExecutesResourceFrame (compile fragment) witness.toInitialStack
+      outputs flags txCtx trace dynamic)
+    (stackSelected : selectedStackSummary fragment expected = some trace)
+    (opSelected : selectedOpSummary fragment expected = some dynamic) :
+    GeneratedResourceContract fragment witness expected flags txCtx
+      ⟨base, mods⟩ := by
+  cases standard with
+  | b input facts executed =>
+      exact .b input facts executed (resources.alignOutputs executed)
+        stackSelected opSelected
+  | v input expectedTrue executed =>
+      exact .v input expectedTrue executed (resources.alignOutputs executed)
+        stackSelected opSelected
+  | k input ownArgs key signature stackShape executed checked =>
+      have target : ExecutesStackFrame (compile fragment)
+          witness.toInitialStack [key, signature] flags txCtx := by
+        rw [stackShape]
+        simpa using executed.withSuffix (suffix := [signature])
+      exact .k input ownArgs key signature stackShape executed checked
+        (resources.alignOutputs target) stackSelected opSelected
+  | w => simp [branchBase] at branch
+
 /-- Resource-aware left branch of `or_i`, selected by the canonical true
     witness item for every admissible branch base. -/
 theorem orI_left
@@ -29,73 +83,18 @@ theorem orI_left
         o := firstMods.z && secondMods.z
         d := firstMods.d || secondMods.d
         u := firstMods.u && secondMods.u }⟩ := by
+  obtain ⟨_, _, _, resources, stackSelected, opSelected⟩ :=
+    contract.resourceFrame branch
+  obtain ⟨_, _, bounded, targetStack, targetOps⟩ :=
+    orILeftResources (second := second) resources stackSelected opSelected
+  refine ofGeneratedContract ?_ branch
+    (by simpa only [Witness.toInitialStack_withSelector] using bounded)
+    targetStack targetOps
+  have standard := contract.toGeneratedContract
   cases base with
-  | B =>
-      cases contract with
-      | @b _ result value trace dynamic input facts executed resources
-          stackSelected opSelected =>
-        obtain ⟨upperTrace, upperDynamic, bounded, targetStack, targetOps⟩ :=
-          orILeftResources (second := second) resources stackSelected opSelected
-        have standard := GeneratedContract.orILeft_b
-          (second := second) (secondMods := secondMods)
-          (GeneratedContract.b input facts executed)
-        cases standard with
-        | @b _ targetResult targetValue targetInput targetFacts
-            targetExecuted =>
-            have target' : ExecutesStackFrame (compile (.or_i first second))
-                (trueElement :: witness.toInitialStack) [targetResult]
-                flags txCtx := by
-              simpa only [Witness.toInitialStack_withSelector, BExecution] using
-                targetExecuted
-            apply GeneratedResourceContract.b targetInput targetFacts
-              targetExecuted
-            · simpa only [Witness.toInitialStack_withSelector] using
-                bounded.alignOutputs target'
-            · exact targetStack
-            · exact targetOps
-  | K =>
-      cases contract with
-      | @k _ trace dynamic input ownArgs key signature stackShape executed
-          checked resources stackSelected opSelected =>
-        obtain ⟨upperTrace, upperDynamic, bounded, targetStack, targetOps⟩ :=
-          orILeftResources (second := second) resources stackSelected opSelected
-        have standard := GeneratedContract.orILeft_k
-          (second := second) (secondMods := secondMods)
-          (GeneratedContract.k input ownArgs key signature stackShape executed
-            checked)
-        cases standard with
-        | k targetInput targetOwnArgs targetKey targetSignature targetShape
-            targetExecuted targetChecked =>
-            have target : ExecutesStackFrame (compile (.or_i first second))
-                (witness.withSelector trueElement).toInitialStack
-                [targetKey, targetSignature] flags txCtx := by
-              rw [targetShape]
-              simpa using targetExecuted.withSuffix
-                (suffix := [targetSignature])
-            have target' : ExecutesStackFrame (compile (.or_i first second))
-                (trueElement :: witness.toInitialStack)
-                [targetKey, targetSignature] flags txCtx := by
-              simpa only [Witness.toInitialStack_withSelector] using target
-            exact GeneratedResourceContract.k targetInput targetOwnArgs
-              targetKey targetSignature targetShape targetExecuted targetChecked
-              (by simpa only [Witness.toInitialStack_withSelector] using
-                bounded.alignOutputs target')
-              targetStack targetOps
-  | V =>
-      cases contract with
-      | @v _ trace dynamic input expectedTrue executed resources stackSelected
-          opSelected =>
-        obtain ⟨upperTrace, upperDynamic, bounded, targetStack, targetOps⟩ :=
-          orILeftResources (second := second) resources stackSelected opSelected
-        have standard := GeneratedContract.orILeft_v
-          (second := second) (secondMods := secondMods)
-          (GeneratedContract.v input expectedTrue executed)
-        cases standard with
-        | v targetInput targetTrue targetExecuted =>
-            exact GeneratedResourceContract.v targetInput targetTrue
-              targetExecuted (by
-                simpa only [Witness.toInitialStack_withSelector] using bounded)
-              targetStack targetOps
+  | B => exact GeneratedContract.orILeft_b standard
+  | K => exact GeneratedContract.orILeft_k standard
+  | V => exact GeneratedContract.orILeft_v standard
   | W => simp [branchBase] at branch
 
 /-- Resource-aware right branch of `or_i`, selected by the canonical false
@@ -112,73 +111,18 @@ theorem orI_right
         o := firstMods.z && secondMods.z
         d := firstMods.d || secondMods.d
         u := firstMods.u && secondMods.u }⟩ := by
+  obtain ⟨_, _, _, resources, stackSelected, opSelected⟩ :=
+    contract.resourceFrame branch
+  obtain ⟨_, _, bounded, targetStack, targetOps⟩ :=
+    orIRightResources (first := first) resources stackSelected opSelected
+  refine ofGeneratedContract ?_ branch
+    (by simpa only [Witness.toInitialStack_withSelector] using bounded)
+    targetStack targetOps
+  have standard := contract.toGeneratedContract
   cases base with
-  | B =>
-      cases contract with
-      | @b _ result value trace dynamic input facts executed resources
-          stackSelected opSelected =>
-        obtain ⟨upperTrace, upperDynamic, bounded, targetStack, targetOps⟩ :=
-          orIRightResources (first := first) resources stackSelected opSelected
-        have standard := GeneratedContract.orIRight_b
-          (first := first) (firstMods := firstMods)
-          (GeneratedContract.b input facts executed)
-        cases standard with
-        | @b _ targetResult targetValue targetInput targetFacts
-            targetExecuted =>
-            have target' : ExecutesStackFrame (compile (.or_i first second))
-                (falseElement :: witness.toInitialStack) [targetResult]
-                flags txCtx := by
-              simpa only [Witness.toInitialStack_withSelector, BExecution] using
-                targetExecuted
-            apply GeneratedResourceContract.b targetInput targetFacts
-              targetExecuted
-            · simpa only [Witness.toInitialStack_withSelector] using
-                bounded.alignOutputs target'
-            · exact targetStack
-            · exact targetOps
-  | K =>
-      cases contract with
-      | @k _ trace dynamic input ownArgs key signature stackShape executed
-          checked resources stackSelected opSelected =>
-        obtain ⟨upperTrace, upperDynamic, bounded, targetStack, targetOps⟩ :=
-          orIRightResources (first := first) resources stackSelected opSelected
-        have standard := GeneratedContract.orIRight_k
-          (first := first) (firstMods := firstMods)
-          (GeneratedContract.k input ownArgs key signature stackShape executed
-            checked)
-        cases standard with
-        | k targetInput targetOwnArgs targetKey targetSignature targetShape
-            targetExecuted targetChecked =>
-            have target : ExecutesStackFrame (compile (.or_i first second))
-                (witness.withSelector falseElement).toInitialStack
-                [targetKey, targetSignature] flags txCtx := by
-              rw [targetShape]
-              simpa using targetExecuted.withSuffix
-                (suffix := [targetSignature])
-            have target' : ExecutesStackFrame (compile (.or_i first second))
-                (falseElement :: witness.toInitialStack)
-                [targetKey, targetSignature] flags txCtx := by
-              simpa only [Witness.toInitialStack_withSelector] using target
-            exact GeneratedResourceContract.k targetInput targetOwnArgs
-              targetKey targetSignature targetShape targetExecuted targetChecked
-              (by simpa only [Witness.toInitialStack_withSelector] using
-                bounded.alignOutputs target')
-              targetStack targetOps
-  | V =>
-      cases contract with
-      | @v _ trace dynamic input expectedTrue executed resources stackSelected
-          opSelected =>
-        obtain ⟨upperTrace, upperDynamic, bounded, targetStack, targetOps⟩ :=
-          orIRightResources (first := first) resources stackSelected opSelected
-        have standard := GeneratedContract.orIRight_v
-          (first := first) (firstMods := firstMods)
-          (GeneratedContract.v input expectedTrue executed)
-        cases standard with
-        | v targetInput targetTrue targetExecuted =>
-            exact GeneratedResourceContract.v targetInput targetTrue
-              targetExecuted (by
-                simpa only [Witness.toInitialStack_withSelector] using bounded)
-              targetStack targetOps
+  | B => exact GeneratedContract.orIRight_b standard
+  | K => exact GeneratedContract.orIRight_k standard
+  | V => exact GeneratedContract.orIRight_v standard
   | W => simp [branchBase] at branch
 
 /-- Resource-aware true-selector path of `andor` for every admissible branch
@@ -204,84 +148,22 @@ theorem andorTrue
   cases firstContract with
   | @b _ selector firstValue firstTrace firstDynamic firstInput firstFacts
       firstExecuted firstResources firstStack firstOps =>
+    obtain ⟨_, _, _, branchResources, branchStack, branchOps⟩ :=
+      secondContract.resourceFrame branch
+    obtain ⟨_, _, bounded, targetStack, targetOps⟩ :=
+      andorTrueResources (third := third) firstResources branchResources
+        (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
+        firstStack branchStack firstOps branchOps
+    refine ofGeneratedContract ?_ branch
+      (by simpa only [Witness.toInitialStack_combine] using bounded)
+      targetStack targetOps
+    have firstStandard := GeneratedContract.b firstInput firstFacts
+      firstExecuted
+    have standard := secondContract.toGeneratedContract
     cases base with
-    | B =>
-        cases secondContract with
-        | @b _ result value branchTrace branchDynamic branchInput branchFacts
-            branchExecuted branchResources branchStack branchOps =>
-          obtain ⟨upperTrace, upperDynamic, bounded, targetStack, targetOps⟩ :=
-            andorTrueResources (third := third) firstResources branchResources
-              (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
-              firstStack branchStack firstOps branchOps
-          have standard := GeneratedContract.andorTrue_b
-            (third := third) (thirdMods := thirdMods)
-            (GeneratedContract.b firstInput firstFacts firstExecuted) firstUnit
-            (GeneratedContract.b branchInput branchFacts branchExecuted)
-          cases standard with
-          | @b _ targetResult targetValue targetInput targetFacts
-              targetExecuted =>
-              have target' : ExecutesStackFrame
-                  (compile (.andor first second third))
-                  (firstWitness.toInitialStack ++ secondWitness.toInitialStack)
-                  [targetResult] flags txCtx := by
-                simpa only [Witness.toInitialStack_combine, BExecution] using
-                  targetExecuted
-              exact GeneratedResourceContract.b targetInput targetFacts
-                targetExecuted
-                (by simpa only [Witness.toInitialStack_combine] using
-                  bounded.alignOutputs target') targetStack targetOps
-    | K =>
-        cases secondContract with
-        | @k _ branchTrace branchDynamic branchInput ownArgs key signature
-            stackShape branchExecuted checked branchResources branchStack
-            branchOps =>
-          obtain ⟨upperTrace, upperDynamic, bounded, targetStack, targetOps⟩ :=
-            andorTrueResources (third := third) firstResources branchResources
-              (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
-              firstStack branchStack firstOps branchOps
-          have standard := GeneratedContract.andorTrue_k
-            (third := third) (thirdMods := thirdMods)
-            (GeneratedContract.b firstInput firstFacts firstExecuted) firstUnit
-            (GeneratedContract.k branchInput ownArgs key signature stackShape
-              branchExecuted checked)
-          cases standard with
-          | k targetInput targetOwnArgs targetKey targetSignature targetShape
-              targetExecuted targetChecked =>
-              have target : ExecutesStackFrame
-                  (compile (.andor first second third))
-                  (Witness.combine firstWitness secondWitness).toInitialStack
-                  [targetKey, targetSignature] flags txCtx := by
-                rw [targetShape]
-                simpa using targetExecuted.withSuffix
-                  (suffix := [targetSignature])
-              have target' : ExecutesStackFrame
-                  (compile (.andor first second third))
-                  (firstWitness.toInitialStack ++ secondWitness.toInitialStack)
-                  [targetKey, targetSignature] flags txCtx := by
-                simpa only [Witness.toInitialStack_combine] using target
-              exact GeneratedResourceContract.k targetInput targetOwnArgs
-                targetKey targetSignature targetShape targetExecuted
-                targetChecked
-                (by simpa only [Witness.toInitialStack_combine] using
-                  bounded.alignOutputs target') targetStack targetOps
-    | V =>
-        cases secondContract with
-        | @v _ branchTrace branchDynamic branchInput expectedTrue
-            branchExecuted branchResources branchStack branchOps =>
-          obtain ⟨upperTrace, upperDynamic, bounded, targetStack, targetOps⟩ :=
-            andorTrueResources (third := third) firstResources branchResources
-              (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
-              firstStack branchStack firstOps branchOps
-          have standard := GeneratedContract.andorTrue_v
-            (third := third) (thirdMods := thirdMods)
-            (GeneratedContract.b firstInput firstFacts firstExecuted) firstUnit
-            (GeneratedContract.v branchInput expectedTrue branchExecuted)
-          cases standard with
-          | v targetInput targetTrue targetExecuted =>
-              exact GeneratedResourceContract.v targetInput targetTrue
-                targetExecuted
-                (by simpa only [Witness.toInitialStack_combine] using bounded)
-                targetStack targetOps
+    | B => exact GeneratedContract.andorTrue_b firstStandard firstUnit standard
+    | K => exact GeneratedContract.andorTrue_k firstStandard firstUnit standard
+    | V => exact GeneratedContract.andorTrue_v firstStandard firstUnit standard
     | W => simp [branchBase] at branch
 
 /-- Resource-aware false-selector path of `andor` for every admissible branch
@@ -307,84 +189,22 @@ theorem andorFalse
   cases firstContract with
   | @b _ selector firstValue firstTrace firstDynamic firstInput firstFacts
       firstExecuted firstResources firstStack firstOps =>
+    obtain ⟨_, _, _, branchResources, branchStack, branchOps⟩ :=
+      thirdContract.resourceFrame branch
+    obtain ⟨_, _, bounded, targetStack, targetOps⟩ :=
+      andorFalseResources (second := second) firstResources branchResources
+        (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
+        firstStack branchStack firstOps branchOps
+    refine ofGeneratedContract ?_ branch
+      (by simpa only [Witness.toInitialStack_combine] using bounded)
+      targetStack targetOps
+    have firstStandard := GeneratedContract.b firstInput firstFacts
+      firstExecuted
+    have standard := thirdContract.toGeneratedContract
     cases base with
-    | B =>
-        cases thirdContract with
-        | @b _ result value branchTrace branchDynamic branchInput branchFacts
-            branchExecuted branchResources branchStack branchOps =>
-          obtain ⟨upperTrace, upperDynamic, bounded, targetStack, targetOps⟩ :=
-            andorFalseResources (second := second) firstResources
-              branchResources (firstFacts.minimalIfSatisfied firstUnit)
-              firstFacts.truth firstStack branchStack firstOps branchOps
-          have standard := GeneratedContract.andorFalse_b
-            (second := second) (secondMods := secondMods)
-            (GeneratedContract.b firstInput firstFacts firstExecuted) firstUnit
-            (GeneratedContract.b branchInput branchFacts branchExecuted)
-          cases standard with
-          | @b _ targetResult targetValue targetInput targetFacts
-              targetExecuted =>
-              have target' : ExecutesStackFrame
-                  (compile (.andor first second third))
-                  (firstWitness.toInitialStack ++ thirdWitness.toInitialStack)
-                  [targetResult] flags txCtx := by
-                simpa only [Witness.toInitialStack_combine, BExecution] using
-                  targetExecuted
-              exact GeneratedResourceContract.b targetInput targetFacts
-                targetExecuted
-                (by simpa only [Witness.toInitialStack_combine] using
-                  bounded.alignOutputs target') targetStack targetOps
-    | K =>
-        cases thirdContract with
-        | @k _ branchTrace branchDynamic branchInput ownArgs key signature
-            stackShape branchExecuted checked branchResources branchStack
-            branchOps =>
-          obtain ⟨upperTrace, upperDynamic, bounded, targetStack, targetOps⟩ :=
-            andorFalseResources (second := second) firstResources
-              branchResources (firstFacts.minimalIfSatisfied firstUnit)
-              firstFacts.truth firstStack branchStack firstOps branchOps
-          have standard := GeneratedContract.andorFalse_k
-            (second := second) (secondMods := secondMods)
-            (GeneratedContract.b firstInput firstFacts firstExecuted) firstUnit
-            (GeneratedContract.k branchInput ownArgs key signature stackShape
-              branchExecuted checked)
-          cases standard with
-          | k targetInput targetOwnArgs targetKey targetSignature targetShape
-              targetExecuted targetChecked =>
-              have target : ExecutesStackFrame
-                  (compile (.andor first second third))
-                  (Witness.combine firstWitness thirdWitness).toInitialStack
-                  [targetKey, targetSignature] flags txCtx := by
-                rw [targetShape]
-                simpa using targetExecuted.withSuffix
-                  (suffix := [targetSignature])
-              have target' : ExecutesStackFrame
-                  (compile (.andor first second third))
-                  (firstWitness.toInitialStack ++ thirdWitness.toInitialStack)
-                  [targetKey, targetSignature] flags txCtx := by
-                simpa only [Witness.toInitialStack_combine] using target
-              exact GeneratedResourceContract.k targetInput targetOwnArgs
-                targetKey targetSignature targetShape targetExecuted
-                targetChecked
-                (by simpa only [Witness.toInitialStack_combine] using
-                  bounded.alignOutputs target') targetStack targetOps
-    | V =>
-        cases thirdContract with
-        | @v _ branchTrace branchDynamic branchInput expectedTrue
-            branchExecuted branchResources branchStack branchOps =>
-          obtain ⟨upperTrace, upperDynamic, bounded, targetStack, targetOps⟩ :=
-            andorFalseResources (second := second) firstResources
-              branchResources (firstFacts.minimalIfSatisfied firstUnit)
-              firstFacts.truth firstStack branchStack firstOps branchOps
-          have standard := GeneratedContract.andorFalse_v
-            (second := second) (secondMods := secondMods)
-            (GeneratedContract.b firstInput firstFacts firstExecuted) firstUnit
-            (GeneratedContract.v branchInput expectedTrue branchExecuted)
-          cases standard with
-          | v targetInput targetTrue targetExecuted =>
-              exact GeneratedResourceContract.v targetInput targetTrue
-                targetExecuted
-                (by simpa only [Witness.toInitialStack_combine] using bounded)
-                targetStack targetOps
+    | B => exact GeneratedContract.andorFalse_b firstStandard firstUnit standard
+    | K => exact GeneratedContract.andorFalse_k firstStandard firstUnit standard
+    | V => exact GeneratedContract.andorFalse_v firstStandard firstUnit standard
     | W => simp [branchBase] at branch
 
 /-- Resource-aware satisfying path of the `d` wrapper. -/
@@ -404,37 +224,18 @@ theorem d
     have childResources : ExecutesResourceFrame (compile fragment) [] []
         flags txCtx trace dynamic := by
       simpa [childShape] using resources
-    let frame : ConditionalFrame := { branches := [compile fragment], after := [] }
-    have split : splitConditional (compile fragment ++ [.op .OP_ENDIF]) =
-        some frame := by
-      simpa [frame] using splitConditional_balanced_ifThen
-        (compile_balancedControlFlow fragment) (suffix := [])
-    have selected : ExecutesResourceFrame
-        (frame.select (castToBool trueElement)) [trueElement] [trueElement]
-        flags txCtx trace dynamic := by
-      simpa [frame, ConditionalFrame.select, selectConditionalBranches] using
-        childResources.withSuffix (suffix := [trueElement])
-    have conditional := ExecutesResourceFrame.ifSelected split
-      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) selected
+    have conditional := ifThenFrame (compile_balancedControlFlow fragment)
+      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg)
+      (selected := by
+        simpa using childResources.withSuffix (suffix := [trueElement]))
     have concrete :=
       (ExecutesResourceFrame.dup trueElement flags txCtx).append conditional
-    have raw : ExecutesResourceFrame (compile (.d fragment)) [trueElement]
-        [trueElement] flags txCtx
-        (StackTraceBound.dup.sequential
-          (StackTraceBound.branch.sequential trace)) dynamic := by
-      simpa [compile, compileWithKeyHash, frame] using concrete
     have bounded : ExecutesResourceFrame (compile (.d fragment)) [trueElement]
         [trueElement] flags txCtx
         ((StackTraceBound.dup.sequential StackTraceBound.branch).sequential
           trace) dynamic := by
-      apply raw.mono
-      · simp [StackTraceBound.sequential, StackTraceBound.dup,
-          StackTraceBound.branch]
-        omega
-      · simp [StackTraceBound.sequential, StackTraceBound.dup,
-          StackTraceBound.branch]
-        omega
-      · exact Nat.le_refl _
+      simpa [compile, compileWithKeyHash,
+        StackTraceBound.sequential_assoc] using concrete
     have childExec := executed
     rw [childShape] at childExec
     have targetInput : GeneratedInput (witness.withSelector trueElement) true
@@ -469,35 +270,18 @@ theorem d_false
     (flags : ScriptFlags) (txCtx : TxContext) :
     GeneratedResourceContract (.d fragment) [falseElement] false flags txCtx
       ⟨.B, { o := true, n := true, d := true, u := scriptCtx.dWrapperUnit }⟩ := by
-  let frame : ConditionalFrame := { branches := [compile fragment], after := [] }
-  have split : splitConditional (compile fragment ++ [.op .OP_ENDIF]) =
-      some frame := by
-    simpa [frame] using splitConditional_balanced_ifThen
-      (compile_balancedControlFlow fragment) (suffix := [])
-  have skipped : ExecutesResourceFrame
-      (frame.select (castToBool falseElement)) [falseElement] [falseElement]
-      flags txCtx StackTraceBound.empty 0 := by
-    simpa [frame, ConditionalFrame.select, selectConditionalBranches] using
-      ExecutesResourceFrame.empty [falseElement] flags txCtx
-  have conditional := ExecutesResourceFrame.ifSelected split
-    (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) skipped
+  have conditional := ifThenFrame (compile_balancedControlFlow fragment)
+    (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg)
+    (inputs := [falseElement]) (outputs := [falseElement])
+    (selected := by
+      simpa using ExecutesResourceFrame.empty [falseElement] flags txCtx)
   have concrete :=
     (ExecutesResourceFrame.dup falseElement flags txCtx).append conditional
-  have raw : ExecutesResourceFrame (compile (.d fragment)) [falseElement]
-      [falseElement] flags txCtx
-      (StackTraceBound.dup.sequential
-        (StackTraceBound.branch.sequential StackTraceBound.empty)) 0 := by
-    simpa [compile, compileWithKeyHash, frame] using concrete
   have resources : ExecutesResourceFrame (compile (.d fragment)) [falseElement]
       [falseElement] flags txCtx
       (StackTraceBound.dup.sequential StackTraceBound.branch) 0 := by
-    apply raw.mono
-    · simp [StackTraceBound.sequential, StackTraceBound.dup,
-        StackTraceBound.branch, StackTraceBound.empty]
-    · simp [StackTraceBound.sequential, StackTraceBound.dup,
-        StackTraceBound.branch, StackTraceBound.empty]
-      omega
-    · exact Nat.le_refl _
+    simpa [compile, compileWithKeyHash,
+      StackTraceBound.branch_sequential_empty] using concrete
   apply GeneratedResourceContract.b
   · refine ⟨Witness.ItemsBounded.singleton.mpr falseElement_size_le,
       ?_, ?_, ?_⟩
