@@ -40,3 +40,5 @@ import LeanMiniscript.Policy.Compiler
 import LeanMiniscript.Policy.Semantics
 import LeanMiniscript.Policy.Syntax
 import LeanMiniscript.Policy.Text
+import LeanMiniscript.Psbt.Codec
+import LeanMiniscript.Psbt.Fields

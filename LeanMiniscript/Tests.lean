@@ -82,6 +82,7 @@ import LeanMiniscript.Extraction.DescriptorMaterialExamples
 import LeanMiniscript.Extraction.SignatureEncodingCoreExamples
 import LeanMiniscript.Extraction.TaprootBytesExamples
 import LeanMiniscript.Extraction.TaprootExamples
+import LeanMiniscript.Psbt.CodecExamples
 
 /-! Build-checked external conformance, executable boundary, and semantic
 regression fixtures. General theorem applications belong in

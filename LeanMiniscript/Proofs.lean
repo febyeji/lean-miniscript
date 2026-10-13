@@ -54,6 +54,8 @@ import LeanMiniscript.Extraction.DescriptorSatisfactionProofs
 import LeanMiniscript.Extraction.RefInterpProofs
 import LeanMiniscript.Extraction.TaprootBytesProofs
 import LeanMiniscript.Extraction.TaprootProofs
+import LeanMiniscript.Psbt.CodecProofs
+import LeanMiniscript.Psbt.ParseProofs
 
 /-!
 # Proof-oriented lean-miniscript modules
