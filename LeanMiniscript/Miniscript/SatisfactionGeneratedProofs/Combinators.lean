@@ -14,6 +14,22 @@ open LeanMiniscript.Script
 Candidate-pair support for the binary connectives, `andor`, and `thresh`.
 -/
 
+/-- Support for a combined candidate, mapping each pair of supported child
+    witnesses to the parent invariant on their serialized combination. -/
+private theorem supports_combine_map
+    {left right : CandidateResult}
+    {leftPredicate rightPredicate target : Witness → Prop}
+    (leftSupported : left.Supports leftPredicate)
+    (rightSupported : right.Supports rightPredicate)
+    (build : ∀ {leftWitness rightWitness : Witness},
+      leftPredicate leftWitness → rightPredicate rightWitness →
+        target (Witness.combine leftWitness rightWitness)) :
+    (left.combine right).Supports target := by
+  intro witness selected
+  obtain ⟨leftWitness, rightWitness, rfl, leftHolds, rightHolds⟩ :=
+    (leftSupported.combine rightSupported) witness selected
+  exact build leftHolds rightHolds
+
 namespace CandidatePair.SupportsGeneratedContract
 
 /-- Generated candidate support for `and_v`, including the usable
@@ -37,25 +53,12 @@ theorem and_v
         n := firstMods.n || (firstMods.z && secondType.mods.n)
         u := secondType.mods.u
       }⟩ flags txCtx := by
-  refine ⟨.and_v firstSupported.typed secondSupported.typed branch, ?_, ?_⟩
-  · change (firstPair.sat.combine secondPair.sat).Supports _
-    intro witness selected
-    obtain ⟨firstWitness, secondWitness, rfl,
-      firstContract, secondContract⟩ :=
-      (firstSupported.sat.combine secondSupported.sat) witness selected
-    cases secondType with
-    | mk base mods =>
-        cases base with
-        | B => exact firstContract.andV_b secondContract
-        | K => exact firstContract.andV_k secondContract
-        | V => exact firstContract.andV_v secondContract
-        | W => simp [branchBase] at branch
-  · change (firstPair.sat.combine secondPair.dsat).markNonCanonical.Supports _
-    intro witness selected
-    have combined := CandidateResult.markNonCanonical_usableWitness_iff.mp selected
-    obtain ⟨firstWitness, secondWitness, rfl,
-      firstContract, secondContract⟩ :=
-      (firstSupported.sat.combine secondSupported.dsat) witness combined
+  refine ⟨.and_v firstSupported.typed secondSupported.typed branch,
+    supports_combine_map firstSupported.sat secondSupported.sat ?_,
+    CandidateResult.Supports.markNonCanonical
+      (supports_combine_map firstSupported.sat secondSupported.dsat ?_)⟩
+  all_goals
+    intro firstWitness secondWitness firstContract secondContract
     cases secondType with
     | mk base mods =>
         cases base with
@@ -87,33 +90,16 @@ theorem and_b
         d := firstMods.d && secondMods.d
         u := true
       }⟩ flags txCtx := by
-  refine ⟨.and_b firstSupported.typed secondSupported.typed, ?_, ?_⟩
-  · change (firstPair.sat.combine secondPair.sat).Supports _
-    intro witness selected
-    obtain ⟨firstWitness, secondWitness, rfl,
-      firstContract, secondContract⟩ :=
-      (firstSupported.sat.combine secondSupported.sat) witness selected
+  refine ⟨.and_b firstSupported.typed secondSupported.typed,
+    supports_combine_map firstSupported.sat secondSupported.sat ?_,
+    CandidateResult.Supports.select
+      (CandidateResult.Supports.select
+        (supports_combine_map firstSupported.dsat secondSupported.dsat ?_)
+        (CandidateResult.supports_markOvercomplete _ _))
+      (CandidateResult.supports_markOvercomplete _ _)⟩
+  all_goals
+    intro firstWitness secondWitness firstContract secondContract
     exact firstContract.andB secondContract (by decide)
-  · change (((firstPair.dsat.combine secondPair.dsat).select
-      ((firstPair.dsat.combine secondPair.sat).markOvercomplete)).select
-      ((firstPair.sat.combine secondPair.dsat).markOvercomplete)).Supports _
-    have canonical : (firstPair.dsat.combine secondPair.dsat).Supports
-        (fun witness => GeneratedContract (.and_b first second) witness false
-          flags txCtx ⟨.B, {
-            z := firstMods.z && secondMods.z
-            o := (firstMods.z && secondMods.o) ||
-              (firstMods.o && secondMods.z)
-            n := firstMods.n || (firstMods.z && secondMods.n)
-            d := firstMods.d && secondMods.d
-            u := true }⟩) := by
-      intro witness selected
-      obtain ⟨firstWitness, secondWitness, rfl,
-        firstContract, secondContract⟩ :=
-        (firstSupported.dsat.combine secondSupported.dsat) witness selected
-      exact firstContract.andB secondContract (by decide)
-    exact (canonical.select
-      (CandidateResult.supports_markOvercomplete _ _)).select
-      (CandidateResult.supports_markOvercomplete _ _)
 
 /-- Generated candidate support for `or_b`, including both usable mixed
     satisfaction paths and the all-false canonical dissatisfaction. -/
@@ -139,43 +125,14 @@ theorem or_b
         u := true
       }⟩ flags txCtx := by
   refine ⟨.or_b firstSupported.typed firstD secondSupported.typed secondD,
-    ?_, ?_⟩
-  · change (((firstPair.sat.combine secondPair.dsat).select
-      (firstPair.dsat.combine secondPair.sat)).select
-      ((firstPair.sat.combine secondPair.sat).markOvercomplete)).Supports _
-    have left : (firstPair.sat.combine secondPair.dsat).Supports
-        (fun witness => GeneratedContract (.or_b first second) witness true
-          flags txCtx ⟨.B, {
-            z := firstMods.z && secondMods.z
-            o := (firstMods.z && secondMods.o) ||
-              (firstMods.o && secondMods.z)
-            d := true
-            u := true }⟩) := by
-      intro witness selected
-      obtain ⟨firstWitness, secondWitness, rfl,
-        firstContract, secondContract⟩ :=
-        (firstSupported.sat.combine secondSupported.dsat) witness selected
-      exact firstContract.orB secondContract (by decide)
-    have right : (firstPair.dsat.combine secondPair.sat).Supports
-        (fun witness => GeneratedContract (.or_b first second) witness true
-          flags txCtx ⟨.B, {
-            z := firstMods.z && secondMods.z
-            o := (firstMods.z && secondMods.o) ||
-              (firstMods.o && secondMods.z)
-            d := true
-            u := true }⟩) := by
-      intro witness selected
-      obtain ⟨firstWitness, secondWitness, rfl,
-        firstContract, secondContract⟩ :=
-        (firstSupported.dsat.combine secondSupported.sat) witness selected
-      exact firstContract.orB secondContract (by decide)
-    exact (left.select right).select
-      (CandidateResult.supports_markOvercomplete _ _)
-  · change (firstPair.dsat.combine secondPair.dsat).Supports _
-    intro witness selected
-    obtain ⟨firstWitness, secondWitness, rfl,
-      firstContract, secondContract⟩ :=
-      (firstSupported.dsat.combine secondSupported.dsat) witness selected
+    CandidateResult.Supports.select
+      (CandidateResult.Supports.select
+        (supports_combine_map firstSupported.sat secondSupported.dsat ?_)
+        (supports_combine_map firstSupported.dsat secondSupported.sat ?_))
+      (CandidateResult.supports_markOvercomplete _ _),
+    supports_combine_map firstSupported.dsat secondSupported.dsat ?_⟩
+  all_goals
+    intro firstWitness secondWitness firstContract secondContract
     exact firstContract.orB secondContract (by decide)
 
 /-- Generated support for `or_c`: either the satisfying unit selector skips
@@ -198,26 +155,12 @@ theorem or_c
         o := firstMods.o && secondMods.z
       }⟩ flags txCtx := by
   refine ⟨.or_c firstSupported.typed firstD firstUnit secondSupported.typed,
-    ?_, CandidateResult.supports_impossible _⟩
-  change (firstPair.sat.select
-    (firstPair.dsat.combine secondPair.sat)).Supports _
-  have left : firstPair.sat.Supports
-      (fun witness => GeneratedContract (.or_c first second) witness true
-        flags txCtx ⟨.V, {
-          z := firstMods.z && secondMods.z
-          o := firstMods.o && secondMods.z }⟩) :=
-    firstSupported.sat.mono fun _ contract => contract.orC_left firstUnit
-  have right : (firstPair.dsat.combine secondPair.sat).Supports
-      (fun witness => GeneratedContract (.or_c first second) witness true
-        flags txCtx ⟨.V, {
-          z := firstMods.z && secondMods.z
-          o := firstMods.o && secondMods.z }⟩) := by
-    intro witness selected
-    obtain ⟨firstWitness, secondWitness, rfl,
-      firstContract, secondContract⟩ :=
-      (firstSupported.dsat.combine secondSupported.sat) witness selected
-    exact firstContract.orC_right firstUnit secondContract
-  exact left.select right
+    CandidateResult.Supports.select
+      (firstSupported.sat.mono fun _ contract => contract.orC_left firstUnit)
+      (supports_combine_map firstSupported.dsat secondSupported.sat
+        fun firstContract secondContract =>
+          firstContract.orC_right firstUnit secondContract),
+    CandidateResult.supports_impossible _⟩
 
 /-- Generated support for all direct, alternate, and dissatisfaction paths of
     `or_d`. -/
@@ -242,35 +185,12 @@ theorem or_d
         u := secondMods.u
       }⟩ flags txCtx := by
   refine ⟨.or_d firstSupported.typed firstD firstUnit secondSupported.typed,
-    ?_, ?_⟩
-  · change (firstPair.sat.select
-      (firstPair.dsat.combine secondPair.sat)).Supports _
-    have left : firstPair.sat.Supports
-        (fun witness => GeneratedContract (.or_d first second) witness true
-          flags txCtx ⟨.B, {
-            z := firstMods.z && secondMods.z
-            o := firstMods.o && secondMods.z
-            d := secondMods.d
-            u := secondMods.u }⟩) :=
-      firstSupported.sat.mono fun _ contract => contract.orD_left firstUnit
-    have right : (firstPair.dsat.combine secondPair.sat).Supports
-        (fun witness => GeneratedContract (.or_d first second) witness true
-          flags txCtx ⟨.B, {
-            z := firstMods.z && secondMods.z
-            o := firstMods.o && secondMods.z
-            d := secondMods.d
-            u := secondMods.u }⟩) := by
-      intro witness selected
-      obtain ⟨firstWitness, secondWitness, rfl,
-        firstContract, secondContract⟩ :=
-        (firstSupported.dsat.combine secondSupported.sat) witness selected
-      exact firstContract.orD_right firstUnit secondContract
-    exact left.select right
-  · change (firstPair.dsat.combine secondPair.dsat).Supports _
-    intro witness selected
-    obtain ⟨firstWitness, secondWitness, rfl,
-      firstContract, secondContract⟩ :=
-      (firstSupported.dsat.combine secondSupported.dsat) witness selected
+    CandidateResult.Supports.select
+      (firstSupported.sat.mono fun _ contract => contract.orD_left firstUnit)
+      (supports_combine_map firstSupported.dsat secondSupported.sat ?_),
+    supports_combine_map firstSupported.dsat secondSupported.dsat ?_⟩
+  all_goals
+    intro firstWitness secondWitness firstContract secondContract
     exact firstContract.orD_right firstUnit secondContract
 
 private theorem orILeftSupport
@@ -365,16 +285,9 @@ private theorem andorTrueSupport
     (firstUnit : firstMods.u = true) (branch : branchBase base) :
     (firstResult.combine branchResult).Supports fun witness =>
       GeneratedContract (.andor first second third) witness expected flags txCtx
-        ⟨base, {
-          z := firstMods.z && secondMods.z && thirdMods.z
-          o := (firstMods.z && secondMods.o && thirdMods.o) ||
-            (firstMods.o && secondMods.z && thirdMods.z)
-          d := thirdMods.d
-          u := secondMods.u && thirdMods.u
-        }⟩ := by
-  intro witness selected
-  obtain ⟨firstWitness, branchWitness, rfl, firstContract, branchContract⟩ :=
-    (firstSupported.combine branchSupported) witness selected
+        ⟨base, andorModifiers firstMods secondMods thirdMods⟩ := by
+  refine supports_combine_map firstSupported branchSupported ?_
+  intro firstWitness branchWitness firstContract branchContract
   cases base with
   | B => exact firstContract.andorTrue_b firstUnit branchContract
   | K => exact firstContract.andorTrue_k firstUnit branchContract
@@ -393,16 +306,9 @@ private theorem andorFalseSupport
     (firstUnit : firstMods.u = true) (branch : branchBase base) :
     (firstResult.combine branchResult).Supports fun witness =>
       GeneratedContract (.andor first second third) witness expected flags txCtx
-        ⟨base, {
-          z := firstMods.z && secondMods.z && thirdMods.z
-          o := (firstMods.z && secondMods.o && thirdMods.o) ||
-            (firstMods.o && secondMods.z && thirdMods.z)
-          d := thirdMods.d
-          u := secondMods.u && thirdMods.u
-        }⟩ := by
-  intro witness selected
-  obtain ⟨firstWitness, branchWitness, rfl, firstContract, branchContract⟩ :=
-    (firstSupported.combine branchSupported) witness selected
+        ⟨base, andorModifiers firstMods secondMods thirdMods⟩ := by
+  refine supports_combine_map firstSupported branchSupported ?_
+  intro firstWitness branchWitness firstContract branchContract
   cases base with
   | B => exact firstContract.andorFalse_b firstUnit branchContract
   | K => exact firstContract.andorFalse_k firstUnit branchContract

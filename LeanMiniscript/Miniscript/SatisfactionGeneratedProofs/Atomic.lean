@@ -44,10 +44,7 @@ theorem generatedContract_zero (scriptCtx : ScriptContext) (env : SatEnv)
   refine ⟨.zero, CandidateResult.supports_impossible _, ?_⟩
   apply CandidateResult.supports_usable
   apply GeneratedContract.b
-  · refine ⟨Witness.ItemsBounded.nil, ?_, ?_, ?_⟩
-    · simp
-    · simp
-    · simp
+  · refine ⟨Witness.ItemsBounded.nil, ?_, ?_, ?_⟩ <;> simp
   · exact BooleanResultFacts.canonical false _ flags
   · simpa [boolToElement] using zero_execution flags env.txCtx
 
@@ -59,10 +56,7 @@ theorem generatedContract_one (scriptCtx : ScriptContext) (env : SatEnv)
   refine ⟨.one, ?_, CandidateResult.supports_impossible _⟩
   apply CandidateResult.supports_usable
   apply GeneratedContract.b
-  · refine ⟨Witness.ItemsBounded.nil, ?_, ?_, ?_⟩
-    · simp
-    · simp
-    · simp
+  · refine ⟨Witness.ItemsBounded.nil, ?_, ?_, ?_⟩ <;> simp
   · exact BooleanResultFacts.canonical true _ flags
   · simpa [boolToElement] using one_execution flags env.txCtx
 
@@ -395,19 +389,9 @@ theorem generated_hash
     (satisfactionCandidates lock.fragment env).SupportsGenerated scriptCtx
       lock.fragment ⟨.B, { o := true, n := true, d := true, u := true }⟩
       flags env.txCtx := by
-  cases lock with
-  | sha256 hash =>
-      exact ⟨.sha256 hash, generated_hash_sat sound,
-        generated_hash_dsat (.sha256 hash) env flags⟩
-  | hash256 hash =>
-      exact ⟨.hash256 hash, generated_hash_sat sound,
-        generated_hash_dsat (.hash256 hash) env flags⟩
-  | ripemd160 hash =>
-      exact ⟨.ripemd160 hash, generated_hash_sat sound,
-        generated_hash_dsat (.ripemd160 hash) env flags⟩
-  | hash160 hash =>
-      exact ⟨.hash160 hash, generated_hash_sat sound,
-        generated_hash_dsat (.hash160 hash) env flags⟩
+  cases lock <;>
+    exact ⟨by constructor, generated_hash_sat sound,
+      generated_hash_dsat _ env flags⟩
 
 private theorem generatedContract_hash_sat
     {lock : HashLock} {env : SatEnv} {flags : ScriptFlags}
@@ -457,18 +441,8 @@ theorem generatedContract_hash
     (satisfactionCandidates lock.fragment env).SupportsGeneratedContract
       scriptCtx lock.fragment
       ⟨.B, { o := true, n := true, d := true, u := true }⟩ flags env.txCtx := by
-  cases lock with
-  | sha256 hash =>
-      exact ⟨.sha256 hash, generatedContract_hash_sat sound,
-        generatedContract_hash_dsat (.sha256 hash) env flags⟩
-  | hash256 hash =>
-      exact ⟨.hash256 hash, generatedContract_hash_sat sound,
-        generatedContract_hash_dsat (.hash256 hash) env flags⟩
-  | ripemd160 hash =>
-      exact ⟨.ripemd160 hash, generatedContract_hash_sat sound,
-        generatedContract_hash_dsat (.ripemd160 hash) env flags⟩
-  | hash160 hash =>
-      exact ⟨.hash160 hash, generatedContract_hash_sat sound,
-        generatedContract_hash_dsat (.hash160 hash) env flags⟩
+  cases lock <;>
+    exact ⟨by constructor, generatedContract_hash_sat sound,
+      generatedContract_hash_dsat _ env flags⟩
 
 end LeanMiniscript.Miniscript

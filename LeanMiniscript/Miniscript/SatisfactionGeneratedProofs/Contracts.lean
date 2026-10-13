@@ -433,13 +433,8 @@ private theorem snoc_inv {scriptCtx : ScriptContext} {flags : ScriptFlags}
   cases supported with
   | nil => simp at pairsEq
   | @snoc otherPairs otherFragments otherTypes otherPair fragment ty prior child =>
-      have lengths : pairs.length = otherPairs.length := by
-        have := congrArg List.length pairsEq
-        simpa using this
-      obtain ⟨pairsEq, singletonEq⟩ := List.append_inj pairsEq lengths
-      have pairEq : pair = otherPair := by simpa using singletonEq
-      subst otherPairs
-      subst otherPair
+      obtain ⟨rfl, singletonEq⟩ := List.append_inj' pairsEq rfl
+      cases singletonEq
       exact ⟨otherFragments, otherTypes, fragment, ty, rfl, rfl, prior, child⟩
 
 /-- List support retains the pointwise typing evidence needed by the threshold
