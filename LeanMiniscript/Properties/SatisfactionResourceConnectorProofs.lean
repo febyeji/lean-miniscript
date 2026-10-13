@@ -17,6 +17,22 @@ them into candidate-level resource support.
 
 namespace CandidatePair.SupportsGeneratedResources
 
+/-- Support for a combined candidate follows from support of both parts and a
+    rule combining the two part predicates. -/
+private theorem supports_combine_of
+    {left right : CandidateResult}
+    {leftPredicate rightPredicate target : Witness → Prop}
+    (leftSupported : left.Supports leftPredicate)
+    (rightSupported : right.Supports rightPredicate)
+    (implication : ∀ leftWitness rightWitness,
+      leftPredicate leftWitness → rightPredicate rightWitness →
+        target (Witness.combine leftWitness rightWitness)) :
+    (left.combine right).Supports target := by
+  intro witness selected
+  obtain ⟨leftWitness, rightWitness, rfl, leftHolds, rightHolds⟩ :=
+    (leftSupported.combine rightSupported) witness selected
+  exact implication leftWitness rightWitness leftHolds rightHolds
+
 private theorem orILeftSupport
     {result : CandidateResult}
     {first second : CoreFragment} {base : BaseType}
@@ -76,11 +92,9 @@ private theorem andorTrueSupport
           o := (firstMods.z && secondMods.o && thirdMods.o) ||
             (firstMods.o && secondMods.z && thirdMods.z)
           d := thirdMods.d
-          u := secondMods.u && thirdMods.u }⟩ := by
-  intro witness selected
-  obtain ⟨firstWitness, branchWitness, rfl, firstContract, branchContract⟩ :=
-    (firstSupported.combine branchSupported) witness selected
-  exact firstContract.andorTrue firstUnit branchContract branch
+          u := secondMods.u && thirdMods.u }⟩ :=
+  supports_combine_of firstSupported branchSupported fun _ _ firstContract
+    branchContract => firstContract.andorTrue firstUnit branchContract branch
 
 private theorem andorFalseSupport
     {firstResult branchResult : CandidateResult}
@@ -101,11 +115,9 @@ private theorem andorFalseSupport
           o := (firstMods.z && secondMods.o && thirdMods.o) ||
             (firstMods.o && secondMods.z && thirdMods.z)
           d := thirdMods.d
-          u := secondMods.u && thirdMods.u }⟩ := by
-  intro witness selected
-  obtain ⟨firstWitness, branchWitness, rfl, firstContract, branchContract⟩ :=
-    (firstSupported.combine branchSupported) witness selected
-  exact firstContract.andorFalse firstUnit branchContract branch
+          u := secondMods.u && thirdMods.u }⟩ :=
+  supports_combine_of firstSupported branchSupported fun _ _ firstContract
+    branchContract => firstContract.andorFalse firstUnit branchContract branch
 
 /-- Resource-aware generated support for `and_b`. -/
 theorem and_b
@@ -130,10 +142,9 @@ theorem and_b
         d := firstMods.d && secondMods.d
         u := true }⟩ flags txCtx := by
   refine ⟨.and_b firstSupported.typed secondSupported.typed, ?_, ?_⟩
-  · intro witness selected
-    obtain ⟨firstWitness, secondWitness, rfl, firstContract, secondContract⟩ :=
-      (firstSupported.sat.combine secondSupported.sat) witness selected
-    exact firstContract.andB_same secondContract
+  · exact supports_combine_of firstSupported.sat secondSupported.sat
+      fun _ _ firstContract secondContract =>
+        firstContract.andB_same secondContract
   · have canonical : (firstPair.dsat.combine secondPair.dsat).Supports
         (fun witness => GeneratedResourceContract (.and_b first second)
           witness false flags txCtx ⟨.B, {
@@ -142,12 +153,10 @@ theorem and_b
               (firstMods.o && secondMods.z)
             n := firstMods.n || (firstMods.z && secondMods.n)
             d := firstMods.d && secondMods.d
-            u := true }⟩) := by
-      intro witness selected
-      obtain ⟨firstWitness, secondWitness, rfl, firstContract,
-        secondContract⟩ :=
-        (firstSupported.dsat.combine secondSupported.dsat) witness selected
-      exact firstContract.andB_same secondContract
+            u := true }⟩) :=
+      supports_combine_of firstSupported.dsat secondSupported.dsat
+        fun _ _ firstContract secondContract =>
+          firstContract.andB_same secondContract
     exact (canonical.select
       (CandidateResult.supports_markOvercomplete _ _)).select
       (CandidateResult.supports_markOvercomplete _ _)
@@ -183,12 +192,10 @@ theorem or_b
             o := (firstMods.z && secondMods.o) ||
               (firstMods.o && secondMods.z)
             d := true
-            u := true }⟩) := by
-      intro witness selected
-      obtain ⟨firstWitness, secondWitness, rfl, firstContract,
-        secondContract⟩ :=
-        (firstSupported.sat.combine secondSupported.dsat) witness selected
-      simpa using firstContract.orB_path secondContract (by simp)
+            u := true }⟩) :=
+      supports_combine_of firstSupported.sat secondSupported.dsat
+        fun _ _ firstContract secondContract => by
+          simpa using firstContract.orB_path secondContract (by simp)
     have right : (firstPair.dsat.combine secondPair.sat).Supports
         (fun witness => GeneratedResourceContract (.or_b first second)
           witness true flags txCtx ⟨.B, {
@@ -196,19 +203,15 @@ theorem or_b
             o := (firstMods.z && secondMods.o) ||
               (firstMods.o && secondMods.z)
             d := true
-            u := true }⟩) := by
-      intro witness selected
-      obtain ⟨firstWitness, secondWitness, rfl, firstContract,
-        secondContract⟩ :=
-        (firstSupported.dsat.combine secondSupported.sat) witness selected
-      simpa using firstContract.orB_path secondContract (by simp)
+            u := true }⟩) :=
+      supports_combine_of firstSupported.dsat secondSupported.sat
+        fun _ _ firstContract secondContract => by
+          simpa using firstContract.orB_path secondContract (by simp)
     exact (left.select right).select
       (CandidateResult.supports_markOvercomplete _ _)
-  · intro witness selected
-    obtain ⟨firstWitness, secondWitness, rfl, firstContract,
-      secondContract⟩ :=
-      (firstSupported.dsat.combine secondSupported.dsat) witness selected
-    simpa using firstContract.orB_path secondContract (by simp)
+  · exact supports_combine_of firstSupported.dsat secondSupported.dsat
+      fun _ _ firstContract secondContract => by
+        simpa using firstContract.orB_path secondContract (by simp)
 
 /-- Resource-aware generated support for both satisfaction paths of `or_c`. -/
 theorem or_c
@@ -241,12 +244,10 @@ theorem or_c
       (fun witness => GeneratedResourceContract (.or_c first second) witness true
         flags txCtx ⟨.V, {
           z := firstMods.z && secondMods.z
-          o := firstMods.o && secondMods.z }⟩) := by
-    intro witness selected
-    obtain ⟨firstWitness, secondWitness, rfl, firstContract,
-      secondContract⟩ :=
-      (firstSupported.dsat.combine secondSupported.sat) witness selected
-    exact firstContract.orC_right firstUnit secondContract
+          o := firstMods.o && secondMods.z }⟩) :=
+    supports_combine_of firstSupported.dsat secondSupported.sat
+      fun _ _ firstContract secondContract =>
+        firstContract.orC_right firstUnit secondContract
   exact left.select right
 
 /-- Resource-aware generated support for every usable path of `or_d`. -/
@@ -287,19 +288,15 @@ theorem or_d
             z := firstMods.z && secondMods.z
             o := firstMods.o && secondMods.z
             d := secondMods.d
-            u := secondMods.u }⟩) := by
-      intro witness selected
-      obtain ⟨firstWitness, secondWitness, rfl, firstContract,
-        secondContract⟩ :=
-        (firstSupported.dsat.combine secondSupported.sat) witness selected
-      exact firstContract.orD_right firstUnit secondContract
+            u := secondMods.u }⟩) :=
+      supports_combine_of firstSupported.dsat secondSupported.sat
+        fun _ _ firstContract secondContract =>
+          firstContract.orD_right firstUnit secondContract
     exact left.select right
   · change (firstPair.dsat.combine secondPair.dsat).Supports _
-    intro witness selected
-    obtain ⟨firstWitness, secondWitness, rfl, firstContract,
-      secondContract⟩ :=
-      (firstSupported.dsat.combine secondSupported.dsat) witness selected
-    exact firstContract.orD_right firstUnit secondContract
+    exact supports_combine_of firstSupported.dsat secondSupported.dsat
+      fun _ _ firstContract secondContract =>
+        firstContract.orD_right firstUnit secondContract
 
 /-- Resource-aware generated support for both tagged branches of `or_i`. -/
 theorem or_i

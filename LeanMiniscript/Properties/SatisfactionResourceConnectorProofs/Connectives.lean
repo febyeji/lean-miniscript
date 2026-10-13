@@ -71,6 +71,40 @@ theorem andB_same
               simp [selectedOpSummary] at firstOps secondOps ⊢ <;>
               simp [opPathBounds, firstOps, secondOps, PathMaximum.sequential]
 
+/-- Bound a mixed `or_b` row by the public choice between the two mixed
+    rows. -/
+private theorem orBMixedResources
+    {first second : CoreFragment} {inputs outputs : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    {trace : StackTraceBound} {dynamic : Nat}
+    (concrete : ExecutesResourceFrame (compile (.or_b first second)) inputs
+      outputs flags ctx (trace.sequential StackTraceBound.binary) dynamic)
+    (stackChoice : ∃ upper, StackTraceSet.choice
+      (StackTraceSet.sequential (stackPathBounds first).sat
+        (stackPathBounds second).dsat)
+      (StackTraceSet.sequential (stackPathBounds first).dsat
+        (stackPathBounds second).sat) = some upper ∧
+        trace.netDiff ≤ upper.netDiff ∧ trace.exec ≤ upper.exec)
+    (opChoice : ∃ upper, PathMaximum.choice
+      (PathMaximum.sequential (opPathBounds first).sat
+        (opPathBounds second).dsat)
+      (PathMaximum.sequential (opPathBounds first).dsat
+        (opPathBounds second).sat) = some upper ∧ dynamic ≤ upper) :
+    ∃ upperTrace upperDynamic,
+      ExecutesResourceFrame (compile (.or_b first second)) inputs outputs
+        flags ctx upperTrace upperDynamic ∧
+      selectedStackSummary (.or_b first second) true = some upperTrace ∧
+      selectedOpSummary (.or_b first second) true = some upperDynamic := by
+  obtain ⟨upperTrace, choiceStack, netBound, execBound⟩ := stackChoice
+  obtain ⟨upperDynamic, choiceOps, dynamicBound⟩ := opChoice
+  refine ⟨_, upperDynamic,
+    concrete.monoSequentialLeft netBound execBound dynamicBound, ?_, ?_⟩
+  · simpa [selectedStackSummary, stackPathBounds,
+      StackTraceSet.sequential] using congrArg
+        (fun summary => StackTraceSet.sequential summary
+          (some StackTraceBound.binary)) choiceStack
+  · simpa [selectedOpSummary, opPathBounds] using choiceOps
+
 /-- Resource-aware usable path for `or_b`. The all-true overcomplete row is
     excluded; each mixed row is lifted to the public coordinate-wise choice. -/
 theorem orB_path
@@ -118,6 +152,16 @@ theorem orB_path
         (expected := firstExpected || secondExpected)
         (GeneratedContract.b firstInput firstFacts firstExecuted)
         (GeneratedContract.w secondInput order secondFacts secondExecuted) rfl
+      have currentStack : StackTraceSet.sequential
+          (selectedStackSummary first firstExpected)
+          (selectedStackSummary second secondExpected) =
+          some (firstTrace.sequential secondTrace) := by
+        simp [firstStack, secondStack, StackTraceSet.sequential]
+      have currentOps : PathMaximum.sequential
+          (selectedOpSummary first firstExpected)
+          (selectedOpSummary second secondExpected) =
+          some (firstDynamic + secondDynamic) := by
+        simp [firstOps, secondOps, PathMaximum.sequential]
       cases firstExpected <;> cases secondExpected
       · cases standard with
         | b input facts executed =>
@@ -128,70 +172,22 @@ theorem orB_path
                 StackTraceSet.sequential]
             · simp [selectedOpSummary] at firstOps secondOps ⊢
               simp [opPathBounds, firstOps, secondOps, PathMaximum.sequential]
-      · have currentStack : StackTraceSet.sequential
-            (stackPathBounds first).dsat (stackPathBounds second).sat =
-            some (firstTrace.sequential secondTrace) := by
-          simp [selectedStackSummary] at firstStack secondStack
-          simp [firstStack, secondStack, StackTraceSet.sequential]
-        obtain ⟨upperTrace, choiceStack, netBound, execBound⟩ :=
-          stackChoiceRight (left := StackTraceSet.sequential
-            (stackPathBounds first).sat (stackPathBounds second).dsat)
-            currentStack
-        have currentOps : PathMaximum.sequential (opPathBounds first).dsat
-            (opPathBounds second).sat = some (firstDynamic + secondDynamic) := by
-          simp [selectedOpSummary] at firstOps secondOps
-          simp [firstOps, secondOps, PathMaximum.sequential]
-        obtain ⟨upperDynamic, choiceOps, dynamicBound⟩ :=
-          opChoiceRight (left := PathMaximum.sequential
-            (opPathBounds first).sat (opPathBounds second).dsat) currentOps
-        have bounded := concreteResources.mono
-          (upper := upperTrace.sequential StackTraceBound.binary)
-          (upperDynamic := upperDynamic) (by
-            simp [StackTraceBound.sequential, StackTraceBound.binary] at *
-            omega) (by
-            simp [StackTraceBound.sequential, StackTraceBound.binary] at *
-            omega) dynamicBound
+      · obtain ⟨_, _, bounded, targetStack, targetOps⟩ :=
+          orBMixedResources concreteResources
+            (stackChoiceRight (by simpa [selectedStackSummary] using currentStack))
+            (opChoiceRight (by simpa [selectedOpSummary] using currentOps))
         cases standard with
         | b input facts executed =>
-            apply GeneratedResourceContract.b input facts executed
-              (bounded.alignOutputs executed)
-            · simpa [selectedStackSummary, stackPathBounds,
-                StackTraceSet.sequential] using congrArg
-                  (fun summary => StackTraceSet.sequential summary
-                    (some StackTraceBound.binary)) choiceStack
-            · simpa [selectedOpSummary, opPathBounds] using choiceOps
-      · have currentStack : StackTraceSet.sequential
-            (stackPathBounds first).sat (stackPathBounds second).dsat =
-            some (firstTrace.sequential secondTrace) := by
-          simp [selectedStackSummary] at firstStack secondStack
-          simp [firstStack, secondStack, StackTraceSet.sequential]
-        obtain ⟨upperTrace, choiceStack, netBound, execBound⟩ :=
-          stackChoiceLeft (right := StackTraceSet.sequential
-            (stackPathBounds first).dsat (stackPathBounds second).sat)
-            currentStack
-        have currentOps : PathMaximum.sequential (opPathBounds first).sat
-            (opPathBounds second).dsat = some (firstDynamic + secondDynamic) := by
-          simp [selectedOpSummary] at firstOps secondOps
-          simp [firstOps, secondOps, PathMaximum.sequential]
-        obtain ⟨upperDynamic, choiceOps, dynamicBound⟩ :=
-          opChoiceLeft (right := PathMaximum.sequential
-            (opPathBounds first).dsat (opPathBounds second).sat) currentOps
-        have bounded := concreteResources.mono
-          (upper := upperTrace.sequential StackTraceBound.binary)
-          (upperDynamic := upperDynamic) (by
-            simp [StackTraceBound.sequential, StackTraceBound.binary] at *
-            omega) (by
-            simp [StackTraceBound.sequential, StackTraceBound.binary] at *
-            omega) dynamicBound
+            exact .b input facts executed (bounded.alignOutputs executed)
+              targetStack targetOps
+      · obtain ⟨_, _, bounded, targetStack, targetOps⟩ :=
+          orBMixedResources concreteResources
+            (stackChoiceLeft (by simpa [selectedStackSummary] using currentStack))
+            (opChoiceLeft (by simpa [selectedOpSummary] using currentOps))
         cases standard with
         | b input facts executed =>
-            apply GeneratedResourceContract.b input facts executed
-              (bounded.alignOutputs executed)
-            · simpa [selectedStackSummary, stackPathBounds,
-                StackTraceSet.sequential] using congrArg
-                  (fun summary => StackTraceSet.sequential summary
-                    (some StackTraceBound.binary)) choiceStack
-            · simpa [selectedOpSummary, opPathBounds] using choiceOps
+            exact .b input facts executed (bounded.alignOutputs executed)
+              targetStack targetOps
       · exact False.elim (usable ⟨rfl, rfl⟩)
 
 /-- Resource-aware direct path of `or_c`, where a true first result skips the
@@ -209,39 +205,15 @@ theorem orC_left
   cases contract with
   | @b _ result value trace dynamic input facts executed resources stackSelected
       opSelected =>
-    let frame : ConditionalFrame := { branches := [compile second], after := [] }
-    have split : splitConditional (compile second ++ [.op .OP_ENDIF]) =
-        some frame := by
-      simpa [frame] using splitConditional_balanced_ifThen
-        (compile_balancedControlFlow second) (suffix := [])
-    have skipped : ExecutesResourceFrame
-        (frame.select (!castToBool result)) [] [] flags txCtx
-        StackTraceBound.empty 0 := by
-      simpa [frame, ConditionalFrame.select, selectConditionalBranches,
-        facts.truth] using ExecutesResourceFrame.empty [] flags txCtx
-    have branch := ExecutesResourceFrame.notifSelected split
-      (facts.minimalIfSatisfied firstUnit) skipped
-    have concrete := resources.append branch
-    have concreteRaw : ExecutesResourceFrame (compile (.or_c first second))
-        witness.toInitialStack [] flags txCtx
-        (trace.sequential
-          (StackTraceBound.branch.sequential StackTraceBound.empty))
-        dynamic := by
-      simpa [compile, compileWithKeyHash, frame] using concrete
+    have branch := notifThenFrame (compile_balancedControlFlow second)
+      (facts.minimalIfSatisfied firstUnit) (inputs := []) (outputs := [])
+      (selected := by
+        simpa [facts.truth] using ExecutesResourceFrame.empty [] flags txCtx)
     have concrete' : ExecutesResourceFrame (compile (.or_c first second))
         witness.toInitialStack [] flags txCtx
         (trace.sequential StackTraceBound.branch) dynamic := by
-      apply concreteRaw.mono
-      · simp [StackTraceBound.empty, StackTraceBound.branch,
-          StackTraceBound.sequential]
-      · simp [StackTraceBound.empty, StackTraceBound.branch,
-          StackTraceBound.sequential]
-        have traceNonnegative := resources.exec_nonneg
-        have oneLe : (1 : Int) ≤ 1 + trace.exec := by omega
-        rw [Int.max_eq_right oneLe]
-        rw [Int.max_eq_right (by omega)]
-        exact Int.le_refl _
-      · exact Nat.le_refl _
+      simpa [compile, compileWithKeyHash,
+        StackTraceBound.branch_sequential_empty] using resources.append branch
     have currentStack : StackTraceSet.sequential (stackPathBounds first).sat
         (some StackTraceBound.branch) =
         some (trace.sequential StackTraceBound.branch) := by
@@ -289,39 +261,19 @@ theorem orC_right
     cases secondContract with
     | @v _ secondTrace secondDynamic secondInput secondTrue secondExecuted
         secondResources secondStack secondOps =>
-      let frame : ConditionalFrame := { branches := [compile second], after := [] }
-      have split : splitConditional (compile second ++ [.op .OP_ENDIF]) =
-          some frame := by
-        simpa [frame] using splitConditional_balanced_ifThen
-          (compile_balancedControlFlow second) (suffix := [])
-      have selected : ExecutesResourceFrame
-          (frame.select (!castToBool result)) secondWitness.toInitialStack []
-          flags txCtx secondTrace secondDynamic := by
-        simpa [frame, ConditionalFrame.select, selectConditionalBranches,
-          firstFacts.truth] using secondResources
-      have branch := ExecutesResourceFrame.notifSelected split
-        (firstFacts.minimalIfSatisfied firstUnit) selected
+      have branch := notifThenFrame (compile_balancedControlFlow second)
+        (firstFacts.minimalIfSatisfied firstUnit)
+        (selected := by simpa [firstFacts.truth] using secondResources)
       have concrete := (firstResources.withSuffix
         (suffix := secondWitness.toInitialStack)).append branch
-      have concreteRaw : ExecutesResourceFrame (compile (.or_c first second))
-          (Witness.combine firstWitness secondWitness).toInitialStack []
-          flags txCtx
-          (firstTrace.sequential
-            (StackTraceBound.branch.sequential secondTrace))
-          (firstDynamic + secondDynamic) := by
-        simpa [compile, compileWithKeyHash, frame,
-          Witness.toInitialStack_combine, List.append_assoc] using concrete
       have concrete' : ExecutesResourceFrame (compile (.or_c first second))
           (Witness.combine firstWitness secondWitness).toInitialStack []
           flags txCtx
           ((firstTrace.sequential StackTraceBound.branch).sequential secondTrace)
           (firstDynamic + secondDynamic) := by
-        apply concreteRaw.mono
-        · simp [StackTraceBound.sequential, StackTraceBound.branch]
-          omega
-        · simp [StackTraceBound.sequential, StackTraceBound.branch]
-          omega
-        · exact Nat.le_refl _
+        simpa [compile, compileWithKeyHash,
+          Witness.toInitialStack_combine, List.append_assoc,
+          StackTraceBound.sequential_assoc] using concrete
       have currentStack : StackTraceSet.sequential
           (StackTraceSet.sequential (stackPathBounds first).dsat
             (some StackTraceBound.branch)) (stackPathBounds second).sat =
@@ -367,40 +319,21 @@ theorem orD_left
   cases contract with
   | @b _ result value trace dynamic input facts executed resources stackSelected
       opSelected =>
-    let frame : ConditionalFrame := { branches := [compile second], after := [] }
-    have split : splitConditional (compile second ++ [.op .OP_ENDIF]) =
-        some frame := by
-      simpa [frame] using splitConditional_balanced_ifThen
-        (compile_balancedControlFlow second) (suffix := [])
-    have skipped : ExecutesResourceFrame
-        (frame.select (!castToBool result)) [result] [result] flags txCtx
-        StackTraceBound.empty 0 := by
-      simpa [frame, ConditionalFrame.select, selectConditionalBranches,
-        facts.truth] using ExecutesResourceFrame.empty [result] flags txCtx
-    have branch := ExecutesResourceFrame.notifSelected split
-      (facts.minimalIfSatisfied firstUnit) skipped
+    have branch := notifThenFrame (compile_balancedControlFlow second)
+      (facts.minimalIfSatisfied firstUnit) (inputs := [result])
+      (outputs := [result])
+      (selected := by
+        simpa [facts.truth] using
+          ExecutesResourceFrame.empty [result] flags txCtx)
     have tail := (ifdupTrueFrame (ctx := txCtx) facts.truth).append branch
     have concrete := resources.append tail
-    have concreteRaw : ExecutesResourceFrame (compile (.or_d first second))
-        witness.toInitialStack [result] flags txCtx
-        (trace.sequential
-          (StackTraceBound.ifdupTrue.sequential
-            (StackTraceBound.branch.sequential StackTraceBound.empty)))
-        dynamic := by
-      simpa [compile, compileWithKeyHash, frame] using concrete
     have concrete' : ExecutesResourceFrame (compile (.or_d first second))
         witness.toInitialStack [result] flags txCtx
         ((trace.sequential StackTraceBound.ifdupTrue).sequential
           StackTraceBound.branch) dynamic := by
-      apply concreteRaw.mono
-      · simp [StackTraceBound.sequential, StackTraceBound.empty,
-          StackTraceBound.ifdupTrue, StackTraceBound.branch]
-        omega
-      · simp [StackTraceBound.sequential, StackTraceBound.empty,
-          StackTraceBound.ifdupTrue, StackTraceBound.branch]
-        have traceNonnegative := resources.exec_nonneg
-        omega
-      · exact Nat.le_refl _
+      simpa [compile, compileWithKeyHash,
+        StackTraceBound.branch_sequential_empty,
+        StackTraceBound.sequential_assoc] using concrete
     have currentStack : StackTraceSet.sequential
         (StackTraceSet.sequential (stackPathBounds first).sat
           (some StackTraceBound.ifdupTrue))
@@ -456,46 +389,23 @@ theorem orD_right
     cases secondContract with
     | @b _ result secondValue secondTrace secondDynamic secondInput secondFacts
       secondExecuted secondResources secondStack secondOps =>
-      let frame : ConditionalFrame := { branches := [compile second], after := [] }
-      have split : splitConditional (compile second ++ [.op .OP_ENDIF]) =
-          some frame := by
-        simpa [frame] using splitConditional_balanced_ifThen
-          (compile_balancedControlFlow second) (suffix := [])
-      have selected : ExecutesResourceFrame
-          (frame.select (!castToBool selector)) secondWitness.toInitialStack
-          [result] flags txCtx secondTrace secondDynamic := by
-        simpa [frame, ConditionalFrame.select, selectConditionalBranches,
-          firstFacts.truth] using secondResources
-      have branch := ExecutesResourceFrame.notifSelected split
-        (firstFacts.minimalIfSatisfied firstUnit) selected
+      have branch := notifThenFrame (compile_balancedControlFlow second)
+        (firstFacts.minimalIfSatisfied firstUnit)
+        (selected := by simpa [firstFacts.truth] using secondResources)
       have duplicated := (ifdupFalseFrame (flags := flags) (ctx := txCtx)
         firstFacts.truth).withSuffix (suffix := secondWitness.toInitialStack)
       have tail := duplicated.append branch
       have concrete := (firstResources.withSuffix
         (suffix := secondWitness.toInitialStack)).append tail
-      have concreteRaw : ExecutesResourceFrame (compile (.or_d first second))
-          (Witness.combine firstWitness secondWitness).toInitialStack [result]
-          flags txCtx
-          (firstTrace.sequential
-            (StackTraceBound.ifdupFalse.sequential
-              (StackTraceBound.branch.sequential secondTrace)))
-          (firstDynamic + secondDynamic) := by
-        simpa [compile, compileWithKeyHash, frame,
-          Witness.toInitialStack_combine, List.append_assoc] using concrete
       have concrete' : ExecutesResourceFrame (compile (.or_d first second))
           (Witness.combine firstWitness secondWitness).toInitialStack [result]
           flags txCtx
           (((firstTrace.sequential StackTraceBound.ifdupFalse).sequential
             StackTraceBound.branch).sequential secondTrace)
           (firstDynamic + secondDynamic) := by
-        apply concreteRaw.mono
-        · simp [StackTraceBound.sequential, StackTraceBound.ifdupFalse,
-            StackTraceBound.branch]
-          omega
-        · simp [StackTraceBound.sequential, StackTraceBound.ifdupFalse,
-            StackTraceBound.branch]
-          omega
-        · exact Nat.le_refl _
+        simpa [compile, compileWithKeyHash,
+          Witness.toInitialStack_combine, List.append_assoc,
+          StackTraceBound.sequential_assoc] using concrete
       have standard := GeneratedContract.orD_right
         (GeneratedContract.b firstInput firstFacts firstExecuted) firstUnit
         (GeneratedContract.b secondInput secondFacts secondExecuted)
