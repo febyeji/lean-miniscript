@@ -1,4 +1,5 @@
 import LeanMiniscript
+import LeanMiniscript.Bitcoin.DeserializationProofs
 import LeanMiniscript.Script.BigStepProofs
 import LeanMiniscript.Script.Codec.Proofs
 import LeanMiniscript.Script.Codec.VerificationProofs

@@ -1,3 +1,5 @@
+import LeanMiniscript.Bitcoin.Base64
+import LeanMiniscript.Bitcoin.Deserialization
 import LeanMiniscript.Bitcoin.Schnorr
 import LeanMiniscript.Bitcoin.TaggedHash
 import LeanMiniscript.Bitcoin.TaprootControlBlock

@@ -1,4 +1,5 @@
 import LeanMiniscript
+import LeanMiniscript.Bitcoin.Base64Examples
 import LeanMiniscript.Bitcoin.BIP32Examples
 import LeanMiniscript.Bitcoin.BIP32ReviewExamples
 import LeanMiniscript.Bitcoin.DescriptorChecksumExamples
