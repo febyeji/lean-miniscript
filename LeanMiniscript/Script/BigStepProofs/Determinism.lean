@@ -52,6 +52,21 @@ theorem Eval.append
     rw [ConditionalFrame.select_append]
     exact ih rightEval
 
+/-- `simp_all` with the opcode-classification definitions that guard `Eval`
+    side conditions unfolded, plus optional extra simp lemmas. Used to discharge
+    constructor-overlap goals after `cases` on an evaluation. -/
+local syntax "simp_all_opcode_classes" (" [" Lean.Parser.Tactic.simpLemma,* "]")? : tactic
+
+macro_rules
+  | `(tactic| simp_all_opcode_classes) =>
+    `(tactic| simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?,
+      Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+      Opcode.isUpgradeableNop, Opcode.usesTimelockScriptNum])
+  | `(tactic| simp_all_opcode_classes [$extra,*]) =>
+    `(tactic| simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?,
+      Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex,
+      Opcode.isUpgradeableNop, Opcode.usesTimelockScriptNum, $extra,*])
+
 /-! ## Proof-facing execution API
 
 These lemmas keep unchanged scripts, stacks, flags, contexts, and results
@@ -136,8 +151,7 @@ theorem Eval.fixedArityStackUnderflow_result
     (evaluated : Eval (.op opcode :: script) stack altStack flags ctx result) :
     result = .failure .stackUnderflow := by
   cases opcode <;> cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
-      Opcode.usesTimelockScriptNum] <;>
+    simp_all_opcode_classes <;>
     omega
 
 /-- Empty-alt-stack failure cannot overlap normal `OP_FROMALTSTACK` execution. -/
@@ -147,8 +161,7 @@ theorem Eval.fromAltStack_empty_result
     (evaluated : Eval (.op .OP_FROMALTSTACK :: script) stack [] flags ctx result) :
     result = .failure .altStackUnderflow := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
-      Opcode.usesTimelockScriptNum] <;>
+    simp_all_opcode_classes <;>
     omega
 
 /-- A structurally unclosed IF evaluates its active segments before converting
@@ -165,8 +178,7 @@ theorem Eval.ifUnbalanced_result
         flags ctx selectedResult ∧
       result = finishUnclosedConditional selectedResult := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
-      Opcode.usesTimelockScriptNum, minimalIfSatisfied] <;>
+    simp_all_opcode_classes [minimalIfSatisfied] <;>
     try omega
   case if_unbalanced => exact ⟨_, by assumption, rfl⟩
 
@@ -183,8 +195,7 @@ theorem Eval.notifUnbalanced_result
         flags ctx selectedResult ∧
       result = finishUnclosedConditional selectedResult := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
-      Opcode.usesTimelockScriptNum, minimalIfSatisfied] <;>
+    simp_all_opcode_classes [minimalIfSatisfied] <;>
     try omega
   case notif_unbalanced => exact ⟨_, by assumption, rfl⟩
 
@@ -195,8 +206,7 @@ theorem Eval.elseUnbalanced_result
     (evaluated : Eval (.op .OP_ELSE :: script) stack altStack flags ctx result) :
     result = .failure .unbalancedConditional := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
-      Opcode.usesTimelockScriptNum] <;>
+    simp_all_opcode_classes <;>
     omega
 
 /-- ENDIF at top level cannot overlap a normal execution rule. -/
@@ -206,8 +216,7 @@ theorem Eval.endifUnbalanced_result
     (evaluated : Eval (.op .OP_ENDIF :: script) stack altStack flags ctx result) :
     result = .failure .unbalancedConditional := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
-      Opcode.usesTimelockScriptNum] <;>
+    simp_all_opcode_classes <;>
     omega
 
 /-- A decoder error cannot overlap a normal binary numeric execution rule. -/
@@ -223,8 +232,7 @@ theorem Eval.binaryScriptNumFailure_result
   cases opcode <;> simp_all [Opcode.usesBinaryScriptNums]
   all_goals
     cases evaluated <;>
-      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
-        Opcode.usesTimelockScriptNum] <;>
+      simp_all_opcode_classes <;>
       omega
 
 /-- A decoder error cannot overlap normal `OP_0NOTEQUAL` execution. -/
@@ -238,8 +246,7 @@ theorem Eval.unaryScriptNumFailure_result
       altStack flags ctx result) :
     result = .failure error := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
-      Opcode.usesTimelockScriptNum] <;>
+    simp_all_opcode_classes <;>
     omega
 
 /-- A malformed CHECKSIGADD count fails before signature evaluation. -/
@@ -253,8 +260,7 @@ theorem Eval.checksigaddScriptNumFailure_result
       (pubkey :: countBytes :: sig :: rest) altStack flags ctx result) :
     result = .failure error := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
-      Opcode.usesTimelockScriptNum, decodeCheckSigAddCount] <;>
+    simp_all_opcode_classes [decodeCheckSigAddCount] <;>
     omega
 
 /-- A legacy multisignature operand-decoder error cannot overlap a normal
@@ -268,8 +274,7 @@ theorem Eval.checkMultiSigOperandFailure_result
       result) :
     result = .failure error := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
-      Opcode.usesTimelockScriptNum] <;>
+    simp_all_opcode_classes <;>
     omega
 
 /-- A non-null dummy fails only after successful matching, or after rejected
@@ -287,8 +292,7 @@ theorem Eval.checkMultiSigNullDummyFailure_result
       result) :
     result = .failure .nullDummy := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
-      Opcode.usesTimelockScriptNum] <;>
+    simp_all_opcode_classes <;>
     try omega <;> grind
 
 /-- A decoder error cannot overlap normal CLTV/CSV execution or the separate
@@ -306,8 +310,7 @@ theorem Eval.timelockScriptNumFailure_result
   cases opcode <;> simp_all [Opcode.usesTimelockScriptNum]
   all_goals
     cases evaluated <;>
-      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
-        Opcode.usesTimelockScriptNum] <;>
+      simp_all_opcode_classes <;>
       omega
 
 /-- A decoded negative timelock operand fails before either opcode consults
@@ -326,8 +329,7 @@ theorem Eval.timelockNegativeFailure_result
   cases opcode <;> simp_all [Opcode.usesTimelockScriptNum]
   all_goals
     cases evaluated <;>
-      simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
-        Opcode.usesTimelockScriptNum] <;>
+      simp_all_opcode_classes <;>
       omega
 
 /-- A nonnegative CSV operand that fails the BIP 68/112 context conditions
@@ -344,8 +346,7 @@ theorem Eval.checkSequenceVerifyFailure_result
       (operand :: rest) altStack flags ctx result) :
     result = .failure .checkSequenceVerify := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
-      Opcode.usesTimelockScriptNum] <;>
+    simp_all_opcode_classes <;>
     omega
 
 /-- A nonnegative CLTV operand that fails the BIP 65 context conditions cannot
@@ -362,8 +363,7 @@ theorem Eval.checkLockTimeVerifyFailure_result
       (operand :: rest) altStack flags ctx result) :
     result = .failure .checkLockTimeVerify := by
   cases evaluated <;>
-    simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
-      Opcode.usesTimelockScriptNum] <;>
+    simp_all_opcode_classes <;>
     omega
 
 set_option maxHeartbeats 400000 in
@@ -379,8 +379,7 @@ theorem Eval.result_unique
   -- rule must reopen the corresponding determinism obligations.
   induction first generalizing secondResult <;> cases second
   all_goals
-    try simp_all [Opcode.activeFixedMainStackInputs?, Opcode.fixedMainStackInputs?, Opcode.usesBinaryScriptNums, Opcode.usesUnaryArithmetic, Opcode.usesStackIndex, Opcode.isUpgradeableNop,
-      Opcode.usesTimelockScriptNum, minimalIfSatisfied, decodeCheckSigAddCount]
+    try simp_all_opcode_classes [minimalIfSatisfied, decodeCheckSigAddCount]
     try omega
     try solve_by_elim
     try grind
