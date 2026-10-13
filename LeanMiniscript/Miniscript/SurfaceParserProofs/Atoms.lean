@@ -79,17 +79,16 @@ theorem byteArrayHex_length (bytes : ByteArray) :
     List.length_nil, Nat.zero_add, Array.length_toList, ByteArray.size]
     using hTwo data.toList
 
-theorem parseNatRaw_toString
-    (role : String) (position value : Nat) :
-    parseNatRaw role (.atom position (toString value)) = .ok value := by
-  simp [parseNatRaw, rawAtom, Nat.toNat?_repr]
-  rfl
-
 theorem parseNatRaw_repr
     (role : String) (position value : Nat) :
     parseNatRaw role (.atom position value.repr) = .ok value := by
   simp [parseNatRaw, rawAtom, Nat.toNat?_repr]
   rfl
+
+theorem parseNatRaw_toString
+    (role : String) (position value : Nat) :
+    parseNatRaw role (.atom position (toString value)) = .ok value :=
+  parseNatRaw_repr role position value
 
 theorem atomCharSafe_of_digit_or_underscore (char : Char)
     (h : char.isDigit ∨ char = '_') :

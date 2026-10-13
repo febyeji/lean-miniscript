@@ -12,12 +12,15 @@ The supporting development lives in the `SurfaceParserProofs/` submodules. -/
 
 open SurfaceParser
 
-/-- Every successfully parsed surface fragment is already in canonical form. -/
-theorem normalizeSurface_of_parseSurface_eq_ok
+/-- A successful public parse returns the normalization of an unchecked parse
+    that passed validation: it is context-valid and well-typed. -/
+private theorem exists_unchecked_of_parseSurface_eq_ok
     (context : ScriptContext) (resolver : KeyResolver) (input : String)
     (fragment : SurfaceFragment)
     (h : parseSurface context resolver input = .ok fragment) :
-    normalizeSurface fragment = fragment := by
+    ∃ unchecked, fragment = normalizeSurface unchecked ∧
+      fragment.WellFormed context ∧
+        ∃ ty, HasType context (desugar fragment) ty := by
   unfold parseSurface at h
   cases hUnchecked : parseSurfaceUnchecked context resolver input with
   | error error =>
@@ -34,9 +37,19 @@ theorem normalizeSurface_of_parseSurface_eq_ok
             simp [validateSurface, hValid, hTyped] at h
             change Except.ok (normalizeSurface unchecked) = Except.ok fragment at h
             injection h with hFragment
-            rw [← hFragment]
-            exact normalizeSurface_idempotent unchecked
+            subst hFragment
+            exact ⟨unchecked, rfl, hValid, ⟨typed.val, typed.property⟩⟩
       · simp [validateSurface, hValid] at h
+
+/-- Every successfully parsed surface fragment is already in canonical form. -/
+theorem normalizeSurface_of_parseSurface_eq_ok
+    (context : ScriptContext) (resolver : KeyResolver) (input : String)
+    (fragment : SurfaceFragment)
+    (h : parseSurface context resolver input = .ok fragment) :
+    normalizeSurface fragment = fragment := by
+  obtain ⟨unchecked, rfl, -⟩ :=
+    exists_unchecked_of_parseSurface_eq_ok context resolver input fragment h
+  exact normalizeSurface_idempotent unchecked
 
 /-- Successful public parsing returns a context-valid and well-typed surface
     fragment. -/
@@ -45,28 +58,8 @@ theorem wellFormed_and_hasType_of_parseSurface_eq_ok
     (fragment : SurfaceFragment)
     (h : parseSurface context resolver input = .ok fragment) :
     fragment.WellFormed context ∧
-      ∃ ty, HasType context (desugar fragment) ty := by
-  unfold parseSurface at h
-  cases hUnchecked : parseSurfaceUnchecked context resolver input with
-  | error error =>
-      rw [hUnchecked] at h
-      contradiction
-  | ok unchecked =>
-      rw [hUnchecked] at h
-      change validateSurface context (normalizeSurface unchecked) = .ok fragment at h
-      by_cases hValid : (normalizeSurface unchecked).WellFormed context
-      · cases hTyped : inferTyped context
-          (desugar (normalizeSurface unchecked)) with
-        | none => simp [validateSurface, hValid, hTyped] at h
-        | some typed =>
-            simp [validateSurface, hValid, hTyped] at h
-            change Except.ok (normalizeSurface unchecked) = Except.ok fragment at h
-            injection h with hFragment
-            rw [← hFragment]
-            exact ⟨hValid, ⟨typed.val, typed.property⟩⟩
-      · simp [validateSurface, hValid] at h
-
-
+      ∃ ty, HasType context (desugar fragment) ty :=
+  (exists_unchecked_of_parseSurface_eq_ok context resolver input fragment h).choose_spec.2
 
 /-- `parseSurfaceHex` is a left inverse of `prettySurface` for every
     context-valid, inferred surface fragment, modulo the documented surface

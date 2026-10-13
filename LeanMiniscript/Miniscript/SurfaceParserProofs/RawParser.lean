@@ -381,35 +381,13 @@ private theorem stopsRawExpr_of_remainingArgumentLexemes
           simp [remainingArgumentLexemes, StopsRawExpr] at hTokens ⊢
           exact Or.inl hTokens.1
 
-private theorem tokenKind_eq_atom_of_toLexeme_eq
-    (token : SurfaceToken) (value : String)
-    (h : token.toLexeme = .atom value) : token.kind = .atom value := by
-  rcases token with ⟨kind, position⟩
-  cases kind <;> simp_all [SurfaceToken.toLexeme]
-
-private theorem tokenKind_eq_leftParen_of_toLexeme_eq
-    (token : SurfaceToken) (h : token.toLexeme = .leftParen) :
-    token.kind = .leftParen := by
-  rcases token with ⟨kind, position⟩
-  cases kind <;> simp_all [SurfaceToken.toLexeme]
-
-private theorem tokenKind_eq_rightParen_of_toLexeme_eq
-    (token : SurfaceToken) (h : token.toLexeme = .rightParen) :
-    token.kind = .rightParen := by
-  rcases token with ⟨kind, position⟩
-  cases kind <;> simp_all [SurfaceToken.toLexeme]
-
-private theorem tokenKind_eq_comma_of_toLexeme_eq
-    (token : SurfaceToken) (h : token.toLexeme = .comma) :
-    token.kind = .comma := by
-  rcases token with ⟨kind, position⟩
-  cases kind <;> simp_all [SurfaceToken.toLexeme]
-
-private theorem tokenKind_eq_colon_of_toLexeme_eq
-    (token : SurfaceToken) (h : token.toLexeme = .colon) :
-    token.kind = .colon := by
-  rcases token with ⟨kind, position⟩
-  cases kind <;> simp_all [SurfaceToken.toLexeme]
+/-- A token's kind is determined by its position-free lexeme. -/
+private theorem tokenKind_eq_of_toLexeme_eq
+    (token : SurfaceToken) (kind : SurfaceTokenKind)
+    (h : token.toLexeme = SurfaceToken.toLexeme ⟨kind, 0⟩) :
+    token.kind = kind := by
+  rcases token with ⟨tokenKind, position⟩
+  cases tokenKind <;> cases kind <;> simp_all [SurfaceToken.toLexeme]
 
 private def RawParserCorrect (fuel : Nat) : Prop :=
   (∀ (expr : SurfaceText.Expr) (tokens tail : List SurfaceToken),
@@ -436,6 +414,53 @@ private def RawParserCorrect (fuel : Nat) : Prop :=
         raws.map RawSurfaceExpr.toExpr =
           reversed.reverse.map RawSurfaceExpr.toExpr ++ arguments)
 
+/-- Split the tokens of one argument followed by the remaining argument list,
+parse that argument with the expression parser, and keep enough fuel for the
+remaining arguments. -/
+private theorem parseRawFuel_argument_split (fuel : Nat)
+    (ihExpr : ∀ (expr : SurfaceText.Expr) (tokens tail : List SurfaceToken),
+      tokens.map SurfaceToken.toLexeme = expr.lexemes →
+      StopsRawExpr tail →
+      (tokens ++ tail).length < fuel →
+      ∃ raw,
+        parseRawFuel fuel (tokens ++ tail) = .ok (raw, tail) ∧
+          raw.toExpr = expr)
+    (argument : SurfaceText.Expr) (arguments : List SurfaceText.Expr)
+    (tokens tail : List SurfaceToken)
+    (hTokens : tokens.map SurfaceToken.toLexeme =
+      argument.lexemes ++ remainingArgumentLexemes arguments)
+    (hFuel : (tokens ++ tail).length < fuel) :
+    ∃ argumentTokens remainingTokens argumentRaw,
+      tokens = argumentTokens ++ remainingTokens ∧
+      argumentTokens.map SurfaceToken.toLexeme = argument.lexemes ∧
+      argumentTokens ≠ [] ∧
+      remainingTokens.map SurfaceToken.toLexeme =
+        remainingArgumentLexemes arguments ∧
+      parseRawFuel fuel (argumentTokens ++ (remainingTokens ++ tail)) =
+        .ok (argumentRaw, remainingTokens ++ tail) ∧
+      argumentRaw.toExpr = argument ∧
+      (remainingTokens ++ tail).length + 1 < fuel := by
+  obtain ⟨argumentTokens, remainingTokens, rfl, hArgumentTokens,
+      hRemainingTokens⟩ :=
+    exists_split_of_map_eq_append SurfaceToken.toLexeme tokens
+      argument.lexemes (remainingArgumentLexemes arguments) hTokens
+  have hStop := stopsRawExpr_of_remainingArgumentLexemes
+    arguments remainingTokens tail hRemainingTokens
+  obtain ⟨argumentRaw, hParseArgument, hArgument⟩ :=
+    ihExpr argument argumentTokens (remainingTokens ++ tail)
+      hArgumentTokens hStop (by simpa [List.append_assoc] using hFuel)
+  have hArgumentTokensNonempty : argumentTokens ≠ [] := by
+    intro hNil
+    subst argumentTokens
+    simp at hArgumentTokens
+    exact argument.lexemes_ne_nil hArgumentTokens
+  have hArgumentLength : 0 < argumentTokens.length :=
+    List.length_pos_iff.mpr hArgumentTokensNonempty
+  refine ⟨argumentTokens, remainingTokens, argumentRaw, rfl, hArgumentTokens,
+    hArgumentTokensNonempty, hRemainingTokens, hParseArgument, hArgument, ?_⟩
+  simp only [List.length_append] at hFuel ⊢
+  omega
+
 private theorem rawParserCorrect (fuel : Nat) : RawParserCorrect fuel := by
   induction fuel with
   | zero =>
@@ -456,8 +481,8 @@ private theorem rawParserCorrect (fuel : Nat) : RawParserCorrect fuel := by
                 | nil =>
                     have hToken : token.toLexeme = .atom value := by
                       simpa [SurfaceText.Expr.lexemes] using hTokens
-                    have hKind := tokenKind_eq_atom_of_toLexeme_eq
-                      token value hToken
+                    have hKind := tokenKind_eq_of_toLexeme_eq
+                      token (.atom value) hToken
                     refine ⟨.atom token.position value, ?_, by
                       simp [RawSurfaceExpr.toExpr]⟩
                     cases tail with
@@ -466,12 +491,12 @@ private theorem rawParserCorrect (fuel : Nat) : RawParserCorrect fuel := by
                         rfl
                     | cons next rest =>
                         rcases hStop with hComma | hRightParen
-                        · have hNext := tokenKind_eq_comma_of_toLexeme_eq
-                            next hComma
+                        · have hNext := tokenKind_eq_of_toLexeme_eq
+                            next .comma hComma
                           simp [parseRawFuel, hKind, hNext]
                           rfl
-                        · have hNext := tokenKind_eq_rightParen_of_toLexeme_eq
-                            next hRightParen
+                        · have hNext := tokenKind_eq_of_toLexeme_eq
+                            next .rightParen hRightParen
                           simp [parseRawFuel, hKind, hNext]
                           rfl
         | wrapper name inner =>
@@ -484,10 +509,10 @@ private theorem rawParserCorrect (fuel : Nat) : RawParserCorrect fuel := by
                     simp only [List.map_cons, SurfaceText.Expr.lexemes] at hTokens
                     injection hTokens with hName hTokens
                     injection hTokens with hColon hInnerTokens
-                    have hNameKind := tokenKind_eq_atom_of_toLexeme_eq
-                      nameToken name hName
-                    have hColonKind := tokenKind_eq_colon_of_toLexeme_eq
-                      colonToken hColon
+                    have hNameKind := tokenKind_eq_of_toLexeme_eq
+                      nameToken (.atom name) hName
+                    have hColonKind := tokenKind_eq_of_toLexeme_eq
+                      colonToken .colon hColon
                     have hInnerFuel : (innerTokens ++ tail).length < fuel := by
                       simp only [List.length_cons, List.length_append] at hFuel ⊢
                       omega
@@ -507,11 +532,11 @@ private theorem rawParserCorrect (fuel : Nat) : RawParserCorrect fuel := by
                     simp only [List.map_cons, SurfaceText.Expr.lexemes] at hTokens
                     injection hTokens with hName hTokens
                     injection hTokens with hLeftParen hArgumentTokens
-                    have hNameKind := tokenKind_eq_atom_of_toLexeme_eq
-                      nameToken name hName
+                    have hNameKind := tokenKind_eq_of_toLexeme_eq
+                      nameToken (.atom name) hName
                     have hLeftParenKind :=
-                      tokenKind_eq_leftParen_of_toLexeme_eq
-                        leftParenToken hLeftParen
+                      tokenKind_eq_of_toLexeme_eq
+                        leftParenToken .leftParen hLeftParen
                     have hArgumentFuel :
                         (argumentTokens ++ tail).length + 1 < fuel := by
                       simpa using hFuel
@@ -534,36 +559,17 @@ private theorem rawParserCorrect (fuel : Nat) : RawParserCorrect fuel := by
                 | nil =>
                     have hToken : token.toLexeme = .rightParen := by
                       simpa [SurfaceText.argumentLexemes] using hTokens
-                    have hKind := tokenKind_eq_rightParen_of_toLexeme_eq
-                      token hToken
+                    have hKind := tokenKind_eq_of_toLexeme_eq
+                      token .rightParen hToken
                     refine ⟨[], ?_, rfl⟩
                     simp [parseRawArgumentsFuel, hKind] <;> rfl
         | cons argument arguments =>
             rw [argumentLexemes_cons_append_rightParen] at hTokens
-            obtain ⟨argumentTokens, remainingTokens, hSplit,
-                hArgumentTokens, hRemainingTokens⟩ :=
-              exists_split_of_map_eq_append SurfaceToken.toLexeme tokens
-                argument.lexemes (remainingArgumentLexemes arguments) hTokens
-            subst tokens
-            have hStop := stopsRawExpr_of_remainingArgumentLexemes
-              arguments remainingTokens tail hRemainingTokens
-            have hExprFuel :
-                (argumentTokens ++ (remainingTokens ++ tail)).length < fuel := by
-              simpa [List.append_assoc] using hFuel
-            obtain ⟨argumentRaw, hParseArgument, hArgument⟩ :=
-              ihExpr argument argumentTokens (remainingTokens ++ tail)
-                hArgumentTokens hStop hExprFuel
-            have hArgumentTokensNonempty : argumentTokens ≠ [] := by
-              intro hNil
-              subst argumentTokens
-              simp at hArgumentTokens
-              exact argument.lexemes_ne_nil hArgumentTokens
-            have hMoreFuel :
-                (remainingTokens ++ tail).length + 1 < fuel := by
-              simp only [List.length_append] at hFuel ⊢
-              have : 0 < argumentTokens.length :=
-                List.length_pos_iff.mpr hArgumentTokensNonempty
-              omega
+            obtain ⟨argumentTokens, remainingTokens, argumentRaw, rfl,
+                hArgumentTokens, hArgumentTokensNonempty, hRemainingTokens,
+                hParseArgument, hArgument, hMoreFuel⟩ :=
+              parseRawFuel_argument_split fuel ihExpr argument arguments
+                tokens tail hTokens (by omega)
             obtain ⟨raws, hParseMore, hRaws⟩ :=
               ihMore [argumentRaw] arguments remainingTokens tail
                 hRemainingTokens hMoreFuel
@@ -576,8 +582,8 @@ private theorem rawParserCorrect (fuel : Nat) : RawParserCorrect fuel := by
               simp only [List.map_cons] at hArgumentTokens
               rw [hFirst] at hArgumentTokens
               injection hArgumentTokens
-            have hFirstKind := tokenKind_eq_atom_of_toLexeme_eq
-              argumentToken firstValue hFirstToken
+            have hFirstKind := tokenKind_eq_of_toLexeme_eq
+              argumentToken (.atom firstValue) hFirstToken
             refine ⟨raws, ?_, ?_⟩
             · simp only [Nat.add_one, List.append_assoc]
               change parseRawArgumentsFuel (Nat.succ fuel)
@@ -609,8 +615,8 @@ private theorem rawParserCorrect (fuel : Nat) : RawParserCorrect fuel := by
                 | nil =>
                     have hToken : token.toLexeme = .rightParen := by
                       simpa [remainingArgumentLexemes] using hTokens
-                    have hKind := tokenKind_eq_rightParen_of_toLexeme_eq
-                      token hToken
+                    have hKind := tokenKind_eq_of_toLexeme_eq
+                      token .rightParen hToken
                     refine ⟨reversed.reverse, ?_, by simp⟩
                     simp [parseMoreRawArgumentsFuel, hKind] <;> rfl
         | cons argument arguments =>
@@ -621,33 +627,15 @@ private theorem rawParserCorrect (fuel : Nat) : RawParserCorrect fuel := by
                 injection hTokens with hComma hTokens
                 have hTokens' := hTokens.trans
                   (argumentLexemes_cons_append_rightParen argument arguments)
-                obtain ⟨argumentTokens, remainingTokens, hSplit,
-                    hArgumentTokens, hRemainingTokens⟩ :=
-                  exists_split_of_map_eq_append SurfaceToken.toLexeme tokens
-                    argument.lexemes (remainingArgumentLexemes arguments) hTokens'
-                subst tokens
-                have hCommaKind := tokenKind_eq_comma_of_toLexeme_eq
-                  commaToken hComma
-                have hStop := stopsRawExpr_of_remainingArgumentLexemes
-                  arguments remainingTokens tail hRemainingTokens
-                have hExprFuel :
-                    (argumentTokens ++ (remainingTokens ++ tail)).length < fuel := by
-                  simp only [List.length_cons, List.length_append] at hFuel ⊢
-                  omega
-                obtain ⟨argumentRaw, hParseArgument, hArgument⟩ :=
-                  ihExpr argument argumentTokens (remainingTokens ++ tail)
-                    hArgumentTokens hStop hExprFuel
-                have hArgumentTokensNonempty : argumentTokens ≠ [] := by
-                  intro hNil
-                  subst argumentTokens
-                  simp at hArgumentTokens
-                  exact argument.lexemes_ne_nil hArgumentTokens
-                have hMoreFuel :
-                    (remainingTokens ++ tail).length + 1 < fuel := by
-                  simp only [List.length_cons, List.length_append] at hFuel ⊢
-                  have : 0 < argumentTokens.length :=
-                    List.length_pos_iff.mpr hArgumentTokensNonempty
-                  omega
+                have hCommaKind := tokenKind_eq_of_toLexeme_eq
+                  commaToken .comma hComma
+                obtain ⟨argumentTokens, remainingTokens, argumentRaw, rfl,
+                    -, -, hRemainingTokens, hParseArgument, hArgument,
+                    hMoreFuel⟩ :=
+                  parseRawFuel_argument_split fuel ihExpr argument arguments
+                    tokens tail hTokens' (by
+                      simp only [List.length_cons, List.length_append] at hFuel ⊢
+                      omega)
                 obtain ⟨raws, hParseMore, hRaws⟩ :=
                   ihMore (argumentRaw :: reversed) arguments
                     remainingTokens tail hRemainingTokens hMoreFuel

@@ -293,8 +293,8 @@ private theorem canonicalExprCorrect_unaryAtomCall
     (fragment : SurfaceFragment)
     (hNameSafe : SurfaceText.AtomSafe name)
     (hTokenSafe : SurfaceText.AtomSafe token)
-    (hElaborate : ∀ (fuel callPosition atomPosition : Nat), 0 < fuel →
-      elaborateRawFuel context resolveHexKey fuel
+    (hElaborate : ∀ (fuel callPosition atomPosition : Nat),
+      elaborateRawFuel context resolveHexKey (fuel + 1)
         (.call callPosition name [.atom atomPosition token]) = .ok fragment) :
     CanonicalExprCorrect context
       (.call name [.atom token]) fragment := by
@@ -312,7 +312,9 @@ private theorem canonicalExprCorrect_unaryAtomCall
     | atom atomPosition rawToken =>
         simp only [RawSurfaceExpr.toExpr] at hRaw
         cases hRaw
-        exact hElaborate fuel callPosition atomPosition (by omega)
+        cases fuel with
+        | zero => simp at hFuel
+        | succ fuel => exact hElaborate fuel callPosition atomPosition
     | wrapper => simp [RawSurfaceExpr.toExpr] at hRaw
     | call => simp [RawSurfaceExpr.toExpr] at hRaw
 
@@ -321,8 +323,8 @@ private theorem canonicalExprCorrect_keyCall
     (fragment : SurfaceFragment)
     (hValid : validResolvedPubKey context key)
     (hNameSafe : SurfaceText.AtomSafe name)
-    (hElaborate : ∀ (fuel callPosition atomPosition : Nat), 0 < fuel →
-      elaborateRawFuel context resolveHexKey fuel
+    (hElaborate : ∀ (fuel callPosition atomPosition : Nat),
+      elaborateRawFuel context resolveHexKey (fuel + 1)
         (.call callPosition name [.atom atomPosition (prettyPubKey key)]) =
           .ok fragment) :
     CanonicalExprCorrect context
@@ -342,13 +344,10 @@ theorem canonicalExprCorrect_pk
   apply canonicalExprCorrect_keyCall context "pk" key (.pk key) hValid
   · simp [SurfaceText.AtomSafe, SurfaceText.isSpace,
       SurfaceText.isPunctuation]
-  · intro fuel callPosition atomPosition hFuel
-    cases fuel with
-    | zero => omega
-    | succ fuel =>
-        simp [elaborateRawFuel, unaryArgument,
-          resolveKeyRaw_prettyPubKey context atomPosition key hValid]
-        rfl
+  · intro fuel callPosition atomPosition
+    simp [elaborateRawFuel, unaryArgument,
+      resolveKeyRaw_prettyPubKey context atomPosition key hValid]
+    rfl
 
 theorem canonicalExprCorrect_pkh
     (context : ScriptContext) (key : PubKey)
@@ -358,13 +357,10 @@ theorem canonicalExprCorrect_pkh
   apply canonicalExprCorrect_keyCall context "pkh" key (.pkh key) hValid
   · simp [SurfaceText.AtomSafe, SurfaceText.isSpace,
       SurfaceText.isPunctuation]
-  · intro fuel callPosition atomPosition hFuel
-    cases fuel with
-    | zero => omega
-    | succ fuel =>
-        simp [elaborateRawFuel, unaryArgument,
-          resolveKeyRaw_prettyPubKey context atomPosition key hValid]
-        rfl
+  · intro fuel callPosition atomPosition
+    simp [elaborateRawFuel, unaryArgument,
+      resolveKeyRaw_prettyPubKey context atomPosition key hValid]
+    rfl
 
 theorem canonicalExprCorrect_pk_k
     (context : ScriptContext) (key : PubKey)
@@ -375,13 +371,10 @@ theorem canonicalExprCorrect_pk_k
     hValid
   · simp [SurfaceText.AtomSafe, SurfaceText.isSpace,
       SurfaceText.isPunctuation]
-  · intro fuel callPosition atomPosition hFuel
-    cases fuel with
-    | zero => omega
-    | succ fuel =>
-        simp [elaborateRawFuel, unaryArgument,
-          resolveKeyRaw_prettyPubKey context atomPosition key hValid]
-        rfl
+  · intro fuel callPosition atomPosition
+    simp [elaborateRawFuel, unaryArgument,
+      resolveKeyRaw_prettyPubKey context atomPosition key hValid]
+    rfl
 
 theorem canonicalExprCorrect_pk_h
     (context : ScriptContext) (key : PubKey)
@@ -392,13 +385,10 @@ theorem canonicalExprCorrect_pk_h
     hValid
   · simp [SurfaceText.AtomSafe, SurfaceText.isSpace,
       SurfaceText.isPunctuation]
-  · intro fuel callPosition atomPosition hFuel
-    cases fuel with
-    | zero => omega
-    | succ fuel =>
-        simp [elaborateRawFuel, unaryArgument,
-          resolveKeyRaw_prettyPubKey context atomPosition key hValid]
-        rfl
+  · intro fuel callPosition atomPosition
+    simp [elaborateRawFuel, unaryArgument,
+      resolveKeyRaw_prettyPubKey context atomPosition key hValid]
+    rfl
 
 theorem canonicalExprCorrect_older
     (context : ScriptContext) (value : Nat) :
@@ -408,18 +398,15 @@ theorem canonicalExprCorrect_older
   · simp [SurfaceText.AtomSafe, SurfaceText.isSpace,
       SurfaceText.isPunctuation]
   · exact atomSafe_toString value
-  · intro fuel callPosition atomPosition hFuel
-    cases fuel with
-    | zero => omega
-    | succ fuel =>
-        simp [elaborateRawFuel]
-        simp only [unaryArgument]
-        simp
-        change (fun result => SurfaceFragment.core (.older result)) <$>
-          parseNatRaw "a relative timelock"
-            (.atom atomPosition (toString value)) = .ok (.core (.older value))
-        rw [parseNatRaw_toString "a relative timelock" atomPosition value]
-        rfl
+  · intro fuel callPosition atomPosition
+    simp [elaborateRawFuel]
+    simp only [unaryArgument]
+    simp
+    change (fun result => SurfaceFragment.core (.older result)) <$>
+      parseNatRaw "a relative timelock"
+        (.atom atomPosition (toString value)) = .ok (.core (.older value))
+    rw [parseNatRaw_toString "a relative timelock" atomPosition value]
+    rfl
 
 theorem canonicalExprCorrect_after
     (context : ScriptContext) (value : Nat) :
@@ -429,18 +416,15 @@ theorem canonicalExprCorrect_after
   · simp [SurfaceText.AtomSafe, SurfaceText.isSpace,
       SurfaceText.isPunctuation]
   · exact atomSafe_toString value
-  · intro fuel callPosition atomPosition hFuel
-    cases fuel with
-    | zero => omega
-    | succ fuel =>
-        simp [elaborateRawFuel]
-        simp only [unaryArgument]
-        simp
-        change (fun result => SurfaceFragment.core (.after result)) <$>
-          parseNatRaw "an absolute timelock"
-            (.atom atomPosition (toString value)) = .ok (.core (.after value))
-        rw [parseNatRaw_toString "an absolute timelock" atomPosition value]
-        rfl
+  · intro fuel callPosition atomPosition
+    simp [elaborateRawFuel]
+    simp only [unaryArgument]
+    simp
+    change (fun result => SurfaceFragment.core (.after result)) <$>
+      parseNatRaw "an absolute timelock"
+        (.atom atomPosition (toString value)) = .ok (.core (.after value))
+    rw [parseNatRaw_toString "an absolute timelock" atomPosition value]
+    rfl
 
 theorem canonicalExprCorrect_sha256
     (context : ScriptContext) (hash : Hash256)
@@ -454,14 +438,11 @@ theorem canonicalExprCorrect_sha256
   · apply atomSafe_byteArrayHex
     unfold validHash256 Hash256.size at hValid
     omega
-  · intro fuel callPosition atomPosition hFuel
-    cases fuel with
-    | zero => omega
-    | succ fuel =>
-        simp [elaborateRawFuel, unaryArgument,
-          parseHashBytes_byteArrayHex "sha256" 32 atomPosition hash.bytes
-            (by simpa [validHash256, Hash256.size] using hValid)]
-        rfl
+  · intro fuel callPosition atomPosition
+    simp [elaborateRawFuel, unaryArgument,
+      parseHashBytes_byteArrayHex "sha256" 32 atomPosition hash.bytes
+        (by simpa [validHash256, Hash256.size] using hValid)]
+    rfl
 
 theorem canonicalExprCorrect_hash256
     (context : ScriptContext) (hash : Hash256)
@@ -475,14 +456,11 @@ theorem canonicalExprCorrect_hash256
   · apply atomSafe_byteArrayHex
     unfold validHash256 Hash256.size at hValid
     omega
-  · intro fuel callPosition atomPosition hFuel
-    cases fuel with
-    | zero => omega
-    | succ fuel =>
-        simp [elaborateRawFuel, unaryArgument,
-          parseHashBytes_byteArrayHex "hash256" 32 atomPosition hash.bytes
-            (by simpa [validHash256, Hash256.size] using hValid)]
-        rfl
+  · intro fuel callPosition atomPosition
+    simp [elaborateRawFuel, unaryArgument,
+      parseHashBytes_byteArrayHex "hash256" 32 atomPosition hash.bytes
+        (by simpa [validHash256, Hash256.size] using hValid)]
+    rfl
 
 theorem canonicalExprCorrect_ripemd160
     (context : ScriptContext) (hash : Hash160)
@@ -497,14 +475,11 @@ theorem canonicalExprCorrect_ripemd160
   · apply atomSafe_byteArrayHex
     unfold validHash160 Hash160.size at hValid
     omega
-  · intro fuel callPosition atomPosition hFuel
-    cases fuel with
-    | zero => omega
-    | succ fuel =>
-        simp [elaborateRawFuel, unaryArgument,
-          parseHashBytes_byteArrayHex "ripemd160" 20 atomPosition hash.bytes
-            (by simpa [validHash160, Hash160.size] using hValid)]
-        rfl
+  · intro fuel callPosition atomPosition
+    simp [elaborateRawFuel, unaryArgument,
+      parseHashBytes_byteArrayHex "ripemd160" 20 atomPosition hash.bytes
+        (by simpa [validHash160, Hash160.size] using hValid)]
+    rfl
 
 theorem canonicalExprCorrect_hash160
     (context : ScriptContext) (hash : Hash160)
@@ -518,14 +493,11 @@ theorem canonicalExprCorrect_hash160
   · apply atomSafe_byteArrayHex
     unfold validHash160 Hash160.size at hValid
     omega
-  · intro fuel callPosition atomPosition hFuel
-    cases fuel with
-    | zero => omega
-    | succ fuel =>
-        simp [elaborateRawFuel, unaryArgument,
-          parseHashBytes_byteArrayHex "hash160" 20 atomPosition hash.bytes
-            (by simpa [validHash160, Hash160.size] using hValid)]
-        rfl
+  · intro fuel callPosition atomPosition
+    simp [elaborateRawFuel, unaryArgument,
+      parseHashBytes_byteArrayHex "hash160" 20 atomPosition hash.bytes
+        (by simpa [validHash160, Hash160.size] using hValid)]
+    rfl
 
 theorem canonicalExprCorrect_binaryCall
     (context : ScriptContext) (name : String)
