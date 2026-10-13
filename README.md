@@ -11,6 +11,7 @@
   - Spending policies: parsing and printing, denotational semantics, and a cost-based policy-to-Miniscript compiler whose output provably preserves the policy's meaning.
   - Bitcoin Script execution, control flow, signatures, Taproot, timelocks, and runtime limits.
   - Bitcoin transaction, descriptor, ECDSA, Schnorr, and Taproot serialization utilities.
+  - PSBT (BIP174, BIP370, BIP371) parsing, serialization, roles, and descriptor-based finalization.
 
 ## Getting started
 
@@ -28,6 +29,8 @@
   ```
 
 - The audit downloads checksum-pinned Bitcoin Core fixtures and checks all 1,222 cases.
+- PSBT test vectors are generated from pinned BIP174, BIP370, and BIP371 sources by
+  `scripts/generate_psbt_fixtures.py`.
 
 ## Repository layout
 
