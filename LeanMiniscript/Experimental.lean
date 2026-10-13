@@ -16,6 +16,7 @@ import LeanMiniscript.Extraction.RefInterp
 import LeanMiniscript.Extraction.Taproot
 import LeanMiniscript.Extraction.TaprootBytes
 import LeanMiniscript.Psbt.Roles
+import LeanMiniscript.Psbt.Finalizer
 
 /-!
 # Experimental lean-miniscript modules
