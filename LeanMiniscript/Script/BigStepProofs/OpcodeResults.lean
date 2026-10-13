@@ -18,16 +18,9 @@ theorem Eval.done {stack altStack : Stack} {flags : ScriptFlags} {ctx : TxContex
 theorem Eval.nip_result (top discarded : StackElement) (stack altStack : Stack)
     (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
     Eval [.op .OP_NIP] (top :: discarded :: stack) altStack flags ctx result ↔
-      result = .success (top :: stack) altStack := by
-  have canonical : Eval [.op .OP_NIP] (top :: discarded :: stack) altStack flags ctx
-      (.success (top :: stack) altStack) :=
-    .nip top discarded stack altStack [] flags ctx _ .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (top :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.nip top discarded stack altStack [] flags ctx _ .done)
 
 /-- With zero or one main-stack item, NIP terminates before any suffix. -/
 theorem Eval.nip_underflow_result {stack altStack : Stack} {script : Script}
@@ -41,16 +34,9 @@ theorem Eval.nip_underflow_result {stack altStack : Stack} {script : Script}
 theorem Eval.twoDrop_result (top discarded : StackElement) (stack altStack : Stack)
     (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
     Eval [.op .OP_2DROP] (top :: discarded :: stack) altStack flags ctx result ↔
-      result = .success stack altStack := by
-  have canonical : Eval [.op .OP_2DROP] (top :: discarded :: stack) altStack flags ctx
-      (.success stack altStack) :=
-    .twoDrop top discarded stack altStack [] flags ctx _ .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success stack altStack :=
+  Eval.result_iff_of_canonical
+    (.twoDrop top discarded stack altStack [] flags ctx _ .done)
 
 /-- With zero or one main-stack item, 2DROP terminates before any suffix. -/
 theorem Eval.twoDrop_underflow_result {stack altStack : Stack} {script : Script}
@@ -64,16 +50,9 @@ theorem Eval.twoDrop_underflow_result {stack altStack : Stack} {script : Script}
 theorem Eval.twoDup_result (top below : StackElement) (stack altStack : Stack)
     (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
     Eval [.op .OP_2DUP] (top :: below :: stack) altStack flags ctx result ↔
-      result = .success (top :: below :: top :: below :: stack) altStack := by
-  have canonical : Eval [.op .OP_2DUP] (top :: below :: stack) altStack flags ctx
-      (.success (top :: below :: top :: below :: stack) altStack) :=
-    .twoDup top below stack altStack [] flags ctx _ .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (top :: below :: top :: below :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.twoDup top below stack altStack [] flags ctx _ .done)
 
 /-- With zero or one main-stack item, 2DUP terminates before any suffix. -/
 theorem Eval.twoDup_underflow_result {stack altStack : Stack} {script : Script}
@@ -87,16 +66,9 @@ theorem Eval.twoDup_underflow_result {stack altStack : Stack} {script : Script}
 theorem Eval.threeDup_result (top second third : StackElement) (stack altStack : Stack)
     (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
     Eval [.op .OP_3DUP] (top :: second :: third :: stack) altStack flags ctx result ↔
-      result = .success (top :: second :: third :: top :: second :: third :: stack) altStack := by
-  have canonical : Eval [.op .OP_3DUP] (top :: second :: third :: stack) altStack flags ctx
-      (.success (top :: second :: third :: top :: second :: third :: stack) altStack) :=
-    .threeDup top second third stack altStack [] flags ctx _ .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (top :: second :: third :: top :: second :: third :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.threeDup top second third stack altStack [] flags ctx _ .done)
 
 /-- With fewer than three main-stack items, 3DUP terminates before any suffix. -/
 theorem Eval.threeDup_underflow_result {stack altStack : Stack} {script : Script}
@@ -110,16 +82,9 @@ theorem Eval.threeDup_underflow_result {stack altStack : Stack} {script : Script
 theorem Eval.twoOver_result (top second third fourth : StackElement) (stack altStack : Stack)
     (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
     Eval [.op .OP_2OVER] (top :: second :: third :: fourth :: stack) altStack flags ctx result ↔
-      result = .success (third :: fourth :: top :: second :: third :: fourth :: stack) altStack := by
-  have canonical : Eval [.op .OP_2OVER] (top :: second :: third :: fourth :: stack) altStack flags ctx
-      (.success (third :: fourth :: top :: second :: third :: fourth :: stack) altStack) :=
-    .twoOver top second third fourth stack altStack [] flags ctx _ .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (third :: fourth :: top :: second :: third :: fourth :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.twoOver top second third fourth stack altStack [] flags ctx _ .done)
 
 /-- With fewer than four main-stack items, 2OVER terminates before any suffix. -/
 theorem Eval.twoOver_underflow_result {stack altStack : Stack} {script : Script}
@@ -133,16 +98,9 @@ theorem Eval.twoOver_underflow_result {stack altStack : Stack} {script : Script}
 theorem Eval.over_result (top below : StackElement) (stack altStack : Stack)
     (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
     Eval [.op .OP_OVER] (top :: below :: stack) altStack flags ctx result ↔
-      result = .success (below :: top :: below :: stack) altStack := by
-  have canonical : Eval [.op .OP_OVER] (top :: below :: stack) altStack flags ctx
-      (.success (below :: top :: below :: stack) altStack) :=
-    .over top below stack altStack [] flags ctx _ .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (below :: top :: below :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.over top below stack altStack [] flags ctx _ .done)
 
 /-- With zero or one main-stack item, OVER terminates before any suffix. -/
 theorem Eval.over_underflow_result {stack altStack : Stack} {script : Script}
@@ -156,16 +114,9 @@ theorem Eval.over_underflow_result {stack altStack : Stack} {script : Script}
 theorem Eval.tuck_result (top below : StackElement) (stack altStack : Stack)
     (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
     Eval [.op .OP_TUCK] (top :: below :: stack) altStack flags ctx result ↔
-      result = .success (top :: below :: top :: stack) altStack := by
-  have canonical : Eval [.op .OP_TUCK] (top :: below :: stack) altStack flags ctx
-      (.success (top :: below :: top :: stack) altStack) :=
-    .tuck top below stack altStack [] flags ctx _ .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (top :: below :: top :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.tuck top below stack altStack [] flags ctx _ .done)
 
 /-- With zero or one main-stack item, TUCK terminates before any suffix. -/
 theorem Eval.tuck_underflow_result {stack altStack : Stack} {script : Script}
@@ -179,16 +130,9 @@ theorem Eval.tuck_underflow_result {stack altStack : Stack} {script : Script}
 theorem Eval.rot_result (top second third : StackElement) (stack altStack : Stack)
     (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
     Eval [.op .OP_ROT] (top :: second :: third :: stack) altStack flags ctx result ↔
-      result = .success (third :: top :: second :: stack) altStack := by
-  have canonical : Eval [.op .OP_ROT] (top :: second :: third :: stack) altStack flags ctx
-      (.success (third :: top :: second :: stack) altStack) :=
-    .rot top second third stack altStack [] flags ctx _ .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (third :: top :: second :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.rot top second third stack altStack [] flags ctx _ .done)
 
 /-- With fewer than three main-stack items, ROT terminates before any suffix. -/
 theorem Eval.rot_underflow_result {stack altStack : Stack} {script : Script}
@@ -202,16 +146,9 @@ theorem Eval.rot_underflow_result {stack altStack : Stack} {script : Script}
 theorem Eval.twoRot_result (top second third fourth fifth sixth : StackElement) (stack altStack : Stack)
     (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
     Eval [.op .OP_2ROT] (top :: second :: third :: fourth :: fifth :: sixth :: stack) altStack flags ctx result ↔
-      result = .success (fifth :: sixth :: top :: second :: third :: fourth :: stack) altStack := by
-  have canonical : Eval [.op .OP_2ROT] (top :: second :: third :: fourth :: fifth :: sixth :: stack) altStack flags ctx
-      (.success (fifth :: sixth :: top :: second :: third :: fourth :: stack) altStack) :=
-    .twoRot top second third fourth fifth sixth stack altStack [] flags ctx _ .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (fifth :: sixth :: top :: second :: third :: fourth :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.twoRot top second third fourth fifth sixth stack altStack [] flags ctx _ .done)
 
 /-- With fewer than six main-stack items, 2ROT terminates before any suffix. -/
 theorem Eval.twoRot_underflow_result {stack altStack : Stack} {script : Script}
@@ -225,16 +162,9 @@ theorem Eval.twoRot_underflow_result {stack altStack : Stack} {script : Script}
 theorem Eval.twoSwap_result (top second third fourth : StackElement) (stack altStack : Stack)
     (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
     Eval [.op .OP_2SWAP] (top :: second :: third :: fourth :: stack) altStack flags ctx result ↔
-      result = .success (third :: fourth :: top :: second :: stack) altStack := by
-  have canonical : Eval [.op .OP_2SWAP] (top :: second :: third :: fourth :: stack) altStack flags ctx
-      (.success (third :: fourth :: top :: second :: stack) altStack) :=
-    .twoSwap top second third fourth stack altStack [] flags ctx _ .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (third :: fourth :: top :: second :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.twoSwap top second third fourth stack altStack [] flags ctx _ .done)
 
 /-- With fewer than four main-stack items, 2SWAP terminates before any suffix. -/
 theorem Eval.twoSwap_underflow_result {stack altStack : Stack} {script : Script}
@@ -267,15 +197,9 @@ theorem Eval.upgradeableNop_result (opcode : Opcode)
     (upgradeable : opcode.isUpgradeableNop = true)
     (allowed : flags.discourageUpgradableNops = false) (result : ExecResult) :
     Eval [.op opcode] stack altStack flags ctx result ↔
-      result = .success stack altStack := by
-  have canonical : Eval [.op opcode] stack altStack flags ctx (.success stack altStack) :=
-    .upgradeableNop opcode [] stack altStack flags ctx _ upgradeable allowed .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success stack altStack :=
+  Eval.result_iff_of_canonical
+    (.upgradeableNop opcode [] stack altStack flags ctx _ upgradeable allowed .done)
 
 /-- A discouraged upgradeable NOP terminates before its suffix. -/
 theorem Eval.upgradeableNop_failure_result (opcode : Opcode) (script : Script)
@@ -283,30 +207,17 @@ theorem Eval.upgradeableNop_failure_result (opcode : Opcode) (script : Script)
     (upgradeable : opcode.isUpgradeableNop = true)
     (discouraged : flags.discourageUpgradableNops = true) (result : ExecResult) :
     Eval (.op opcode :: script) stack altStack flags ctx result ↔
-      result = .failure .discourageUpgradableNops := by
-  have canonical : Eval (.op opcode :: script) stack altStack flags ctx
-      (.failure .discourageUpgradableNops) :=
-    .upgradeableNop_discouraged opcode script stack altStack flags ctx upgradeable discouraged
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .failure .discourageUpgradableNops :=
+  Eval.result_iff_of_canonical
+    (.upgradeableNop_discouraged opcode script stack altStack flags ctx upgradeable discouraged)
 
 /-- Active RETURN determines the terminal result for every stack and suffix. -/
 theorem Eval.opReturn_result (script : Script) (stack altStack : Stack)
     (flags : ScriptFlags) (ctx : TxContext) (result : ExecResult) :
     Eval (.op .OP_RETURN :: script) stack altStack flags ctx result ↔
-      result = .failure .opReturn := by
-  have canonical : Eval (.op .OP_RETURN :: script) stack altStack flags ctx
-      (.failure .opReturn) := .opReturn script stack altStack flags ctx
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .failure .opReturn :=
+  Eval.result_iff_of_canonical
+    (.opReturn script stack altStack flags ctx)
 
 /-- A decoded in-range index determines the exact OP_PICK result. -/
 theorem Eval.pick_result (operand top : StackElement) (index : Nat)
@@ -315,17 +226,9 @@ theorem Eval.pick_result (operand top : StackElement) (index : Nat)
     (result : ExecResult) :
     Eval [.op .OP_PICK] (operand :: top :: stack) altStack flags ctx result ↔
       result = .success ((top :: stack)[index]?.getD ByteArray.empty ::
-        (top :: stack)) altStack := by
-  have canonical : Eval [.op .OP_PICK] (operand :: top :: stack) altStack flags ctx
-      (.success ((top :: stack)[index]?.getD ByteArray.empty ::
-        (top :: stack)) altStack) :=
-    .pick operand top index stack altStack [] flags ctx _ decoded .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+        (top :: stack)) altStack :=
+  Eval.result_iff_of_canonical
+    (.pick operand top index stack altStack [] flags ctx _ decoded .done)
 
 /-- A decoded in-range index determines the exact OP_ROLL result. -/
 theorem Eval.roll_result (operand top : StackElement) (index : Nat)
@@ -334,32 +237,17 @@ theorem Eval.roll_result (operand top : StackElement) (index : Nat)
     (result : ExecResult) :
     Eval [.op .OP_ROLL] (operand :: top :: stack) altStack flags ctx result ↔
       result = .success ((top :: stack)[index]?.getD ByteArray.empty ::
-        (top :: stack).eraseIdx index) altStack := by
-  have canonical : Eval [.op .OP_ROLL] (operand :: top :: stack) altStack flags ctx
-      (.success ((top :: stack)[index]?.getD ByteArray.empty ::
-        (top :: stack).eraseIdx index) altStack) :=
-    .roll operand top index stack altStack [] flags ctx _ decoded .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+        (top :: stack).eraseIdx index) altStack :=
+  Eval.result_iff_of_canonical
+    (.roll operand top index stack altStack [] flags ctx _ decoded .done)
 
 /-- DEPTH has this exact relational result for every main/alternate stack. -/
 theorem Eval.depth_result (stack altStack : Stack) (flags : ScriptFlags)
     (ctx : TxContext) (result : ExecResult) :
     Eval [.op .OP_DEPTH] stack altStack flags ctx result ↔
-      result = .success (scriptNat stack.length :: stack) altStack := by
-  have canonical : Eval [.op .OP_DEPTH] stack altStack flags ctx
-      (.success (scriptNat stack.length :: stack) altStack) :=
-    .depth stack altStack [] flags ctx _ .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (scriptNat stack.length :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.depth stack altStack [] flags ctx _ .done)
 
 /-- Successful OP_1ADD decoding determines its exact relational result. -/
 theorem Eval.oneAdd_result (operand : StackElement) (value : Int)
@@ -367,16 +255,9 @@ theorem Eval.oneAdd_result (operand : StackElement) (value : Int)
     (decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
       .ok value) (result : ExecResult) :
     Eval [.op .OP_1ADD] (operand :: stack) altStack flags ctx result ↔
-      result = .success (scriptNum (value + 1) :: stack) altStack := by
-  have canonical : Eval [.op .OP_1ADD] (operand :: stack) altStack flags ctx
-      (.success (scriptNum (value + 1) :: stack) altStack) :=
-    .oneAdd operand value stack altStack [] flags ctx _ decoded .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (scriptNum (value + 1) :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.oneAdd operand value stack altStack [] flags ctx _ decoded .done)
 
 /-- Successful OP_1SUB decoding determines its exact relational result. -/
 theorem Eval.oneSub_result (operand : StackElement) (value : Int)
@@ -384,16 +265,9 @@ theorem Eval.oneSub_result (operand : StackElement) (value : Int)
     (decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
       .ok value) (result : ExecResult) :
     Eval [.op .OP_1SUB] (operand :: stack) altStack flags ctx result ↔
-      result = .success (scriptNum (value - 1) :: stack) altStack := by
-  have canonical : Eval [.op .OP_1SUB] (operand :: stack) altStack flags ctx
-      (.success (scriptNum (value - 1) :: stack) altStack) :=
-    .oneSub operand value stack altStack [] flags ctx _ decoded .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (scriptNum (value - 1) :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.oneSub operand value stack altStack [] flags ctx _ decoded .done)
 
 /-- Successful OP_NEGATE decoding determines its exact relational result. -/
 theorem Eval.negate_result (operand : StackElement) (value : Int)
@@ -401,16 +275,9 @@ theorem Eval.negate_result (operand : StackElement) (value : Int)
     (decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
       .ok value) (result : ExecResult) :
     Eval [.op .OP_NEGATE] (operand :: stack) altStack flags ctx result ↔
-      result = .success (scriptNum (-value) :: stack) altStack := by
-  have canonical : Eval [.op .OP_NEGATE] (operand :: stack) altStack flags ctx
-      (.success (scriptNum (-value) :: stack) altStack) :=
-    .negate operand value stack altStack [] flags ctx _ decoded .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (scriptNum (-value) :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.negate operand value stack altStack [] flags ctx _ decoded .done)
 
 /-- Successful OP_ABS decoding determines its exact relational result. -/
 theorem Eval.abs_result (operand : StackElement) (value : Int)
@@ -418,16 +285,9 @@ theorem Eval.abs_result (operand : StackElement) (value : Int)
     (decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
       .ok value) (result : ExecResult) :
     Eval [.op .OP_ABS] (operand :: stack) altStack flags ctx result ↔
-      result = .success (scriptNum (if value < 0 then -value else value) :: stack) altStack := by
-  have canonical : Eval [.op .OP_ABS] (operand :: stack) altStack flags ctx
-      (.success (scriptNum (if value < 0 then -value else value) :: stack) altStack) :=
-    .abs operand value stack altStack [] flags ctx _ decoded .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (scriptNum (if value < 0 then -value else value) :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.abs operand value stack altStack [] flags ctx _ decoded .done)
 
 /-- Decoded OP_SUB operands determine its exact relational result. -/
 theorem Eval.sub_result (aBytes bBytes : StackElement) (a b : Int)
@@ -435,16 +295,9 @@ theorem Eval.sub_result (aBytes bBytes : StackElement) (a b : Int)
     (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b))
     (result : ExecResult) :
     Eval [.op .OP_SUB] (aBytes :: bBytes :: stack) altStack flags ctx result ↔
-      result = .success (scriptNum (b - a) :: stack) altStack := by
-  have canonical : Eval [.op .OP_SUB] (aBytes :: bBytes :: stack) altStack flags ctx
-      (.success (scriptNum (b - a) :: stack) altStack) :=
-    .sub aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (scriptNum (b - a) :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.sub aBytes bBytes a b stack [] altStack flags ctx _ decoded .done)
 
 /-- Decoded OP_MIN operands determine its exact relational result. -/
 theorem Eval.min_result (aBytes bBytes : StackElement) (a b : Int)
@@ -452,16 +305,9 @@ theorem Eval.min_result (aBytes bBytes : StackElement) (a b : Int)
     (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b))
     (result : ExecResult) :
     Eval [.op .OP_MIN] (aBytes :: bBytes :: stack) altStack flags ctx result ↔
-      result = .success (scriptNum (Min.min b a) :: stack) altStack := by
-  have canonical : Eval [.op .OP_MIN] (aBytes :: bBytes :: stack) altStack flags ctx
-      (.success (scriptNum (Min.min b a) :: stack) altStack) :=
-    .min aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (scriptNum (Min.min b a) :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.min aBytes bBytes a b stack [] altStack flags ctx _ decoded .done)
 
 /-- Decoded OP_MAX operands determine its exact relational result. -/
 theorem Eval.max_result (aBytes bBytes : StackElement) (a b : Int)
@@ -469,16 +315,9 @@ theorem Eval.max_result (aBytes bBytes : StackElement) (a b : Int)
     (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b))
     (result : ExecResult) :
     Eval [.op .OP_MAX] (aBytes :: bBytes :: stack) altStack flags ctx result ↔
-      result = .success (scriptNum (Max.max b a) :: stack) altStack := by
-  have canonical : Eval [.op .OP_MAX] (aBytes :: bBytes :: stack) altStack flags ctx
-      (.success (scriptNum (Max.max b a) :: stack) altStack) :=
-    .max aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (scriptNum (Max.max b a) :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.max aBytes bBytes a b stack [] altStack flags ctx _ decoded .done)
 
 /-- Decoded OP_NUMNOTEQUAL operands determine its exact relational result. -/
 theorem Eval.numNotEqual_result (aBytes bBytes : StackElement) (a b : Int)
@@ -486,16 +325,9 @@ theorem Eval.numNotEqual_result (aBytes bBytes : StackElement) (a b : Int)
     (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b))
     (result : ExecResult) :
     Eval [.op .OP_NUMNOTEQUAL] (aBytes :: bBytes :: stack) altStack flags ctx result ↔
-      result = .success (boolToElement (decide (a ≠ b)) :: stack) altStack := by
-  have canonical : Eval [.op .OP_NUMNOTEQUAL] (aBytes :: bBytes :: stack) altStack flags ctx
-      (.success (boolToElement (decide (a ≠ b)) :: stack) altStack) :=
-    .numNotEqual aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (boolToElement (decide (a ≠ b)) :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.numNotEqual aBytes bBytes a b stack [] altStack flags ctx _ decoded .done)
 
 /-- Decoded OP_LESSTHAN operands determine its exact relational result. -/
 theorem Eval.lessThan_result (aBytes bBytes : StackElement) (a b : Int)
@@ -503,16 +335,9 @@ theorem Eval.lessThan_result (aBytes bBytes : StackElement) (a b : Int)
     (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b))
     (result : ExecResult) :
     Eval [.op .OP_LESSTHAN] (aBytes :: bBytes :: stack) altStack flags ctx result ↔
-      result = .success (boolToElement (decide (b < a)) :: stack) altStack := by
-  have canonical : Eval [.op .OP_LESSTHAN] (aBytes :: bBytes :: stack) altStack flags ctx
-      (.success (boolToElement (decide (b < a)) :: stack) altStack) :=
-    .lessThan aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (boolToElement (decide (b < a)) :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.lessThan aBytes bBytes a b stack [] altStack flags ctx _ decoded .done)
 
 /-- Decoded OP_GREATERTHAN operands determine its exact relational result. -/
 theorem Eval.greaterThan_result (aBytes bBytes : StackElement) (a b : Int)
@@ -520,16 +345,9 @@ theorem Eval.greaterThan_result (aBytes bBytes : StackElement) (a b : Int)
     (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b))
     (result : ExecResult) :
     Eval [.op .OP_GREATERTHAN] (aBytes :: bBytes :: stack) altStack flags ctx result ↔
-      result = .success (boolToElement (decide (b > a)) :: stack) altStack := by
-  have canonical : Eval [.op .OP_GREATERTHAN] (aBytes :: bBytes :: stack) altStack flags ctx
-      (.success (boolToElement (decide (b > a)) :: stack) altStack) :=
-    .greaterThan aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (boolToElement (decide (b > a)) :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.greaterThan aBytes bBytes a b stack [] altStack flags ctx _ decoded .done)
 
 /-- Decoded OP_LESSTHANOREQUAL operands determine its exact relational result. -/
 theorem Eval.lessThanOrEqual_result (aBytes bBytes : StackElement) (a b : Int)
@@ -537,16 +355,9 @@ theorem Eval.lessThanOrEqual_result (aBytes bBytes : StackElement) (a b : Int)
     (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b))
     (result : ExecResult) :
     Eval [.op .OP_LESSTHANOREQUAL] (aBytes :: bBytes :: stack) altStack flags ctx result ↔
-      result = .success (boolToElement (decide (b ≤ a)) :: stack) altStack := by
-  have canonical : Eval [.op .OP_LESSTHANOREQUAL] (aBytes :: bBytes :: stack) altStack flags ctx
-      (.success (boolToElement (decide (b ≤ a)) :: stack) altStack) :=
-    .lessThanOrEqual aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (boolToElement (decide (b ≤ a)) :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.lessThanOrEqual aBytes bBytes a b stack [] altStack flags ctx _ decoded .done)
 
 /-- Decoded OP_GREATERTHANOREQUAL operands determine its exact relational result. -/
 theorem Eval.greaterThanOrEqual_result (aBytes bBytes : StackElement) (a b : Int)
@@ -554,16 +365,9 @@ theorem Eval.greaterThanOrEqual_result (aBytes bBytes : StackElement) (a b : Int
     (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b))
     (result : ExecResult) :
     Eval [.op .OP_GREATERTHANOREQUAL] (aBytes :: bBytes :: stack) altStack flags ctx result ↔
-      result = .success (boolToElement (decide (b ≥ a)) :: stack) altStack := by
-  have canonical : Eval [.op .OP_GREATERTHANOREQUAL] (aBytes :: bBytes :: stack) altStack flags ctx
-      (.success (boolToElement (decide (b ≥ a)) :: stack) altStack) :=
-    .greaterThanOrEqual aBytes bBytes a b stack [] altStack flags ctx _ decoded .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (boolToElement (decide (b ≥ a)) :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.greaterThanOrEqual aBytes bBytes a b stack [] altStack flags ctx _ decoded .done)
 
 /-- Successful NOT decoding determines its exact relational result. -/
 theorem Eval.not_result (operand : StackElement) (value : Int)
@@ -571,16 +375,9 @@ theorem Eval.not_result (operand : StackElement) (value : Int)
     (decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes =
       .ok value) (result : ExecResult) :
     Eval [.op .OP_NOT] (operand :: stack) altStack flags ctx result ↔
-      result = .success (boolToElement (value == 0) :: stack) altStack := by
-  have canonical : Eval [.op .OP_NOT] (operand :: stack) altStack flags ctx
-      (.success (boolToElement (value == 0) :: stack) altStack) :=
-    .op_not operand value stack altStack [] flags ctx _ decoded .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (boolToElement (value == 0) :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.op_not operand value stack altStack [] flags ctx _ decoded .done)
 
 /-- Any relational execution after a NOT decoder error has that exact failure. -/
 theorem Eval.notScriptNumFailure_result
@@ -599,18 +396,10 @@ theorem Eval.within_result (upperBytes lowerBytes valueBytes : StackElement)
     (decoded : decodeWithinScriptNums flags upperBytes lowerBytes valueBytes = .ok (upper, lower, value))
     (result : ExecResult) :
     Eval [.op .OP_WITHIN] (upperBytes :: lowerBytes :: valueBytes :: stack) altStack flags ctx result ↔
-      result = .success (boolToElement (decide (lower ≤ value ∧ value < upper)) :: stack) altStack := by
-  have canonical : Eval [.op .OP_WITHIN] (upperBytes :: lowerBytes :: valueBytes :: stack)
-      altStack flags ctx (.success (boolToElement (decide (lower ≤ value ∧ value < upper)) :: stack)
-        altStack) :=
-    .within upperBytes lowerBytes valueBytes upper lower value stack altStack [] flags ctx _
-      decoded .done
-  constructor
-  · intro evaluated
-    exact evaluated.result_unique canonical
-  · intro equal
-    subst result
-    exact canonical
+      result = .success (boolToElement (decide (lower ≤ value ∧ value < upper)) :: stack) altStack :=
+  Eval.result_iff_of_canonical
+    (.within upperBytes lowerBytes valueBytes upper lower value stack altStack [] flags ctx _
+      decoded .done)
 
 /-- Every relational execution after a WITHIN decoding error has that failure. -/
 theorem Eval.withinScriptNumFailure_result
