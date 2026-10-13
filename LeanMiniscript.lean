@@ -34,6 +34,7 @@ import LeanMiniscript.Miniscript.TypeInference
 import LeanMiniscript.Miniscript.Types
 import LeanMiniscript.Miniscript.Validation
 import LeanMiniscript.Miniscript.ValidationDecidable
+import LeanMiniscript.Policy.Compiler
 import LeanMiniscript.Policy.Semantics
 import LeanMiniscript.Policy.Syntax
 import LeanMiniscript.Policy.Text

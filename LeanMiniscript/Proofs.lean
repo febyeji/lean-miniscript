@@ -35,6 +35,7 @@ import LeanMiniscript.Miniscript.SurfaceParserProofs
 import LeanMiniscript.Miniscript.SurfaceTextProofs
 import LeanMiniscript.Miniscript.TypeInferenceProofs
 import LeanMiniscript.Miniscript.TypeSoundnessProofs
+import LeanMiniscript.Policy.CompilerProofs
 import LeanMiniscript.Policy.TextProofs
 import LeanMiniscript.Properties.NonMalleability
 import LeanMiniscript.Properties.ResourceBoundsProofs
