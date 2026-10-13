@@ -227,7 +227,7 @@ theorem rawExprMap_eq_nil (raws : List RawSurfaceExpr)
     (hMap : raws.map RawSurfaceExpr.toExpr = []) : raws = [] := by
   cases raws <;> simp_all
 
-private theorem rawExprMap_eq_singleton
+theorem rawExprMap_eq_singleton
     (raws : List RawSurfaceExpr) (expr : SurfaceText.Expr)
     (hMap : raws.map RawSurfaceExpr.toExpr = [expr]) :
     ∃ raw, raws = [raw] ∧ raw.toExpr = expr := by
@@ -237,7 +237,7 @@ private theorem rawExprMap_eq_singleton
   subst rest
   exact ⟨raw, rfl, hRaw⟩
 
-private theorem rawExprMap_eq_pair
+theorem rawExprMap_eq_pair
     (raws : List RawSurfaceExpr) (first second : SurfaceText.Expr)
     (hMap : raws.map RawSurfaceExpr.toExpr = [first, second]) :
     ∃ firstRaw secondRaw,
@@ -619,7 +619,7 @@ def CanonicalExprListCorrect (context : ScriptContext)
       (∀ expr ∈ exprs, expr.lexemes.length < fuel) →
         raws.mapM (elaborateRawFuel context resolveHexKey fuel) = .ok fragments
 
-private theorem lexemes_length_le_argumentLexemes_of_mem
+theorem lexemes_length_le_argumentLexemes_of_mem
     (expr : SurfaceText.Expr) (arguments : List SurfaceText.Expr)
     (hMem : expr ∈ arguments) :
     expr.lexemes.length ≤ (SurfaceText.argumentLexemes arguments).length := by

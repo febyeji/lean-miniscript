@@ -119,20 +119,6 @@ def SurfaceFragment.desugar : SurfaceFragment → CoreFragment
 /-- Lower BIP 379 surface syntax into the core fragment language. -/
 def desugar : SurfaceFragment → CoreFragment := SurfaceFragment.desugar
 
-/-- Policy language (high-level spending conditions). -/
-inductive Policy where
-  | key : PubKey → Policy
-  | older : Nat → Policy
-  | after : Nat → Policy
-  | sha256 : Hash256 → Policy
-  | hash256 : Hash256 → Policy
-  | ripemd160 : Hash160 → Policy
-  | hash160 : Hash160 → Policy
-  | and : Policy → Policy → Policy
-  | or : Policy → Policy → Policy
-  | thresh : Nat → List Policy → Policy
-  deriving Repr
-
 -- AST side conditions live in `Miniscript.Validation`.
 -- Structural metrics live in `Miniscript.Metrics`.
 

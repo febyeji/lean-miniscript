@@ -8,6 +8,7 @@
 - The codebase covers:
   - Miniscript syntax, parsing, pretty-printing, normalization, type inference, and validation.
   - Miniscript compilation, concrete compilation, malleability analysis, satisfaction availability, and metrics.
+  - Spending policies: parsing and printing, denotational semantics, and a cost-based policy-to-Miniscript compiler whose output provably preserves the policy's meaning.
   - Bitcoin Script execution, control flow, signatures, Taproot, timelocks, and runtime limits.
   - Bitcoin transaction, descriptor, ECDSA, Schnorr, and Taproot serialization utilities.
 

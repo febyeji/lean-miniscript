@@ -28,12 +28,15 @@ import LeanMiniscript.Miniscript.SatisfactionCorrectnessProofs
 import LeanMiniscript.Miniscript.SatisfactionGeneratedProofs
 import LeanMiniscript.Miniscript.SatisfactionGeneratedRecursiveProofs
 import LeanMiniscript.Miniscript.SatisfactionLemmas
+import LeanMiniscript.Miniscript.SatisfactionPossibilityProofs
 import LeanMiniscript.Miniscript.SatisfactionProofs
 import LeanMiniscript.Miniscript.Structural
 import LeanMiniscript.Miniscript.SurfaceParserProofs
 import LeanMiniscript.Miniscript.SurfaceTextProofs
 import LeanMiniscript.Miniscript.TypeInferenceProofs
 import LeanMiniscript.Miniscript.TypeSoundnessProofs
+import LeanMiniscript.Policy.CompilerProofs
+import LeanMiniscript.Policy.TextProofs
 import LeanMiniscript.Properties.NonMalleability
 import LeanMiniscript.Properties.ResourceBoundsProofs
 import LeanMiniscript.Properties.ResourceCompilerMetricProofs
@@ -63,5 +66,8 @@ preservation, and runtime prefix-bound guarantees without adding their proof
 graph to the stable executable facade. Generated final satisfactions also
 expose one concrete resource observation bounded by the jointly selected stack
 and dynamic paths, including the context-specific limits certified by sane
-fragments.
+fragments. Raw satisfier candidates exist exactly when a valid fragment is
+structurally satisfiable under the environment's atom material, and the policy
+layer proves its text round trip and that compiled policies preserve the
+policy's meaning.
 -/

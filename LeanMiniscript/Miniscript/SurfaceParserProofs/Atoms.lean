@@ -58,13 +58,13 @@ private theorem decodeHexChars_byteHexChars (bytes : List UInt8) :
   | cons byte bytes ih =>
       rw [List.flatMap_cons, decodeHexChars_byteHexChars_append, ih]
 
-private theorem decodeHex_byteArrayHex (bytes : ByteArray) :
+theorem decodeHex_byteArrayHex (bytes : ByteArray) :
     decodeHex? (LeanMiniscript.Script.byteArrayHex bytes) = some bytes := by
   rcases bytes with ⟨data⟩
   simp [decodeHex?, LeanMiniscript.Script.byteArrayHex,
     decodeHexChars_byteHexChars]
 
-private theorem byteArrayHex_length (bytes : ByteArray) :
+theorem byteArrayHex_length (bytes : ByteArray) :
     (LeanMiniscript.Script.byteArrayHex bytes).length = bytes.size * 2 := by
   rcases bytes with ⟨data⟩
   rw [LeanMiniscript.Script.byteArrayHex, String.length_ofList,
@@ -91,7 +91,7 @@ theorem parseNatRaw_repr
   simp [parseNatRaw, rawAtom, Nat.toNat?_repr]
   rfl
 
-private theorem atomCharSafe_of_digit_or_underscore (char : Char)
+theorem atomCharSafe_of_digit_or_underscore (char : Char)
     (h : char.isDigit ∨ char = '_') :
     SurfaceText.isSpace char = false ∧
       SurfaceText.isPunctuation char = false := by
@@ -151,7 +151,7 @@ theorem atomSafe_byteArrayHex (bytes : ByteArray)
     exact byteHexChars_atomCharsSafe byte char hChar
 
 
-private theorem resolveHexKey_prettyPubKey (key : PubKey)
+theorem resolveHexKey_prettyPubKey (key : PubKey)
     (hSize : key.size = 32 ∨ key.size = 33) :
     resolveHexKey (prettyPubKey key) = .ok key := by
   have hAllowed : key.bytes.size * 2 = 64 ∨ key.bytes.size * 2 = 66 := by
