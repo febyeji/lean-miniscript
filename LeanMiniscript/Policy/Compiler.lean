@@ -108,6 +108,9 @@ structure Candidate where
   size : Nat
   sat : Float
   dsat : Option Float
+  /-- Generation order among equally cheap candidates: earlier templates, in
+      particular those keeping the policy's branch order, win ties. -/
+  order : Nat := 0
 
 namespace Candidate
 
@@ -158,18 +161,36 @@ def realizeTemplate (ctx : ScriptContext) (template : Template) :
             sat := template.sat
             dsat := template.dsat }
 
-/-- Type a list of templates. -/
-def realize (ctx : ScriptContext) (templates : List Template) : List Candidate :=
-  templates.filterMap (realizeTemplate ctx)
+/-- Type templates, numbering them from `index` in generation order. -/
+def realizeFrom (ctx : ScriptContext) : Nat → List Template → List Candidate
+  | _, [] => []
+  | index, template :: templates =>
+      match realizeTemplate ctx template with
+      | some candidate =>
+          { candidate with order := index } :: realizeFrom ctx (index + 1) templates
+      | none => realizeFrom ctx (index + 1) templates
 
-/-- Insert a candidate, replacing a costlier candidate with the same key. -/
+/-- Type a list of templates in generation order. -/
+def realize (ctx : ScriptContext) (templates : List Template) : List Candidate :=
+  realizeFrom ctx 0 templates
+
+/-- Whether `candidate` should replace `other`: strictly cheaper, or equally
+    cheap and generated earlier. -/
+def Candidate.better (satProb dsatProb : Float) (candidate other : Candidate) :
+    Bool :=
+  candidate.score satProb dsatProb < other.score satProb dsatProb ||
+    (candidate.score satProb dsatProb == other.score satProb dsatProb &&
+      candidate.order < other.order)
+
+/-- Insert a candidate, replacing in place a worse candidate with the same
+    key. -/
 def insertCheapest (satProb dsatProb : Float) (kept : List Candidate)
     (candidate : Candidate) : List Candidate :=
   match kept.find? (fun other => other.key == candidate.key) with
   | none => kept ++ [candidate]
   | some other =>
-      if candidate.score satProb dsatProb < other.score satProb dsatProb then
-        candidate :: kept.filter (fun kept => !(kept.key == candidate.key))
+      if candidate.better satProb dsatProb other then
+        kept.map (fun kept => if kept.key == candidate.key then candidate else kept)
       else kept
 
 /-- Keep the cheapest candidate of each type and malleability class. -/
@@ -187,11 +208,18 @@ def wrapTemplates (candidate : Candidate) : List Template :=
     ⟨.and_v x .one, s, none⟩, ⟨.or_i .zero x, s + 1, some 2⟩,
     ⟨.or_i x .zero, s + 2, some 1⟩ ]
 
+/-- Wrapped candidates rank after every unwrapped candidate of equal cost, so
+    `and_v(v:pk(A),pk(B))` is preferred to the script-identical
+    `c:and_v(v:pk(A),pk_k(B))`. -/
+def wrappedOrderOffset : Nat := 1000000
+
 /-- One wrapper-closure round followed by pruning. -/
 def closeOnce (ctx : ScriptContext) (satProb dsatProb : Float)
     (candidates : List Candidate) : List Candidate :=
   prune satProb dsatProb
-    (candidates ++ candidates.flatMap (fun x => realize ctx (wrapTemplates x)))
+    (candidates ++ candidates.flatMap (fun x =>
+      (realize ctx (wrapTemplates x)).map (fun wrapped =>
+        { wrapped with order := x.order + wrappedOrderOffset })))
 
 /-- Bounded wrapper closure. Three rounds reach every useful wrapper chain of
     length three, such as `s:n:l:` or `n:d:v:`. -/
@@ -376,7 +404,8 @@ end
 def rankedFragments (ctx : ScriptContext) (policy : Policy) : List CoreFragment :=
   let top := (compileCandidates ctx policy 1 0).filter
     (fun candidate => candidate.ty.base == .B)
-  (top.mergeSort (fun a b => a.score 1 0 ≤ b.score 1 0)).map Candidate.fragment
+  (top.mergeSort (fun a b => a.better 1 0 b || !(b.better 1 0 a))).map
+    Candidate.fragment
 
 /-- The first fragment in a list that passes the static sanity check. -/
 def firstSane (ctx : ScriptContext) :

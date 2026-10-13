@@ -145,12 +145,28 @@ theorem realizeTemplate_fragment {ctx : ScriptContext} {template : Template}
             rw [← realized]
           · simp [hType, hMall, hNon] at realized
 
+theorem mem_realizeFrom {ctx : ScriptContext} :
+    {index : Nat} → {templates : List Template} → {candidate : Candidate} →
+      candidate ∈ realizeFrom ctx index templates →
+        ∃ template ∈ templates, candidate.fragment = template.fragment
+  | _, [], _, member => by simp [realizeFrom] at member
+  | index, template :: templates, candidate, member => by
+      unfold realizeFrom at member
+      split at member
+      · rename_i realizedCandidate realized
+        simp only [List.mem_cons] at member
+        rcases member with rfl | member
+        · exact ⟨template, by simp, realizeTemplate_fragment (candidate := realizedCandidate)
+            realized⟩
+        · obtain ⟨source, sourceMember, fragmentEq⟩ := mem_realizeFrom member
+          exact ⟨source, List.mem_cons_of_mem _ sourceMember, fragmentEq⟩
+      · obtain ⟨source, sourceMember, fragmentEq⟩ := mem_realizeFrom member
+        exact ⟨source, List.mem_cons_of_mem _ sourceMember, fragmentEq⟩
+
 theorem mem_realize {ctx : ScriptContext} {templates : List Template}
     {candidate : Candidate} (member : candidate ∈ realize ctx templates) :
-    ∃ template ∈ templates, candidate.fragment = template.fragment := by
-  simp only [realize, List.mem_filterMap] at member
-  obtain ⟨template, templateMember, realized⟩ := member
-  exact ⟨template, templateMember, realizeTemplate_fragment realized⟩
+    ∃ template ∈ templates, candidate.fragment = template.fragment :=
+  mem_realizeFrom member
 
 theorem realize_preserves {ctx : ScriptContext} {policy : Policy}
     {templates : List Template}
@@ -170,10 +186,11 @@ theorem mem_insertCheapest {satProb dsatProb : Float} {kept : List Candidate}
   · simp only [List.mem_append, List.mem_singleton] at member
     exact member
   · split at member
-    · simp only [List.mem_cons, List.mem_filter] at member
-      rcases member with rfl | ⟨member, _⟩
-      · exact Or.inr rfl
-      · exact Or.inl member
+    · simp only [List.mem_map] at member
+      obtain ⟨previous, previousMember, replaced⟩ := member
+      split at replaced
+      · exact Or.inr replaced.symm
+      · exact Or.inl (replaced ▸ previousMember)
     · exact Or.inl member
 
 theorem mem_prune {satProb dsatProb : Float} {candidates : List Candidate}
@@ -219,8 +236,10 @@ theorem closeOnce_preserves {ctx : ScriptContext} {policy : Policy}
   simp only [List.mem_append, List.mem_flatMap] at member
   rcases member with member | ⟨source, sourceMember, wrapped⟩
   · exact preserves candidate member
-  · exact realize_preserves (wrapTemplates_preserves (preserves source sourceMember))
-      candidate wrapped
+  · simp only [List.mem_map] at wrapped
+    obtain ⟨realized, realizedMember, rfl⟩ := wrapped
+    exact realize_preserves (wrapTemplates_preserves (preserves source sourceMember))
+      realized realizedMember
 
 theorem closeWrappers_preserves {ctx : ScriptContext} {policy : Policy}
     {satProb dsatProb : Float} {candidates : List Candidate}
