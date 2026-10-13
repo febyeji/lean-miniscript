@@ -308,6 +308,13 @@ example : (match ({ taproot 2 with outputs := [[]] }).updateOutputFromDescriptor
     | .ok psbt => psbt.outputs == (taproot 2).outputs
     | .error _ => false) = true := by native_decide
 
+-- Descriptor key expressions supply the same origins as the BIP174 updater.
+example : bip174UpdaterKeys.all (fun (key, path) =>
+    match keySourceOf s!"[d90c6a4f{(path.drop 1).toString.replace "'" "h"}]{key}" with
+    | .ok (bytes, source) => bytes == hex key && source.fingerprint == masterFingerprint &&
+        source.path == parsePath path
+    | .error _ => false) = true := by native_decide
+
 -- The witness-v0 descriptor updater adds the scripts and origins of the
 -- BIP174 updater for the P2SH-P2WSH input.
 example : (match (role 0).updateInputFromDescriptor 1 shWshMultisig updaterData.keyOrigins with
