@@ -38,9 +38,20 @@
 - PSBT test vectors are generated from pinned BIP174, BIP370, and BIP371 sources by
   `scripts/generate_psbt_fixtures.py`.
 
+- Parse a hexadecimal-key policy into its Lean AST and print canonical text:
+
+  ```sh
+  lake exe policy_cli -- \
+    'and(pk(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798),older(100))'
+  ```
+
+- Focused cross-module regressions live under `LeanMiniscript/Regression/`,
+  split by policy, descriptor, and PSBT behavior.
+
 ## Repository layout
 
 - `LeanMiniscript/` — Lean libraries, executable models, examples, and proofs.
+- `LeanMiniscript/Regression/` — focused cross-module behavior regressions.
 - `LeanMiniscript.lean` — public module that imports the main library surface.
 - `scripts/` — fixture generation helpers.
 - `assets/` — project artwork, including the repository logo.
