@@ -4,7 +4,7 @@ import LeanMiniscript.Miniscript.OutputDescriptor
 
 namespace LeanMiniscript.Miniscript
 
-/-! Output-descriptor parsing for `wsh`, `sh(wsh(...))` and `tr`.
+/-! Output-descriptor parsing for legacy, witness-v0, raw, and Taproot outputs.
 The checksum is checked on the original text before parsing. Miniscript leaves
 use the existing context-aware parser and must have base type B. Taproot trees
 retain their binary shape and allow at most 128 branch levels.
@@ -92,6 +92,42 @@ private def parseWsh (body : String) (wildcardIndex : Option Nat) :
   | [script] => parseLeaf .p2wsh script wildcardIndex
   | _ => throw "wsh requires exactly one Miniscript argument"
 
+private def parseSingleKey (body : String) (wildcardIndex : Option Nat)
+    (compressed : Bool := false) : Except String PubKey := do
+  let [token] ← splitArguments body | throw "Expected exactly one key argument"
+  let key ← resolveDescriptorKey wildcardIndex token
+  if !Bitcoin.KeyEncoding.validatePublicKey key.bytes then
+    throw "Expected a valid SEC public key"
+  if compressed && key.size != 33 then throw "Witness-v0 requires compressed public keys"
+  return key
+
+private def keyLexLE : List UInt8 → List UInt8 → Bool
+  | [], _ => true
+  | _ :: _, [] => false
+  | a :: as, b :: bs => if a == b then keyLexLE as bs else a < b
+
+private def parseMultisig (name body : String) (wildcardIndex : Option Nat) :
+    Except String (Nat × List PubKey) := do
+  let threshold :: tokens ← splitArguments body | throw "Missing multisig threshold"
+  let some threshold := threshold.toNat? | throw "Invalid multisig threshold"
+  let keys ← tokens.mapM (fun token => parseSingleKey token wildcardIndex)
+  if threshold == 0 || threshold > keys.length || keys.length > 20 then
+    throw "Invalid multisig threshold or key count"
+  return (threshold, if name == "sortedmulti" then
+    keys.mergeSort (fun a b => keyLexLE a.bytes.data.toList b.bytes.data.toList) else keys)
+
+private def parseLegacyScript (text : String) (wildcardIndex : Option Nat) :
+    Except String SurfaceFragment := do
+  match parseCall text with
+  | .ok ("pk", body) => return .pk (← parseSingleKey body wildcardIndex)
+  | .ok ("pkh", body) => return .pkh (← parseSingleKey body wildcardIndex)
+  | .ok (name, body) =>
+      if name == "multi" || name == "sortedmulti" then
+        let (threshold, keys) ← parseMultisig name body wildcardIndex
+        return .core (.multi threshold keys)
+      parseLeaf .p2wsh text wildcardIndex
+  | .error _ => parseLeaf .p2wsh text wildcardIndex
+
 /-- Parse the supported output-descriptor wrappers and validate every script
 and key. A provided wildcard index is shared by all key expressions. Existing
 checksums are always verified; `requireChecksum` also rejects an absent one. -/
@@ -100,14 +136,34 @@ def parseOutputDescriptor (input : String) (wildcardIndex : Option Nat := none)
   let text ← Bitcoin.DescriptorChecksum.validate input requireChecksum
   let (name, body) ← parseCall text
   match name with
+  | "raw" =>
+      let [script] ← splitArguments body | throw "raw requires exactly one hex script"
+      let some bytes := SurfaceParser.decodeHex? script | throw "Invalid raw script hex"
+      return .raw bytes
+  | "pk" => return .pk (← parseSingleKey body wildcardIndex)
+  | "pkh" => return .pkh (← parseSingleKey body wildcardIndex)
+  | "wpkh" => return .wpkh (← parseSingleKey body wildcardIndex true)
+  | "multi" | "sortedmulti" =>
+      let (threshold, keys) ← parseMultisig name body wildcardIndex
+      if keys.length > 3 then throw "Bare multisig descriptors allow at most three keys"
+      return .multi threshold keys
   | "wsh" => return .wsh (← parseWsh body wildcardIndex)
   | "sh" =>
       match ← splitArguments body with
       | [inner] =>
-          let (innerName, innerBody) ← parseCall inner
-          if innerName != "wsh" then throw "sh requires a wsh Miniscript descriptor"
-          return .shWsh (← parseWsh innerBody wildcardIndex)
-      | _ => throw "sh requires exactly one wsh descriptor"
+          match parseCall inner with
+          | .ok ("wsh", innerBody) => return .shWsh (← parseWsh innerBody wildcardIndex)
+          | .ok ("wpkh", innerBody) =>
+              return .shWpkh (← parseSingleKey innerBody wildcardIndex true)
+          | .ok ("raw", innerBody) =>
+              let [script] ← splitArguments innerBody | throw "raw requires exactly one hex script"
+              let some bytes := SurfaceParser.decodeHex? script | throw "Invalid raw script hex"
+              return .shRaw bytes
+          | _ =>
+              let fragment ← parseLegacyScript inner wildcardIndex
+              let _ ← compileOutputDescriptor (.sh fragment)
+              return .sh fragment
+      | _ => throw "sh requires exactly one script descriptor"
   | "tr" =>
       match ← splitArguments body with
       | [key] => return .tr (← parseInternalKey key wildcardIndex) none
@@ -116,7 +172,7 @@ def parseOutputDescriptor (input : String) (wildcardIndex : Option Nat := none)
           let tree ← parseTree 129 tree wildcardIndex
           return .tr key (some tree)
       | _ => throw "tr requires an internal key and an optional script tree"
-  | _ => throw "Supported output descriptors are wsh, sh(wsh), and tr"
+  | _ => throw "Unsupported output descriptor"
 
 /-- Parse a descriptor and compile its output and associated spend scripts.
 Taproot results include each leaf's script, Merkle path, and control block in

@@ -21,6 +21,11 @@ private def extended : String :=
   "xpub6ERApfZwUNrhLCkDtcHTcxd75RbzS1ed54G1LkBUHQVHQKqhMkhgbmJbZRkrgZw4koxb5JaHWkY4ALHY2grBGRjaDMzQLcgJvLJuZZvRcEL"
 
 private def valid : Array String := #[
+  "pk(" ++ compressed ++ ")", "pkh(" ++ compressed ++ ")",
+  "wpkh(" ++ compressed ++ ")", "sh(pk(" ++ compressed ++ "))",
+  "sh(pkh(" ++ compressed ++ "))", "sh(wpkh(" ++ compressed ++ "))",
+  "raw(51)", "sh(raw(51))", "multi(1," ++ compressed ++ ")",
+  "sortedmulti(1," ++ compressed ++ ")",
   "wsh(1)", "wsh(0)", "sh(wsh(1))", "wsh( 1 )",
   "wsh(pk(" ++ compressed ++ "))",
   "sh(wsh(pk([deadbeef/0h/1']" ++ compressed ++ ")))",
@@ -54,10 +59,8 @@ example : malformed.all (fun text => !succeeds (parseOutputDescriptor text)) = t
   native_decide
 
 private def unsupported : Array String := #[
-  "pk(" ++ compressed ++ ")", "sh(pk(" ++ compressed ++ "))",
-  "wpkh(" ++ compressed ++ ")", "sh(wpkh(" ++ compressed ++ "))",
   "wsh(tr(" ++ xOnly ++ "))", "tr(" ++ xOnly ++ ",wsh(1))",
-  "tr(" ++ xOnly ++ ",tr(" ++ xOnly ++ "))", "raw(51)", "addr(address)",
+  "tr(" ++ xOnly ++ ",tr(" ++ xOnly ++ "))", "addr(address)",
   "WSH(1)", "wsh (1)"]
 
 example : unsupported.all (fun text => !succeeds (parseOutputDescriptor text)) = true := by

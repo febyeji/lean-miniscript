@@ -14,7 +14,8 @@ open LeanMiniscript.Extraction
 The finalizer turns an input's PSBT records into satisfaction material and
 asks the existing Miniscript satisfier for the final witness:
 
-* `wsh` and `sh(wsh)`: partial signatures that verify against their BIP143
+* `pk`, `pkh`, `sh`, `wpkh`, `sh(wpkh)`, `wsh`, and `sh(wsh)`: partial
+  signatures that verify against their legacy or BIP143
   digest and 32-byte hash preimages form a `DescriptorSatisfactionMaterial`;
   `satisfyFinal` on the sane witness-script fragment supplies the witness
   arguments, followed by the witness script. The complete Core script-pair
@@ -26,11 +27,9 @@ asks the existing Miniscript satisfier for the final witness:
   verifier model. The smallest verified witness is chosen, earliest leaf
   first on ties.
 
-Nonpreimage dissatisfaction material is 32 zero bytes. The modeled descriptor
-contexts are P2WSH, P2SH-P2WSH, and Taproot; legacy script-hash and raw
-single-key descriptors remain outside this descriptor type. Already finalized
-inputs are left unchanged. Legacy support requires a legacy Miniscript context
-before those descriptor forms can be added.
+Nonpreimage dissatisfaction material is 32 zero bytes. Raw descriptors retain
+their exact script bytes; satisfaction generation remains available for the
+typed and single-key forms. Already finalized inputs are left unchanged.
 -/
 
 inductive FinalizeError where
@@ -87,6 +86,14 @@ def InputFields.witnessV0Material (input : InputFields)
   preimageFor lock := (input.preimageFor lock).filter (·.size == 32)
   nonPreimageFor _ := zeroNonPreimage
 
+/-- Legacy material uses the same PSBT records as witness-v0 material, with a
+legacy signature-hash callback supplied by the finalizer. -/
+def InputFields.legacyMaterial (input : InputFields)
+    (accept : ByteArray → ByteArray → Bool) : DescriptorSatisfactionMaterial where
+  signatureFor key := (lookupBytes input.partialSigs key.bytes).filter (accept key.bytes)
+  preimageFor lock := (input.preimageFor lock).filter (·.size == 32)
+  nonPreimageFor _ := zeroNonPreimage
+
 /-- Script execution context for a witness-v0 input. Signature digests are
 checked per signature by the material filter, so the abstract hash is empty. -/
 def witnessV0Context (tx : Transaction) (index : Nat) : TxContext :=
@@ -95,6 +102,14 @@ def witnessV0Context (tx : Transaction) (index : Nat) : TxContext :=
     sequence := (tx.inputs[index]!).sequence.toNat
     sigHash := ByteArray.empty
     sigVersion := .witnessV0 }
+
+/-- Script execution context for a legacy input. -/
+def legacyContext (tx : Transaction) (index : Nat) : TxContext :=
+  { version := tx.signedVersion
+    locktime := tx.locktime.toNat
+    sequence := (tx.inputs[index]!).sequence.toNat
+    sigHash := ByteArray.empty
+    sigVersion := .base }
 
 /-- Accept an ECDSA partial signature when it verifies against the BIP143
 digest selected by its own hash-type byte. -/
@@ -106,11 +121,26 @@ def witnessV0Accept (config : FinalizerConfig) (tx : Transaction) (index : Nat)
     | .ok digest => config.verifyECDSA (signature.extract 0 (signature.size - 1)) key digest
     | .error _ => false
 
+/-- Accept an ECDSA partial signature using legacy SIGHASH serialization. -/
+def legacyAccept (config : FinalizerConfig) (tx : Transaction) (index : Nat)
+    (scriptCode key signature : ByteArray) : Bool :=
+  signature.size != 0 &&
+    match legacySignatureHash tx index scriptCode
+        (UInt32.ofNat signature[signature.size - 1]!.toNat) with
+    | .ok digest => config.verifyECDSA (signature.extract 0 (signature.size - 1)) key digest
+    | .error _ => false
+
 /-- The satisfaction environment used for a witness-v0 input. -/
 def witnessV0Env (config : FinalizerConfig) (tx : Transaction) (index : Nat)
     (input : InputFields) (witnessScript : ByteArray) (amount : UInt64) : SatEnv :=
   (input.witnessV0Material (witnessV0Accept config tx index witnessScript amount)).toEnv
     (witnessV0Context tx index)
+
+/-- The satisfaction environment used for a legacy script-hash input. -/
+def legacyEnv (config : FinalizerConfig) (tx : Transaction) (index : Nat)
+    (input : InputFields) (scriptCode : ByteArray) : SatEnv :=
+  (input.legacyMaterial (legacyAccept config tx index scriptCode)).toEnv
+    (legacyContext tx index)
 
 /-- Transaction-backed Core execution for a finalized witness-v0 input. The
 signature callback derives the BIP143 or legacy digest from the signature's
@@ -132,6 +162,21 @@ def witnessV0CoreExecutor (config : FinalizerConfig) (tx : Transaction)
   fun request => executeCoreScript config.flags (witnessV0Context tx index)
     oracleForScript request
 
+/-- Transaction-backed Core execution for a legacy input. -/
+def legacyCoreExecutor (config : FinalizerConfig) (tx : Transaction)
+    (index : Nat) : CoreScriptExecutor :=
+  let oracleForScript := fun _ scriptCode =>
+    CryptoOracle.pureLeanHashes (fun signature publicKey _ =>
+      if signature.size == 0 then false
+      else
+        let hashType := UInt32.ofNat signature[signature.size - 1]!.toNat
+        match legacySignatureHash tx index scriptCode hashType with
+        | .error _ => false
+        | .ok digest => config.verifyECDSA (signature.extract 0 (signature.size - 1))
+            publicKey digest) config.oracle.checkSchnorrSig
+  fun request => executeCoreScript config.flags (legacyContext tx index)
+    oracleForScript request
+
 /-- Verify a finalized P2WSH or P2SH-P2WSH witness through the same Core
 script-pair and witness-program boundary used by Taproot finalization. -/
 def verifyWitnessV0Final (config : FinalizerConfig) (tx : Transaction)
@@ -145,6 +190,17 @@ def verifyWitnessV0Final (config : FinalizerConfig) (tx : Transaction)
   verifyCoreScripts execute
     (fun witness version program isP2SH =>
       verifyCoreWitnessProgram execute config.flags witness version program isP2SH)
+    config.flags final.scriptSig compiled.scriptPubKey final.witness
+
+/-- Verify a legacy script pair through Core's scriptSig, scriptPubKey, and
+P2SH boundary. A legacy descriptor must not carry witness data. -/
+def verifyLegacyFinal (config : FinalizerConfig) (tx : Transaction)
+    (index : Nat) (compiled : CompiledDescriptor) (final : FinalInput) :
+    Except CoreVerificationError Unit := do
+  if !final.witness.isEmpty then throw (.unsupported "legacy witness data")
+  let execute := legacyCoreExecutor config tx index
+  verifyCoreScripts execute
+    (fun _ _ _ _ => throw (.unsupported "legacy witness program"))
     config.flags final.scriptSig compiled.scriptPubKey final.witness
 
 /-! ## Signature hash-type agreement -/
@@ -161,6 +217,99 @@ def InputFields.sighashTypesMatch (input : InputFields) : Bool :=
         signature.size != 0 && signature[signature.size - 1]!.toNat == expected.toNat) &&
       input.tapKeySig.all (fun signature => schnorrType signature == expected.toNat) &&
       input.tapScriptSigs.all (fun (_, signature) => schnorrType signature == expected.toNat)
+
+private def serializeArguments (arguments : Witness) : ByteArray :=
+  arguments.foldl (fun script argument => script ++ pushData argument) ByteArray.empty
+
+/-! ## Legacy and single-key finalization -/
+
+def finalizeLegacyFragment (config : FinalizerConfig) (decoded : DecodedPsbt) (index : Nat)
+    (input : InputFields) (descriptor : OutputDescriptor) (fragment : SurfaceFragment) :
+    Except FinalizeError FinalInput := do
+  let compiled ← (compileDescriptor descriptor).mapError .role
+  let spent ← (decoded.spentOutput index).mapError .role
+  let tx ← (liftPsbt decoded.unsignedTransaction).mapError .role
+  let some redeemScript := compiled.redeemScript
+    | throw (.role (.descriptor "legacy descriptor has no redeem script"))
+  if spent.scriptPubKey ≠ compiled.scriptPubKey then
+    throw (.role (.scriptMismatch "UTXO script is not the descriptor output"))
+  if input.redeemScript.any (· != redeemScript) || input.witnessScript.isSome then
+    throw (.role (.scriptMismatch "PSBT scripts differ from the descriptor"))
+  let env := legacyEnv config tx index input redeemScript
+  let arguments := match fragment with
+    | .pk _ | .pkh _ | .core (.multi _ _) => satisfyFinal (desugar fragment) env
+    | _ =>
+        match checkSaneSurface .p2wsh fragment with
+        | .error _ => none
+        | .ok sane => satisfyFinal sane.checked.fragment env
+  match arguments with
+  | none => throw .unavailable
+  | some arguments =>
+      let final := { scriptSig := serializeArguments arguments ++ pushData redeemScript }
+      match verifyLegacyFinal config tx index compiled final with
+      | .ok () => return final
+      | .error _ => throw .unavailable
+
+def finalizeLegacyMulti (config : FinalizerConfig) (decoded : DecodedPsbt) (index : Nat)
+    (input : InputFields) (descriptor : OutputDescriptor) (threshold : Nat) (keys : List PubKey) :
+    Except FinalizeError FinalInput := do
+  let compiled ← (compileDescriptor descriptor).mapError .role
+  let spent ← (decoded.spentOutput index).mapError .role
+  let tx ← (liftPsbt decoded.unsignedTransaction).mapError .role
+  if spent.scriptPubKey ≠ compiled.scriptPubKey then
+    throw (.role (.scriptMismatch "UTXO script is not the descriptor output"))
+  if input.redeemScript.isSome || input.witnessScript.isSome then
+    throw (.role (.scriptMismatch "PSBT scripts differ from the descriptor"))
+  let fragment := SurfaceFragment.core (.multi threshold keys)
+  match satisfyFinal (desugar fragment)
+      (legacyEnv config tx index input compiled.scriptPubKey) with
+  | none => throw .unavailable
+  | some arguments =>
+      let final := { scriptSig := serializeArguments arguments }
+      match verifyLegacyFinal config tx index compiled final with
+      | .ok () => return final
+      | .error _ => throw .unavailable
+
+def finalizeLegacySingle (config : FinalizerConfig) (decoded : DecodedPsbt) (index : Nat)
+    (input : InputFields) (descriptor : OutputDescriptor) (key : PubKey) (pkh : Bool) :
+    Except FinalizeError FinalInput := do
+  let compiled ← (compileDescriptor descriptor).mapError .role
+  let spent ← (decoded.spentOutput index).mapError .role
+  let tx ← (liftPsbt decoded.unsignedTransaction).mapError .role
+  if spent.scriptPubKey ≠ compiled.scriptPubKey then
+    throw (.role (.scriptMismatch "UTXO script is not the descriptor output"))
+  if input.redeemScript.isSome || input.witnessScript.isSome then
+    throw (.role (.scriptMismatch "PSBT scripts differ from the descriptor"))
+  let some signature := lookupBytes input.partialSigs key.bytes | throw .unavailable
+  if !legacyAccept config tx index compiled.scriptPubKey key.bytes signature then
+    throw .unavailable
+  let arguments := if pkh then [signature, key.bytes] else [signature]
+  let final := { scriptSig := serializeArguments arguments }
+  match verifyLegacyFinal config tx index compiled final with
+  | .ok () => return final
+  | .error _ => throw .unavailable
+
+def finalizeWpkh (config : FinalizerConfig) (decoded : DecodedPsbt) (index : Nat)
+    (input : InputFields) (descriptor : OutputDescriptor) (key : PubKey) :
+    Except FinalizeError FinalInput := do
+  let compiled ← (compileDescriptor descriptor).mapError .role
+  let spent ← (decoded.spentOutput index).mapError .role
+  let tx ← (liftPsbt decoded.unsignedTransaction).mapError .role
+  if spent.scriptPubKey ≠ compiled.scriptPubKey then
+    throw (.role (.scriptMismatch "UTXO script is not the descriptor output"))
+  let expectedProgram := ⟨#[0x00, 0x14]⟩ ++ LeanHash160.hash160 key.bytes
+  if compiled.redeemScript.any (· != expectedProgram) || input.witnessScript.isSome ||
+      input.redeemScript.any (· != expectedProgram) then
+    throw (.role (.scriptMismatch "PSBT scripts differ from the descriptor"))
+  let scriptCode := p2pkhScript (LeanHash160.hash160 key.bytes)
+  let some signature := lookupBytes input.partialSigs key.bytes | throw .unavailable
+  if !witnessV0Accept config tx index scriptCode spent.amount key.bytes signature then
+    throw .unavailable
+  let final := { scriptSig := (compiled.redeemScript.map pushData).getD ByteArray.empty
+                 witness := [signature, key.bytes] }
+  match verifyWitnessV0Final config tx index compiled final spent.amount with
+  | .ok () => return final
+  | .error _ => throw .unavailable
 
 /-! ## Witness-v0 finalization -/
 
@@ -252,6 +401,13 @@ def DecodedPsbt.finalInput (config : FinalizerConfig) (decoded : DecodedPsbt) (i
   let input ← (decoded.input index).mapError .role
   if !input.sighashTypesMatch then throw .sighashMismatch
   match descriptor with
+  | .raw _ | .shRaw _ => throw .unavailable
+  | .pk key => finalizeLegacySingle config decoded index input descriptor key false
+  | .pkh key => finalizeLegacySingle config decoded index input descriptor key true
+  | .multi threshold keys =>
+      finalizeLegacyMulti config decoded index input descriptor threshold keys
+  | .sh fragment => finalizeLegacyFragment config decoded index input descriptor fragment
+  | .wpkh key | .shWpkh key => finalizeWpkh config decoded index input descriptor key
   | .wsh fragment | .shWsh fragment => finalizeWitnessV0 config decoded index input descriptor fragment
   | .tr _ _ => finalizeTaproot config decoded index input descriptor
 

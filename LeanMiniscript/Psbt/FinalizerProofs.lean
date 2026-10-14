@@ -13,6 +13,9 @@ open LeanMiniscript.Extraction
 A finalized witness is exactly what the existing satisfaction machinery
 returns for the material read from the PSBT input:
 
+* legacy single-key, multisig, and `sh` descriptors: `satisfyFinal` or direct
+  signature material with legacy transaction hashing, followed by Core's
+  script-pair verifier.
 * `wsh`/`sh(wsh)`: `satisfyFinal` on the sane witness-script fragment with
   `witnessV0Env`, followed by the witness script; under the existing
   environment contracts `satisfyFinalCorrectnessCore` then gives Miniscript
@@ -278,6 +281,13 @@ theorem finalInput_spec {config : FinalizerConfig} {decoded : DecodedPsbt} {inde
     (finalized : decoded.finalInput config index descriptor = .ok final) :
     ∃ input, decoded.inputs[index]? = some input ∧ input.sighashTypesMatch = true ∧
       match descriptor with
+      | .raw _ | .shRaw _ => False
+      | .multi threshold keys =>
+          finalizeLegacyMulti config decoded index input descriptor threshold keys = .ok final
+      | .pk key => finalizeLegacySingle config decoded index input descriptor key false = .ok final
+      | .pkh key => finalizeLegacySingle config decoded index input descriptor key true = .ok final
+      | .sh fragment => finalizeLegacyFragment config decoded index input descriptor fragment = .ok final
+      | .wpkh key | .shWpkh key => finalizeWpkh config decoded index input descriptor key = .ok final
       | .wsh fragment | .shWsh fragment =>
           finalizeWitnessV0 config decoded index input descriptor fragment = .ok final
       | .tr _ _ => finalizeTaproot config decoded index input descriptor = .ok final := by
@@ -294,7 +304,18 @@ theorem finalInput_spec {config : FinalizerConfig} {decoded : DecodedPsbt} {inde
     · simp [throw, throwThe, MonadExceptOf.throw] at finalized
     · rename_i agree
       refine ⟨input, found, by simpa using agree, ?_⟩
-      cases descriptor <;> exact finalized
+      cases descriptor with
+      | raw _ => simp at finalized
+      | shRaw _ => simp at finalized
+      | multi _ _ => exact finalized
+      | pk _ => exact finalized
+      | pkh _ => exact finalized
+      | sh _ => exact finalized
+      | wpkh _ => exact finalized
+      | shWpkh _ => exact finalized
+      | wsh _ => exact finalized
+      | shWsh _ => exact finalized
+      | tr _ _ => exact finalized
 
 /-- The finalizer leaves finalized inputs unchanged and otherwise replaces
 exactly the selected input map by `finalizedInputMap` for the finalizer's
