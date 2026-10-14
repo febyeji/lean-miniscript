@@ -164,6 +164,25 @@ example : (match (role 5).finalizeInput {} 1 shWshMultisig with
     | .ok psbt => psbt.inputs[1]! == (role 6).inputs[1]! && psbt.inputs[0]! == (role 5).inputs[0]!
     | .error _ => false) = true := by native_decide
 
+-- The wrapped witness must reach both P2SH and witness verification even
+-- when the caller supplies fewer flags than the default configuration.
+example : ((role 5).finalizeInput
+    { flags := { witness := false, cleanStack := false, p2sh := true } }
+    1 shWshMultisig).toBool = false := by native_decide
+
+example : ((role 5).finalizeInput
+    { flags := { witness := true, cleanStack := false, p2sh := false } }
+    1 shWshMultisig).toBool = false := by native_decide
+
+-- The complete verifier checks signature encoding even if a supplied
+-- material-verification callback accepts malformed signatures.
+example : (let decoded := decodedOf (role 5)
+    let input := { decoded.inputs[1]! with
+      partialSigs := multisigKeys.map (fun key => (key.bytes, hex "01")) }
+    finalizeWitnessV0 { verifyECDSA := fun _ _ _ => true }
+      decoded 1 input shWshMultisig (.core (.multi 2 multisigKeys))).toBool = false := by
+  native_decide
+
 example : (match (role 6).extract with
     | .ok bytes => bytes == roleBytes 7
     | .error _ => false) = true := by native_decide

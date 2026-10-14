@@ -17,12 +17,10 @@ The combiner is a left-biased union of each map, by key. It requires both
 PSBTs to describe the same transaction: the same unsigned transaction for
 version 0, or the same BIP370 unique identifier for version 2.
 
-No signing primitive exists in this library. The signer integration point
-computes the digest a signer must sign, checks BIP174 signer preconditions,
-verifies supplied signatures and inserts them.
-
-TODO(psbt-signer): add a signer once deterministic ECDSA and BIP340 signing
-are available.
+The signer entry points take caller-supplied signing callbacks. They compute
+the exact BIP143, legacy, or BIP341 digest, append the requested hash type,
+verify the resulting signature, and insert it. This keeps deterministic
+nonce generation and private-key handling at the application boundary.
 -/
 
 inductive RoleError where
@@ -503,6 +501,20 @@ def Psbt.addPartialSig (psbt : Psbt) (index : Nat)
     (·.insert (recordKey KeyType.inPartialSig publicKey) signature)
   updated.checked
 
+/-- Sign and insert an ECDSA partial signature. The callback receives the
+32-byte digest and returns DER bytes without the final hash-type byte. -/
+def Psbt.signPartialSig (psbt : Psbt) (index : Nat)
+    (sign : ByteArray → Option ByteArray)
+    (verify : ByteArray → ByteArray → ByteArray → Bool)
+    (publicKey : ByteArray) (hashType : UInt32) : Except RoleError Psbt := do
+  let decoded ← liftPsbt psbt.decode
+  let digest ← decoded.ecdsaSignatureHash index hashType
+  let raw ← match sign digest with
+    | some signature => pure signature
+    | none => throw .invalidSignature
+  let signature := raw ++ ⟨#[UInt8.ofNat (hashType.toNat % 256)]⟩
+  psbt.addPartialSig index verify publicKey signature
+
 /-- Insert a Taproot key-path signature after BIP340 verification against
 the output key. -/
 def Psbt.addTapKeySig (psbt : Psbt) (index : Nat)
@@ -518,6 +530,22 @@ def Psbt.addTapKeySig (psbt : Psbt) (index : Nat)
   let updated ← psbt.modifyInput index (·.insert (recordKey KeyType.inTapKeySig) signature)
   updated.checked
 
+/-- Sign and insert a Taproot key-path signature. The callback receives the
+32-byte BIP341 digest and returns the 64-byte BIP340 signature; a non-default
+hash type is appended by this wrapper. -/
+def Psbt.signTapKeySig (psbt : Psbt) (index : Nat)
+    (sign : ByteArray → Option ByteArray)
+    (verify : ByteArray → ByteArray → ByteArray → Bool)
+    (hashType : UInt8) : Except RoleError Psbt := do
+  let decoded ← liftPsbt psbt.decode
+  let digest ← decoded.taprootSignatureHash index none hashType
+  let raw ← match sign digest with
+    | some signature => pure signature
+    | none => throw .invalidSignature
+  if raw.size != 64 then throw .invalidSignature
+  let signature := if hashType == 0 then raw else raw ++ ⟨#[hashType]⟩
+  psbt.addTapKeySig index verify signature
+
 /-- Insert a Taproot script-path signature for an x-only key and a version
 0xc0 leaf script, after BIP340 verification. -/
 def Psbt.addTapScriptSig (psbt : Psbt) (index : Nat)
@@ -532,6 +560,20 @@ def Psbt.addTapScriptSig (psbt : Psbt) (index : Nat)
   let updated ← psbt.modifyInput index
     (·.insert (recordKey KeyType.inTapScriptSig (publicKey ++ tapleafHash leafScript 0xc0)) signature)
   updated.checked
+
+/-- Sign and insert a Taproot script-path signature for a version-0xc0 leaf. -/
+def Psbt.signTapScriptSig (psbt : Psbt) (index : Nat)
+    (sign : ByteArray → Option ByteArray)
+    (verify : ByteArray → ByteArray → ByteArray → Bool)
+    (publicKey leafScript : ByteArray) (hashType : UInt8) : Except RoleError Psbt := do
+  let decoded ← liftPsbt psbt.decode
+  let digest ← decoded.taprootSignatureHash index (some leafScript) hashType
+  let raw ← match sign digest with
+    | some signature => pure signature
+    | none => throw .invalidSignature
+  if raw.size != 64 then throw .invalidSignature
+  let signature := if hashType == 0 then raw else raw ++ ⟨#[hashType]⟩
+  psbt.addTapScriptSig index verify publicKey leafScript signature
 
 /-! ## Extractor -/
 

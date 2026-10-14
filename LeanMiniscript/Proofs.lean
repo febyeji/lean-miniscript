@@ -55,9 +55,11 @@ import LeanMiniscript.Extraction.RefInterpProofs
 import LeanMiniscript.Extraction.TaprootBytesProofs
 import LeanMiniscript.Extraction.TaprootProofs
 import LeanMiniscript.Psbt.CodecProofs
+import LeanMiniscript.Psbt.FieldsProofs
 import LeanMiniscript.Psbt.ParseProofs
 import LeanMiniscript.Psbt.CombinerProofs
 import LeanMiniscript.Psbt.FinalizerProofs
+import LeanMiniscript.Psbt.ExtractionProofs
 
 /-!
 # Proof-oriented lean-miniscript modules

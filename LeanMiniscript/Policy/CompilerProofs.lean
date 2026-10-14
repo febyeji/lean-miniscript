@@ -299,6 +299,18 @@ theorem orTemplates_swap_preserves {leftWeight rightWeight : Nat}
     simp [CoreFragment.isSatisfiableWith, Policy.eval, preservesX material,
       preservesZ material, Bool.or_comm]
 
+theorem andorTemplates_preserves {left middle right : Policy} {x y z : Candidate}
+    (preservesX : Preserves left x.fragment)
+    (preservesY : Preserves middle y.fragment)
+    (preservesZ : Preserves right z.fragment) :
+    ∀ template ∈ andorTemplates x y z,
+      Preserves (.or 0 left 0 (.and middle right)) template.fragment := by
+  intro template member material
+  simp only [andorTemplates, List.mem_singleton] at member
+  subst member
+  simp [CoreFragment.isSatisfiableWith, Policy.eval, preservesX material,
+    preservesY material, preservesZ material, Bool.or_comm, Bool.and_comm]
+
 theorem pickBest_mem {satProb dsatProb : Float} {predicate : Candidate → Bool} :
     {candidates : List Candidate} → {best : Candidate} →
       pickBest satProb dsatProb predicate candidates = some best → best ∈ candidates
@@ -423,6 +435,38 @@ theorem multiTemplates_preserves (ctx : ScriptContext) (k : Nat) (subs : List Po
       simp [CoreFragment.isSatisfiableWith, Material.atom, Policy.eval,
         evalCount_keys]
 
+theorem directAndorTemplates_preserves (_ctx : ScriptContext)
+    (leftWeight : Nat) (left : Policy) (rightWeight : Nat) (right : Policy)
+    (lefts middles tails : List Candidate)
+    (leftPreserves : AllPreserve left lefts)
+    (middlePreserves : ∀ middle tail, right = .and middle tail →
+      AllPreserve middle middles)
+    (tailPreserves : ∀ middle tail, right = .and middle tail →
+      AllPreserve tail tails) :
+    ∀ template ∈ directAndorTemplates right lefts middles tails,
+      Preserves (.or leftWeight left rightWeight right) template.fragment := by
+  cases right with
+  | and middle tail =>
+      intro template member
+      simp only [directAndorTemplates, List.mem_flatMap] at member
+      obtain ⟨x, xMember, y, yMember, z, zMember, templateMember⟩ := member
+      exact andorTemplates_preserves
+        (leftPreserves x xMember)
+        ((middlePreserves middle tail rfl) y yMember)
+        ((tailPreserves middle tail rfl) z zMember)
+        template templateMember
+  | unsatisfiable => simp [directAndorTemplates]
+  | trivial => simp [directAndorTemplates]
+  | key _ => simp [directAndorTemplates]
+  | after _ => simp [directAndorTemplates]
+  | older _ => simp [directAndorTemplates]
+  | sha256 _ => simp [directAndorTemplates]
+  | hash256 _ => simp [directAndorTemplates]
+  | ripemd160 _ => simp [directAndorTemplates]
+  | hash160 _ => simp [directAndorTemplates]
+  | or _ _ _ _ => simp [directAndorTemplates]
+  | thresh _ _ => simp [directAndorTemplates]
+
 mutual
   /-- Every cost-based compilation candidate preserves the policy's meaning. -/
   theorem compileCandidates_preserves (ctx : ScriptContext) :
@@ -449,17 +493,32 @@ mutual
         apply closeWrappers_preserves
         apply realize_preserves
         intro template member
-        simp only [List.mem_append, List.mem_flatMap] at member
-        rcases member with ⟨x, xMember, z, zMember, member⟩ |
-            ⟨z, zMember, x, xMember, member⟩
-        · exact orTemplates_preserves
+        have outerSplit := List.mem_append.mp member
+        rcases outerSplit with leftPart | swappedMember
+        · rcases List.mem_append.mp leftPart with directMember | forwardMember
+          · exact directAndorTemplates_preserves ctx leftWeight left rightWeight right _ _ _
+              (fun x xMember => compileCandidates_preserves ctx left _ _ x xMember)
+              (by
+                intro middle tail hRight
+                cases hRight
+                exact fun y yMember => compileCandidates_preserves ctx middle _ _ y yMember)
+              (by
+                intro middle tail hRight
+                cases hRight
+                exact fun z zMember => compileCandidates_preserves ctx tail _ _ z zMember)
+              template directMember
+          · rcases List.mem_flatMap.mp forwardMember with ⟨x, xMember, rest⟩
+            rcases List.mem_flatMap.mp rest with ⟨z, zMember, templateMember⟩
+            exact orTemplates_preserves
+              (compileCandidates_preserves ctx left _ _ x xMember)
+              (compileCandidates_preserves ctx right _ _ z zMember)
+              template templateMember
+        · rcases List.mem_flatMap.mp swappedMember with ⟨z, zMember, rest⟩
+          rcases List.mem_flatMap.mp rest with ⟨x, xMember, templateMember⟩
+          exact orTemplates_swap_preserves
             (compileCandidates_preserves ctx left _ _ x xMember)
             (compileCandidates_preserves ctx right _ _ z zMember)
-            template member
-        · exact orTemplates_swap_preserves
-            (compileCandidates_preserves ctx left _ _ x xMember)
-            (compileCandidates_preserves ctx right _ _ z zMember)
-            template member
+            template templateMember
     | .thresh k subs, satProb, dsatProb => by
         rw [compileCandidates]
         apply closeWrappers_preserves

@@ -265,6 +265,21 @@ def orTemplates (x z : Candidate) (px pz : Float) : List Template :=
     ⟨.or_i x.fragment z.fragment, px * (2 + x.sat) + pz * (1 + z.sat),
       minCost (x.dsat.map (· + 2)) (z.dsat.map (· + 1))⟩ ]
 
+/-- A direct `andor(x,y,z)` candidate for the common policy shape
+`or(x,and(y,z))`. It evaluates the left branch once and preserves the
+policy's branch semantics while avoiding the selector overhead of `or_d`. -/
+def andorTemplates (x y z : Candidate) : List Template :=
+  [⟨.andor z.fragment y.fragment x.fragment,
+    min (z.sat + y.sat) (z.dsat.getD infiniteCost + x.sat),
+    minCost (addCost z.dsat x.dsat) (addCost (some z.sat) y.dsat)⟩]
+
+def directAndorTemplates (right : Policy) (lefts middles tails : List Candidate) : List Template :=
+  match right with
+  | .and _ _ =>
+      lefts.flatMap fun x =>
+        middles.flatMap fun y => tails.flatMap fun z => andorTemplates x y z
+  | _ => []
+
 /-- Pick the cheapest candidate satisfying a predicate. -/
 def pickBest (satProb dsatProb : Float) (predicate : Candidate → Bool) :
     List Candidate → Option Candidate
@@ -373,9 +388,16 @@ mutual
           (dsatProb + satProb * pz)
         let rights := compileCandidates ctx right (satProb * pz)
           (dsatProb + satProb * px)
+        let middles := match right with
+          | .and middle _ => compileCandidates ctx middle (satProb * pz) dsatProb
+          | _ => []
+        let tails := match right with
+          | .and _ tail => compileCandidates ctx tail (satProb * pz) dsatProb
+          | _ => []
         closeWrappers ctx satProb dsatProb
           (realize ctx
-            ((lefts.flatMap fun x => rights.flatMap fun z => orTemplates x z px pz) ++
+            (directAndorTemplates right lefts middles tails ++
+              (lefts.flatMap fun x => rights.flatMap fun z => orTemplates x z px pz) ++
               (rights.flatMap fun z => lefts.flatMap fun x =>
                 orTemplates z x pz px)))
     | .thresh k subs, satProb, dsatProb =>

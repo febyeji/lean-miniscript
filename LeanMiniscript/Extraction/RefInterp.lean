@@ -1,4 +1,5 @@
 import LeanMiniscript.Script.ValidationWeight
+import LeanMiniscript.Extraction.CoreScriptSource
 
 namespace LeanMiniscript.Extraction
 
@@ -35,6 +36,7 @@ def execTapscriptTransaction (oracle : CryptoOracle) (script : Script)
 
 -- Extraction.BitcoinCoreFixtures provides concrete ECDSA and original-byte
 -- execution for legacy, P2SH and witness rows in the pinned Core fixture.
--- TODO(script-cli): Add a CLI for standalone Script-source execution.
+-- `script_cli` exposes the same parser and evaluator for one standalone
+-- Core-style Script source string.
 
 end LeanMiniscript.Extraction

@@ -20,9 +20,8 @@ Beyond Core's framing checks, hash preimage records must hash to their key,
 as BIP174 requires. Public keys in `PARTIAL_SIG` and `BIP32_DERIVATION` keys
 must parse as secp256k1 points. X-only keys are checked only for length.
 
-TODO(psbt-typed-codec): prove round trips for the typed value encoders
-(`encodeKeySource`, `encodeTapKeySource`, `encodeTapTree`); the proved round
-trips are at the key-value map layer.
+The typed value encoders are covered by executable round-trip examples for
+key origins, Taproot key origins, and complete Taproot trees.
 -/
 
 namespace KeyType
@@ -152,16 +151,16 @@ structure OutputFields where
 
 /-! ## Field decoders -/
 
-private def checkKeyData (scope : String) (keyType : Nat) (valid : Bool) (reason : String) :
+def checkKeyData (scope : String) (keyType : Nat) (valid : Bool) (reason : String) :
     Except PsbtError Unit :=
   if valid then .ok () else .error (.invalidKey scope keyType reason)
 
-private def noKeyData (scope : String) (keyType : Nat) (keyData : ByteArray) :
+def noKeyData (scope : String) (keyType : Nat) (keyData : ByteArray) :
     Except PsbtError Unit :=
   checkKeyData scope keyType (keyData.size == 0) "key data must be empty"
 
 /-- Decode a value that must be consumed exactly. -/
-private def exactValue {α : Type} (scope : String) (keyType : Nat) (decoder : Decoder α)
+def exactValue {α : Type} (scope : String) (keyType : Nat) (decoder : Decoder α)
     (value : ByteArray) : Except PsbtError α :=
   match decodeAll decoder value with
   | .ok result => .ok result
@@ -361,7 +360,8 @@ def globalCounts (map : KeyValueMap) : Except PsbtError (Nat × Nat) := do
 private def v2Only (scope : String) (version keyType : Nat) : Except PsbtError Unit :=
   if version == 2 then .ok () else .error (.excludedField scope keyType)
 
-private def inputStep (version : Nat) (fields : InputFields) (record : Record) :
+/-- Decode one input record, updating its typed field. -/
+def inputStep (version : Nat) (fields : InputFields) (record : Record) :
     Except PsbtError InputFields := do
   let scope := "input"
   let (keyType, keyData) ← splitKey record.key
