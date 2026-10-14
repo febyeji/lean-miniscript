@@ -25,10 +25,16 @@
 - Run the Bitcoin Core fixture audit:
 
   ```sh
-  python3 scripts/check_core_fixture_audit.py
+  curl --fail --location \
+    https://raw.githubusercontent.com/bitcoin/bitcoin/f13ae519de94394314cd63a27924b0998ac65d45/src/test/data/script_tests.json \
+    --output /tmp/script_tests.json
+  lake exe core_fixture_audit -- --show-details /tmp/script_tests.json
   ```
 
-- The audit downloads checksum-pinned Bitcoin Core fixtures and checks all 1,222 cases.
+- The audit downloads the fixture from the pinned Bitcoin Core revision and checks all 1,258 cases.
+- The pinned `script_tests.json` comes from Bitcoin Core commit
+  [`f13ae519de94394314cd63a27924b0998ac65d45`](https://github.com/bitcoin/bitcoin/commit/f13ae519de94394314cd63a27924b0998ac65d45),
+  dated 2026-10-14, and contains 1,258 executable tests plus 60 documentation rows.
 - PSBT test vectors are generated from pinned BIP174, BIP370, and BIP371 sources by
   `scripts/generate_psbt_fixtures.py`.
 
@@ -36,7 +42,7 @@
 
 - `LeanMiniscript/` — Lean libraries, executable models, examples, and proofs.
 - `LeanMiniscript.lean` — public module that imports the main library surface.
-- `scripts/` — fixture generation and audit helpers.
+- `scripts/` — fixture generation helpers.
 - `assets/` — project artwork, including the repository logo.
 
 ## Verification scope

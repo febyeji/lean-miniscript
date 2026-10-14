@@ -20,11 +20,21 @@ jobs:
         with:
           auto-config: false
           build: true
-      - name: Test Core audit gate
-        run: python3 -B -m unittest discover -s scripts -p 'test_check_core_fixture_audit.py' -v
+      - name: Download pinned Bitcoin Core fixtures
+        env:
+          CORE_REVISION: f13ae519de94394314cd63a27924b0998ac65d45
+        run: >-
+          curl --fail --location --retry 3
+          https://raw.githubusercontent.com/bitcoin/bitcoin/${CORE_REVISION}/src/test/data/script_tests.json
+          --output script_tests.json
       - name: Audit pinned Bitcoin Core fixtures
         shell: bash
-        run: python3 scripts/check_core_fixture_audit.py 2>&1 | tee core-fixture-audit.log
+        run: |
+          set -euo pipefail
+          lake exe core_fixture_audit -- --show-details script_tests.json 2>&1 | tee core-fixture-audit.log
+          grep --fixed-strings --line-regexp \
+            'tests=1258 compared=1258 matched=1258 mismatched=0 unsupported=0 documentation=60' \
+            core-fixture-audit.log
       - name: Upload Core audit report
         if: always()
         uses: actions/upload-artifact@v7
