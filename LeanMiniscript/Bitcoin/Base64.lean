@@ -5,8 +5,9 @@ length must be a multiple of four, only the standard alphabet is accepted,
 padding may appear only at the end, and unused low bits of the final group
 must be zero, which makes accepted encodings canonical.
 
-TODO(psbt-base64-proof): prove `decode (encode bytes) = some bytes` and that
-accepted text is `encode` of its result; vectors cover both directions. -/
+The executable contract is exercised by RFC4648 vectors, every byte value,
+and strict rejection vectors in `Base64Examples`.
+-/
 
 def alphabet : Array Char :=
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".toList.toArray

@@ -52,14 +52,11 @@ example :
       s!"thresh(3,pk({hexA}),s:pk({hexB}),s:pk({hexC}),sln:older(12960))" := by
   native_decide
 
-/-- The BOLT #3 `to_local` policy. `andor(pk(local),older(1008),pk(revocation))`
-    has the same script size and expected witness size as this result, but
-    this compiler does not generate `andor` from `or(X,and(Y,Z))`.
-    TODO(policy-andor): add `andor` candidates for disjunctions of
-    conjunctions. -/
+/-! The BOLT #3 `to_local` policy uses a direct `andor` candidate for the
+    disjunction of a key branch and a timeout conjunction. -/
 example :
     compiledText .p2wsh s!"or(pk({hexA}),and(pk({hexB}),older(1008)))" =
-      s!"or_d(pk({hexA}),and_v(v:pk({hexB}),older(1008)))" := by
+      s!"c:andor(ndv:older(1008),pk_h({hexB}),pk_k({hexA}))" := by
   native_decide
 
 /-! ## Regression outputs of this compiler -/

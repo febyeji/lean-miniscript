@@ -29,3 +29,7 @@ lean_lib LeanMiniscriptTests where
 @[default_target]
 lean_exe core_fixture_audit where
   root := `LeanMiniscript.Extraction.BitcoinCoreAuditMain
+
+@[default_target]
+lean_exe script_cli where
+  root := `LeanMiniscript.Extraction.ScriptCliMain

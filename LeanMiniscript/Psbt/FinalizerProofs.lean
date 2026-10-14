@@ -27,11 +27,10 @@ returns for the material read from the PSBT input:
 `decodeAll_readWitnessStack` shows the stored witness value decodes to the
 finalizer's stack.
 
-TODO(psbt-extract-link): prove that decoding a finalized input map yields
-`finalScriptWitness = some final.witness`, so the extractor's witness is the
-finalizer's; this needs a lemma about the `inputStep` fold over a filtered map.
-TODO(psbt-wsh-core): connect witness-v0 witnesses to Core script-pair
-verification; the existing Core theorems cover Taproot descriptors only.
+`ExtractionProofs` connects newly finalized witness records to the decoded
+input and the transaction extractor under the serialization length bounds.
+The witness-v0 specification also exposes successful Core script-pair
+verification with transaction-backed ECDSA digests.
 -/
 
 private theorem mapError_ok {ε ε' α : Type} {f : ε → ε'} {result : Except ε α} {value : α}
@@ -204,7 +203,8 @@ theorem finalizeWitnessV0_spec {config : FinalizerConfig} {decoded : DecodedPsbt
       satisfyFinal sane.checked.fragment
         (witnessV0Env config tx index input witnessScript spent.amount) = some arguments ∧
       final.witness = arguments ++ [witnessScript] ∧
-      final.scriptSig = (compiled.redeemScript.map pushData).getD ByteArray.empty := by
+      final.scriptSig = (compiled.redeemScript.map pushData).getD ByteArray.empty ∧
+      verifyWitnessV0Final config tx index compiled final spent.amount = .ok () := by
   unfold finalizeWitnessV0 at finalized
   cases hc : (compileDescriptor descriptor).mapError FinalizeError.role with
   | error error => simp [hc, bind, Except.bind] at finalized
@@ -245,10 +245,15 @@ theorem finalizeWitnessV0_spec {config : FinalizerConfig} {decoded : DecodedPsbt
                 split at finalized
                 · simp [throw, throwThe, MonadExceptOf.throw] at finalized
                 · rename_i arguments generated
-                  simp only [pure, Except.pure, Except.ok.injEq] at finalized
-                  subst finalized
-                  exact ⟨compiled, spent, tx, witnessScript, sane, arguments, compiledEq, spentEq,
-                    txEq, hw, scriptEq, saneEq, generated, rfl, rfl⟩
+                  cases verified : verifyWitnessV0Final config tx index compiled
+                      { scriptSig := (compiled.redeemScript.map pushData).getD ByteArray.empty
+                        witness := arguments ++ [witnessScript] } spent.amount with
+                  | error error => simp [verified] at finalized
+                  | ok checked =>
+                    simp only [verified, pure, Except.pure, Except.ok.injEq] at finalized
+                    subst finalized
+                    exact ⟨compiled, spent, tx, witnessScript, sane, arguments, compiledEq, spentEq,
+                      txEq, hw, scriptEq, saneEq, generated, rfl, rfl, verified⟩
 
 /-- Under the existing satisfaction-environment contracts, the witness-v0
 finalizer's arguments are accepted by the witness script's Miniscript under
@@ -397,7 +402,8 @@ theorem Psbt.finalizeInput_taproot_sound {config : FinalizerConfig} {psbt result
 `sh(wsh(fragment))` either was already final, or now carries exactly the
 `satisfyFinal` result for the sane witness-script fragment and the PSBT
 material, followed by the witness script; the scriptSig is the P2SH push of
-the witness program for `sh(wsh)` and empty otherwise. -/
+the witness program for `sh(wsh)` and empty otherwise. The complete Core
+script-pair verifier accepts the final witness with its transaction context. -/
 theorem Psbt.finalizeInput_witnessV0_sound {config : FinalizerConfig} {psbt result : Psbt}
     {index : Nat} {descriptor : OutputDescriptor} {fragment : SurfaceFragment}
     (shape : descriptor = .wsh fragment ∨ descriptor = .shWsh fragment)
@@ -414,7 +420,8 @@ theorem Psbt.finalizeInput_witnessV0_sound {config : FinalizerConfig} {psbt resu
         (witnessV0Env config tx index input witnessScript spent.amount) = some arguments ∧
       result = { psbt with inputs := psbt.inputs.modify index (finalizedInputMap · final) } ∧
       final.witness = arguments ++ [witnessScript] ∧
-      final.scriptSig = (compiled.redeemScript.map pushData).getD ByteArray.empty := by
+      final.scriptSig = (compiled.redeemScript.map pushData).getD ByteArray.empty ∧
+      verifyWitnessV0Final config tx index compiled final spent.amount = .ok () := by
   obtain ⟨decoded, input, decodes, found, outcome⟩ := Psbt.finalizeInput_spec finalized
   rcases outcome with ⟨_, same⟩ | ⟨final, produced, _, resultEq⟩
   · exact .inl same
@@ -426,10 +433,10 @@ theorem Psbt.finalizeInput_witnessV0_sound {config : FinalizerConfig} {psbt resu
         .ok final := by
       rcases shape with rfl | rfl <;> exact witnessV0
     obtain ⟨compiled, spent, tx, witnessScript, sane, arguments, compiledEq, spentEq, txEq,
-      witnessEq, scriptEq, saneEq, generated, witness, scriptSig⟩ :=
+      witnessEq, scriptEq, saneEq, generated, witness, scriptSig, verified⟩ :=
       finalizeWitnessV0_spec finalizedV0
     exact ⟨decoded, input', final, compiled, spent, tx, witnessScript, sane, arguments, decodes,
       found, compiledEq, spentEq, txEq, witnessEq, scriptEq, saneEq, generated, resultEq,
-      witness, scriptSig⟩
+      witness, scriptSig, verified⟩
 
 end LeanMiniscript.Psbt

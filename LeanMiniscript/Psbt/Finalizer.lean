@@ -1,5 +1,6 @@
 import LeanMiniscript.Psbt.Roles
 import LeanMiniscript.Extraction.DescriptorSatisfaction
+import LeanMiniscript.Extraction.BitcoinCoreVerification
 import LeanMiniscript.Bitcoin.ECDSA
 
 namespace LeanMiniscript.Psbt
@@ -16,7 +17,8 @@ asks the existing Miniscript satisfier for the final witness:
 * `wsh` and `sh(wsh)`: partial signatures that verify against their BIP143
   digest and 32-byte hash preimages form a `DescriptorSatisfactionMaterial`;
   `satisfyFinal` on the sane witness-script fragment supplies the witness
-  arguments, followed by the witness script.
+  arguments, followed by the witness script. The complete Core script-pair
+  verifier checks the resulting scriptSig and witness before returning them.
 * `tr`: a key-path signature that verifies against the output key is used
   when present. Otherwise every leaf is tried with
   `satisfyDescriptorTransaction`, using that leaf's `TAP_SCRIPT_SIG` records
@@ -24,14 +26,11 @@ asks the existing Miniscript satisfier for the final witness:
   verifier model. The smallest verified witness is chosen, earliest leaf
   first on ties.
 
-Nonpreimage dissatisfaction material is 32 zero bytes. Plain `sh` and
-non-Miniscript inputs are outside the modeled script contexts. Already
-finalized inputs are left unchanged.
-
-TODO(psbt-legacy-sh): finalize legacy `sh(...)` and single-key inputs once a
-legacy Miniscript context is modeled.
-TODO(psbt-wsh-core): run the Core verifier on witness-v0 final witnesses, as
-the Taproot path does, once a P2WSH descriptor verification entry point exists.
+Nonpreimage dissatisfaction material is 32 zero bytes. The modeled descriptor
+contexts are P2WSH, P2SH-P2WSH, and Taproot; legacy script-hash and raw
+single-key descriptors remain outside this descriptor type. Already finalized
+inputs are left unchanged. Legacy support requires a legacy Miniscript context
+before those descriptor forms can be added.
 -/
 
 inductive FinalizeError where
@@ -113,6 +112,41 @@ def witnessV0Env (config : FinalizerConfig) (tx : Transaction) (index : Nat)
   (input.witnessV0Material (witnessV0Accept config tx index witnessScript amount)).toEnv
     (witnessV0Context tx index)
 
+/-- Transaction-backed Core execution for a finalized witness-v0 input. The
+signature callback derives the BIP143 or legacy digest from the signature's
+hash-type byte, matching the PSBT preflight used to select material. -/
+def witnessV0CoreExecutor (config : FinalizerConfig) (tx : Transaction)
+    (index : Nat) (amount : UInt64) : CoreScriptExecutor :=
+  let oracleForScript := fun version scriptCode =>
+    CryptoOracle.pureLeanHashes (fun signature publicKey _ =>
+      if signature.size == 0 then false
+      else
+        let hashType := UInt32.ofNat signature[signature.size - 1]!.toNat
+        let digest := if version == .witnessV0 then
+          witnessV0SignatureHash tx index scriptCode amount hashType
+        else legacySignatureHash tx index scriptCode hashType
+        match digest with
+        | .error _ => false
+        | .ok digest => config.verifyECDSA (signature.extract 0 (signature.size - 1))
+            publicKey digest) config.oracle.checkSchnorrSig
+  fun request => executeCoreScript config.flags (witnessV0Context tx index)
+    oracleForScript request
+
+/-- Verify a finalized P2WSH or P2SH-P2WSH witness through the same Core
+script-pair and witness-program boundary used by Taproot finalization. -/
+def verifyWitnessV0Final (config : FinalizerConfig) (tx : Transaction)
+    (index : Nat) (compiled : CompiledDescriptor) (final : FinalInput)
+    (amount : UInt64) : Except CoreVerificationError Unit := do
+  if !(config.flags.witness || config.flags.cleanStack) then
+    throw (.unsupported "witness verification disabled")
+  if compiled.redeemScript.isSome && !(config.flags.p2sh || config.flags.cleanStack) then
+    throw (.unsupported "P2SH verification disabled")
+  let execute := witnessV0CoreExecutor config tx index amount
+  verifyCoreScripts execute
+    (fun witness version program isP2SH =>
+      verifyCoreWitnessProgram execute config.flags witness version program isP2SH)
+    config.flags final.scriptSig compiled.scriptPubKey final.witness
+
 /-! ## Signature hash-type agreement -/
 
 /-- With `PSBT_IN_SIGHASH_TYPE`, every signature must carry that type. A
@@ -148,8 +182,11 @@ def finalizeWitnessV0 (config : FinalizerConfig) (decoded : DecodedPsbt) (index 
       (witnessV0Env config tx index input witnessScript spent.amount) with
   | none => throw .unavailable
   | some arguments =>
-      return { scriptSig := (compiled.redeemScript.map pushData).getD ByteArray.empty
-               witness := arguments ++ [witnessScript] }
+      let final := { scriptSig := (compiled.redeemScript.map pushData).getD ByteArray.empty
+                     witness := arguments ++ [witnessScript] }
+      match verifyWitnessV0Final config tx index compiled final spent.amount with
+      | .ok () => return final
+      | .error _ => throw .unavailable
 
 /-! ## Taproot finalization -/
 
