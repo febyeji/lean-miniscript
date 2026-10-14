@@ -303,7 +303,10 @@ private def descriptorInternalKey : OutputDescriptor → Option ByteArray
   | _ => none
 
 private def descriptorKeys : OutputDescriptor → List ByteArray
-  | .wsh fragment | .shWsh fragment => (desugar fragment).keys.map (·.bytes)
+  | .raw _ | .shRaw _ => []
+  | .pk key | .pkh key | .wpkh key | .shWpkh key => [key.bytes]
+  | .multi _ keys => keys.map (·.bytes)
+  | .sh fragment | .wsh fragment | .shWsh fragment => (desugar fragment).keys.map (·.bytes)
   | .tr _ none => []
   | .tr _ (some tree) => tree.fragments.flatMap fun fragment => (desugar fragment).keys.map (·.bytes)
 
@@ -337,7 +340,16 @@ def Psbt.updateInputFromDescriptor (psbt : Psbt) (index : Nat) (descriptor : Out
   | .error error => throw error
   let keys := descriptorKeys descriptor
   let records : KeyValueMap := match descriptor with
-    | .wsh _ | .shWsh _ =>
+    | .raw _ =>
+        bip32Records KeyType.inBip32Derivation []
+    | .shRaw script =>
+        [⟨recordKey KeyType.inRedeemScript, script⟩]
+    | .pk _ | .pkh _ | .multi _ _ | .wpkh _ =>
+        bip32Records KeyType.inBip32Derivation (origins.filter fun (key, _) => keys.contains key)
+    | .shWpkh _ =>
+        (compiled.redeemScript.toList.map fun script => ⟨recordKey KeyType.inRedeemScript, script⟩) ++
+        bip32Records KeyType.inBip32Derivation (origins.filter fun (key, _) => keys.contains key)
+    | .sh _ | .wsh _ | .shWsh _ =>
         (compiled.redeemScript.toList.map fun script => ⟨recordKey KeyType.inRedeemScript, script⟩) ++
         (compiled.witnessScript.toList.map fun script => ⟨recordKey KeyType.inWitnessScript, script⟩) ++
         bip32Records KeyType.inBip32Derivation (origins.filter fun (key, _) => keys.contains key)
@@ -362,6 +374,14 @@ def Psbt.updateOutputFromDescriptor (psbt : Psbt) (index : Nat) (descriptor : Ou
     throw (.scriptMismatch "output script is not the descriptor output")
   let keys := descriptorKeys descriptor
   let records : KeyValueMap := match descriptor with
+    | .raw _ => []
+    | .shRaw script => [⟨recordKey KeyType.outRedeemScript, script⟩]
+    | .pk _ | .pkh _ | .multi _ _ | .wpkh _ =>
+        bip32Records KeyType.outBip32Derivation (origins.filter fun (key, _) => keys.contains key)
+    | .sh _ | .shWpkh _ =>
+        (compiled.redeemScript.toList.map fun script =>
+          ⟨recordKey KeyType.outRedeemScript, script⟩) ++
+        bip32Records KeyType.outBip32Derivation (origins.filter fun (key, _) => keys.contains key)
     | .wsh _ | .shWsh _ =>
         (compiled.redeemScript.toList.map fun script => ⟨recordKey KeyType.outRedeemScript, script⟩) ++
         (compiled.witnessScript.toList.map fun script => ⟨recordKey KeyType.outWitnessScript, script⟩) ++

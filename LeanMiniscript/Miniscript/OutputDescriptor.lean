@@ -21,8 +21,21 @@ def DescriptorTree.fragments : DescriptorTree → List SurfaceFragment
   | .leaf fragment => [fragment]
   | .branch left right => left.fragments ++ right.fragments
 
-/-- Supported output wrappers after resolving descriptor keys. -/
+/-- Supported output wrappers after resolving descriptor keys.
+
+The legacy forms use the same B-typed Miniscript fragments as P2WSH for
+script-hash spends.  Raw scripts remain available as an explicit byte
+boundary, while the single-key and P2WPKH forms are represented directly so
+their key encoding rules can follow Bitcoin Core's descriptor rules. -/
 inductive OutputDescriptor where
+  | raw (script : ByteArray)
+  | shRaw (script : ByteArray)
+  | pk (key : PubKey)
+  | multi (threshold : Nat) (keys : List PubKey)
+  | pkh (key : PubKey)
+  | wpkh (key : PubKey)
+  | shWpkh (key : PubKey)
+  | sh (fragment : SurfaceFragment)
   | wsh (fragment : SurfaceFragment)
   | shWsh (fragment : SurfaceFragment)
   | tr (internalKey : PubKey) (tree : Option DescriptorTree)
@@ -87,6 +100,26 @@ private def validCurveKey (ctx : ScriptContext) (key : PubKey) : Bool :=
   | .tapscript => key.size == 32 &&
       (Secp256k1.liftX (Secp256k1.decodeBE key.bytes)).isSome
 
+private def validLegacyKey (key : PubKey) : Bool :=
+  KeyEncoding.validatePublicKey key.bytes
+
+private def legacyPushData (data : ByteArray) : ByteArray :=
+  if data.size < 76 then ⟨#[UInt8.ofNat data.size]⟩ ++ data
+  else if data.size < 256 then ⟨#[0x4c, UInt8.ofNat data.size]⟩ ++ data
+  else ⟨#[0x4d] ++ (unsignedLE 2 data.size).toArray⟩ ++ data
+
+private def legacyP2sh (script : ByteArray) : ByteArray :=
+  ⟨#[0xa9, 0x14]⟩ ++ LeanHash160.hash160 script ++ ⟨#[0x87]⟩
+
+private def legacyP2pkh (key : PubKey) : ByteArray :=
+  ⟨#[0x76, 0xa9, 0x14]⟩ ++ LeanHash160.hash160 key.bytes ++ ⟨#[0x88, 0xac]⟩
+
+private def legacyP2pk (key : PubKey) : ByteArray :=
+  legacyPushData key.bytes ++ ⟨#[0xac]⟩
+
+private def witnessP2wpkh (key : PubKey) : ByteArray :=
+  ⟨#[0x00, 0x14]⟩ ++ LeanHash160.hash160 key.bytes
+
 /-- Validate a descriptor leaf and serialize its concrete compilation. -/
 def compileDescriptorFragment (ctx : ScriptContext)
     (fragment : SurfaceFragment) : Except String ByteArray := do
@@ -99,6 +132,21 @@ def compileDescriptorFragment (ctx : ScriptContext)
   match LeanMiniscript.Script.serializeScript (compileSurfaceConcrete fragment) with
   | .ok bytes => return bytes
   | .error _ => throw "Descriptor script cannot be serialized"
+
+/-- Legacy descriptor scripts permit uncompressed SEC keys in `pk`, `pkh`,
+and `multi`. Other fragments use the existing P2WSH typing boundary and are
+executed with BASE signature hashing by the legacy finalizer. -/
+def compileLegacyDescriptorFragment (fragment : SurfaceFragment) : Except String ByteArray := do
+  match fragment with
+  | .pk key | .pkh key =>
+      if !validLegacyKey key then throw "Legacy descriptor key is not a valid SEC public key"
+  | .core (.multi threshold keys) =>
+      if threshold == 0 || threshold > keys.length || keys.length > 20 then
+        throw "Invalid legacy multisig threshold or key count"
+      if !keys.all validLegacyKey then throw "Legacy multisig contains an invalid SEC public key"
+  | _ => return ← compileDescriptorFragment .p2wsh fragment
+  (LeanMiniscript.Script.serializeScript (compileSurfaceConcrete fragment)).mapError
+    (fun _ => "Legacy descriptor script cannot be serialized")
 
 /-- Compile leaves and build their Merkle paths. The depth budget counts
 branches, so a single leaf uses zero. Output descriptors use a budget of 128. -/
@@ -126,13 +174,43 @@ private def descriptorInternalKey (key : PubKey) : Except String ByteArray := do
 private def encodeOutputX (x : Nat) : ByteArray :=
   ⟨(List.range 32).toArray.map (fun i => UInt8.ofNat (x / 256 ^ (31 - i)))⟩
 
-/-- Compile P2WSH, P2SH-P2WSH, or P2TR output bytes. Raw AST inputs are checked
-for context, correctness type B, and curve membership. Taproot preserves the
-given tree grouping and permits at most 128 branches on each leaf path.
-These checks do not establish wallet policy or cryptographic correctness. -/
+/-- Compile legacy, P2WPKH, P2WSH, P2SH, or P2TR output bytes. Raw AST inputs
+are checked for context, correctness type B, and curve membership. Taproot
+preserves the given tree grouping and permits at most 128 branches on each
+leaf path. These checks do not establish wallet policy or cryptographic
+correctness. -/
 def compileOutputDescriptor (descriptor : OutputDescriptor) :
     Except String CompiledDescriptor := do
   match descriptor with
+  | .raw script =>
+      return { scriptPubKey := script }
+  | .shRaw script =>
+      if script.size > 520 then throw "P2SH redeem script exceeds 520 bytes"
+      return { scriptPubKey := legacyP2sh script, redeemScript := some script }
+  | .pk key =>
+      if !validLegacyKey key then throw "Legacy descriptor key is not a valid SEC public key"
+      return { scriptPubKey := legacyP2pk key }
+  | .pkh key =>
+      if !validLegacyKey key then throw "Legacy descriptor key is not a valid SEC public key"
+      return { scriptPubKey := legacyP2pkh key }
+  | .wpkh key =>
+      if key.size != 33 || !KeyEncoding.validatePublicKey key.bytes then
+        throw "wpkh requires a valid compressed public key"
+      return { scriptPubKey := witnessP2wpkh key }
+  | .shWpkh key =>
+      if key.size != 33 || !KeyEncoding.validatePublicKey key.bytes then
+        throw "sh(wpkh) requires a valid compressed public key"
+      let program := witnessP2wpkh key
+      return { scriptPubKey := legacyP2sh program
+               redeemScript := some program }
+  | .multi threshold keys =>
+      if keys.length > 3 then throw "Bare multisig descriptors allow at most three keys"
+      return { scriptPubKey := ← compileLegacyDescriptorFragment (.core (.multi threshold keys)) }
+  | .sh fragment =>
+      let redeemScript ← compileLegacyDescriptorFragment fragment
+      if redeemScript.size > 520 then throw "P2SH redeem script exceeds 520 bytes"
+      return { scriptPubKey := legacyP2sh redeemScript
+               redeemScript := some redeemScript }
   | .wsh fragment | .shWsh fragment =>
       let witnessScript ← compileDescriptorFragment .p2wsh fragment
       let program := ByteArray.mk #[0x00, 0x20] ++ LeanHash160.SHA256.hash witnessScript
