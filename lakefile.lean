@@ -33,3 +33,7 @@ lean_exe core_fixture_audit where
 @[default_target]
 lean_exe script_cli where
   root := `LeanMiniscript.Extraction.ScriptCliMain
+
+@[default_target]
+lean_exe policy_cli where
+  root := `LeanMiniscript.PolicyCliMain

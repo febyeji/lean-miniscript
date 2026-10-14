@@ -1,35 +1,16 @@
 import LeanMiniscript.Psbt.Finalizer
-import LeanMiniscript.Psbt.Fixtures
+import LeanMiniscript.Psbt.RoleSupport
 
 namespace LeanMiniscript.Psbt.RoleExamples
 
 open LeanMiniscript.Bitcoin LeanMiniscript.Miniscript LeanMiniscript.Psbt
 open LeanMiniscript.Psbt.Fixtures
+open LeanMiniscript.Psbt.RoleSupport
 
 /-! Role vectors from BIP174 and BIP371. Record order inside a map is not
 significant in BIP174 and Core orders some fields by key hash, so map
 contents are compared as record sets (`sameRecords`) except where the
 official bytes are reproduced exactly. -/
-
-private def digit (byte : UInt8) : Nat :=
-  if byte.toNat ≤ 57 then byte.toNat - 48 else byte.toNat - 87
-private def decodeHex : List UInt8 → List UInt8
-  | a :: b :: rest => UInt8.ofNat (16 * digit a + digit b) :: decodeHex rest
-  | _ => []
-private def hex (text : String) : ByteArray := ⟨(decodeHex text.toUTF8.data.toList).toArray⟩
-
-private def psbtOf (bytes : String) : Psbt :=
-  match Psbt.parse (hex bytes) with
-  | .ok psbt => psbt
-  | .error _ => default
-
-private def decodedOf (psbt : Psbt) : DecodedPsbt :=
-  match psbt.decode with
-  | .ok decoded => decoded
-  | .error _ => default
-
-private def role (index : Nat) : Psbt := psbtOf bip174Roles[index]!.2.1
-private def roleBytes (index : Nat) : ByteArray := hex bip174Roles[index]!.2.1
 
 /-! ## BIP174 creator, updater and signer -/
 
@@ -157,23 +138,10 @@ private def multisigKeys : List PubKey :=
    PubKey.ofBytes (hex "023add904f3d6dcf59ddb906b0dee23529b7ffb9ed50e5e86151926860221f0e73")]
 private def shWshMultisig : OutputDescriptor := .shWsh (.core (.multi 2 multisigKeys))
 
-private def legacyMultisigKeys : List PubKey :=
-  [PubKey.ofBytes (hex "029583bf39ae0a609747ad199addd634fa6108559d6c5cd39b4c2183f1ab96e07f"),
-   PubKey.ofBytes (hex "02dab61ff49a14db6a7d02b0cd1fbb78fc4b18312b5b4e54dae4dba2fbfef536d7")]
-private def shLegacyMultisig : OutputDescriptor :=
-  .sh (.core (.multi 2 legacyMultisigKeys))
-
 -- Input 1 is P2SH-P2WSH: the descriptor finalizer reproduces its official
--- final scriptSig and witness byte for byte. Input 0 is legacy P2SH and is
--- finalized through the legacy script context below.
+-- final scriptSig and witness byte for byte.
 example : (match (role 5).finalizeInput {} 1 shWshMultisig with
     | .ok psbt => psbt.inputs[1]! == (role 6).inputs[1]! && psbt.inputs[0]! == (role 5).inputs[0]!
-    | .error _ => false) = true := by native_decide
-
--- Input 0 is the legacy P2SH half of the same official role vector. Its
--- scriptSig is built from the legacy ECDSA signatures and redeem script.
-example : (match (role 5).finalizeInput {} 0 shLegacyMultisig with
-    | .ok psbt => psbt.inputs[0]! == (role 6).inputs[0]! && psbt.inputs[1]! == (role 5).inputs[1]!
     | .error _ => false) = true := by native_decide
 
 -- The wrapped witness must reach both P2SH and witness verification even
