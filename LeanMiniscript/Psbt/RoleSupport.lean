@@ -13,7 +13,7 @@ private def decodeHex : List UInt8 → List UInt8
   | a :: b :: rest => UInt8.ofNat (16 * digit a + digit b) :: decodeHex rest
   | _ => []
 
-/-- Decode fixture hex shared by the PSBT role regression modules. -/
+/-- Decode fixture hex shared by the PSBT role conformance modules. -/
 def hex (text : String) : ByteArray :=
   ⟨(decodeHex text.toUTF8.data.toList).toArray⟩
 

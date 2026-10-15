@@ -1,6 +1,6 @@
 import LeanMiniscript.Policy.Text
 
-namespace LeanMiniscript.Regression.Policy
+namespace LeanMiniscript.Conformance.Policy
 
 open LeanMiniscript.Miniscript
 open LeanMiniscript.Policy
@@ -33,4 +33,4 @@ example : (match parsePolicyHex s!"thresh(2,pk({key}),older(100),TRIVIAL)" with
     | _ => false) = true := by
   native_decide
 
-end LeanMiniscript.Regression.Policy
+end LeanMiniscript.Conformance.Policy
