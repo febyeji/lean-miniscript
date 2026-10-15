@@ -1,7 +1,7 @@
 import LeanMiniscript.Psbt.Finalizer
 import LeanMiniscript.Psbt.RoleSupport
 
-namespace LeanMiniscript.Regression.Psbt
+namespace LeanMiniscript.Conformance.Psbt
 
 open LeanMiniscript.Bitcoin LeanMiniscript.Miniscript LeanMiniscript.Psbt
 open LeanMiniscript.Psbt.RoleSupport
@@ -13,7 +13,7 @@ private def legacyMultisigKeys : List PubKey :=
 private def shLegacyMultisig : OutputDescriptor :=
   .sh (.core (.multi 2 legacyMultisigKeys))
 
-/-! The official BIP174 legacy P2SH input remains a byte-for-byte regression
+/-! The official BIP174 legacy P2SH input remains a byte-for-byte conformance
 for descriptor finalization and legacy signature hashing. -/
 
 example : (match (role 5).finalizeInput {} 0 shLegacyMultisig with
@@ -21,4 +21,4 @@ example : (match (role 5).finalizeInput {} 0 shLegacyMultisig with
     | .error _ => false) = true := by
   native_decide
 
-end LeanMiniscript.Regression.Psbt
+end LeanMiniscript.Conformance.Psbt

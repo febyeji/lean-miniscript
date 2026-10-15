@@ -1,7 +1,7 @@
 import LeanMiniscript.Miniscript.DescriptorParser
 import LeanMiniscript.Miniscript.OutputDescriptor
 
-namespace LeanMiniscript.Regression.Descriptor
+namespace LeanMiniscript.Conformance.Descriptor
 
 open LeanMiniscript.Miniscript
 
@@ -58,4 +58,4 @@ example : (match deriveOutputDescriptor s!"sh(pk(0279be667ef9dcbbac55a06295ce870
     | .error _ => false) = true := by
   native_decide
 
-end LeanMiniscript.Regression.Descriptor
+end LeanMiniscript.Conformance.Descriptor

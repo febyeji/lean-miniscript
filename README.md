@@ -45,13 +45,13 @@
     'and(pk(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798),older(100))'
   ```
 
-- Focused cross-module regressions live under `LeanMiniscript/Regression/`,
+- Focused cross-module conformance checks live under `LeanMiniscript/Conformance/`,
   split by policy, descriptor, and PSBT behavior.
 
 ## Repository layout
 
 - `LeanMiniscript/` — Lean libraries, executable models, examples, and proofs.
-- `LeanMiniscript/Regression/` — focused cross-module behavior regressions.
+- `LeanMiniscript/Conformance/` — focused cross-module conformance checks.
 - `LeanMiniscript.lean` — public module that imports the main library surface.
 - `scripts/` — fixture generation helpers.
 - `assets/` — project artwork, including the repository logo.
@@ -59,7 +59,7 @@
 ## Verification scope
 
 - Proofs establish the contracts stated by their Lean declarations.
-- Fixture matches provide regression coverage against the pinned Bitcoin Core data.
+- Fixture matches provide conformance coverage against the pinned Bitcoin Core data.
 - General consensus equivalence and cryptographic correctness are outside those results.
 - Private-key derivation uses variable-time arithmetic.
 
