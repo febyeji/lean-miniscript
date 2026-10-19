@@ -221,18 +221,36 @@ def InputFields.sighashTypesMatch (input : InputFields) : Bool :=
 private def serializeArguments (arguments : Witness) : ByteArray :=
   arguments.foldl (fun script argument => script ++ pushData argument) ByteArray.empty
 
+/-- Descriptor and transaction data shared by legacy and witness-v0 finalizers. -/
+structure FinalizationContext where
+  compiled : CompiledDescriptor
+  spent : TxOutput
+  transaction : Transaction
+
+/-- Compile the descriptor and load the selected UTXO and unsigned transaction,
+in the order used by legacy and witness-v0 finalization. -/
+def prepareFinalization (decoded : DecodedPsbt) (index : Nat)
+    (descriptor : OutputDescriptor) : Except FinalizeError FinalizationContext := do
+  let compiled ← (compileDescriptor descriptor).mapError .role
+  let spent ← (decoded.spentOutput index).mapError .role
+  let transaction ← (liftPsbt decoded.unsignedTransaction).mapError .role
+  return { compiled, spent, transaction }
+
+/-- Require the selected UTXO to commit to the compiled descriptor output. -/
+def checkFinalizerOutput (compiled : CompiledDescriptor) (spent : TxOutput) :
+    Except FinalizeError Unit := do
+  if spent.scriptPubKey ≠ compiled.scriptPubKey then
+    throw (.role (.scriptMismatch "UTXO script is not the descriptor output"))
+
 /-! ## Legacy and single-key finalization -/
 
 def finalizeLegacyFragment (config : FinalizerConfig) (decoded : DecodedPsbt) (index : Nat)
     (input : InputFields) (descriptor : OutputDescriptor) (fragment : SurfaceFragment) :
     Except FinalizeError FinalInput := do
-  let compiled ← (compileDescriptor descriptor).mapError .role
-  let spent ← (decoded.spentOutput index).mapError .role
-  let tx ← (liftPsbt decoded.unsignedTransaction).mapError .role
+  let ⟨compiled, spent, tx⟩ ← prepareFinalization decoded index descriptor
   let some redeemScript := compiled.redeemScript
     | throw (.role (.descriptor "legacy descriptor has no redeem script"))
-  if spent.scriptPubKey ≠ compiled.scriptPubKey then
-    throw (.role (.scriptMismatch "UTXO script is not the descriptor output"))
+  checkFinalizerOutput compiled spent
   if input.redeemScript.any (· != redeemScript) || input.witnessScript.isSome then
     throw (.role (.scriptMismatch "PSBT scripts differ from the descriptor"))
   let env := legacyEnv config tx index input redeemScript
@@ -253,11 +271,8 @@ def finalizeLegacyFragment (config : FinalizerConfig) (decoded : DecodedPsbt) (i
 def finalizeLegacyMulti (config : FinalizerConfig) (decoded : DecodedPsbt) (index : Nat)
     (input : InputFields) (descriptor : OutputDescriptor) (threshold : Nat) (keys : List PubKey) :
     Except FinalizeError FinalInput := do
-  let compiled ← (compileDescriptor descriptor).mapError .role
-  let spent ← (decoded.spentOutput index).mapError .role
-  let tx ← (liftPsbt decoded.unsignedTransaction).mapError .role
-  if spent.scriptPubKey ≠ compiled.scriptPubKey then
-    throw (.role (.scriptMismatch "UTXO script is not the descriptor output"))
+  let ⟨compiled, spent, tx⟩ ← prepareFinalization decoded index descriptor
+  checkFinalizerOutput compiled spent
   if input.redeemScript.isSome || input.witnessScript.isSome then
     throw (.role (.scriptMismatch "PSBT scripts differ from the descriptor"))
   let fragment := SurfaceFragment.core (.multi threshold keys)
@@ -273,11 +288,8 @@ def finalizeLegacyMulti (config : FinalizerConfig) (decoded : DecodedPsbt) (inde
 def finalizeLegacySingle (config : FinalizerConfig) (decoded : DecodedPsbt) (index : Nat)
     (input : InputFields) (descriptor : OutputDescriptor) (key : PubKey) (pkh : Bool) :
     Except FinalizeError FinalInput := do
-  let compiled ← (compileDescriptor descriptor).mapError .role
-  let spent ← (decoded.spentOutput index).mapError .role
-  let tx ← (liftPsbt decoded.unsignedTransaction).mapError .role
-  if spent.scriptPubKey ≠ compiled.scriptPubKey then
-    throw (.role (.scriptMismatch "UTXO script is not the descriptor output"))
+  let ⟨compiled, spent, tx⟩ ← prepareFinalization decoded index descriptor
+  checkFinalizerOutput compiled spent
   if input.redeemScript.isSome || input.witnessScript.isSome then
     throw (.role (.scriptMismatch "PSBT scripts differ from the descriptor"))
   let some signature := lookupBytes input.partialSigs key.bytes | throw .unavailable
@@ -292,11 +304,8 @@ def finalizeLegacySingle (config : FinalizerConfig) (decoded : DecodedPsbt) (ind
 def finalizeWpkh (config : FinalizerConfig) (decoded : DecodedPsbt) (index : Nat)
     (input : InputFields) (descriptor : OutputDescriptor) (key : PubKey) :
     Except FinalizeError FinalInput := do
-  let compiled ← (compileDescriptor descriptor).mapError .role
-  let spent ← (decoded.spentOutput index).mapError .role
-  let tx ← (liftPsbt decoded.unsignedTransaction).mapError .role
-  if spent.scriptPubKey ≠ compiled.scriptPubKey then
-    throw (.role (.scriptMismatch "UTXO script is not the descriptor output"))
+  let ⟨compiled, spent, tx⟩ ← prepareFinalization decoded index descriptor
+  checkFinalizerOutput compiled spent
   let expectedProgram := ScriptBytes.p2wpkh (LeanHash160.hash160 key.bytes)
   if compiled.redeemScript.any (· != expectedProgram) || input.witnessScript.isSome ||
       input.redeemScript.any (· != expectedProgram) then
@@ -316,13 +325,10 @@ def finalizeWpkh (config : FinalizerConfig) (decoded : DecodedPsbt) (index : Nat
 def finalizeWitnessV0 (config : FinalizerConfig) (decoded : DecodedPsbt) (index : Nat)
     (input : InputFields) (descriptor : OutputDescriptor) (fragment : SurfaceFragment) :
     Except FinalizeError FinalInput := do
-  let compiled ← (compileDescriptor descriptor).mapError .role
-  let spent ← (decoded.spentOutput index).mapError .role
-  let tx ← (liftPsbt decoded.unsignedTransaction).mapError .role
+  let ⟨compiled, spent, tx⟩ ← prepareFinalization decoded index descriptor
   let some witnessScript := compiled.witnessScript
     | throw (.role (.descriptor "descriptor has no witness script"))
-  if spent.scriptPubKey ≠ compiled.scriptPubKey then
-    throw (.role (.scriptMismatch "UTXO script is not the descriptor output"))
+  checkFinalizerOutput compiled spent
   if input.witnessScript.any (· != witnessScript) ||
       input.redeemScript.any (fun script => compiled.redeemScript != some script) then
     throw (.role (.scriptMismatch "PSBT scripts differ from the descriptor"))
@@ -380,8 +386,7 @@ def finalizeTaproot (config : FinalizerConfig) (decoded : DecodedPsbt) (index : 
   let tx ← (liftPsbt decoded.unsignedTransaction).mapError .role
   let spentOutputs ← decoded.spentOutputs.mapError .role
   let some spent := spentOutputs[index]? | throw (.role .inputIndex)
-  if spent.scriptPubKey ≠ compiled.scriptPubKey then
-    throw (.role (.scriptMismatch "UTXO script is not the descriptor output"))
+  checkFinalizerOutput compiled spent
   let outputKey := compiled.scriptPubKey.extract 2 34
   match input.tapKeySig with
   | some signature =>

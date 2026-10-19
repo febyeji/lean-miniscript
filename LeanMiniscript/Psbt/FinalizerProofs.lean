@@ -107,7 +107,7 @@ theorem finalizeTaproot_spec {config : FinalizerConfig} {decoded : DecodedPsbt} 
       (spentOutputs[index]?).map (·.scriptPubKey) = some compiled.scriptPubKey ∧
       final.scriptSig = ByteArray.empty ∧
       TaprootFinalSource config input index compiled tx spentOutputs final := by
-  unfold finalizeTaproot at finalized
+  unfold finalizeTaproot checkFinalizerOutput at finalized
   cases hc : (compileDescriptor descriptor).mapError FinalizeError.role with
   | error error => simp [hc, bind, Except.bind] at finalized
   | ok compiled =>
@@ -123,7 +123,7 @@ theorem finalizeTaproot_spec {config : FinalizerConfig} {decoded : DecodedPsbt} 
         have := mapError_ok ht
         unfold liftPsbt at this
         exact mapError_ok this
-      simp only [ht] at finalized
+      simp only [ht, pure, Except.pure] at finalized
       cases hs : decoded.spentOutputs.mapError FinalizeError.role with
       | error error => simp [hs] at finalized
       | ok spentOutputs =>
@@ -134,7 +134,7 @@ theorem finalizeTaproot_spec {config : FinalizerConfig} {decoded : DecodedPsbt} 
         | some spent =>
           simp only [hi] at finalized
           split at finalized
-          · simp [throw, throwThe, MonadExceptOf.throw] at finalized
+          · simp at finalized
           · rename_i agree
             have scriptEq : spent.scriptPubKey = compiled.scriptPubKey := by
               simpa using agree
@@ -146,7 +146,7 @@ theorem finalizeTaproot_spec {config : FinalizerConfig} {decoded : DecodedPsbt} 
               simp only [hk] at finalized
               by_cases valid : keyPathValid config tx spentOutputs index
                   (compiled.scriptPubKey.extract 2 34) signature = true
-              · simp only [valid, if_true, pure, Except.pure, Except.ok.injEq] at finalized
+              · simp only [valid, if_true, Except.ok.injEq] at finalized
                 subst finalized
                 exact ⟨rfl, .inl ⟨signature, hk, valid, rfl⟩⟩
               · simp only [valid, if_false, Bool.false_eq_true] at finalized
@@ -155,7 +155,7 @@ theorem finalizeTaproot_spec {config : FinalizerConfig} {decoded : DecodedPsbt} 
                 | none => simp [selected, throw, throwThe, MonadExceptOf.throw] at finalized
                 | some choice =>
                   obtain ⟨leafIndex, prepared⟩ := choice
-                  simp only [selected, pure, Except.pure, Except.ok.injEq] at finalized
+                  simp only [selected, Except.ok.injEq] at finalized
                   subst finalized
                   obtain ⟨leaf, found, success⟩ :=
                     mem_scriptPathCandidates (bestCandidate_mem selected)
@@ -167,7 +167,7 @@ theorem finalizeTaproot_spec {config : FinalizerConfig} {decoded : DecodedPsbt} 
               | none => simp [selected, throw, throwThe, MonadExceptOf.throw] at finalized
               | some choice =>
                 obtain ⟨leafIndex, prepared⟩ := choice
-                simp only [selected, pure, Except.pure, Except.ok.injEq] at finalized
+                simp only [selected, Except.ok.injEq] at finalized
                 subst finalized
                 obtain ⟨leaf, found, success⟩ :=
                   mem_scriptPathCandidates (bestCandidate_mem selected)
@@ -208,7 +208,7 @@ theorem finalizeWitnessV0_spec {config : FinalizerConfig} {decoded : DecodedPsbt
       final.witness = arguments ++ [witnessScript] ∧
       final.scriptSig = (compiled.redeemScript.map pushData).getD ByteArray.empty ∧
       verifyWitnessV0Final config tx index compiled final spent.amount = .ok () := by
-  unfold finalizeWitnessV0 at finalized
+  unfold finalizeWitnessV0 prepareFinalization checkFinalizerOutput at finalized
   cases hc : (compileDescriptor descriptor).mapError FinalizeError.role with
   | error error => simp [hc, bind, Except.bind] at finalized
   | ok compiled =>
@@ -229,13 +229,13 @@ theorem finalizeWitnessV0_spec {config : FinalizerConfig} {decoded : DecodedPsbt
           have := mapError_ok ht
           unfold liftPsbt at this
           exact mapError_ok this
-        simp only [ht] at finalized
+        simp only [ht, pure, Except.pure] at finalized
         cases hw : compiled.witnessScript with
         | none => simp [hw, throw, throwThe, MonadExceptOf.throw] at finalized
         | some witnessScript =>
           simp only [hw] at finalized
           split at finalized
-          · simp [throw, throwThe, MonadExceptOf.throw] at finalized
+          · simp at finalized
           · rename_i agree
             have scriptEq : spent.scriptPubKey = compiled.scriptPubKey := by simpa using agree
             split at finalized
@@ -253,7 +253,7 @@ theorem finalizeWitnessV0_spec {config : FinalizerConfig} {decoded : DecodedPsbt
                         witness := arguments ++ [witnessScript] } spent.amount with
                   | error error => simp [verified] at finalized
                   | ok checked =>
-                    simp only [verified, pure, Except.pure, Except.ok.injEq] at finalized
+                    simp only [verified, Except.ok.injEq] at finalized
                     subst finalized
                     exact ⟨compiled, spent, tx, witnessScript, sane, arguments, compiledEq, spentEq,
                       txEq, hw, scriptEq, saneEq, generated, rfl, rfl, verified⟩
