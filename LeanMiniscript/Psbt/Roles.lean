@@ -1,4 +1,5 @@
 import LeanMiniscript.Psbt.Fields
+import LeanMiniscript.Bitcoin.ScriptBytes
 import LeanMiniscript.Miniscript.DescriptorKey
 import LeanMiniscript.Miniscript.OutputDescriptor
 
@@ -46,13 +47,13 @@ def uint64Bytes (value : UInt64) : ByteArray := ⟨(unsignedLE 8 value.toNat).to
 def compactSizeBytes (value : Nat) : ByteArray := ⟨(compactSize value).toArray⟩
 
 def p2shScript (script : ByteArray) : ByteArray :=
-  ⟨#[0xa9, 0x14]⟩ ++ LeanHash160.hash160 script ++ ⟨#[0x87]⟩
+  ScriptBytes.p2sh script
 
 def p2wshScript (script : ByteArray) : ByteArray :=
-  ⟨#[0x00, 0x20]⟩ ++ LeanHash160.SHA256.hash script
+  ScriptBytes.p2wsh script
 
 def p2pkhScript (keyHash : ByteArray) : ByteArray :=
-  ⟨#[0x76, 0xa9, 0x14]⟩ ++ keyHash ++ ⟨#[0x88, 0xac]⟩
+  ScriptBytes.p2pkh keyHash
 
 def isP2sh (script : ByteArray) : Bool :=
   script.size == 23 && script[0]! == 0xa9 && script[1]! == 0x14 && script[22]! == 0x87
@@ -69,9 +70,7 @@ def isP2tr (script : ByteArray) : Bool := script.size == 34 && script[0]! == 0x5
 
 /-- Minimal direct push used for a single-element P2SH scriptSig. -/
 def pushData (data : ByteArray) : ByteArray :=
-  if data.size < 76 then ⟨#[UInt8.ofNat data.size]⟩ ++ data
-  else if data.size < 256 then ⟨#[0x4c, UInt8.ofNat data.size]⟩ ++ data
-  else ⟨#[0x4d] ++ (unsignedLE 2 data.size).toArray⟩ ++ data
+  ScriptBytes.pushData data
 
 /-- Data pushes of a script, stopping at the first malformed push. -/
 def scriptPushes (script : ByteArray) : List ByteArray := Id.run do
