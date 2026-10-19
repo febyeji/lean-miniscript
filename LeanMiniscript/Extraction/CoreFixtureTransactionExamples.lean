@@ -1,3 +1,4 @@
+import LeanMiniscript.TestSupport.Hex
 import LeanMiniscript.Extraction.CoreFixtureTransaction
 import LeanMiniscript.Bitcoin.ECDSA
 
@@ -5,12 +6,7 @@ namespace LeanMiniscript.Extraction
 
 open Bitcoin
 
-private def digit (byte : UInt8) : Nat :=
-  if byte.toNat ≤ 57 then byte.toNat - 48 else byte.toNat - 87
-private def decodeHex : List UInt8 → List UInt8
-  | a :: b :: rest => UInt8.ofNat (16 * digit a + digit b) :: decodeHex rest
-  | _ => []
-private def hex (text : String) : ByteArray := ⟨(decodeHex text.toUTF8.data.toList).toArray⟩
+open LeanMiniscript.TestSupport (hex)
 
 -- BEGIN GENERATED VECTORS
 /-! Core revision 9be056a8a72b624dae9623b2f7bded92c2a21c91, script_tests.json.

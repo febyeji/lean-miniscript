@@ -1,3 +1,4 @@
+import LeanMiniscript.TestSupport.Hex
 import LeanMiniscript.Extraction.BitcoinCoreVerification
 import LeanMiniscript.Miniscript.OutputDescriptor
 import LeanMiniscript.Miniscript.Satisfaction
@@ -19,12 +20,7 @@ private instance : DecidableEq (Except CoreVerificationError Unit) := by
   · exact isFalse (by intro same; cases same)
   · exact isTrue (by congr)
 
-private def digit (byte : UInt8) : Nat :=
-  if byte.toNat ≤ 57 then byte.toNat - 48 else byte.toNat - 87
-private def decodeHex : List UInt8 → List UInt8
-  | a :: b :: rest => UInt8.ofNat (16 * digit a + digit b) :: decodeHex rest
-  | _ => []
-private def hex (text : String) : ByteArray := ⟨(decodeHex text.toUTF8.data.toList).toArray⟩
+open LeanMiniscript.TestSupport (hex)
 
 -- The real transaction signature also used by TaprootExamples. Here the
 -- descriptor compiler supplies the output, script and control block, and

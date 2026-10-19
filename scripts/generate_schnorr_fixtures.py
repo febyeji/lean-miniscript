@@ -26,13 +26,7 @@ def load(name, path):
     spec.loader.exec_module(module)
     return module
 
-HEX = """private def digit (byte : UInt8) : Nat :=
-  if byte.toNat ≤ 57 then byte.toNat - 48 else byte.toNat - 87
-private def decodeHex : List UInt8 → List UInt8
-  | a :: b :: rest => UInt8.ofNat (16 * digit a + digit b) :: decodeHex rest
-  | _ => []
-private def hex (text : String) : ByteArray := ⟨(decodeHex text.toUTF8.data.toList).toArray⟩
-"""
+HEX_OPEN = "open LeanMiniscript.TestSupport (hex)\n"
 
 def generate(args):
     assert hashlib.sha256(args.bip340_vectors.read_bytes()).hexdigest() == VECTORS_SHA256
@@ -43,7 +37,7 @@ def generate(args):
     for row in rows:
         assert ref.schnorr_verify(bytes.fromhex(row['message']), bytes.fromhex(row['public key']),
                                   bytes.fromhex(row['signature'])) == (row['verification result'] == 'TRUE')
-    text = 'import LeanMiniscript.Bitcoin.Schnorr\n\nnamespace LeanMiniscript.Bitcoin\n' + HEX
+    text = 'import LeanMiniscript.TestSupport.Hex\nimport LeanMiniscript.Bitcoin.Schnorr\n\nnamespace LeanMiniscript.Bitcoin\n' + HEX_OPEN
     text += '\n-- All 19 official BIP340 verification vectors, including variable-size messages.\n'
     text += 'private def vectors : List (Nat × String × String × String × Bool) := [\n'
     for row in rows:
@@ -79,7 +73,7 @@ end LeanMiniscript.Bitcoin
         assert ref.schnorr_verify(digest, key, signature)
         return (signature + (bytes([mode]) if mode else b'')).hex()
     signatures = [(mode, sign(mode)) for mode in [0,1,2,3,129,130,131]]
-    text = 'import LeanMiniscript.Bitcoin.TaprootSighashExamples\nimport LeanMiniscript.Extraction.RefInterp\n\nnamespace LeanMiniscript.Script\nopen LeanMiniscript.Bitcoin\n' + HEX
+    text = 'import LeanMiniscript.TestSupport.Hex\nimport LeanMiniscript.Bitcoin.TaprootSighashExamples\nimport LeanMiniscript.Extraction.RefInterp\n\nnamespace LeanMiniscript.Script\nopen LeanMiniscript.Bitcoin\n' + HEX_OPEN
     text += f'private def key := hex "{key.hex()}"\n'
     text += """private def script : Script := [.pushData key, .op .OP_CHECKSIG]
 private def witness (signature : ByteArray) : TapscriptWitness :=

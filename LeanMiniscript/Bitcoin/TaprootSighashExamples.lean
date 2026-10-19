@@ -1,3 +1,4 @@
+import LeanMiniscript.TestSupport.Hex
 import LeanMiniscript.Bitcoin.TaprootSighash
 
 namespace LeanMiniscript.Bitcoin
@@ -7,12 +8,7 @@ BIP341 wallet vectors: 55083d36ddebcd2a039135a2f4ee74917a5803d3.
 Core reference: 9be056a8a72b624dae9623b2f7bded92c2a21c91.
 Seven official cases plus 56 Core-generated valid cases; all checked offline. -/
 
-private def digit (byte : UInt8) : Nat :=
-  if byte.toNat ≤ 57 then byte.toNat - 48 else byte.toNat - 87
-private def decodeHex : List UInt8 → List UInt8
-  | a :: b :: rest => UInt8.ofNat (16 * digit a + digit b) :: decodeHex rest
-  | _ => []
-private def hex (text : String) : ByteArray := ⟨(decodeHex text.toUTF8.data.toList).toArray⟩
+open LeanMiniscript.TestSupport (hex)
 
 def sighashFixtureTransaction : Transaction where
   version := 2

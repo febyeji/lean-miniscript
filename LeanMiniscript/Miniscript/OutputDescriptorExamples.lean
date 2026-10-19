@@ -1,16 +1,11 @@
+import LeanMiniscript.TestSupport.Hex
 import LeanMiniscript.Miniscript.OutputDescriptor
 
 namespace LeanMiniscript.Miniscript.OutputDescriptorExamples
 
 open LeanMiniscript.Miniscript
 
-private def digit (byte : UInt8) : Nat :=
-  if byte.toNat ≤ 57 then byte.toNat - 48 else byte.toNat - 87
-private def decodeHex : List UInt8 → List UInt8
-  | a :: b :: rest => UInt8.ofNat (16 * digit a + digit b) :: decodeHex rest
-  | _ => []
-private def hex (text : String) : ByteArray :=
-  ⟨(decodeHex text.toUTF8.data.toList).toArray⟩
+open LeanMiniscript.TestSupport (hex)
 private def key (text : String) : PubKey := PubKey.ofBytes (hex text)
 private def leaf (text : String) : DescriptorTree := .leaf (.pk (key text))
 

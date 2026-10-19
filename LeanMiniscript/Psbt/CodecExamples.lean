@@ -1,3 +1,4 @@
+import LeanMiniscript.TestSupport.Hex
 import LeanMiniscript.Psbt.Fields
 import LeanMiniscript.Psbt.Fixtures
 import LeanMiniscript.Bitcoin.Base64
@@ -10,12 +11,7 @@ open LeanMiniscript.Bitcoin LeanMiniscript.Psbt LeanMiniscript.Psbt.Fixtures
 parse, re-serialize to the identical bytes and match their Base64 form;
 invalid vectors must be rejected. -/
 
-private def digit (byte : UInt8) : Nat :=
-  if byte.toNat ≤ 57 then byte.toNat - 48 else byte.toNat - 87
-private def decodeHex : List UInt8 → List UInt8
-  | a :: b :: rest => UInt8.ofNat (16 * digit a + digit b) :: decodeHex rest
-  | _ => []
-private def hex (text : String) : ByteArray := ⟨(decodeHex text.toUTF8.data.toList).toArray⟩
+open LeanMiniscript.TestSupport (hex)
 
 private def rejected (vectors : List (String × String × String)) : Bool :=
   vectors.all fun (_, bytes, encoded) =>
