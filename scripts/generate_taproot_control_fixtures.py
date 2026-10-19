@@ -55,7 +55,7 @@ def generate(args):
             assert (b'\x51\x20' + key).hex() == group['expected']['scriptPubKey']
             fixtures.append((script.hex(), control.hex(), key.hex(), leaf['leafVersion'], leaf_hash.hex(), root.hex()))
     assert len(fixtures) == 12
-    text = 'import LeanMiniscript.Bitcoin.TaprootControlBlock\n\nnamespace LeanMiniscript.Bitcoin\n' + schnorr.HEX
+    text = 'import LeanMiniscript.TestSupport.Hex\nimport LeanMiniscript.Bitcoin.TaprootControlBlock\n\nnamespace LeanMiniscript.Bitcoin\n' + schnorr.HEX_OPEN
     text += '\n-- Every script-path control block from the pinned official BIP341 wallet vectors.\n'
     text += 'private def fixtures : List (String × String × String × UInt8 × String × String) := [\n'
     text += ''.join(f'  ("{s}", "{c}", "{q}", {v}, "{h}", "{r}"),\n' for s,c,q,v,h,r in fixtures) + ']\n'
@@ -145,7 +145,7 @@ example : [TaprootControlError.internalKey, .tweakRange, .infiniteOutput, .commi
     future_leaf, future_root = root_for(b'\x51', b'\xfa' + internal)
     future_key, future_parity = output(internal, future_root)
     future_control = bytes([250 | future_parity]) + internal
-    text = 'import LeanMiniscript.Bitcoin.TaprootSighashExamples\nimport LeanMiniscript.Extraction.Taproot\n\nnamespace LeanMiniscript.Extraction\nopen LeanMiniscript.Script LeanMiniscript.Bitcoin\n' + schnorr.HEX
+    text = 'import LeanMiniscript.TestSupport.Hex\nimport LeanMiniscript.Bitcoin.TaprootSighashExamples\nimport LeanMiniscript.Extraction.Taproot\n\nnamespace LeanMiniscript.Extraction\nopen LeanMiniscript.Script LeanMiniscript.Bitcoin\n' + schnorr.HEX_OPEN
     text += f'private def key := hex "{signing_key.hex()}"\nprivate def control := hex "{control.hex()}"\nprivate def program := hex "{program.hex()}"\nprivate def signature := hex "{signature}"\n'
     text += """private def script : Script := [.pushData key, .op .OP_CHECKSIG]
 private def scriptBytes := hex "20" ++ key ++ hex "ac"
@@ -228,7 +228,8 @@ example : verify annexWitness = .ok (initialValidationWeight annexWitness - 50) 
 example : verify [ByteArray.empty, scriptBytes, control] = .error (.script .evalFalse) := by native_decide
 example : verify (ByteArray.empty :: fullWitness) = .error (.script .cleanStack) := by native_decide
 example : verify [flip signature 40, scriptBytes, control] = .error (.script .schnorrSig) := by native_decide
-example : verify fullWitness { minimalIf := false } = .error (.script .tapscriptFlags) := by native_decide
+example : verify fullWitness { minimalIf := false } =
+    .ok (initialValidationWeight fullWitness - 50) := by native_decide
 private def oversized : ByteArray := ⟨Array.replicate 521 1⟩
 private def tooMany := List.replicate 1001 oversized ++ [scriptBytes, control]
 -- Initial limits precede signatures; count precedes element size.

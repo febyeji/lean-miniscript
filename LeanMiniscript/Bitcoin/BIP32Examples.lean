@@ -1,13 +1,9 @@
+import LeanMiniscript.TestSupport.Hex
 import LeanMiniscript.Bitcoin.BIP32
 
 namespace LeanMiniscript.Bitcoin.BIP32
 
-private def digit (byte : UInt8) : Nat :=
-  if byte.toNat ≤ 57 then byte.toNat - 48 else byte.toNat - 87
-private def decodeHex : List UInt8 → List UInt8
-  | a :: b :: rest => UInt8.ofNat (16 * digit a + digit b) :: decodeHex rest
-  | _ => []
-private def hex (text : String) : ByteArray := ⟨(decodeHex text.toUTF8.data.toList).toArray⟩
+open LeanMiniscript.TestSupport (hex)
 
 /-! All 17 positive nodes and 16 invalid strings in official BIP32 test vectors
 1–5, including both leading-zero regression sets. Source:

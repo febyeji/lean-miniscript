@@ -1,3 +1,4 @@
+import LeanMiniscript.TestSupport.Hex
 import LeanMiniscript.Extraction.TaprootBytes
 import LeanMiniscript.Bitcoin.TaprootSighashExamples
 
@@ -11,12 +12,7 @@ local instance canonicalTapscriptExceptDecidableEq
   cases first <;> cases second <;>
     simp only [Except.ok.injEq, Except.error.injEq, reduceCtorEq] <;> infer_instance
 
-private def digit (byte : UInt8) : Nat :=
-  if byte.toNat ≤ 57 then byte.toNat - 48 else byte.toNat - 87
-private def decodeHex : List UInt8 → List UInt8
-  | a :: b :: rest => UInt8.ofNat (16 * digit a + digit b) :: decodeHex rest
-  | _ => []
-private def hex (text : String) : ByteArray := ⟨(decodeHex text.toUTF8.data.toList).toArray⟩
+open LeanMiniscript.TestSupport (hex)
 private def flip (bytes : ByteArray) (index : Nat) : ByteArray :=
   ⟨bytes.data.set! index (bytes[index]! ^^^ 1)⟩
 

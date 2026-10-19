@@ -1,15 +1,11 @@
+import LeanMiniscript.TestSupport.Hex
 import LeanMiniscript.Bitcoin.TaprootSighashExamples
 import LeanMiniscript.Extraction.RefInterp
 
 namespace LeanMiniscript.Script
 open LeanMiniscript.Bitcoin
 
-private def digit (byte : UInt8) : Nat :=
-  if byte.toNat ≤ 57 then byte.toNat - 48 else byte.toNat - 87
-private def decodeHex : List UInt8 → List UInt8
-  | a :: b :: rest => UInt8.ofNat (16 * digit a + digit b) :: decodeHex rest
-  | _ => []
-private def hex (text : String) : ByteArray := ⟨(decodeHex text.toUTF8.data.toList).toArray⟩
+open LeanMiniscript.TestSupport (hex)
 private def key : ByteArray := ⟨Array.replicate 32 2⟩
 private def sig (mode : UInt8) (marker : UInt8 := 3) : ByteArray :=
   ⟨Array.replicate 64 marker⟩ ++ if mode == 0 then ByteArray.empty else ⟨#[mode]⟩

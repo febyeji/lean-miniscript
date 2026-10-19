@@ -1,13 +1,9 @@
+import LeanMiniscript.TestSupport.Hex
 import LeanMiniscript.Bitcoin.ECDSA
 
 namespace LeanMiniscript.Bitcoin.ECDSA
 
-private def digit (byte : UInt8) : Nat :=
-  if byte.toNat ≤ 57 then byte.toNat - 48 else byte.toNat - 87
-private def decodeHex : List UInt8 → List UInt8
-  | a :: b :: rest => UInt8.ofNat (16 * digit a + digit b) :: decodeHex rest
-  | _ => []
-private def hex (text : String) : ByteArray := ⟨(decodeHex text.toUTF8.data.toList).toArray⟩
+open LeanMiniscript.TestSupport (hex)
 
 -- BEGIN GENERATED VECTORS
 /-! Official BIP143 SHA-256: 62bc71351563e68baeb12643c68355d217953ae9eb6a6e68b2b0323275b6beec.

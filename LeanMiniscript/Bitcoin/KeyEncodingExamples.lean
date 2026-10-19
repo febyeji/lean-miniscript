@@ -1,14 +1,9 @@
+import LeanMiniscript.TestSupport.Hex
 import LeanMiniscript.Bitcoin.KeyEncoding
 
 namespace LeanMiniscript.Bitcoin.KeyEncoding
 
-private def digit (byte : UInt8) : Nat :=
-  if byte.toNat ≤ 57 then byte.toNat - 48
-  else if byte.toNat ≤ 70 then byte.toNat - 55 else byte.toNat - 87
-private def decodeHex : List UInt8 → List UInt8
-  | a :: b :: rest => UInt8.ofNat (16 * digit a + digit b) :: decodeHex rest
-  | _ => []
-private def hex (text : String) : ByteArray := ⟨(decodeHex text.toUTF8.data.toList).toArray⟩
+open LeanMiniscript.TestSupport (hex)
 private def succeedsWith (result : Except String ByteArray) (expected : ByteArray) : Bool :=
   match result with
   | .ok bytes => bytes == expected
