@@ -1,4 +1,5 @@
 import LeanMiniscript.Bitcoin.KeyEncoding
+import LeanMiniscript.Bitcoin.ScriptBytes
 import LeanMiniscript.Bitcoin.TaprootControlBlock
 import LeanMiniscript.Miniscript.Checked
 import LeanMiniscript.Miniscript.CompileConcrete
@@ -103,22 +104,8 @@ private def validCurveKey (ctx : ScriptContext) (key : PubKey) : Bool :=
 private def validLegacyKey (key : PubKey) : Bool :=
   KeyEncoding.validatePublicKey key.bytes
 
-private def legacyPushData (data : ByteArray) : ByteArray :=
-  if data.size < 76 then ⟨#[UInt8.ofNat data.size]⟩ ++ data
-  else if data.size < 256 then ⟨#[0x4c, UInt8.ofNat data.size]⟩ ++ data
-  else ⟨#[0x4d] ++ (unsignedLE 2 data.size).toArray⟩ ++ data
-
-private def legacyP2sh (script : ByteArray) : ByteArray :=
-  ⟨#[0xa9, 0x14]⟩ ++ LeanHash160.hash160 script ++ ⟨#[0x87]⟩
-
-private def legacyP2pkh (key : PubKey) : ByteArray :=
-  ⟨#[0x76, 0xa9, 0x14]⟩ ++ LeanHash160.hash160 key.bytes ++ ⟨#[0x88, 0xac]⟩
-
 private def legacyP2pk (key : PubKey) : ByteArray :=
-  legacyPushData key.bytes ++ ⟨#[0xac]⟩
-
-private def witnessP2wpkh (key : PubKey) : ByteArray :=
-  ⟨#[0x00, 0x14]⟩ ++ LeanHash160.hash160 key.bytes
+  ScriptBytes.pushData key.bytes ++ ⟨#[0xac]⟩
 
 /-- Validate a descriptor leaf and serialize its concrete compilation. -/
 def compileDescriptorFragment (ctx : ScriptContext)
@@ -186,22 +173,22 @@ def compileOutputDescriptor (descriptor : OutputDescriptor) :
       return { scriptPubKey := script }
   | .shRaw script =>
       if script.size > 520 then throw "P2SH redeem script exceeds 520 bytes"
-      return { scriptPubKey := legacyP2sh script, redeemScript := some script }
+      return { scriptPubKey := ScriptBytes.p2sh script, redeemScript := some script }
   | .pk key =>
       if !validLegacyKey key then throw "Legacy descriptor key is not a valid SEC public key"
       return { scriptPubKey := legacyP2pk key }
   | .pkh key =>
       if !validLegacyKey key then throw "Legacy descriptor key is not a valid SEC public key"
-      return { scriptPubKey := legacyP2pkh key }
+      return { scriptPubKey := ScriptBytes.p2pkh (LeanHash160.hash160 key.bytes) }
   | .wpkh key =>
       if key.size != 33 || !KeyEncoding.validatePublicKey key.bytes then
         throw "wpkh requires a valid compressed public key"
-      return { scriptPubKey := witnessP2wpkh key }
+      return { scriptPubKey := ScriptBytes.p2wpkh (LeanHash160.hash160 key.bytes) }
   | .shWpkh key =>
       if key.size != 33 || !KeyEncoding.validatePublicKey key.bytes then
         throw "sh(wpkh) requires a valid compressed public key"
-      let program := witnessP2wpkh key
-      return { scriptPubKey := legacyP2sh program
+      let program := ScriptBytes.p2wpkh (LeanHash160.hash160 key.bytes)
+      return { scriptPubKey := ScriptBytes.p2sh program
                redeemScript := some program }
   | .multi threshold keys =>
       if keys.length > 3 then throw "Bare multisig descriptors allow at most three keys"
@@ -209,16 +196,15 @@ def compileOutputDescriptor (descriptor : OutputDescriptor) :
   | .sh fragment =>
       let redeemScript ← compileLegacyDescriptorFragment fragment
       if redeemScript.size > 520 then throw "P2SH redeem script exceeds 520 bytes"
-      return { scriptPubKey := legacyP2sh redeemScript
+      return { scriptPubKey := ScriptBytes.p2sh redeemScript
                redeemScript := some redeemScript }
   | .wsh fragment | .shWsh fragment =>
       let witnessScript ← compileDescriptorFragment .p2wsh fragment
-      let program := ByteArray.mk #[0x00, 0x20] ++ LeanHash160.SHA256.hash witnessScript
+      let program := ScriptBytes.p2wsh witnessScript
       match descriptor with
       | .shWsh _ =>
           return {
-            scriptPubKey := ByteArray.mk #[0xa9, 0x14] ++
-              LeanHash160.hash160 program ++ ByteArray.mk #[0x87]
+            scriptPubKey := ScriptBytes.p2sh program
             redeemScript := some program
             witnessScript := some witnessScript }
       | _ => return { scriptPubKey := program, witnessScript := some witnessScript }

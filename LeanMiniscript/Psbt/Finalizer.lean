@@ -297,7 +297,7 @@ def finalizeWpkh (config : FinalizerConfig) (decoded : DecodedPsbt) (index : Nat
   let tx ← (liftPsbt decoded.unsignedTransaction).mapError .role
   if spent.scriptPubKey ≠ compiled.scriptPubKey then
     throw (.role (.scriptMismatch "UTXO script is not the descriptor output"))
-  let expectedProgram := ⟨#[0x00, 0x14]⟩ ++ LeanHash160.hash160 key.bytes
+  let expectedProgram := ScriptBytes.p2wpkh (LeanHash160.hash160 key.bytes)
   if compiled.redeemScript.any (· != expectedProgram) || input.witnessScript.isSome ||
       input.redeemScript.any (· != expectedProgram) then
     throw (.role (.scriptMismatch "PSBT scripts differ from the descriptor"))
