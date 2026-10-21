@@ -59,6 +59,7 @@ import LeanMiniscript.Psbt.FieldsProofs
 import LeanMiniscript.Psbt.ParseProofs
 import LeanMiniscript.Psbt.CombinerProofs
 import LeanMiniscript.Psbt.FinalizerProofs
+import LeanMiniscript.Psbt.FinalizerVerificationProofs
 import LeanMiniscript.Psbt.ExtractionProofs
 
 /-!
