@@ -45,6 +45,19 @@
     'and(pk(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798),older(100))'
   ```
 
+- Compile a policy for P2WSH or Tapscript:
+
+  ```sh
+  lake exe policy_cli -- compile --context tapscript \
+    'and(pk(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798),older(100))'
+  ```
+
+- `compile` defaults to `p2wsh`. Its output includes canonical Miniscript,
+  concrete Script hex, script size in bytes, static opcode count, and maximum
+  satisfaction stack bounds. P2WSH also reports the maximum opcode charge.
+- `lake exe policy_cli -- --help` lists the commands; `parse POLICY_TEXT` and the
+  original single-policy invocation print the AST and canonical policy text.
+
 - Focused cross-module conformance checks live under `LeanMiniscript/Conformance/`,
   split by policy, descriptor, and PSBT behavior.
 
