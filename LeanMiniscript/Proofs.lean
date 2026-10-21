@@ -61,6 +61,7 @@ import LeanMiniscript.Psbt.CombinerProofs
 import LeanMiniscript.Psbt.FinalizerProofs
 import LeanMiniscript.Psbt.FinalizerVerificationProofs
 import LeanMiniscript.Psbt.ExtractionProofs
+import LeanMiniscript.Psbt.FinalizeAndExtractProofs
 
 /-!
 # Proof-oriented lean-miniscript modules
@@ -80,4 +81,8 @@ layer proves its text round trip and that compiled policies preserve the
 policy's meaning. PSBT proofs cover exact framing round trips in both
 directions, combiner algebra, and finalizer witnesses produced by the existing
 descriptor satisfaction and Core verification entry points.
+Whole-PSBT finalization and extraction preserve every input's scriptSig and
+witness through network serialization under uint64 witness length bounds.
+The input-property theorem states separate contracts for retained final
+fields and generated verification evidence in each finalization context.
 -/
