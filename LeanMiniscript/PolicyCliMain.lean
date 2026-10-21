@@ -1,28 +1,17 @@
-import LeanMiniscript.Policy.Text
+import LeanMiniscript.Policy.Cli
 
-namespace LeanMiniscript.PolicyCliMain
-
-open LeanMiniscript.Policy
-
-private def usage : String :=
-  "usage: lake exe policy_cli -- POLICY_TEXT"
-
-private def run (source : String) : IO UInt32 := do
-  match parsePolicyHex source with
-  | .error error =>
-      IO.eprintln s!"parse error: {repr error}"
-      return 2
-  | .ok policy =>
-      IO.println s!"ast: {repr policy}"
-      IO.println s!"canonical: {prettyPolicy policy}"
-      return 0
-
-end LeanMiniscript.PolicyCliMain
+open LeanMiniscript.Policy.Cli
 
 def main (args : List String) : IO UInt32 := do
-  match args with
-  | ["--", source] | [source] =>
-      LeanMiniscript.PolicyCliMain.run source
-  | _ =>
-      IO.eprintln LeanMiniscript.PolicyCliMain.usage
+  match parseArgs args with
+  | .error error =>
+      IO.eprintln s!"{error}\n{usage}"
       return 2
+  | .ok command =>
+      match execute command with
+      | .error error =>
+          IO.eprintln error
+          return 2
+      | .ok output =>
+          IO.println output
+          return 0

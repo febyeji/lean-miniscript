@@ -62,6 +62,7 @@ import LeanMiniscript.Miniscript.SurfaceTextRoundTripExamples
 import LeanMiniscript.Miniscript.TimelockMixingExamples
 import LeanMiniscript.Miniscript.TypeInferenceExamples
 import LeanMiniscript.Policy.CompilerExamples
+import LeanMiniscript.Policy.CliExamples
 import LeanMiniscript.Policy.TextExamples
 import LeanMiniscript.Properties.ResourceBoundsExamples
 import LeanMiniscript.Extraction.BitcoinCoreAuditExamples
