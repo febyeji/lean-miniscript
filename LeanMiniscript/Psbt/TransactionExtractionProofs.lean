@@ -4,24 +4,6 @@ namespace LeanMiniscript.Psbt
 
 open LeanMiniscript.Bitcoin
 
-theorem length_of_mapM_ok {α β ε : Type} {f : α → Except ε β}
-    {xs : List α} {ys : List β} (mapped : xs.mapM f = .ok ys) :
-    ys.length = xs.length := by
-  induction xs generalizing ys with
-  | nil => cases mapped; rfl
-  | cons head tail ih =>
-    simp only [List.mapM_cons, bind, Except.bind] at mapped
-    cases first : f head with
-    | error error => simp [first] at mapped
-    | ok value =>
-      simp only [first] at mapped
-      cases rest : tail.mapM f with
-      | error error => simp [rest] at mapped
-      | ok values =>
-        simp only [rest, pure, Except.pure, Except.ok.injEq] at mapped
-        subst ys
-        simp [ih rest]
-
 /-- Typed decoding preserves the input count and the global map. -/
 theorem Psbt.decode_shape {psbt : Psbt} {decoded : DecodedPsbt}
     (read : psbt.decode = .ok decoded) :
@@ -78,6 +60,52 @@ private theorem getElem?_zip_some {α β : Type} {xs : List α} {ys : List β}
       | zero => simpa using And.intro hx hy
       | succ index => exact ih hx hy
 
+/-- The extractor reads one final pair per decoded input before assembling
+transaction inputs. This stage requires no unsigned-input count assumption. -/
+private theorem finalTransaction_parts {decoded : DecodedPsbt} {tx : WitnessTransaction}
+    (extracted : decoded.finalTransaction = .ok tx) :
+    ∃ (unsigned : Transaction) (finals : List (ByteArray × List ByteArray)),
+      decoded.unsignedTransaction = .ok unsigned ∧
+      finals.length = decoded.inputs.length ∧
+      (∀ (index : Nat) (input : InputFields), decoded.inputs[index]? = some input →
+        input.isFinalized = true ∧
+          finals[index]? = some (input.finalInput.scriptSig, input.finalInput.witness)) ∧
+      tx = {
+        transaction := { unsigned with inputs := ((unsigned.inputs.toList.zip finals).map
+          (fun pair => { pair.1 with scriptSig := pair.2.1 })).toArray }
+        witnesses := finals.map (·.2) } := by
+  unfold DecodedPsbt.finalTransaction at extracted
+  rw [bind_eq_ok] at extracted
+  rcases extracted with ⟨unsigned, read, extracted⟩
+  have unsignedEq : decoded.unsignedTransaction = .ok unsigned := by
+    cases h : decoded.unsignedTransaction <;> simp_all [liftPsbt, Except.mapError]
+  rw [bind_eq_ok] at extracted
+  rcases extracted with ⟨finals, computed, extracted⟩
+  refine ⟨unsigned, finals, unsignedEq, ?_, ?_, (Except.ok.inj extracted).symm⟩
+  · simpa using length_of_mapM_ok computed
+  · intro index input found
+    have range : index < decoded.inputs.length := (List.getElem?_eq_some_iff.mp found).1
+    have rangeFound : (List.range decoded.inputs.length)[index]? = some index := by simp [range]
+    obtain ⟨pair, selected, result⟩ := getElem?_of_mapM_ok computed rangeFound
+    simp only [DecodedPsbt.input, found, bind, Except.bind, pure, Except.pure] at result
+    split at result
+    · simp [throw, throwThe, MonadExceptOf.throw] at result
+    · rename_i ready
+      simp only [Except.ok.injEq] at result
+      subst pair
+      refine ⟨?_, selected⟩
+      cases hs : input.finalScriptSig <;> cases hw : input.finalScriptWitness <;>
+        simp_all [InputFields.isFinalized]
+
+/-- Extraction copies the decoded witness at each input index. -/
+theorem DecodedPsbt.finalTransaction_witness {decoded : DecodedPsbt}
+    {tx : WitnessTransaction} {index : Nat} {input : InputFields}
+    (extracted : decoded.finalTransaction = .ok tx)
+    (found : decoded.inputs[index]? = some input) :
+    tx.witnesses[index]? = some (input.finalScriptWitness.getD []) := by
+  obtain ⟨unsigned, finals, _, _, fields, rfl⟩ := finalTransaction_parts extracted
+  simp [List.getElem?_map, (fields index input found).2, InputFields.finalInput]
+
 /-- Extraction preserves transaction fields and fills every input's
 scriptSig and witness from its decoded final fields. -/
 theorem DecodedPsbt.finalTransaction_spec {decoded : DecodedPsbt} {tx : WitnessTransaction}
@@ -96,41 +124,21 @@ theorem DecodedPsbt.finalTransaction_spec {decoded : DecodedPsbt} {tx : WitnessT
           tx.transaction.inputs[index]? = some
             { original with scriptSig := input.finalInput.scriptSig }) ∧
         tx.witnesses[index]? = some input.finalInput.witness := by
-  unfold DecodedPsbt.finalTransaction at extracted
-  cases ht : decoded.unsignedTransaction with
-  | error error => simp [ht, liftPsbt, Except.mapError, bind, Except.bind] at extracted
-  | ok unsigned =>
-    have count := counted unsigned ht
-    simp only [ht, liftPsbt, Except.mapError, bind, Except.bind] at extracted
-    split at extracted
-    · simp at extracted
-    · rename_i finals computed
-      have finalsLength := length_of_mapM_ok computed
-      simp only [List.length_range] at finalsLength
-      simp only [pure, Except.pure, Except.ok.injEq] at extracted
-      subst tx
-      refine ⟨unsigned, rfl, rfl, rfl, rfl, ?_, ?_, ?_⟩
-      · simp [count, finalsLength]
-      · simp [finalsLength]
-      · intro index input found
-        have range : index < decoded.inputs.length := (List.getElem?_eq_some_iff.mp found).1
-        have rangeFound : (List.range decoded.inputs.length)[index]? = some index := by simp [range]
-        obtain ⟨pair, selected, result⟩ := getElem?_of_mapM_ok computed rangeFound
-        simp only [DecodedPsbt.input, found, pure, Except.pure] at result
-        split at result
-        · simp [throw, throwThe, MonadExceptOf.throw] at result
-        · rename_i ready
-          simp only [Except.ok.injEq] at result
-          subst pair
-          have original : unsigned.inputs.toList[index]? = some unsigned.inputs[index] := by
-            simp [show index < unsigned.inputs.size by omega]
-          refine ⟨?_, ⟨unsigned.inputs[index], ?_, ?_⟩, ?_⟩
-          · cases hs : input.finalScriptSig <;> cases hw : input.finalScriptWitness <;>
-              simp_all [InputFields.isFinalized]
-          · simp
-          · simp only [List.getElem?_toArray, List.getElem?_map,
-              getElem?_zip_some original selected, Option.map_some, InputFields.finalInput]
-          · simp [List.getElem?_map, selected, InputFields.finalInput]
+  obtain ⟨unsigned, finals, unsignedEq, length, fields, rfl⟩ := finalTransaction_parts extracted
+  have count := counted unsigned unsignedEq
+  refine ⟨unsigned, unsignedEq, rfl, rfl, rfl, ?_, ?_, ?_⟩
+  · simp [count, length]
+  · simp [length]
+  · intro index input found
+    have range : index < decoded.inputs.length := (List.getElem?_eq_some_iff.mp found).1
+    obtain ⟨ready, selected⟩ := fields index input found
+    have original : unsigned.inputs.toList[index]? = some unsigned.inputs[index] := by
+      simp [show index < unsigned.inputs.size by omega]
+    refine ⟨ready, ⟨unsigned.inputs[index], ?_, ?_⟩, ?_⟩
+    · simp
+    · simp only [List.getElem?_toArray, List.getElem?_map,
+        getElem?_zip_some original selected, Option.map_some]
+    · simp [List.getElem?_map, selected]
 
 /-- Successful extraction returns exactly the serialized final transaction. -/
 theorem Psbt.extract_spec {psbt : Psbt} {bytes : ByteArray}

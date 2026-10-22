@@ -1,9 +1,31 @@
+import LeanMiniscript.Psbt.ProofSupport
 import LeanMiniscript.Psbt.Fields
 import LeanMiniscript.Bitcoin.DeserializationProofs
 
 namespace LeanMiniscript.Psbt
 
 open LeanMiniscript.Bitcoin
+
+/-- Reading any other record preserves both final fields. -/
+theorem inputStep_preserves_finals {version : Nat} {before after : InputFields}
+    {record : Record}
+    (notSig : record.keyType? ≠ some KeyType.inFinalScriptSig)
+    (notWitness : record.keyType? ≠ some KeyType.inFinalScriptWitness)
+    (read : inputStep version before record = .ok after) :
+    after.finalScriptSig = before.finalScriptSig ∧
+      after.finalScriptWitness = before.finalScriptWitness := by
+  unfold inputStep at read
+  rw [bind_eq_ok] at read
+  rcases read with ⟨⟨keyType, keyData⟩, key, read⟩
+  simp [Record.keyType?, key] at notSig notWitness
+  have sigCheck : (keyType == KeyType.inFinalScriptSig) = false := by simp [notSig]
+  have witnessCheck : (keyType == KeyType.inFinalScriptWitness) = false := by simp [notWitness]
+  simp only [sigCheck, witnessCheck, Bool.false_eq_true, if_false] at read
+  repeat' first
+    | (cases read; exact ⟨rfl, rfl⟩)
+    | (rw [bind_eq_ok] at read; rcases read with ⟨_, _, read⟩)
+    | (rw [ite_eq_ok] at read; rcases read with ⟨_, read⟩ | ⟨_, read⟩)
+    | split at read
 
 /-- Reading a final witness record recovers the serialized witness exactly. -/
 theorem inputStep_finalWitness (version : Nat) (fields : InputFields)
@@ -44,29 +66,6 @@ theorem decodeInput_append_finalWitness {version : Nat} {map : KeyValueMap}
           · simp [throw, throwThe, MonadExceptOf.throw] at decoded
           · cases decoded; rfl
       · cases decoded; rfl
-
-/-- Successful monadic mapping preserves each indexed source/result pair. -/
-theorem getElem?_of_mapM_ok {α β ε : Type} {f : α → Except ε β}
-    {xs : List α} {ys : List β} (mapped : xs.mapM f = .ok ys)
-    {index : Nat} {x : α} (found : xs[index]? = some x) :
-    ∃ y, ys[index]? = some y ∧ f x = .ok y := by
-  induction xs generalizing ys index with
-  | nil => simp at found
-  | cons head tail ih =>
-      simp only [List.mapM_cons, bind, Except.bind] at mapped
-      cases first : f head with
-      | error error => simp [first] at mapped
-      | ok value =>
-          simp only [first] at mapped
-          cases rest : tail.mapM f with
-          | error error => simp [rest] at mapped
-          | ok values =>
-              simp only [rest, pure, Except.pure, Except.ok.injEq] at mapped
-              subst ys
-              cases index with
-              | zero => simp only [List.getElem?_cons_zero, Option.some.injEq] at found
-                        subst x; exact ⟨value, rfl, first⟩
-              | succ index => exact ih rest found
 
 /-- Each typed input returned by whole-PSBT decoding is read from the
 corresponding input map with the decoded global version. -/

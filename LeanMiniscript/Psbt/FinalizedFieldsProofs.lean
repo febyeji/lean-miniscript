@@ -1,4 +1,5 @@
-import LeanMiniscript.Psbt.ExtractionProofs
+import LeanMiniscript.Psbt.Finalizer
+import LeanMiniscript.Psbt.FieldsProofs
 
 namespace LeanMiniscript.Psbt
 
@@ -8,46 +9,13 @@ open LeanMiniscript.Bitcoin
 def InputFields.finalInput (input : InputFields) : FinalInput :=
   ⟨input.finalScriptSig.getD ByteArray.empty, input.finalScriptWitness.getD []⟩
 
-private theorem inputStep_kept_finals {version : Nat} {before after : InputFields}
-    {record : Record} (kept : keepAfterFinalize record = true)
-    (read : inputStep version before record = .ok after) :
-    after.finalScriptSig = before.finalScriptSig ∧
-      after.finalScriptWitness = before.finalScriptWitness := by
-  cases hk : splitKey record.key with
-  | error error => simp [inputStep, hk, bind, Except.bind] at read
-  | ok pair =>
-    rcases pair with ⟨keyType, keyData⟩
-    by_cases known : keyType ∈ knownInputKeyTypes
-    · simp [knownInputKeyTypes] at known
-      rcases known with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h |
-        h | h | h | h | h
-      all_goals subst keyType
-      all_goals simp [keepAfterFinalize, Record.keyType?, hk, knownInputKeyTypes] at kept
-      all_goals simp only [inputStep, hk, bind, Except.bind, KeyType.inNonWitnessUtxo,
-        KeyType.inWitnessUtxo, KeyType.inPartialSig, KeyType.inSighashType, KeyType.inRedeemScript,
-        KeyType.inWitnessScript, KeyType.inBip32Derivation, KeyType.inFinalScriptSig,
-        KeyType.inFinalScriptWitness, KeyType.inRipemd160, KeyType.inSha256, KeyType.inHash160,
-        KeyType.inHash256, KeyType.inPreviousTxid, KeyType.inOutputIndex, KeyType.inSequence,
-        KeyType.inRequiredTimeLocktime, KeyType.inRequiredHeightLocktime, KeyType.inTapKeySig,
-        KeyType.inTapScriptSig, KeyType.inTapLeafScript, KeyType.inTapBip32Derivation,
-        KeyType.inTapInternalKey, KeyType.inTapMerkleRoot, Nat.reduceBEq,
-        if_true, pure, Except.pure, throw, throwThe, MonadExceptOf.throw] at read
-      all_goals
-        repeat' (split at read <;> try simp_all)
-        all_goals subst after; exact ⟨rfl, rfl⟩
-    · simp [knownInputKeyTypes] at known
-      simp only [inputStep, hk, bind, Except.bind, KeyType.inNonWitnessUtxo, KeyType.inWitnessUtxo,
-        KeyType.inPartialSig, KeyType.inSighashType, KeyType.inRedeemScript,
-        KeyType.inWitnessScript, KeyType.inBip32Derivation, KeyType.inFinalScriptSig,
-        KeyType.inFinalScriptWitness, KeyType.inRipemd160, KeyType.inSha256, KeyType.inHash160,
-        KeyType.inHash256, KeyType.inPreviousTxid, KeyType.inOutputIndex, KeyType.inSequence,
-        KeyType.inRequiredTimeLocktime, KeyType.inRequiredHeightLocktime, KeyType.inTapKeySig,
-        KeyType.inTapScriptSig, KeyType.inTapLeafScript, KeyType.inTapBip32Derivation,
-        KeyType.inTapInternalKey, KeyType.inTapMerkleRoot] at read
-      simp only [beq_iff_eq] at read
-      simp_all only [if_false]
-      repeat' (split at read <;> try simp_all [pure, Except.pure])
-      all_goals subst after; exact ⟨rfl, rfl⟩
+private theorem keepAfterFinalize_not_finals {record : Record}
+    (kept : keepAfterFinalize record = true) :
+    record.keyType? ≠ some KeyType.inFinalScriptSig ∧
+      record.keyType? ≠ some KeyType.inFinalScriptWitness := by
+  constructor <;> intro key <;>
+    simp [keepAfterFinalize, key, KeyType.inFinalScriptSig, KeyType.inFinalScriptWitness,
+      knownInputKeyTypes] at kept
 
 private theorem fold_kept_finals {version : Nat} {map : KeyValueMap}
     {before after : InputFields}
@@ -63,7 +31,8 @@ private theorem fold_kept_finals {version : Nat} {map : KeyValueMap}
     | error error => simp [first] at read
     | ok next =>
       simp only [first] at read
-      obtain ⟨sig, witness⟩ := inputStep_kept_finals (kept record (by simp)) first
+      obtain ⟨notSig, notWitness⟩ := keepAfterFinalize_not_finals (kept record (by simp))
+      obtain ⟨sig, witness⟩ := inputStep_preserves_finals notSig notWitness first
       obtain ⟨sig', witness'⟩ := ih (by intro r h; exact kept r (by simp [h])) read
       exact ⟨sig'.trans sig, witness'.trans witness⟩
 
