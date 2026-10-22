@@ -1,4 +1,5 @@
 import LeanMiniscript.Psbt.FinalizerProofs
+import LeanMiniscript.Psbt.ProofSupport
 
 namespace LeanMiniscript.Psbt
 
@@ -25,6 +26,12 @@ theorem prepareFinalization_spec {decoded : DecodedPsbt} {index : Nat}
   cases result
   exact ⟨rfl, rfl, rfl⟩
 
+/-- The output check succeeds exactly when the selected UTXO matches the descriptor. -/
+theorem checkFinalizerOutput_eq_ok {compiled : CompiledDescriptor} {spent : TxOutput} :
+    checkFinalizerOutput compiled spent = .ok () ↔
+      spent.scriptPubKey = compiled.scriptPubKey := by
+  simp [checkFinalizerOutput, pure, Except.pure, throw, throwThe, MonadExceptOf.throw]
+
 /-- A legacy final input commits to the descriptor output and passes the
 transaction-backed script-pair verifier with an empty witness. -/
 def LegacyFinalVerified (config : FinalizerConfig) (decoded : DecodedPsbt)
@@ -40,18 +47,14 @@ theorem finalizeLegacySingle_verified {config : FinalizerConfig} {decoded : Deco
     (result : finalizeLegacySingle config decoded index input descriptor key pkh = .ok final) :
     LegacyFinalVerified config decoded index descriptor final := by
   unfold finalizeLegacySingle at result
-  cases hp : prepareFinalization decoded index descriptor with
-  | error error => simp [hp, bind, Except.bind] at result
-  | ok prepared =>
-    rcases prepared with ⟨compiled, spent, tx⟩
-    simp only [hp, bind, Except.bind] at result
-    by_cases agrees : spent.scriptPubKey = compiled.scriptPubKey
-    · simp only [checkFinalizerOutput, agrees, ne_eq, not_true_eq_false, if_false,
-        pure, Except.pure] at result
-      refine ⟨⟨compiled, spent, tx⟩, hp, agrees, ?_⟩
-      repeat' (split at result <;> try simp_all [throw, throwThe, MonadExceptOf.throw])
-      all_goals cases result; rfl
-    · simp [checkFinalizerOutput, agrees, throw, throwThe, MonadExceptOf.throw] at result
+  rw [bind_eq_ok] at result
+  rcases result with ⟨⟨compiled, spent, tx⟩, prepared, result⟩
+  rw [bind_eq_ok] at result
+  rcases result with ⟨⟨⟩, checked, result⟩
+  refine ⟨⟨compiled, spent, tx⟩, prepared, checkFinalizerOutput_eq_ok.mp checked, ?_⟩
+  simp only [bind, Except.bind] at result
+  repeat' (split at result <;> try simp_all [throw, throwThe, MonadExceptOf.throw])
+  all_goals cases result; exact ⟨rfl, by assumption⟩
 
 theorem finalizeLegacyMulti_verified {config : FinalizerConfig} {decoded : DecodedPsbt}
     {index : Nat} {input : InputFields} {descriptor : OutputDescriptor}
@@ -59,18 +62,14 @@ theorem finalizeLegacyMulti_verified {config : FinalizerConfig} {decoded : Decod
     (result : finalizeLegacyMulti config decoded index input descriptor threshold keys = .ok final) :
     LegacyFinalVerified config decoded index descriptor final := by
   unfold finalizeLegacyMulti at result
-  cases hp : prepareFinalization decoded index descriptor with
-  | error error => simp [hp, bind, Except.bind] at result
-  | ok prepared =>
-    rcases prepared with ⟨compiled, spent, tx⟩
-    simp only [hp, bind, Except.bind] at result
-    by_cases agrees : spent.scriptPubKey = compiled.scriptPubKey
-    · simp only [checkFinalizerOutput, agrees, ne_eq, not_true_eq_false, if_false,
-        pure, Except.pure] at result
-      refine ⟨⟨compiled, spent, tx⟩, hp, agrees, ?_⟩
-      repeat' (split at result <;> try simp_all [throw, throwThe, MonadExceptOf.throw])
-      all_goals cases result; rfl
-    · simp [checkFinalizerOutput, agrees, throw, throwThe, MonadExceptOf.throw] at result
+  rw [bind_eq_ok] at result
+  rcases result with ⟨⟨compiled, spent, tx⟩, prepared, result⟩
+  rw [bind_eq_ok] at result
+  rcases result with ⟨⟨⟩, checked, result⟩
+  refine ⟨⟨compiled, spent, tx⟩, prepared, checkFinalizerOutput_eq_ok.mp checked, ?_⟩
+  simp only [bind, Except.bind] at result
+  repeat' (split at result <;> try simp_all [throw, throwThe, MonadExceptOf.throw])
+  all_goals cases result; exact ⟨rfl, by assumption⟩
 
 theorem finalizeLegacyFragment_verified {config : FinalizerConfig} {decoded : DecodedPsbt}
     {index : Nat} {input : InputFields} {descriptor : OutputDescriptor}
@@ -78,19 +77,18 @@ theorem finalizeLegacyFragment_verified {config : FinalizerConfig} {decoded : De
     (result : finalizeLegacyFragment config decoded index input descriptor fragment = .ok final) :
     LegacyFinalVerified config decoded index descriptor final := by
   unfold finalizeLegacyFragment at result
-  cases hp : prepareFinalization decoded index descriptor with
-  | error error => simp [hp, bind, Except.bind] at result
-  | ok prepared =>
-    rcases prepared with ⟨compiled, spent, tx⟩
-    simp only [hp, bind, Except.bind] at result
-    by_cases agrees : spent.scriptPubKey = compiled.scriptPubKey
-    · simp only [checkFinalizerOutput, agrees, ne_eq, not_true_eq_false, if_false,
-        pure, Except.pure] at result
-      refine ⟨⟨compiled, spent, tx⟩, hp, agrees, ?_⟩
+  rw [bind_eq_ok] at result
+  rcases result with ⟨⟨compiled, spent, tx⟩, prepared, result⟩
+  cases redeem : compiled.redeemScript with
+  | none => simp [redeem, throw, throwThe, MonadExceptOf.throw] at result
+  | some script =>
+      simp only [redeem] at result
+      rw [bind_eq_ok] at result
+      rcases result with ⟨⟨⟩, checked, result⟩
+      refine ⟨⟨compiled, spent, tx⟩, prepared, checkFinalizerOutput_eq_ok.mp checked, ?_⟩
+      simp only [bind, Except.bind] at result
       repeat' (split at result <;> try simp_all [throw, throwThe, MonadExceptOf.throw])
-      all_goals cases result; rfl
-    · cases hr : compiled.redeemScript <;>
-        simp [hr, checkFinalizerOutput, agrees, throw, throwThe, MonadExceptOf.throw] at result
+      all_goals cases result; exact ⟨rfl, by assumption⟩
 
 /-- A P2WPKH final input has the signature/key witness and the descriptor's
 scriptSig, and passes verification using the selected UTXO amount. -/
@@ -109,19 +107,15 @@ theorem finalizeWpkh_verified {config : FinalizerConfig} {decoded : DecodedPsbt}
     (result : finalizeWpkh config decoded index input descriptor key = .ok final) :
     WpkhFinalVerified config decoded index descriptor key final := by
   unfold finalizeWpkh at result
-  cases hp : prepareFinalization decoded index descriptor with
-  | error error => simp [hp, bind, Except.bind] at result
-  | ok prepared =>
-    rcases prepared with ⟨compiled, spent, tx⟩
-    simp only [hp, bind, Except.bind] at result
-    by_cases agrees : spent.scriptPubKey = compiled.scriptPubKey
-    · simp only [checkFinalizerOutput, agrees, ne_eq, not_true_eq_false, if_false,
-        pure, Except.pure] at result
-      repeat' (split at result <;> try simp_all [throw, throwThe, MonadExceptOf.throw])
-      rename_i signature _ _ _ verified
-      cases result
-      exact ⟨⟨compiled, spent, tx⟩, signature, hp, agrees, rfl, rfl, verified⟩
-    · simp [checkFinalizerOutput, agrees, throw, throwThe, MonadExceptOf.throw] at result
+  rw [bind_eq_ok] at result
+  rcases result with ⟨⟨compiled, spent, tx⟩, prepared, result⟩
+  rw [bind_eq_ok] at result
+  rcases result with ⟨⟨⟩, checked, result⟩
+  simp only [bind, Except.bind] at result
+  repeat' (split at result <;> try simp_all [throw, throwThe, MonadExceptOf.throw])
+  cases result
+  exact ⟨⟨compiled, spent, tx⟩, _, prepared, checkFinalizerOutput_eq_ok.mp checked,
+    rfl, rfl, by assumption⟩
 
 /-- Descriptor forms finalized with legacy signature hashing. -/
 def LegacyFinalDescriptor : OutputDescriptor → Prop

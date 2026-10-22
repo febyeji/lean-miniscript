@@ -1,5 +1,5 @@
 import LeanMiniscript.Psbt.FinalizerProofs
-import LeanMiniscript.Psbt.FieldsProofs
+import LeanMiniscript.Psbt.TransactionExtractionProofs
 
 namespace LeanMiniscript.Psbt
 
@@ -23,32 +23,6 @@ theorem decodeInput_finalizedInputMap {version : Nat} {map : KeyValueMap}
         [⟨recordKey KeyType.inFinalScriptSig, final.scriptSig⟩])
       final.witness count bounded ?_
     simpa [finalizedInputMap, empty, nonempty, List.append_assoc] using decoded
-
-/-- Extraction copies the decoded witness at each input index. -/
-theorem DecodedPsbt.finalTransaction_witness {decoded : DecodedPsbt}
-    {tx : WitnessTransaction} {index : Nat} {input : InputFields}
-    (extracted : decoded.finalTransaction = .ok tx)
-    (found : decoded.inputs[index]? = some input) :
-    tx.witnesses[index]? = some (input.finalScriptWitness.getD []) := by
-  have inRange : index < decoded.inputs.length := List.getElem?_eq_some_iff.mp found |>.1
-  unfold DecodedPsbt.finalTransaction at extracted
-  cases ht : liftPsbt decoded.unsignedTransaction with
-  | error error => simp [ht, bind, Except.bind] at extracted
-  | ok unsigned =>
-      simp only [ht, bind, Except.bind] at extracted
-      split at extracted
-      · simp at extracted
-      · rename_i finals computed
-        simp only [pure, Except.pure, Except.ok.injEq] at extracted
-        subst tx
-        have rangeFound : (List.range decoded.inputs.length)[index]? = some index := by
-          simp [inRange]
-        obtain ⟨pair, selected, result⟩ := getElem?_of_mapM_ok computed rangeFound
-        simp only [DecodedPsbt.input, found, pure, Except.pure] at result
-        split at result
-        · simp [throw, throwThe, MonadExceptOf.throw] at result
-        · simp only [Except.ok.injEq] at result
-          simp [List.getElem?_map, selected, ← result]
 
 /-- Finalization validates the resulting PSBT again. -/
 theorem Psbt.finalizeInput_decodes {config : FinalizerConfig} {psbt result : Psbt}
