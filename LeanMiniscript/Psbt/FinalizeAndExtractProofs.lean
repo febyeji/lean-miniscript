@@ -1,12 +1,9 @@
 import LeanMiniscript.Psbt.FinalizationTraceProofs
+import LeanMiniscript.Psbt.FinalizationContextProofs
 
 namespace LeanMiniscript.Psbt
 
 open LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
-
-/-- The length conditions needed to read back a serialized witness. -/
-def FinalInput.WitnessFits (final : FinalInput) : Prop :=
-  final.witness.length < 2 ^ 64 ∧ ∀ item ∈ final.witness, item.size < 2 ^ 64
 
 /-- An extracted input either retains the caller's final fields, or is the
 exact result of a verified finalizer in its recorded transaction context. -/
@@ -20,27 +17,23 @@ def ExtractedInputSource (config : FinalizerConfig) (original : Psbt)
 
 private theorem source_of_map {config : FinalizerConfig} {original : Psbt}
     {version index : Nat} {map : KeyValueMap} {input : InputFields}
-    (bounds : ∀ decoded index descriptor final,
-      DecodedPsbt.finalInput config decoded index descriptor = .ok final → final.WitnessFits)
     (source : FinalizedMapSource config original index map)
     (read : decodeInput version map = .ok input) (ready : input.isFinalized = true) :
     ExtractedInputSource config original version index input.finalInput := by
   rcases source with preserved | ⟨stage, decoded, descriptor, prior, final,
       decodedEq, _, produced, verified, rfl⟩
   · exact .inl ⟨map, input, preserved, read, ready, rfl⟩
-  · obtain ⟨count, items⟩ := bounds decoded index descriptor final produced
+  · obtain ⟨count, items⟩ := DecodedPsbt.finalInput_witnessFits produced
     have fields := decodeInput_finalizedInputMap_finals count items read
     rw [fields]
     exact .inr ⟨stage, decoded, descriptor, decodedEq, produced, verified⟩
 
 /-- Whole-PSBT finalization and extraction: every returned input retains its
 source, both final fields reach the transaction, and the returned bytes are
-its network serialization. The caller supplies uint64 witness length bounds.
+its network serialization. Generated witnesses pass the uint64 length check.
 Preserved inputs remain explicit because finalization does not reverify them. -/
 theorem Psbt.finalizeAndExtract_spec {config : FinalizerConfig} {psbt : Psbt}
     {descriptors : List (Option OutputDescriptor)} {bytes : ByteArray}
-    (bounds : ∀ decoded index descriptor final,
-      DecodedPsbt.finalInput config decoded index descriptor = .ok final → final.WitnessFits)
     (completed : psbt.finalizeAndExtract config descriptors = .ok bytes) :
     ∃ result decoded tx unsigned,
       psbt.finalize config descriptors = .ok result ∧
@@ -83,7 +76,23 @@ theorem Psbt.finalizeAndExtract_spec {config : FinalizerConfig} {psbt : Psbt}
     have same : input = decoded.inputs[index] := Option.some.inj (typed.symm.trans found)
     subst input
     exact ⟨decoded.inputs[index], original, found, ready, originalEq, scriptSig, witness,
-      source_of_map bounds (sources index _ selected) inputRead ready⟩
+      source_of_map (sources index _ selected) inputRead ready⟩
+
+/-- Finalization and extraction preserve the original transaction and UTXO context. -/
+theorem Psbt.finalizeAndExtract_context {config : FinalizerConfig} {psbt : Psbt}
+    {descriptors : List (Option OutputDescriptor)} {bytes : ByteArray} {before : DecodedPsbt}
+    (read : psbt.decode = .ok before)
+    (completed : psbt.finalizeAndExtract config descriptors = .ok bytes) :
+    ∃ result after tx,
+      psbt.finalize config descriptors = .ok result ∧ result.decode = .ok after ∧
+      after.finalTransaction = .ok tx ∧
+      bytes = serializeWitnessTransaction tx.transaction tx.witnesses ∧
+      before.unsignedTransaction = after.unsignedTransaction ∧
+      before.spentOutputs = after.spentOutputs := by
+  obtain ⟨result, after, tx, _, finalized, written, extracted, _, serialized, _⟩ :=
+    Psbt.finalizeAndExtract_spec completed
+  obtain ⟨transaction, spent⟩ := Psbt.finalize_preserves_transaction read written finalized
+  exact ⟨result, after, tx, finalized, written, extracted, serialized, transaction, spent⟩
 
 /-- A caller's input property lifts through the whole pipeline when it holds
 for retained final fields and follows from each generated input's verifier
@@ -93,8 +102,6 @@ with an external consensus verifier remains a separate contract. -/
 theorem Psbt.finalizeAndExtract_preserves {config : FinalizerConfig} {psbt : Psbt}
     {descriptors : List (Option OutputDescriptor)} {bytes : ByteArray}
     (P : Nat → FinalInput → Prop)
-    (bounds : ∀ decoded index descriptor final,
-      DecodedPsbt.finalInput config decoded index descriptor = .ok final → final.WitnessFits)
     (existing : ∀ version index map input, psbt.inputs[index]? = some map →
       decodeInput version map = .ok input → input.isFinalized = true → P index input.finalInput)
     (generated : ∀ decoded index descriptor final,
@@ -108,7 +115,7 @@ theorem Psbt.finalizeAndExtract_preserves {config : FinalizerConfig} {psbt : Psb
         tx.transaction.inputs[index]? = some input ∧ tx.witnesses[index]? = some witness ∧
         P index ⟨input.scriptSig, witness⟩ := by
   obtain ⟨_, decoded, tx, _, _, _, _, _, serialized, _, _, _, count, witnesses, fields⟩ :=
-    Psbt.finalizeAndExtract_spec bounds completed
+    Psbt.finalizeAndExtract_spec completed
   refine ⟨tx, serialized, count, witnesses, ?_⟩
   intro index range
   obtain ⟨input, original, _, _, _, scriptSig, witness, source⟩ := fields index range

@@ -37,6 +37,7 @@ inductive FinalizeError where
   | sighashMismatch
   | notSane (error : SaneError)
   | unavailable
+  | witnessTooLarge
   deriving Repr, DecidableEq
 
 /-- Verification callbacks and flags used during finalization. -/
@@ -53,6 +54,16 @@ structure FinalInput where
   scriptSig : ByteArray := ByteArray.empty
   witness : List ByteArray := []
   deriving Repr, DecidableEq, Inhabited
+
+/-- CompactSize encodes the witness item count and each item length as uint64. -/
+def FinalInput.WitnessFits (final : FinalInput) : Prop :=
+  final.witness.length < 2 ^ 64 ∧ ∀ item ∈ final.witness, item.size < 2 ^ 64
+
+/-- Validate witness lengths before writing final fields to a PSBT. -/
+def FinalInput.checkWitness (final : FinalInput) : Except FinalizeError FinalInput :=
+  if final.witness.length < 2 ^ 64 && final.witness.all (fun item => item.size < 2 ^ 64) then
+    .ok final
+  else .error .witnessTooLarge
 
 /-! ## Satisfaction material from PSBT records -/
 
@@ -405,16 +416,17 @@ def DecodedPsbt.finalInput (config : FinalizerConfig) (decoded : DecodedPsbt) (i
     (descriptor : OutputDescriptor) : Except FinalizeError FinalInput := do
   let input ← (decoded.input index).mapError .role
   if !input.sighashTypesMatch then throw .sighashMismatch
-  match descriptor with
-  | .raw _ | .shRaw _ => throw .unavailable
-  | .pk key => finalizeLegacySingle config decoded index input descriptor key false
-  | .pkh key => finalizeLegacySingle config decoded index input descriptor key true
-  | .multi threshold keys =>
-      finalizeLegacyMulti config decoded index input descriptor threshold keys
-  | .sh fragment => finalizeLegacyFragment config decoded index input descriptor fragment
-  | .wpkh key | .shWpkh key => finalizeWpkh config decoded index input descriptor key
-  | .wsh fragment | .shWsh fragment => finalizeWitnessV0 config decoded index input descriptor fragment
-  | .tr _ _ => finalizeTaproot config decoded index input descriptor
+  let final ← match descriptor with
+    | .raw _ | .shRaw _ => throw .unavailable
+    | .pk key => finalizeLegacySingle config decoded index input descriptor key false
+    | .pkh key => finalizeLegacySingle config decoded index input descriptor key true
+    | .multi threshold keys =>
+        finalizeLegacyMulti config decoded index input descriptor threshold keys
+    | .sh fragment => finalizeLegacyFragment config decoded index input descriptor fragment
+    | .wpkh key | .shWpkh key => finalizeWpkh config decoded index input descriptor key
+    | .wsh fragment | .shWsh fragment => finalizeWitnessV0 config decoded index input descriptor fragment
+    | .tr _ _ => finalizeTaproot config decoded index input descriptor
+  final.checkWitness
 
 /-- Input key types defined by BIP174, BIP370 and BIP371. -/
 def knownInputKeyTypes : List Nat :=

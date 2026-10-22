@@ -58,6 +58,25 @@
 - `lake exe policy_cli -- --help` lists the commands; `parse POLICY_TEXT` and the
   original single-policy invocation print the AST and canonical policy text.
 
+- Inspect, finalize, or extract a PSBT:
+
+  ```sh
+  lake exe psbt_cli -- inspect --encoding hex "$PSBT_HEX"
+  lake exe psbt_cli -- finalize "$SIGNED_PSBT_BASE64" "0=$DESCRIPTOR" |
+    lake exe psbt_cli -- extract -
+  ```
+
+- Set the variables above to PSBT text and a descriptor with resolved keys.
+  Input defaults to Base64; `--encoding hex` selects hex and `-` reads stdin.
+  `finalize` uses existing signatures and accepts zero-based `INDEX=DESCRIPTOR`
+  assignments. Unspecified inputs and existing final fields are preserved.
+  Its output is a Base64 PSBT; `extract` requires final fields for every input
+  and prints transaction hex. `inspect` reports PSBT version, input/output
+  counts, and final-field presence. It does not verify existing final fields.
+- `lake exe psbt_cli -- --help` lists the commands.
+  Run `python3 scripts/test_psbt_cli.py` after building to check the executable
+  against the pinned BIP174 and BIP370 vectors.
+
 - Focused cross-module conformance checks live under `LeanMiniscript/Conformance/`,
   split by policy, descriptor, and PSBT behavior.
 
@@ -66,12 +85,16 @@
 - `LeanMiniscript/` — Lean libraries, executable models, examples, and proofs.
 - `LeanMiniscript/Conformance/` — focused cross-module conformance checks.
 - `LeanMiniscript.lean` — public module that imports the main library surface.
-- `scripts/` — fixture generation helpers.
+- `scripts/` — fixture generation helpers and CLI checks.
 - `assets/` — project artwork, including the repository logo.
 
 ## Verification scope
 
 - Proofs establish the contracts stated by their Lean declarations.
+- PSBT finalization preserves the decoded unsigned transaction and resolved
+  UTXOs, including v2 transaction fields and locktime. Generated final inputs
+  pass a CompactSize length check; `finalizeAndExtract_spec` and
+  `finalizeAndExtract_preserves` require no caller-supplied witness length bound.
 - Fixture matches provide conformance coverage against the pinned Bitcoin Core data.
 - General consensus equivalence and cryptographic correctness are outside those results.
 - Private-key derivation uses variable-time arithmetic.

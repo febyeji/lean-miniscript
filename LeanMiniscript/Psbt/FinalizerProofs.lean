@@ -1,4 +1,4 @@
-import LeanMiniscript.Psbt.Finalizer
+import LeanMiniscript.Psbt.FinalizerBoundsProofs
 import LeanMiniscript.Extraction.DescriptorSatisfactionProofs
 import LeanMiniscript.Miniscript.SatisfactionCorrectnessProofs
 
@@ -307,15 +307,15 @@ theorem finalInput_spec {config : FinalizerConfig} {decoded : DecodedPsbt} {inde
       cases descriptor with
       | raw _ => simp at finalized
       | shRaw _ => simp at finalized
-      | multi _ _ => exact finalized
-      | pk _ => exact finalized
-      | pkh _ => exact finalized
-      | sh _ => exact finalized
-      | wpkh _ => exact finalized
-      | shWpkh _ => exact finalized
-      | wsh _ => exact finalized
-      | shWsh _ => exact finalized
-      | tr _ _ => exact finalized
+      | multi _ _ => exact (checkWitness_bind_eq_ok.mp finalized).1
+      | pk _ => exact (checkWitness_bind_eq_ok.mp finalized).1
+      | pkh _ => exact (checkWitness_bind_eq_ok.mp finalized).1
+      | sh _ => exact (checkWitness_bind_eq_ok.mp finalized).1
+      | wpkh _ => exact (checkWitness_bind_eq_ok.mp finalized).1
+      | shWpkh _ => exact (checkWitness_bind_eq_ok.mp finalized).1
+      | wsh _ => exact (checkWitness_bind_eq_ok.mp finalized).1
+      | shWsh _ => exact (checkWitness_bind_eq_ok.mp finalized).1
+      | tr _ _ => exact (checkWitness_bind_eq_ok.mp finalized).1
 
 /-- The finalizer leaves finalized inputs unchanged and otherwise replaces
 exactly the selected input map by `finalizedInputMap` for the finalizer's

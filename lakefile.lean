@@ -37,3 +37,7 @@ lean_exe script_cli where
 @[default_target]
 lean_exe policy_cli where
   root := `LeanMiniscript.PolicyCliMain
+
+@[default_target]
+lean_exe psbt_cli where
+  root := `LeanMiniscript.PsbtCliMain
