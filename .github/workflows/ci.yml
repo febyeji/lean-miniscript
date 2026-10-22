@@ -20,6 +20,8 @@ jobs:
         with:
           auto-config: false
           build: true
+      - name: Check PSBT CLI against pinned BIP vectors
+        run: python3 scripts/test_psbt_cli.py
       - name: Download pinned Bitcoin Core fixtures
         env:
           CORE_REVISION: f13ae519de94394314cd63a27924b0998ac65d45
