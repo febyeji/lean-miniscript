@@ -23,21 +23,8 @@ theorem boolAndFrame
     (decoded : order.BinaryDecoded flags saved result savedValue resultValue) :
     ExecutesResourceFrame [.op .OP_BOOLAND] (order.outputs saved result)
       [boolToElement ((savedValue != 0) && (resultValue != 0))]
-      flags ctx StackTraceBound.binary 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
-    cases order with
-    | savedFirst =>
-        exact Eval.booland saved result savedValue resultValue rest [] altStack
-          flags ctx _ decoded Eval.done
-    | resultFirst =>
-        simpa [Bool.and_comm, WStackOrder.outputs] using
-          (Eval.booland result saved resultValue savedValue rest [] altStack
-            flags ctx _ decoded Eval.done)
-  · cases order <;> simp [WStackOrder.outputs, StackTraceBound.binary]
-  · cases order <;> simp [WStackOrder.outputs, StackTraceBound.binary]
-  · simp [StackTraceBound.binary]
-  · simp [executedMultiSigKeyCharge]
+      flags ctx StackTraceBound.binary 0 :=
+  .of_eval (WStackOrder.boolAndStackFrame decoded)
 
 theorem boolOrFrame
     {saved result : StackElement} {savedValue resultValue : Int}
@@ -45,47 +32,24 @@ theorem boolOrFrame
     (decoded : order.BinaryDecoded flags saved result savedValue resultValue) :
     ExecutesResourceFrame [.op .OP_BOOLOR] (order.outputs saved result)
       [boolToElement ((savedValue != 0) || (resultValue != 0))]
-      flags ctx StackTraceBound.binary 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
-    cases order with
-    | savedFirst =>
-        exact Eval.boolor saved result savedValue resultValue rest [] altStack
-          flags ctx _ decoded Eval.done
-    | resultFirst =>
-        simpa [Bool.or_comm, WStackOrder.outputs] using
-          (Eval.boolor result saved resultValue savedValue rest [] altStack
-            flags ctx _ decoded Eval.done)
-  · cases order <;> simp [WStackOrder.outputs, StackTraceBound.binary]
-  · cases order <;> simp [WStackOrder.outputs, StackTraceBound.binary]
-  · simp [StackTraceBound.binary]
-  · simp [executedMultiSigKeyCharge]
+      flags ctx StackTraceBound.binary 0 :=
+  .of_eval (WStackOrder.boolOrStackFrame decoded)
 
 theorem ifdupTrueFrame
     {value : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (truth : castToBool value = true) :
     ExecutesResourceFrame [.op .OP_IFDUP] [value] [value, value]
-      flags ctx StackTraceBound.ifdupTrue 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
-    exact Eval.ifdup_true value rest altStack [] flags ctx _ truth Eval.done
-  · simp [StackTraceBound.ifdupTrue]
-  · simp [StackTraceBound.ifdupTrue]
-  · simp [StackTraceBound.ifdupTrue]
-  · simp [executedMultiSigKeyCharge]
+      flags ctx StackTraceBound.ifdupTrue 0 :=
+  .of_eval fun rest altStack =>
+    Eval.ifdup_true value rest altStack [] flags ctx _ truth Eval.done
 
 theorem ifdupFalseFrame
     {value : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (falsy : castToBool value = false) :
     ExecutesResourceFrame [.op .OP_IFDUP] [value] [value]
-      flags ctx StackTraceBound.ifdupFalse 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
-    exact Eval.ifdup_false value rest altStack [] flags ctx _ falsy Eval.done
-  · simp [StackTraceBound.ifdupFalse]
-  · simp [StackTraceBound.ifdupFalse]
-  · simp [StackTraceBound.ifdupFalse]
-  · simp [executedMultiSigKeyCharge]
+      flags ctx StackTraceBound.ifdupFalse 0 :=
+  .of_eval fun rest altStack =>
+    Eval.ifdup_false value rest altStack [] flags ctx _ falsy Eval.done
 
 theorem stackChoiceLeft
     {left right : StackTraceSet} {trace : StackTraceBound}

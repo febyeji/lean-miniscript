@@ -10,16 +10,16 @@ namespace ExecutesBudgetFrame
 
 theorem dup (value : StackElement) (flags : ScriptFlags) (ctx : TxContext) :
     ExecutesBudgetFrame [.op .OP_DUP] [value] [value, value] flags ctx 0 :=
-  of_resource_zero (ExecutesResourceFrame.dup value flags ctx) rfl
+  of_resource_zero (ExecutesResourceFrame.dup value flags ctx)
 
 theorem size (value : StackElement) (flags : ScriptFlags) (ctx : TxContext) :
     ExecutesBudgetFrame [.op .OP_SIZE] [value] [scriptNat value.size, value] flags ctx 0 :=
-  of_resource_zero (ExecutesResourceFrame.size value flags ctx) rfl
+  of_resource_zero (ExecutesResourceFrame.size value flags ctx)
 
 theorem zeroNotEqual (operand : StackElement) (value : Int) (flags : ScriptFlags) (ctx : TxContext)
     (decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes = .ok value) :
     ExecutesBudgetFrame [.op .OP_0NOTEQUAL] [operand] [boolToElement (value != 0)] flags ctx 0 :=
-  of_resource_zero (ExecutesResourceFrame.zeroNotEqual operand value flags ctx decoded) rfl
+  of_resource_zero (ExecutesResourceFrame.zeroNotEqual operand value flags ctx decoded)
 
 end ExecutesBudgetFrame
 
@@ -99,8 +99,7 @@ theorem j
     let frame : ConditionalFrame := { branches := [compile fragment], after := [] }
     have split : splitConditional (compile fragment ++ [.op .OP_ENDIF]) =
         some frame := by
-      simpa [frame] using splitConditional_balanced_ifThen
-        (compile_balancedControlFlow fragment) (suffix := [])
+      simpa [frame] using splitConditional_compile_ifThen fragment
     have sizeNonzero : Int.ofNat top.size ≠ 0 :=
       Int.ofNat_ne_zero.mpr topNonempty
     have nonzeroBool : (Int.ofNat top.size != 0) = true :=
@@ -155,8 +154,7 @@ theorem j_false
   let frame : ConditionalFrame := { branches := [compile fragment], after := [] }
   have split : splitConditional (compile fragment ++ [.op .OP_ENDIF]) =
       some frame := by
-    simpa [frame] using splitConditional_balanced_ifThen
-      (compile_balancedControlFlow fragment) (suffix := [])
+    simpa [frame] using splitConditional_compile_ifThen fragment
   have skipped : ExecutesBudgetFrame
       (frame.select (castToBool falseElement)) [falseElement] [falseElement]
       flags txCtx 0 := by

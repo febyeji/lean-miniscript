@@ -126,53 +126,73 @@ theorem single
         ExecutionResources.initial_executedMultiSigKeys, Nat.add_zero]
       exact chargeBound rest
 
+/-- Lift one exact single-instruction execution into a bounded resource frame.
+    The three trace side-goals default to simp over the standard trace
+    definitions, and the multisignature charge defaults to the zero-charge
+    simp proof, so a one-opcode frame with a standard trace only needs its
+    execution premise. -/
+theorem of_eval
+    {element : ScriptElement} {inputs outputs : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    {trace : StackTraceBound} {dynamic : Nat}
+    (executed : ExecutesStackFrame [element] inputs outputs flags ctx)
+    (netBound : Int.ofNat inputs.length ≤
+        Int.ofNat outputs.length + trace.netDiff := by
+      simp [StackTraceBound.empty, StackTraceBound.push, StackTraceBound.hash,
+        StackTraceBound.nop, StackTraceBound.branch, StackTraceBound.binary,
+        StackTraceBound.dup, StackTraceBound.ifdupTrue,
+        StackTraceBound.ifdupFalse, StackTraceBound.equalVerify,
+        StackTraceBound.equal, StackTraceBound.size, StackTraceBound.checkSig,
+        StackTraceBound.zeroNotEqual, StackTraceBound.verify])
+    (initialBound : Int.ofNat inputs.length ≤
+        Int.ofNat outputs.length + trace.exec := by
+      simp [StackTraceBound.empty, StackTraceBound.push, StackTraceBound.hash,
+        StackTraceBound.nop, StackTraceBound.branch, StackTraceBound.binary,
+        StackTraceBound.dup, StackTraceBound.ifdupTrue,
+        StackTraceBound.ifdupFalse, StackTraceBound.equalVerify,
+        StackTraceBound.equal, StackTraceBound.size, StackTraceBound.checkSig,
+        StackTraceBound.zeroNotEqual, StackTraceBound.verify])
+    (finalBound : 0 ≤ trace.exec := by
+      simp [StackTraceBound.empty, StackTraceBound.push, StackTraceBound.hash,
+        StackTraceBound.nop, StackTraceBound.branch, StackTraceBound.binary,
+        StackTraceBound.dup, StackTraceBound.ifdupTrue,
+        StackTraceBound.ifdupFalse, StackTraceBound.equalVerify,
+        StackTraceBound.equal, StackTraceBound.size, StackTraceBound.checkSig,
+        StackTraceBound.zeroNotEqual, StackTraceBound.verify])
+    (chargeBound : ∀ rest,
+        executedMultiSigKeyCharge element (inputs ++ rest) flags ctx ≤
+          dynamic := by
+      simp [executedMultiSigKeyCharge]) :
+    ExecutesResourceFrame [element] inputs outputs flags ctx trace dynamic :=
+  single executed netBound initialBound finalBound chargeBound
+
 /-- Pushing a Script number has the standard one-item stack-growth frame. -/
 theorem pushNum (value : Int) (flags : ScriptFlags) (ctx : TxContext) :
     ExecutesResourceFrame [.pushNum value] [] [scriptNum value] flags ctx
-      StackTraceBound.push 0 := by
-  apply single
-  · intro rest altStack
-    exact Eval.pushNum value [] rest altStack flags ctx _ Eval.done
-  · simp [StackTraceBound.push]
-  · simp [StackTraceBound.push]
-  · simp [StackTraceBound.push]
-  · simp
+      StackTraceBound.push 0 :=
+  of_eval fun rest altStack =>
+    Eval.pushNum value [] rest altStack flags ctx _ Eval.done
 
 /-- Pushing raw data has the standard one-item stack-growth frame. -/
 theorem pushData (data : StackElement) (flags : ScriptFlags) (ctx : TxContext) :
     ExecutesResourceFrame [.pushData data] [] [data] flags ctx
-      StackTraceBound.push 0 := by
-  apply single
-  · intro rest altStack
-    exact Eval.pushData data [] rest altStack flags ctx _ Eval.done
-  · simp [StackTraceBound.push]
-  · simp [StackTraceBound.push]
-  · simp [StackTraceBound.push]
-  · simp
+      StackTraceBound.push 0 :=
+  of_eval fun rest altStack =>
+    Eval.pushData data [] rest altStack flags ctx _ Eval.done
 
 /-- `OP_DUP` has the standard one-item stack-growth frame. -/
 theorem dup (value : StackElement) (flags : ScriptFlags) (ctx : TxContext) :
     ExecutesResourceFrame [.op .OP_DUP] [value] [value, value] flags ctx
-      StackTraceBound.dup 0 := by
-  apply single
-  · intro rest altStack
-    exact Eval.dup value rest [] altStack flags ctx _ Eval.done
-  · simp [StackTraceBound.dup]
-  · simp [StackTraceBound.dup]
-  · simp [StackTraceBound.dup]
-  · simp [executedMultiSigKeyCharge]
+      StackTraceBound.dup 0 :=
+  of_eval fun rest altStack =>
+    Eval.dup value rest [] altStack flags ctx _ Eval.done
 
 /-- `OP_SIZE` preserves its input below the pushed byte length. -/
 theorem size (value : StackElement) (flags : ScriptFlags) (ctx : TxContext) :
     ExecutesResourceFrame [.op .OP_SIZE] [value]
-      [scriptNat value.size, value] flags ctx StackTraceBound.size 0 := by
-  apply single
-  · intro rest altStack
-    exact Eval.size value rest altStack [] flags ctx _ Eval.done
-  · simp [StackTraceBound.size]
-  · simp [StackTraceBound.size]
-  · simp [StackTraceBound.size]
-  · simp [executedMultiSigKeyCharge]
+      [scriptNat value.size, value] flags ctx StackTraceBound.size 0 :=
+  of_eval fun rest altStack =>
+    Eval.size value rest altStack [] flags ctx _ Eval.done
 
 /-- `OP_0NOTEQUAL` consumes one decoded number and pushes its truth value. -/
 theorem zeroNotEqual
@@ -181,15 +201,10 @@ theorem zeroNotEqual
     (decoded : decodeScriptNum operand flags.minimalData
       maxArithmeticScriptNumBytes = .ok value) :
     ExecutesResourceFrame [.op .OP_0NOTEQUAL] [operand]
-      [boolToElement (value != 0)] flags ctx StackTraceBound.zeroNotEqual 0 := by
-  apply single
-  · intro rest altStack
-    exact Eval.zeroNotEqual operand value rest altStack [] flags ctx _ decoded
+      [boolToElement (value != 0)] flags ctx StackTraceBound.zeroNotEqual 0 :=
+  of_eval fun rest altStack =>
+    Eval.zeroNotEqual operand value rest altStack [] flags ctx _ decoded
       Eval.done
-  · simp [StackTraceBound.zeroNotEqual]
-  · simp [StackTraceBound.zeroNotEqual]
-  · simp [StackTraceBound.zeroNotEqual]
-  · simp [executedMultiSigKeyCharge]
 
 /-- The empty script preserves an arbitrary resource frame. -/
 theorem empty (frame : Stack) (flags : ScriptFlags) (ctx : TxContext) :

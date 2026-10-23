@@ -31,15 +31,8 @@ private theorem verifyResourceFrame
     (operand : StackElement) (flags : ScriptFlags) (ctx : TxContext)
     (truth : castToBool operand = true) :
     ExecutesResourceFrame [.op .OP_VERIFY] [operand] [] flags ctx
-      StackTraceBound.verify 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
-    exact Eval.verifyTrue truth Eval.done
-  · simp [StackTraceBound.verify]
-  · simp [StackTraceBound.verify]
-  · simp [StackTraceBound.verify]
-  · intro rest
-    simp [executedMultiSigKeyCharge]
+      StackTraceBound.verify 0 :=
+  .of_eval fun _ _ => Eval.verifyTrue truth Eval.done
 
 private theorem checkSigResourceFrame
     (key signature : StackElement) (valid : Bool)
@@ -47,21 +40,16 @@ private theorem checkSigResourceFrame
     (checked : checkSigWithEncoding checkSig checkSchnorrSig flags ctx
       signature key = .ok valid) :
     ExecutesResourceFrame [.op .OP_CHECKSIG] [key, signature]
-      [boolToElement valid] flags ctx StackTraceBound.checkSig 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
+      [boolToElement valid] flags ctx StackTraceBound.checkSig 0 :=
+  .of_eval (executed := by
+    intro rest altStack
     cases valid with
     | false =>
         simpa [boolToElement] using
           (Eval.checksigFalse checked Eval.done)
     | true =>
         simpa [boolToElement] using
-          (Eval.checksigTrue checked Eval.done)
-  · simp [StackTraceBound.checkSig]
-  · simp [StackTraceBound.checkSig]
-  · simp [StackTraceBound.checkSig]
-  · intro rest
-    simp [executedMultiSigKeyCharge]
+          (Eval.checksigTrue checked Eval.done))
 
 private theorem aResourceFrame
     {script : Script} {inputs : Stack} {result : StackElement}

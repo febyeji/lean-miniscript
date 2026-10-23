@@ -15,75 +15,45 @@ by the nonconstant atomic Miniscript fragments.
 private theorem hash160Frame (value : StackElement) (flags : ScriptFlags)
     (ctx : TxContext) :
     ExecutesResourceFrame [.op .OP_HASH160] [value] [hash160 value] flags ctx
-      StackTraceBound.hash 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
-    exact Eval.op_hash160 value rest [] altStack flags ctx _ Eval.done
-  · simp [StackTraceBound.hash]
-  · simp [StackTraceBound.hash]
-  · simp [StackTraceBound.hash]
-  · simp [executedMultiSigKeyCharge]
+      StackTraceBound.hash 0 :=
+  .of_eval fun rest altStack =>
+    Eval.op_hash160 value rest [] altStack flags ctx _ Eval.done
 
 private theorem sha256Frame (value : StackElement) (flags : ScriptFlags)
     (ctx : TxContext) :
     ExecutesResourceFrame [.op .OP_SHA256] [value] [sha256 value] flags ctx
-      StackTraceBound.hash 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
-    exact Eval.op_sha256 value rest [] altStack flags ctx _ Eval.done
-  · simp [StackTraceBound.hash]
-  · simp [StackTraceBound.hash]
-  · simp [StackTraceBound.hash]
-  · simp [executedMultiSigKeyCharge]
+      StackTraceBound.hash 0 :=
+  .of_eval fun rest altStack =>
+    Eval.op_sha256 value rest [] altStack flags ctx _ Eval.done
 
 private theorem hash256Frame (value : StackElement) (flags : ScriptFlags)
     (ctx : TxContext) :
     ExecutesResourceFrame [.op .OP_HASH256] [value] [hash256 value] flags ctx
-      StackTraceBound.hash 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
-    exact Eval.op_hash256 value rest [] altStack flags ctx _ Eval.done
-  · simp [StackTraceBound.hash]
-  · simp [StackTraceBound.hash]
-  · simp [StackTraceBound.hash]
-  · simp [executedMultiSigKeyCharge]
+      StackTraceBound.hash 0 :=
+  .of_eval fun rest altStack =>
+    Eval.op_hash256 value rest [] altStack flags ctx _ Eval.done
 
 private theorem ripemd160Frame (value : StackElement) (flags : ScriptFlags)
     (ctx : TxContext) :
     ExecutesResourceFrame [.op .OP_RIPEMD160] [value] [ripemd160 value]
-      flags ctx StackTraceBound.hash 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
-    exact Eval.op_ripemd160 value rest [] altStack flags ctx _ Eval.done
-  · simp [StackTraceBound.hash]
-  · simp [StackTraceBound.hash]
-  · simp [StackTraceBound.hash]
-  · simp [executedMultiSigKeyCharge]
+      flags ctx StackTraceBound.hash 0 :=
+  .of_eval fun rest altStack =>
+    Eval.op_ripemd160 value rest [] altStack flags ctx _ Eval.done
 
 private theorem equalVerifyFrame (first second : StackElement)
     (equal : first = second) (flags : ScriptFlags) (ctx : TxContext) :
     ExecutesResourceFrame [.op .OP_EQUALVERIFY] [first, second] [] flags ctx
-      StackTraceBound.equalVerify 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
-    exact Eval.equalverify_success first second rest [] altStack flags ctx _
+      StackTraceBound.equalVerify 0 :=
+  .of_eval fun rest altStack =>
+    Eval.equalverify_success first second rest [] altStack flags ctx _
       equal Eval.done
-  · simp [StackTraceBound.equalVerify]
-  · simp [StackTraceBound.equalVerify]
-  · simp [StackTraceBound.equalVerify]
-  · simp [executedMultiSigKeyCharge]
 
 private theorem equalTrueFrame (first second : StackElement)
     (equal : first = second) (flags : ScriptFlags) (ctx : TxContext) :
     ExecutesResourceFrame [.op .OP_EQUAL] [first, second] [trueElement]
-      flags ctx StackTraceBound.equal 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
-    exact Eval.equal_true first second rest [] altStack flags ctx _ equal Eval.done
-  · simp [StackTraceBound.equal]
-  · simp [StackTraceBound.equal]
-  · simp [StackTraceBound.equal]
-  · simp [executedMultiSigKeyCharge]
+      flags ctx StackTraceBound.equal 0 :=
+  .of_eval fun rest altStack =>
+    Eval.equal_true first second rest [] altStack flags ctx _ equal Eval.done
 
 private theorem pkHFrame (key : PubKey) (flags : ScriptFlags) (ctx : TxContext) :
     ExecutesResourceFrame (compile (.pk_h key)) [key.bytes] [key.bytes]
@@ -170,15 +140,10 @@ private theorem checkSequenceFrame {n : Nat} {flags : ScriptFlags}
       maxTimelockScriptNumBytes = .ok (Int.ofNat n))
     (satisfied : sequenceSatisfied n ctx) :
     ExecutesResourceFrame [.op .OP_CHECKSEQUENCEVERIFY] [scriptNat n]
-      [scriptNat n] flags ctx StackTraceBound.nop 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
-    exact Eval.checksequenceverify_success (scriptNat n) n rest [] altStack
+      [scriptNat n] flags ctx StackTraceBound.nop 0 :=
+  .of_eval fun rest altStack =>
+    Eval.checksequenceverify_success (scriptNat n) n rest [] altStack
       flags ctx _ decoded (by omega) satisfied Eval.done
-  · simp [StackTraceBound.nop]
-  · simp [StackTraceBound.nop]
-  · simp [StackTraceBound.nop]
-  · simp [executedMultiSigKeyCharge]
 
 private theorem checkLockTimeFrame {n : Nat} {flags : ScriptFlags}
     {ctx : TxContext}
@@ -186,15 +151,10 @@ private theorem checkLockTimeFrame {n : Nat} {flags : ScriptFlags}
       maxTimelockScriptNumBytes = .ok (Int.ofNat n))
     (satisfied : locktimeSatisfied n ctx) :
     ExecutesResourceFrame [.op .OP_CHECKLOCKTIMEVERIFY] [scriptNat n]
-      [scriptNat n] flags ctx StackTraceBound.nop 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
-    exact Eval.checklocktimeverify_success (scriptNat n) n rest [] altStack
+      [scriptNat n] flags ctx StackTraceBound.nop 0 :=
+  .of_eval fun rest altStack =>
+    Eval.checklocktimeverify_success (scriptNat n) n rest [] altStack
       flags ctx _ decoded (by omega) satisfied Eval.done
-  · simp [StackTraceBound.nop]
-  · simp [StackTraceBound.nop]
-  · simp [StackTraceBound.nop]
-  · simp [executedMultiSigKeyCharge]
 
 private theorem olderFrame {n : Nat} {flags : ScriptFlags} {ctx : TxContext}
     (decoded : decodeScriptNum (scriptNat n) flags.minimalData

@@ -38,8 +38,7 @@ theorem j
     let frame : ConditionalFrame := { branches := [compile fragment], after := [] }
     have split : splitConditional (compile fragment ++ [.op .OP_ENDIF]) =
         some frame := by
-      simpa [frame] using splitConditional_balanced_ifThen
-        (compile_balancedControlFlow fragment) (suffix := [])
+      simpa [frame] using splitConditional_compile_ifThen fragment
     have sizeNonzero : Int.ofNat top.size ≠ 0 :=
       Int.ofNat_ne_zero.mpr topNonempty
     have nonzeroBool : (Int.ofNat top.size != 0) = true :=
@@ -115,8 +114,7 @@ theorem j_false
   let frame : ConditionalFrame := { branches := [compile fragment], after := [] }
   have split : splitConditional (compile fragment ++ [.op .OP_ENDIF]) =
       some frame := by
-    simpa [frame] using splitConditional_balanced_ifThen
-      (compile_balancedControlFlow fragment) (suffix := [])
+    simpa [frame] using splitConditional_compile_ifThen fragment
   have skipped : ExecutesResourceFrame
       (frame.select (castToBool falseElement)) [falseElement] [falseElement]
       flags txCtx StackTraceBound.empty 0 := by

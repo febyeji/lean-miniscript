@@ -4,15 +4,6 @@ namespace LeanMiniscript.Properties
 
 open LeanMiniscript.Miniscript LeanMiniscript.Script
 
-private theorem replicateFalse_rotate (count : Nat) :
-    List.replicate count falseElement ++ [falseElement] =
-      falseElement :: List.replicate count falseElement := by
-  induction count with
-  | zero => rfl
-  | succ count ih =>
-      simp only [List.replicate_succ, List.cons_append]
-      exact congrArg (falseElement :: ·) ih
-
 def signatureBudget (signatures : Stack) : Nat :=
   (signatures.map signatureValidationWeight).sum
 
@@ -27,11 +18,11 @@ namespace ExecutesBudgetFrame
 
 theorem pushData (value : StackElement) (flags : ScriptFlags) (ctx : TxContext) :
     ExecutesBudgetFrame [.pushData value] [] [value] flags ctx 0 :=
-  of_resource_zero (ExecutesResourceFrame.pushData value flags ctx) rfl
+  of_resource_zero (ExecutesResourceFrame.pushData value flags ctx)
 
 theorem pushNum (value : Int) (flags : ScriptFlags) (ctx : TxContext) :
     ExecutesBudgetFrame [.pushNum value] [] [scriptNum value] flags ctx 0 :=
-  of_resource_zero (ExecutesResourceFrame.pushNum value flags ctx) rfl
+  of_resource_zero (ExecutesResourceFrame.pushNum value flags ctx)
 
 end ExecutesBudgetFrame
 
@@ -132,12 +123,10 @@ private theorem numEqualFrame
     {flags : ScriptFlags} {ctx : TxContext}
     (decoded : decodeBinaryScriptNums flags first second = .ok (a, b)) :
     ExecutesBudgetFrame [.op .OP_NUMEQUAL] [first, second]
-      [boolToElement (a == b)] flags ctx 0 := by
-  apply ExecutesBudgetFrame.of_zero
-  · intro rest altStack
-    exact Eval.numequal first second a b rest [] altStack flags ctx _ decoded
+      [boolToElement (a == b)] flags ctx 0 :=
+  .of_zero fun rest altStack =>
+    Eval.numequal first second a b rest [] altStack flags ctx _ decoded
       Eval.done
-  · rfl
 
 private theorem multiABudgetFrame
     {threshold : Nat} {firstKey : PubKey} {keys : List PubKey}
@@ -315,7 +304,8 @@ theorem generatedBudgets_multiA_valid
     · have bounded := multiABudgetFrame (threshold := threshold)
           firstChecked tailExec decoded
       simpa [Witness.toInitialStack, List.replicate_succ, boolToElement,
-        valid.1, replicateFalse_rotate, show signatureValidationWeight falseElement = 0 from rfl] using bounded
+        valid.1, List.replicate_rotate (a := falseElement),
+        show signatureValidationWeight falseElement = 0 from rfl] using bounded
     · exact Nat.zero_le _
 
 theorem generatedBudgets_multiA

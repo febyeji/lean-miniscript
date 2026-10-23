@@ -7,15 +7,6 @@ open LeanMiniscript.Script
 
 /-! # Resource proofs for multisignature atoms -/
 
-private theorem replicateFalse_rotate (count : Nat) :
-    List.replicate count falseElement ++ [falseElement] =
-      falseElement :: List.replicate count falseElement := by
-  induction count with
-  | zero => rfl
-  | succ count ih =>
-      simp only [List.replicate_succ, List.cons_append]
-      exact congrArg (falseElement :: ·) ih
-
 private def checkSigTrace : StackTraceBound := ⟨1, 1⟩
 private def checkSigAddTrace : StackTraceBound := ⟨2, 2⟩
 private def multiAFirstTrace : StackTraceBound :=
@@ -143,15 +134,10 @@ private theorem numEqualFrame
     {flags : ScriptFlags} {ctx : TxContext}
     (decoded : decodeBinaryScriptNums flags first second = .ok (a, b)) :
     ExecutesResourceFrame [.op .OP_NUMEQUAL] [first, second]
-      [boolToElement (a == b)] flags ctx StackTraceBound.binary 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
-    exact Eval.numequal first second a b rest [] altStack flags ctx _ decoded
+      [boolToElement (a == b)] flags ctx StackTraceBound.binary 0 :=
+  .of_eval fun rest altStack =>
+    Eval.numequal first second a b rest [] altStack flags ctx _ decoded
       Eval.done
-  · simp [StackTraceBound.binary]
-  · simp [StackTraceBound.binary]
-  · simp [StackTraceBound.binary]
-  · simp [executedMultiSigKeyCharge]
 
 private theorem multiAResourceFrame
     {threshold : Nat} {firstKey : PubKey} {keys : List PubKey}
@@ -322,7 +308,7 @@ theorem generatedResources_multiA_valid
     · have bounded := multiAResourceFrame (threshold := threshold)
           firstChecked tailExec decoded
       simpa [Witness.toInitialStack, List.replicate_succ, boolToElement,
-        valid.1, replicateFalse_rotate] using bounded
+        valid.1, List.replicate_rotate (a := falseElement)] using bounded
     · simp [selectedStackSummary, stackPathBounds]
     · rfl
 
@@ -636,9 +622,11 @@ theorem generatedResources_multi_valid
       · simp
     · exact BooleanResultFacts.canonical false _ flags
     · simpa [Witness.toInitialStack, List.reverse_replicate,
-        List.replicate_succ, replicateFalse_rotate, boolToElement] using executed
+        List.replicate_succ, List.replicate_rotate (a := falseElement),
+        boolToElement] using executed
     · simpa [Witness.toInitialStack, List.reverse_replicate,
-        List.replicate_succ, replicateFalse_rotate, boolToElement] using bounded
+        List.replicate_succ, List.replicate_rotate (a := falseElement),
+        boolToElement] using bounded
     · rfl
     · rfl
 

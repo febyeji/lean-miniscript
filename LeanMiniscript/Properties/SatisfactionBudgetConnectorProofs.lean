@@ -10,18 +10,8 @@ private theorem boolAndFrame
     (decoded : order.BinaryDecoded flags saved result savedValue resultValue) :
     ExecutesBudgetFrame [.op .OP_BOOLAND] (order.outputs saved result)
       [boolToElement ((savedValue != 0) && (resultValue != 0))]
-      flags ctx 0 := by
-  apply ExecutesBudgetFrame.of_zero
-  · intro rest altStack
-    cases order with
-    | savedFirst =>
-        exact Eval.booland saved result savedValue resultValue rest [] altStack
-          flags ctx _ decoded Eval.done
-    | resultFirst =>
-        simpa [Bool.and_comm, WStackOrder.outputs] using
-          (Eval.booland result saved resultValue savedValue rest [] altStack
-            flags ctx _ decoded Eval.done)
-  · rfl
+      flags ctx 0 :=
+  .of_zero (WStackOrder.boolAndStackFrame decoded)
 
 private theorem boolOrFrame
     {saved result : StackElement} {savedValue resultValue : Int}
@@ -29,38 +19,24 @@ private theorem boolOrFrame
     (decoded : order.BinaryDecoded flags saved result savedValue resultValue) :
     ExecutesBudgetFrame [.op .OP_BOOLOR] (order.outputs saved result)
       [boolToElement ((savedValue != 0) || (resultValue != 0))]
-      flags ctx 0 := by
-  apply ExecutesBudgetFrame.of_zero
-  · intro rest altStack
-    cases order with
-    | savedFirst =>
-        exact Eval.boolor saved result savedValue resultValue rest [] altStack
-          flags ctx _ decoded Eval.done
-    | resultFirst =>
-        simpa [Bool.or_comm, WStackOrder.outputs] using
-          (Eval.boolor result saved resultValue savedValue rest [] altStack
-            flags ctx _ decoded Eval.done)
-  · rfl
+      flags ctx 0 :=
+  .of_zero (WStackOrder.boolOrStackFrame decoded)
 
 private theorem ifdupTrueFrame
     {value : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (truth : castToBool value = true) :
     ExecutesBudgetFrame [.op .OP_IFDUP] [value] [value, value]
-      flags ctx 0 := by
-  apply ExecutesBudgetFrame.of_zero
-  · intro rest altStack
-    exact Eval.ifdup_true value rest altStack [] flags ctx _ truth Eval.done
-  · rfl
+      flags ctx 0 :=
+  .of_zero fun rest altStack =>
+    Eval.ifdup_true value rest altStack [] flags ctx _ truth Eval.done
 
 private theorem ifdupFalseFrame
     {value : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (falsy : castToBool value = false) :
     ExecutesBudgetFrame [.op .OP_IFDUP] [value] [value]
-      flags ctx 0 := by
-  apply ExecutesBudgetFrame.of_zero
-  · intro rest altStack
-    exact Eval.ifdup_false value rest altStack [] flags ctx _ falsy Eval.done
-  · rfl
+      flags ctx 0 :=
+  .of_zero fun rest altStack =>
+    Eval.ifdup_false value rest altStack [] flags ctx _ falsy Eval.done
 
 private theorem ifElseLeftFrame
     {firstScript secondScript : Script} {inputs outputs : Stack}

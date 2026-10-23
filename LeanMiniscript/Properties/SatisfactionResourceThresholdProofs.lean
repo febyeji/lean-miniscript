@@ -90,22 +90,8 @@ private theorem thresholdAddFrame
     (decoded : order.BinaryDecoded flags saved result savedValue resultValue) :
     ExecutesResourceFrame [.op .OP_ADD] (order.outputs saved result)
       [scriptNum (savedValue + resultValue)] flags ctx
-      StackTraceBound.binary 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
-    cases order with
-    | savedFirst =>
-        exact Eval.add saved result savedValue resultValue rest [] altStack
-          flags ctx _ decoded Eval.done
-    | resultFirst =>
-        simpa [WStackOrder.outputs, Int.add_comm] using
-          (Eval.add result saved resultValue savedValue rest [] altStack
-            flags ctx _ decoded Eval.done)
-  · cases order <;> simp [WStackOrder.outputs, StackTraceBound.binary]
-  · cases order <;> simp [WStackOrder.outputs, StackTraceBound.binary]
-  · simp [StackTraceBound.binary]
-  · intro rest
-    simp [executedMultiSigKeyCharge]
+      StackTraceBound.binary 0 :=
+  .of_eval (WStackOrder.addStackFrame decoded)
 
 private theorem thresholdPushFrame (value : Nat) (flags : ScriptFlags)
     (ctx : TxContext) :
@@ -118,19 +104,8 @@ private theorem thresholdEqualFrame
     (first second : StackElement) (flags : ScriptFlags) (ctx : TxContext) :
     ExecutesResourceFrame [.op .OP_EQUAL] [first, second]
       [boolToElement (decide (first = second))] flags ctx
-      StackTraceBound.equal 0 := by
-  apply ExecutesResourceFrame.single
-  · intro rest altStack
-    by_cases equal : first = second
-    · simpa [equal, boolToElement] using
-        (Eval.equal_true first second rest [] altStack flags ctx _ equal Eval.done)
-    · simpa [equal, boolToElement] using
-        (Eval.equal_false first second rest [] altStack flags ctx _ equal Eval.done)
-  · simp [StackTraceBound.equal]
-  · simp [StackTraceBound.equal]
-  · simp [StackTraceBound.equal]
-  · intro rest
-    simp [executedMultiSigKeyCharge]
+      StackTraceBound.equal 0 :=
+  .of_eval (equalStackFrame first second flags ctx)
 
 private theorem thresholdComparisonFrame
     (threshold total : Nat) (flags : ScriptFlags) (ctx : TxContext) :
