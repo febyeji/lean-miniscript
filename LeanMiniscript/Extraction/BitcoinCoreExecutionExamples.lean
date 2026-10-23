@@ -4,12 +4,6 @@ namespace LeanMiniscript.Extraction.BitcoinCoreExecutionExamples
 
 open LeanMiniscript.Script LeanMiniscript.Miniscript
 
-local instance {ε α : Type} [DecidableEq ε] [DecidableEq α] :
-    DecidableEq (Except ε α) := by
-  intro first second
-  cases first <;> cases second <;>
-    simp only [Except.ok.injEq, Except.error.injEq, reduceCtorEq] <;> infer_instance
-
 private def bytes (size : Nat) : ByteArray := ⟨Array.replicate size 1⟩
 
 private def flags : CoreVerificationFlags :=

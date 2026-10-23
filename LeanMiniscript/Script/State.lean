@@ -374,6 +374,16 @@ def ArithmeticScriptNatSafe (n : Nat) : Prop :=
     decodeScriptNum (scriptNat n) true maxArithmeticScriptNumBytes =
       .ok (Int.ofNat n)
 
+instance {ε α : Type} [DecidableEq ε] [DecidableEq α] : DecidableEq (Except ε α) := by
+  intro a b
+  cases a <;> cases b
+  · rename_i x y
+    exact decidable_of_iff (x = y) (by simp)
+  · exact isFalse (by intro h; cases h)
+  · exact isFalse (by intro h; cases h)
+  · rename_i x y
+    exact decidable_of_iff (x = y) (by simp)
+
 private def exceptOkDecidable {ε α : Type} [DecidableEq α]
     (result : Except ε α) (expected : α) : Decidable (result = .ok expected) := by
   cases result with

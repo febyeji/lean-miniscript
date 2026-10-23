@@ -5,15 +5,6 @@ namespace LeanMiniscript.Extraction
 
 open LeanMiniscript.Script
 
-private instance : DecidableEq (Except CoreVerificationError Unit) := fun a b => by
-  cases a <;> cases b
-  · rename_i first second
-    exact decidable_of_iff (first = second)
-      ⟨fun same => congrArg Except.error same, Except.error.inj⟩
-  · exact isFalse (by intro same; cases same)
-  · exact isFalse (by intro same; cases same)
-  · exact isTrue (by congr)
-
 private def raw (source : String) : ByteArray :=
   (coreScriptSourceBytes source).toOption.getD ByteArray.empty
 
@@ -74,8 +65,7 @@ example : coreSignaturePush ⟨#[1]⟩ = ⟨#[1, 1]⟩ ∧
     coreSignaturePush ByteArray.empty = ⟨#[0]⟩ := by native_decide
 
 private def traceCode (source expected : String) (version : SignatureVersion) : Bool :=
-  match executeCoreScript plainFlags
-      { version := 1, locktime := 0, sequence := 0xffffffff, sigHash := ByteArray.empty }
+  match executeCoreScript plainFlags coreFixtureTxContext
       (fun _ scriptCode => CryptoOracle.pureLeanHashes (fun _ _ _ => scriptCode == raw expected))
       { scriptBytes := raw source, sigVersion := version } with
   | .ok [top] => castToBool top

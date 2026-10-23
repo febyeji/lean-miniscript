@@ -6,12 +6,6 @@ namespace LeanMiniscript.Extraction
 
 open Script Bitcoin
 
-local instance canonicalTapscriptExceptDecidableEq
-    {ε α : Type} [DecidableEq ε] [DecidableEq α] : DecidableEq (Except ε α) := by
-  intro first second
-  cases first <;> cases second <;>
-    simp only [Except.ok.injEq, Except.error.injEq, reduceCtorEq] <;> infer_instance
-
 open LeanMiniscript.TestSupport (hex)
 private def flip (bytes : ByteArray) (index : Nat) : ByteArray :=
   ⟨bytes.data.set! index (bytes[index]! ^^^ 1)⟩

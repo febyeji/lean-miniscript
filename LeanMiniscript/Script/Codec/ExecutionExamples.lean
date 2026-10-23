@@ -8,13 +8,6 @@ local instance codecExecResultDecidableEq : DecidableEq ExecResult := by
     simp only [ExecResult.success.injEq, ExecResult.failure.injEq, reduceCtorEq] <;>
     infer_instance
 
-local instance codecExceptDecidableEq {ε α : Type} [DecidableEq ε] [DecidableEq α] :
-    DecidableEq (Except ε α) := by
-  intro first second
-  cases first <;> cases second <;>
-    simp only [Except.ok.injEq, Except.error.injEq, reduceCtorEq] <;>
-    infer_instance
-
 /-! Concrete executions after encoding and decoding, including AST-changing
 pushes, conditional error precedence, resource limits and final acceptance. -/
 

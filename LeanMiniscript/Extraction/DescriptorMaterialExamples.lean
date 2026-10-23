@@ -1,3 +1,4 @@
+import LeanMiniscript.Bitcoin.TaprootSighashExamples
 import LeanMiniscript.Extraction.DescriptorSatisfaction
 import LeanMiniscript.Extraction.DescriptorMaterialFixtures
 

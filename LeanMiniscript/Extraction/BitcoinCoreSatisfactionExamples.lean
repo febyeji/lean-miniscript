@@ -11,15 +11,6 @@ namespace LeanMiniscript.Extraction.BitcoinCoreSatisfactionExamples
 
 open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
 
-private instance : DecidableEq (Except CoreVerificationError Unit) := by
-  intro a b
-  cases a <;> cases b
-  · rename_i first second
-    exact decidable_of_iff (first = second) (by simp)
-  · exact isFalse (by intro same; cases same)
-  · exact isFalse (by intro same; cases same)
-  · exact isTrue (by congr)
-
 open LeanMiniscript.TestSupport (hex)
 
 -- The real transaction signature also used by TaprootExamples. Here the

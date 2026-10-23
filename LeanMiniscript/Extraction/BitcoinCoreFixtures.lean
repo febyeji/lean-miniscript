@@ -63,13 +63,15 @@ private def coreFlagNames (source : String) : List String :=
   if source.trimAscii.isEmpty then []
   else (source.splitOn ",").map (fun flag => flag.trimAscii.toString)
 
-/-- Accept flags whose effects are modeled or whose affected operations are
+/-- Flags whose effects are modeled or whose affected operations are
 excluded by the subsequent fixture admission checks. -/
+private def supportedCoreFixtureFlags : List String :=
+  ["P2SH", "STRICTENC", "DERSIG", "LOW_S", "MINIMALDATA", "MINIMALIF", "NULLDUMMY", "NULLFAIL",
+    "CHECKLOCKTIMEVERIFY", "CHECKSEQUENCEVERIFY",
+    "DISCOURAGE_UPGRADABLE_NOPS"]
+
 private def firstUnsupportedFlag (names : List String) : Option String :=
-  names.find? fun flag =>
-    !["P2SH", "STRICTENC", "DERSIG", "LOW_S", "MINIMALDATA", "MINIMALIF", "NULLDUMMY", "NULLFAIL",
-      "CHECKLOCKTIMEVERIFY", "CHECKSEQUENCEVERIFY",
-      "DISCOURAGE_UPGRADABLE_NOPS"].contains flag
+  names.find? fun flag => !supportedCoreFixtureFlags.contains flag
 
 private def flagsForCoreFixture (names : List String) : ScriptFlags where
   minimalIf := names.contains "MINIMALIF"
@@ -143,6 +145,14 @@ private def supportedExpectedError : String → Bool
       "UNBALANCED_CONDITIONAL" => true
   | _ => false
 
+/-- Transaction fields described by the header of Core's `script_tests.json`.
+    Signature cases are excluded before this simplified context is used. -/
+def coreFixtureTxContext : TxContext where
+  version := 1
+  locktime := 0
+  sequence := 0xffffffff
+  sigHash := ⟨#[]⟩
+
 private def prepareRawCoreFixture (test : CoreScriptTest) :
     Except CoreFixtureUnsupported SupportedCoreFixture := do
   let sigBytes ← (coreScriptSourceBytes test.scriptSigSource).mapError .scriptSig
@@ -162,8 +172,7 @@ private def prepareRawCoreFixture (test : CoreScriptTest) :
     throw (.inactiveTimelockOpcode "CHECKSEQUENCEVERIFY")
   let oracle := CryptoOracle.pureLeanHashes (fun _ _ _ => false)
   let flags := flagsForCoreFixture flagNames
-  let ctx : TxContext :=
-    { version := 1, locktime := 0, sequence := 0xffffffff, sigHash := ⟨#[]⟩ }
+  let ctx := coreFixtureTxContext
   match ← (checkCoreLegacyWithoutVerifier oracle scriptSig [] flags ctx).mapError
       (fun _ => CoreFixtureUnsupported.signatureOpcode) with
   | .error _ => pure ()
@@ -190,12 +199,10 @@ def prepareCoreFixtureWithoutVerifier (test : CoreScriptTest) :
 
 private def firstUnsupportedVerificationFlag (names : List String) : Option String :=
   names.find? fun name =>
-    !["P2SH", "STRICTENC", "DERSIG", "LOW_S", "MINIMALDATA", "MINIMALIF",
-      "NULLDUMMY", "NULLFAIL", "CHECKLOCKTIMEVERIFY", "CHECKSEQUENCEVERIFY",
-      "DISCOURAGE_UPGRADABLE_NOPS", "SIGPUSHONLY", "CLEANSTACK", "WITNESS",
+    !(supportedCoreFixtureFlags ++ ["SIGPUSHONLY", "CLEANSTACK", "WITNESS",
       "WITNESS_PUBKEYTYPE", "TAPROOT", "DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM",
       "DISCOURAGE_UPGRADABLE_TAPROOT_VERSION", "DISCOURAGE_OP_SUCCESS",
-      "DISCOURAGE_UPGRADABLE_PUBKEYTYPE", "CONST_SCRIPTCODE"].contains name
+      "DISCOURAGE_UPGRADABLE_PUBKEYTYPE", "CONST_SCRIPTCODE"]).contains name
 
 /-- Core's test harness adds P2SH and WITNESS whenever CLEANSTACK is requested. -/
 def coreVerificationFlagsForFixture (names : List String) : CoreVerificationFlags where
@@ -256,14 +263,6 @@ def CoreFixtureOutcome.coreTag : CoreFixtureOutcome → String
   | .rejected none => "EVAL_FALSE"
   | .rejected (some error) => coreScriptErrorTag error
   | .verificationRejected error => error.coreTag coreScriptErrorTag
-
-/-- Transaction fields described by the header of Core's `script_tests.json`.
-    Signature cases are excluded before this simplified context is used. -/
-def coreFixtureTxContext : TxContext where
-  version := 1
-  locktime := 0
-  sequence := 0xffffffff
-  sigHash := ⟨#[]⟩
 
 /-- Execute scriptSig and scriptPubKey as separate Script evaluations. The main
     stack is preserved, while the alternate stack is reset between them just

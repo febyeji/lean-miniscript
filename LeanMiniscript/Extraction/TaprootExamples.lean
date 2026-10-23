@@ -71,15 +71,6 @@ example : errorIs (.leafVersionUnsupported 0xfa) (run [hex "51", futureControl] 
 example : errorIs (.control .commitmentMismatch) (run [hex "51", flip futureControl 0] futurePrevouts) = true := by native_decide
 
 -- Final acceptance uses the same real commitment, digest and Schnorr signature.
-local instance {ε α : Type} [DecidableEq ε] [DecidableEq α] : DecidableEq (Except ε α) := by
-  intro a b
-  cases a <;> cases b
-  · rename_i x y
-    exact decidable_of_iff (x = y) (by simp)
-  · exact isFalse (by intro h; cases h)
-  · exact isFalse (by intro h; cases h)
-  · rename_i x y
-    exact decidable_of_iff (x = y) (by simp)
 private def verify (witness : List ByteArray) (flags : ScriptFlags := {}) :
     Except TaprootVerificationError Nat :=
   verifyCommittedTapscriptTransaction CryptoOracle.pureLeanSchnorr script witness flags
