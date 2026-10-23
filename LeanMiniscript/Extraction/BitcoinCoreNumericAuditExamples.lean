@@ -117,11 +117,7 @@ example : numericFixtureSourceIndices.eraseDups.length = 91 := by
   native_decide
 
 -- All selected rows compare with the exact upstream expected result tag.
-example : ((auditCoreScriptTests rejectingFixtureOracle numericFixtureJson).toOption.map
-    fun audit => audit.testRows == 91 && audit.comparedRows == 91 &&
-      audit.matchedRows == 91 && audit.unsupportedRows == 0 &&
-      audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle numericFixtureJson 91 91 0 := by native_decide
 
 private def numericSourceFixtures : List (String × String × Opcode) :=
   [("1ADD", "0x8b", .OP_1ADD),
@@ -185,10 +181,6 @@ private def numericBoundaryFixtureJson : String := r#"
 "#
 
 -- Local rows exercise raw bytes, scriptSig execution, inactive branches and wide results.
-example : ((auditCoreScriptTests rejectingFixtureOracle numericBoundaryFixtureJson).toOption.map
-    fun audit => audit.testRows == 36 && audit.comparedRows == 36 &&
-      audit.matchedRows == 36 && audit.unsupportedRows == 0 &&
-      audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle numericBoundaryFixtureJson 36 36 0 := by native_decide
 
 end LeanMiniscript.Extraction

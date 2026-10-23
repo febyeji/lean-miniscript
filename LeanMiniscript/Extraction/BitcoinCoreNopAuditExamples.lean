@@ -249,11 +249,7 @@ example : nopErrorSourceIndices.length = 225 ∧
   native_decide
 
 -- Every upstream row in this group executes through the complete boundary.
-example : ((auditCoreScriptTests rejectingFixtureOracle nopErrorFixtureJson).toOption.map
-    fun audit => audit.testRows == 225 && audit.comparedRows == 225 &&
-      audit.matchedRows == 225 && audit.unsupportedRows == 0 &&
-      audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle nopErrorFixtureJson 225 225 0 := by native_decide
 
 private def nopSourceFixtures : List (String × String × Opcode) :=
   [("NOP1", "0xb0", .OP_NOP1), ("NOP4", "0xb3", .OP_NOP4),
@@ -304,11 +300,7 @@ private def localOpcodeErrorJson : String := r#"
 
 -- Earlier executed failures precede later malformed pushes and disabled opcodes.
 -- Raw fallback retains inactive-branch state and resets the alternate stack between scripts.
-example : ((auditCoreScriptTests rejectingFixtureOracle localOpcodeErrorJson).toOption.map
-    fun audit => audit.testRows == 28 && audit.comparedRows == 28 &&
-      audit.matchedRows == 28 && audit.unsupportedRows == 0 &&
-      audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle localOpcodeErrorJson 28 28 0 := by native_decide
 
 private def fixture (scriptSig scriptPubKey expected : String) (flags : String := "") :
     CoreScriptTest :=

@@ -183,4 +183,20 @@ def auditCoreScriptTests (oracle : CryptoOracle) (input : String) :
     Except CoreFixtureJsonError CoreFixtureAudit := do
   return auditCoreFixtureEntries oracle (← parseCoreScriptTests input)
 
+namespace CoreFixtureAudit
+
+/-- Whether parsing and auditing a complete Core fixture document under
+    `oracle` yields exactly `compared` compared rows, `matched` matched rows,
+    and `unsupported` unsupported rows with every compared row matching.
+    One-line assertion shape shared by the Core fixture example suites. -/
+def matchesExpectation (oracle : CryptoOracle) (input : String)
+    (compared matched unsupported : Nat) : Bool :=
+  match auditCoreScriptTests oracle input with
+  | .error _ => false
+  | .ok audit =>
+      audit.comparedRows == compared && audit.matchedRows == matched &&
+        audit.unsupportedRows == unsupported && audit.allComparedRowsMatch
+
+end CoreFixtureAudit
+
 end LeanMiniscript.Extraction

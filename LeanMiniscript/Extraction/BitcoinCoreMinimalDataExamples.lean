@@ -58,14 +58,10 @@ private def minimalDataFixtureJson : String := r#"
 ]
 "#
 
-private def minimalDataAudit : Option CoreFixtureAudit :=
-  (auditCoreScriptTests rejectingFixtureOracle minimalDataFixtureJson).toOption
-
 example : minimalDataSourceIndices.length = 41 := by native_decide
-example : minimalDataAudit.map CoreFixtureAudit.testRows = some 41 := by native_decide
-example : minimalDataAudit.map CoreFixtureAudit.matchedRows = some 41 := by native_decide
-example : minimalDataAudit.map CoreFixtureAudit.unsupportedRows = some 0 := by native_decide
-example : minimalDataAudit.map CoreFixtureAudit.allComparedRowsMatch = some true := by native_decide
+example : CoreFixtureAudit.matchesExpectation
+    rejectingFixtureOracle minimalDataFixtureJson 41 41 0 := by
+  native_decide
 
 private def fixture (sig script expected : String) (flags : String := "MINIMALDATA") :
     CoreScriptTest where

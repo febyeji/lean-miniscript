@@ -1,4 +1,5 @@
 import LeanMiniscript.Psbt.Cli
+import LeanMiniscript.CliSupport
 
 open LeanMiniscript.Psbt.Cli
 
@@ -12,16 +13,11 @@ private def readCommand : Command → IO Command
   | .extract encoding source => return .extract encoding (← readSource source)
   | .help => pure .help
 
-def main (args : List String) : IO UInt32 := do
-  match parseArgs args with
-  | .error error =>
-    IO.eprintln s!"{error}\n{usage}"
-    return 2
-  | .ok command =>
-    try
-      match execute (← readCommand command) with
-      | .error error => IO.eprintln error; return 2
-      | .ok output => IO.println output; return 0
-    catch error =>
-      IO.eprintln s!"input error: {error}"
-      return 2
+private def runCommand (command : Command) : IO (Except String String) := do
+  try
+    return execute (← readCommand command)
+  catch error =>
+    return .error s!"input error: {error}"
+
+def main (args : List String) : IO UInt32 :=
+  LeanMiniscript.CliSupport.runMain usage parseArgs runCommand args
