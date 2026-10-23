@@ -1,8 +1,7 @@
 from pathlib import Path
-import importlib.util
 import sys
 sys.dont_write_bytecode = True
-import json
+import fixture_common
 
 import argparse
 parser=argparse.ArgumentParser(description='Regenerate transaction-backed Script sighash execution fixtures from the same pinned official/Core sources.')
@@ -10,14 +9,9 @@ parser.add_argument('--wallet-vectors', type=Path, required=True)
 parser.add_argument('--core-script', type=Path, required=True)
 parser.add_argument('--output', type=Path, required=True)
 args=parser.parse_args()
-root=Path(__file__).resolve().parents[1]
-spec=importlib.util.spec_from_file_location('fixture_generator', root/'scripts/generate_taproot_sighash_fixtures.py')
-g=importlib.util.module_from_spec(spec);spec.loader.exec_module(g)
-g.generate(args.wallet_vectors, args.core_script)  # Verify source digests and official vectors.
-group=json.loads(args.wallet_vectors.read_text())['keyPathSpending'][0]
-tx=g.parse_transaction(group['given']['rawUnsignedTx'])
-spent=[g.make_output(u['amountSats'],bytes.fromhex(u['scriptPubKey'])) for u in group['given']['utxosSpent']]
-ref=g.reference_functions(args.core_script.read_text())
+base=fixture_common.load_sighash_generator('fixture_generator')
+base.generate(args.wallet_vectors, args.core_script)  # Verify source digests and official vectors.
+group,tx,spent,ref=fixture_common.bip341_keypath_group(base,args.wallet_vectors,args.core_script)
 leaf=b'\x20'+bytes([2])*32+b'\xac'
 twice=leaf+b'\x6b'+leaf
 expected={mode:ref['TaprootSignatureHash'](tx,spent,mode,0,scriptpath=True,leaf_script=leaf,codeseparator_pos=0xffffffff).hex() for mode in [0,1,2,3,129,130,131]}

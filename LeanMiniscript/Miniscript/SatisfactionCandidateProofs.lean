@@ -394,24 +394,6 @@ end CandidateResult
 
 namespace CandidatePair
 
-/-- Local snoc induction avoids converting the candidate DP's source-order
-    fold into a head-recursive presentation. -/
-private theorem listSnocInduction {α : Type} {motive : List α → Prop}
-    (nil : motive [])
-    (snoc : ∀ (items : List α) (item : α),
-      motive items → motive (items ++ [item])) :
-    ∀ items, motive items := by
-  intro items
-  have reversed : motive items.reverse.reverse := by
-    have aux : ∀ reversedItems : List α, motive reversedItems.reverse := by
-      intro reversedItems
-      induction reversedItems with
-      | nil => simpa using nil
-      | cons item reversedItems ih =>
-          simpa using snoc reversedItems.reverse item ih
-    exact aux items.reverse
-  simpa using reversed
-
 /-- A source-order explanation of an exact-count witness. `frames` records one
     selected child witness per child, while `witness` is their left-folded
     `Witness.combine` result. -/
@@ -476,15 +458,6 @@ theorem ChoiceTrace.toChoiceFrames {children : List CandidatePair} {count : Nat}
       refine ⟨truths ++ [false], .snocDsat choices selected, ?_⟩
       simp [countEq]
 
-private theorem replicateFalse_snoc (count : Nat) :
-    List.replicate count false ++ [false] =
-      List.replicate (count + 1) false := by
-  induction count with
-  | zero => rfl
-  | succ count ih =>
-      simp only [List.replicate_succ, List.cons_append]
-      exact congrArg (false :: ·) ih
-
 /-- A zero-count source-choice trace consists entirely of dissatisfaction
     rows. -/
 theorem ChoiceFrames.allFalse_of_sum_eq_zero
@@ -500,7 +473,7 @@ theorem ChoiceFrames.allFalse_of_sum_eq_zero
         List.map_nil, List.sum_append, List.sum_cons, List.sum_nil,
         Nat.add_zero] at sumEq
       rw [ih sumEq]
-      simpa using replicateFalse_snoc truths.length
+      simpa using List.replicate_snoc truths.length false
 
 /-- A trace has one argument frame for every source child. -/
 theorem ChoiceTrace.frames_length {children : List CandidatePair} {count : Nat}
@@ -565,7 +538,7 @@ theorem extendCounts_getD_zero (states : List CandidateResult)
 theorem selectExactly_zero_possible (children : List CandidatePair)
     (childrenDsat : ∀ child, child ∈ children → child.dsat.Possible) :
     (selectExactly 0 children).Possible := by
-  induction children using listSnocInduction with
+  induction children using List.snocInduction with
   | nil =>
       exact CandidateResult.Possible.usable [] false
   | snoc children child ih =>
@@ -605,7 +578,7 @@ theorem selectExactly_choiceTrace {children : List CandidatePair} {count : Nat}
     {witness : Witness}
     (selected : (selectExactly count children).usableWitness? = some witness) :
     ∃ frames, ChoiceTrace children count frames witness := by
-  induction children using listSnocInduction generalizing count witness with
+  induction children using List.snocInduction generalizing count witness with
   | nil =>
       cases count with
       | zero =>

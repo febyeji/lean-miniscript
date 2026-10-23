@@ -172,10 +172,7 @@ private def completeBoundaryFixtures : String := r####"
 
 example : completeBoundaryIndices.length = 18 := by native_decide
 
-example : ((auditCoreScriptTests rejectingFixtureOracle completeBoundaryFixtures).toOption.map
-    fun audit => audit.testRows == 18 && audit.matchedRows == 18 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle completeBoundaryFixtures 18 18 0 := by native_decide
 
 -- Expected tags participate only in comparison, even for cryptographic paths.
 example : (checkCoreFixture rejectingFixtureOracle {

@@ -26,6 +26,37 @@ def byteHex (byte : UInt8) : String :=
 def byteArrayHex (bytes : ByteArray) : String :=
   String.ofList (bytes.data.toList.flatMap byteHexChars)
 
+/-- Decode one hexadecimal nibble in either letter case. -/
+def hexNibble? : Char → Option Nat
+  | '0' => some 0
+  | '1' => some 1
+  | '2' => some 2
+  | '3' => some 3
+  | '4' => some 4
+  | '5' => some 5
+  | '6' => some 6
+  | '7' => some 7
+  | '8' => some 8
+  | '9' => some 9
+  | 'a' | 'A' => some 10
+  | 'b' | 'B' => some 11
+  | 'c' | 'C' => some 12
+  | 'd' | 'D' => some 13
+  | 'e' | 'E' => some 14
+  | 'f' | 'F' => some 15
+  | _ => none
+
+/-- Decode an even-length list of hexadecimal characters to bytes, rejecting
+    non-hexadecimal characters and odd-length tails. -/
+def decodeHexChars? : List Char → Option (List UInt8)
+  | [] => some []
+  | high :: low :: rest => do
+      let highValue ← hexNibble? high
+      let lowValue ← hexNibble? low
+      let tail ← decodeHexChars? rest
+      pure (UInt8.ofNat (highValue * 16 + lowValue) :: tail)
+  | [_] => none
+
 /-- BIP-style mnemonic for a modeled opcode. -/
 def opcodeAssembly : Opcode → String
   | .OP_NOP => "NOP"

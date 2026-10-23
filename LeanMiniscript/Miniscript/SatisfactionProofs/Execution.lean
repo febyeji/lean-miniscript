@@ -9,6 +9,14 @@ namespace LeanMiniscript.Miniscript
 
 open LeanMiniscript.Script
 
+/-- Balanced compilation identifies the exact `OP_IF` body when a fragment is
+    closed by `OP_ENDIF`. -/
+theorem splitConditional_compile_ifThen (fragment : CoreFragment) :
+    splitConditional (compile fragment ++ [.op .OP_ENDIF]) =
+      some { branches := [compile fragment], after := [] } := by
+  simpa using splitConditional_balanced_ifThen (compile_balancedControlFlow fragment)
+    (suffix := [])
+
 /-- A selected B-type execution consumes `args` and leaves one exact result. -/
 def BExecution (fragment : CoreFragment) (args : Stack) (result : StackElement)
     (flags : ScriptFlags) (ctx : TxContext) : Prop :=
@@ -51,7 +59,88 @@ def BinaryDecoded (order : WStackOrder) (flags : ScriptFlags)
   | .resultFirst =>
       decodeBinaryScriptNums flags result saved = .ok (resultValue, savedValue)
 
+/-- A W output prefix always holds exactly two elements. -/
+@[simp] theorem outputs_length (order : WStackOrder)
+    (saved result : StackElement) :
+    (order.outputs saved result).length = 2 := by
+  cases order <;> rfl
+
 end WStackOrder
+
+/-! ## Single-opcode stack frames
+
+The resource and budget proof layers lift the same one-opcode execution steps
+into their respective frame contracts. These shared exact frames keep the
+duplicated step proofs in one place. -/
+
+/-- `OP_BOOLAND` combines two decoded W-ordered operands into their logical
+    conjunction, in either physical output order. -/
+theorem WStackOrder.boolAndStackFrame
+    {saved result : StackElement} {savedValue resultValue : Int}
+    {order : WStackOrder} {flags : ScriptFlags} {ctx : TxContext}
+    (decoded : order.BinaryDecoded flags saved result savedValue resultValue) :
+    ExecutesStackFrame [.op .OP_BOOLAND] (order.outputs saved result)
+      [boolToElement ((savedValue != 0) && (resultValue != 0))] flags ctx := by
+  intro rest altStack
+  cases order with
+  | savedFirst =>
+      exact Eval.booland saved result savedValue resultValue rest [] altStack
+        flags ctx _ decoded Eval.done
+  | resultFirst =>
+      simpa [Bool.and_comm, WStackOrder.outputs] using
+        (Eval.booland result saved resultValue savedValue rest [] altStack
+          flags ctx _ decoded Eval.done)
+
+/-- `OP_BOOLOR` combines two decoded W-ordered operands into their logical
+    disjunction, in either physical output order. -/
+theorem WStackOrder.boolOrStackFrame
+    {saved result : StackElement} {savedValue resultValue : Int}
+    {order : WStackOrder} {flags : ScriptFlags} {ctx : TxContext}
+    (decoded : order.BinaryDecoded flags saved result savedValue resultValue) :
+    ExecutesStackFrame [.op .OP_BOOLOR] (order.outputs saved result)
+      [boolToElement ((savedValue != 0) || (resultValue != 0))] flags ctx := by
+  intro rest altStack
+  cases order with
+  | savedFirst =>
+      exact Eval.boolor saved result savedValue resultValue rest [] altStack
+        flags ctx _ decoded Eval.done
+  | resultFirst =>
+      simpa [Bool.or_comm, WStackOrder.outputs] using
+        (Eval.boolor result saved resultValue savedValue rest [] altStack
+          flags ctx _ decoded Eval.done)
+
+/-- `OP_ADD` sums two decoded W-ordered operands, in either physical output
+    order. -/
+theorem WStackOrder.addStackFrame
+    {saved result : StackElement} {savedValue resultValue : Int}
+    {order : WStackOrder} {flags : ScriptFlags} {ctx : TxContext}
+    (decoded : order.BinaryDecoded flags saved result savedValue resultValue) :
+    ExecutesStackFrame [.op .OP_ADD] (order.outputs saved result)
+      [scriptNum (savedValue + resultValue)] flags ctx := by
+  intro rest altStack
+  cases order with
+  | savedFirst =>
+      exact Eval.add saved result savedValue resultValue rest [] altStack
+        flags ctx _ decoded Eval.done
+  | resultFirst =>
+      simpa [WStackOrder.outputs, Int.add_comm] using
+        (Eval.add result saved resultValue savedValue rest [] altStack flags
+          ctx _ decoded Eval.done)
+
+/-- `OP_EQUAL` compares two stack elements and pushes the canonical boolean
+    outcome. -/
+theorem equalStackFrame (first second : StackElement) (flags : ScriptFlags)
+    (ctx : TxContext) :
+    ExecutesStackFrame [.op .OP_EQUAL] [first, second]
+      [boolToElement (decide (first = second))] flags ctx := by
+  intro rest altStack
+  by_cases equal : first = second
+  · simpa [equal, boolToElement] using
+      (Eval.equal_true first second rest [] altStack flags ctx _ equal
+        Eval.done)
+  · simpa [equal, boolToElement] using
+      (Eval.equal_false first second rest [] altStack flags ctx _ equal
+        Eval.done)
 
 /-- A selected W-type execution runs below one protected main-stack element
     and returns the protected element and exact B result in the wrapper's

@@ -14,18 +14,23 @@ def ExecutesBudgetFrame (script : Script) (inputs outputs : Stack)
 
 namespace ExecutesBudgetFrame
 
+/-- A zero-static-weight execution frame stays within a zero signature
+    budget. The weight premise defaults to the definitional `rfl` proof, so
+    single-instruction frames only need their execution premise. -/
 theorem of_zero {script : Script} {inputs outputs : Stack} {flags : ScriptFlags}
     {ctx : TxContext} (executed : ExecutesStackFrame script inputs outputs flags ctx)
-    (zero : staticValidationWeight script = 0) :
+    (zero : staticValidationWeight script = 0 := by rfl) :
     ExecutesBudgetFrame script inputs outputs flags ctx 0 := by
   intro rest alt
   obtain ⟨resources, observed⟩ := EvalResources.exists_of_eval_success (executed rest alt)
   exact ⟨resources, observed, zero ▸ observed.signatureWeight_le_static⟩
 
+/-- A zero-static-weight resource frame stays within a zero signature
+    budget. -/
 theorem of_resource_zero {script : Script} {inputs outputs : Stack} {flags : ScriptFlags}
     {ctx : TxContext} {trace : StackTraceBound} {dynamic : Nat}
     (frame : ExecutesResourceFrame script inputs outputs flags ctx trace dynamic)
-    (zero : staticValidationWeight script = 0) :
+    (zero : staticValidationWeight script = 0 := by rfl) :
     ExecutesBudgetFrame script inputs outputs flags ctx 0 := by
   apply of_zero _ zero
   intro rest alt

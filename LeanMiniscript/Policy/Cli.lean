@@ -1,5 +1,6 @@
 import LeanMiniscript.Policy.Compiler
 import LeanMiniscript.Miniscript.CompileConcreteChecked
+import LeanMiniscript.CliSupport
 
 namespace LeanMiniscript.Policy.Cli
 
@@ -20,7 +21,7 @@ inductive Command where
 /-- Preserve the original single-policy invocation and accept Lake's optional
 argument separator. Compilation has an explicit context override. -/
 def parseArgs (args : List String) : Except String Command :=
-  let args := match args with | "--" :: rest => rest | _ => args
+  let args := CliSupport.stripSeparator args
   match args with
   | ["--help"] | ["-h"] => .ok .help
   | ["compile", "--context", "p2wsh", source] => .ok (.compile .p2wsh source)

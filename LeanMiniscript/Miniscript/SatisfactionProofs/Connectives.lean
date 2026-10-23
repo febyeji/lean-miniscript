@@ -306,86 +306,181 @@ theorem BExecutionOutcome.or_d_right
   obtain ⟨result, frame, truth⟩ := secondExec
   exact ⟨result, firstExec.or_d_right minimal falsy frame, truth⟩
 
+/-- A canonical boolean selector executes the matching `or_i` branch frame:
+    `true` selects the first child, `false` the second. Shared by the B, K,
+    and V execution statements below. -/
+private theorem orIFrame (selector : Bool)
+    {first second : CoreFragment} {inputs outputs : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (bodyExec : ExecutesStackFrame
+      (compile (if selector then first else second)) inputs outputs
+      flags ctx) :
+    ExecutesStackFrame (compile (.or_i first second))
+      (boolToElement selector :: inputs) outputs flags ctx := by
+  cases selector with
+  | true =>
+      simpa [compile, compileWithKeyHash, List.append_assoc, boolToElement]
+        using ExecutesStackFrame.ifElse_first
+          (compile_balancedControlFlow first)
+          (compile_balancedControlFlow second)
+          (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg)
+          (by decide) bodyExec
+  | false =>
+      simpa [compile, compileWithKeyHash, List.append_assoc, boolToElement]
+        using ExecutesStackFrame.ifElse_second
+          (compile_balancedControlFlow first)
+          (compile_balancedControlFlow second)
+          (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg)
+          (by decide) bodyExec
+
+/-- A canonical boolean selector chooses the matching B branch of `or_i`:
+    `true` selects the first child, `false` the second. -/
+theorem BExecution.or_i (selector : Bool)
+    {first second : CoreFragment} {args : Stack} {result : StackElement}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : BExecution (if selector then first else second) args result
+      flags ctx) :
+    BExecution (.or_i first second) (boolToElement selector :: args) result
+      flags ctx :=
+  orIFrame selector executed
+
 /-- The canonical true selector chooses the first B branch of `or_i` and
     satisfies MINIMALIF for every flag set. -/
 theorem BExecution.or_i_left
     {first second : CoreFragment} {args : Stack} {result : StackElement}
     {flags : ScriptFlags} {ctx : TxContext}
     (executed : BExecution first args result flags ctx) :
-    BExecution (.or_i first second) (trueElement :: args) result flags ctx := by
-  simpa [BExecution, compile, compileWithKeyHash, List.append_assoc] using
-    ExecutesStackFrame.ifElse_first
-      (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by decide) executed
+    BExecution (.or_i first second) (trueElement :: args) result flags ctx :=
+  BExecution.or_i true executed
 
 /-- The canonical false selector chooses the second B branch of `or_i`. -/
 theorem BExecution.or_i_right
     {first second : CoreFragment} {args : Stack} {result : StackElement}
     {flags : ScriptFlags} {ctx : TxContext}
     (executed : BExecution second args result flags ctx) :
-    BExecution (.or_i first second) (falseElement :: args) result flags ctx := by
-  simpa [BExecution, compile, compileWithKeyHash, List.append_assoc] using
-    ExecutesStackFrame.ifElse_second
-      (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by decide) executed
+    BExecution (.or_i first second) (falseElement :: args) result flags ctx :=
+  BExecution.or_i false executed
+
+/-- A canonical boolean selector chooses the matching K branch of `or_i`. -/
+theorem KExecution.or_i (selector : Bool)
+    {first second : CoreFragment} {args : Stack} {key : StackElement}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : KExecution (if selector then first else second) args key
+      flags ctx) :
+    KExecution (.or_i first second) (boolToElement selector :: args) key
+      flags ctx :=
+  orIFrame selector executed
 
 theorem KExecution.or_i_left
     {first second : CoreFragment} {args : Stack} {key : StackElement}
     {flags : ScriptFlags} {ctx : TxContext}
     (executed : KExecution first args key flags ctx) :
-    KExecution (.or_i first second) (trueElement :: args) key flags ctx := by
-  simpa [KExecution, compile, compileWithKeyHash, List.append_assoc] using
-    ExecutesStackFrame.ifElse_first
-      (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by decide) executed
+    KExecution (.or_i first second) (trueElement :: args) key flags ctx :=
+  KExecution.or_i true executed
 
 theorem KExecution.or_i_right
     {first second : CoreFragment} {args : Stack} {key : StackElement}
     {flags : ScriptFlags} {ctx : TxContext}
     (executed : KExecution second args key flags ctx) :
-    KExecution (.or_i first second) (falseElement :: args) key flags ctx := by
-  simpa [KExecution, compile, compileWithKeyHash, List.append_assoc] using
-    ExecutesStackFrame.ifElse_second
-      (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by decide) executed
+    KExecution (.or_i first second) (falseElement :: args) key flags ctx :=
+  KExecution.or_i false executed
+
+/-- A canonical boolean selector chooses the matching V branch of `or_i`. -/
+theorem VExecution.or_i (selector : Bool)
+    {first second : CoreFragment} {args : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : VExecution (if selector then first else second) args
+      flags ctx) :
+    VExecution (.or_i first second) (boolToElement selector :: args)
+      flags ctx :=
+  orIFrame selector executed
 
 theorem VExecution.or_i_left
     {first second : CoreFragment} {args : Stack}
     {flags : ScriptFlags} {ctx : TxContext}
     (executed : VExecution first args flags ctx) :
-    VExecution (.or_i first second) (trueElement :: args) flags ctx := by
-  simpa [VExecution, compile, compileWithKeyHash, List.append_assoc] using
-    ExecutesStackFrame.ifElse_first
-      (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (minimalIfSatisfied_of_arg _ _ trueElement_minimalIfArg) (by decide) executed
+    VExecution (.or_i first second) (trueElement :: args) flags ctx :=
+  VExecution.or_i true executed
 
 theorem VExecution.or_i_right
     {first second : CoreFragment} {args : Stack}
     {flags : ScriptFlags} {ctx : TxContext}
     (executed : VExecution second args flags ctx) :
-    VExecution (.or_i first second) (falseElement :: args) flags ctx := by
-  simpa [VExecution, compile, compileWithKeyHash, List.append_assoc] using
-    ExecutesStackFrame.ifElse_second
-      (compile_balancedControlFlow first) (compile_balancedControlFlow second)
-      (minimalIfSatisfied_of_arg _ _ falseElement_minimalIfArg) (by decide) executed
+    VExecution (.or_i first second) (falseElement :: args) flags ctx :=
+  VExecution.or_i false executed
+
+/-- A canonical boolean selector chooses the matching `or_i` branch outcome:
+    `true` selects the first child, `false` the second. -/
+theorem BExecutionOutcome.or_i (selector : Bool)
+    {first second : CoreFragment} {args : Stack} {expected : Bool}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (executed : BExecutionOutcome (if selector then first else second) args
+      expected flags ctx) :
+    BExecutionOutcome (.or_i first second) (boolToElement selector :: args)
+      expected flags ctx := by
+  obtain ⟨result, frame, truth⟩ := executed
+  exact ⟨result, BExecution.or_i selector frame, truth⟩
 
 theorem BExecutionOutcome.or_i_left
     {first second : CoreFragment} {args : Stack} {expected : Bool}
     {flags : ScriptFlags} {ctx : TxContext}
     (executed : BExecutionOutcome first args expected flags ctx) :
     BExecutionOutcome (.or_i first second) (trueElement :: args)
-      expected flags ctx := by
-  obtain ⟨result, frame, truth⟩ := executed
-  exact ⟨result, frame.or_i_left, truth⟩
+      expected flags ctx :=
+  BExecutionOutcome.or_i true executed
 
 theorem BExecutionOutcome.or_i_right
     {first second : CoreFragment} {args : Stack} {expected : Bool}
     {flags : ScriptFlags} {ctx : TxContext}
     (executed : BExecutionOutcome second args expected flags ctx) :
     BExecutionOutcome (.or_i first second) (falseElement :: args)
-      expected flags ctx := by
-  obtain ⟨result, frame, truth⟩ := executed
-  exact ⟨result, frame.or_i_right, truth⟩
+      expected flags ctx :=
+  BExecutionOutcome.or_i false executed
+
+/-- A boolean first-child outcome executes the matching `andor` branch frame:
+    `true` selects Y (the second child), `false` selects Z (the third).
+    Shared by the B, K, and V execution statements below. -/
+private theorem andorFrame (branch : Bool)
+    {first second third : CoreFragment} {selector : StackElement}
+    {firstArgs branchArgs : Stack} {outputs : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (firstFrame : ExecutesStackFrame (compile first)
+      (firstArgs ++ branchArgs) (selector :: branchArgs) flags ctx)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
+    (outcome : castToBool selector = branch)
+    (branchFrame : ExecutesStackFrame
+      (compile (if branch then second else third)) branchArgs outputs
+      flags ctx) :
+    ExecutesStackFrame (compile (.andor first second third))
+      (firstArgs ++ branchArgs) outputs flags ctx := by
+  cases branch with
+  | true =>
+      have tail := ExecutesStackFrame.notifElse_second
+        (compile_balancedControlFlow third) (compile_balancedControlFlow second)
+        minimal outcome branchFrame
+      simpa [compile, compileWithKeyHash, List.append_assoc] using
+        ExecutesStackFrame.append firstFrame tail
+  | false =>
+      have tail := ExecutesStackFrame.notifElse_first
+        (compile_balancedControlFlow third) (compile_balancedControlFlow second)
+        minimal outcome branchFrame
+      simpa [compile, compileWithKeyHash, List.append_assoc] using
+        ExecutesStackFrame.append firstFrame tail
+
+/-- A boolean first-child outcome selects the matching `andor` B branch:
+    truthy selects Y, falsy selects Z. -/
+theorem BExecution.andor (branch : Bool)
+    {first second third : CoreFragment} {firstArgs branchArgs : Stack}
+    {selector result : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
+    (outcome : castToBool selector = branch)
+    (branchExec : BExecution (if branch then second else third) branchArgs
+      result flags ctx) :
+    BExecution (.andor first second third) (firstArgs ++ branchArgs) result
+      flags ctx :=
+  andorFrame branch (firstExec.withSuffix (suffix := branchArgs)) minimal
+    outcome branchExec
 
 /-- A truthy first child selects Y, the second source child of `andor`. -/
 theorem BExecution.andor_true
@@ -396,13 +491,8 @@ theorem BExecution.andor_true
     (truth : castToBool selector = true)
     (secondExec : BExecution second secondArgs result flags ctx) :
     BExecution (.andor first second third) (firstArgs ++ secondArgs)
-      result flags ctx := by
-  have firstFrame := firstExec.withSuffix (suffix := secondArgs)
-  have tail := ExecutesStackFrame.notifElse_second
-    (compile_balancedControlFlow third) (compile_balancedControlFlow second)
-    minimal truth secondExec
-  simpa [BExecution, compile, compileWithKeyHash, List.append_assoc] using
-    ExecutesStackFrame.append firstFrame tail
+      result flags ctx :=
+  BExecution.andor true firstExec minimal truth secondExec
 
 /-- A false first child selects Z, the third source child of `andor`. -/
 theorem BExecution.andor_false
@@ -413,13 +503,22 @@ theorem BExecution.andor_false
     (falsy : castToBool selector = false)
     (thirdExec : BExecution third thirdArgs result flags ctx) :
     BExecution (.andor first second third) (firstArgs ++ thirdArgs)
-      result flags ctx := by
-  have firstFrame := firstExec.withSuffix (suffix := thirdArgs)
-  have tail := ExecutesStackFrame.notifElse_first
-    (compile_balancedControlFlow third) (compile_balancedControlFlow second)
-    minimal falsy thirdExec
-  simpa [BExecution, compile, compileWithKeyHash, List.append_assoc] using
-    ExecutesStackFrame.append firstFrame tail
+      result flags ctx :=
+  BExecution.andor false firstExec minimal falsy thirdExec
+
+/-- A boolean first-child outcome selects the matching `andor` K branch. -/
+theorem KExecution.andor (branch : Bool)
+    {first second third : CoreFragment} {firstArgs branchArgs : Stack}
+    {selector key : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
+    (outcome : castToBool selector = branch)
+    (branchExec : KExecution (if branch then second else third) branchArgs
+      key flags ctx) :
+    KExecution (.andor first second third) (firstArgs ++ branchArgs) key
+      flags ctx :=
+  andorFrame branch (firstExec.withSuffix (suffix := branchArgs)) minimal
+    outcome branchExec
 
 theorem KExecution.andor_true
     {first second third : CoreFragment} {firstArgs secondArgs : Stack}
@@ -429,13 +528,8 @@ theorem KExecution.andor_true
     (truth : castToBool selector = true)
     (secondExec : KExecution second secondArgs key flags ctx) :
     KExecution (.andor first second third) (firstArgs ++ secondArgs)
-      key flags ctx := by
-  have firstFrame := firstExec.withSuffix (suffix := secondArgs)
-  have tail := ExecutesStackFrame.notifElse_second
-    (compile_balancedControlFlow third) (compile_balancedControlFlow second)
-    minimal truth secondExec
-  simpa [BExecution, KExecution, compile, compileWithKeyHash,
-    List.append_assoc] using ExecutesStackFrame.append firstFrame tail
+      key flags ctx :=
+  KExecution.andor true firstExec minimal truth secondExec
 
 theorem KExecution.andor_false
     {first second third : CoreFragment} {firstArgs thirdArgs : Stack}
@@ -445,13 +539,22 @@ theorem KExecution.andor_false
     (falsy : castToBool selector = false)
     (thirdExec : KExecution third thirdArgs key flags ctx) :
     KExecution (.andor first second third) (firstArgs ++ thirdArgs)
-      key flags ctx := by
-  have firstFrame := firstExec.withSuffix (suffix := thirdArgs)
-  have tail := ExecutesStackFrame.notifElse_first
-    (compile_balancedControlFlow third) (compile_balancedControlFlow second)
-    minimal falsy thirdExec
-  simpa [BExecution, KExecution, compile, compileWithKeyHash,
-    List.append_assoc] using ExecutesStackFrame.append firstFrame tail
+      key flags ctx :=
+  KExecution.andor false firstExec minimal falsy thirdExec
+
+/-- A boolean first-child outcome selects the matching `andor` V branch. -/
+theorem VExecution.andor (branch : Bool)
+    {first second third : CoreFragment} {firstArgs branchArgs : Stack}
+    {selector : StackElement} {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
+    (outcome : castToBool selector = branch)
+    (branchExec : VExecution (if branch then second else third) branchArgs
+      flags ctx) :
+    VExecution (.andor first second third) (firstArgs ++ branchArgs)
+      flags ctx :=
+  andorFrame branch (firstExec.withSuffix (suffix := branchArgs)) minimal
+    outcome branchExec
 
 theorem VExecution.andor_true
     {first second third : CoreFragment} {firstArgs secondArgs : Stack}
@@ -460,13 +563,9 @@ theorem VExecution.andor_true
     (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (truth : castToBool selector = true)
     (secondExec : VExecution second secondArgs flags ctx) :
-    VExecution (.andor first second third) (firstArgs ++ secondArgs) flags ctx := by
-  have firstFrame := firstExec.withSuffix (suffix := secondArgs)
-  have tail := ExecutesStackFrame.notifElse_second
-    (compile_balancedControlFlow third) (compile_balancedControlFlow second)
-    minimal truth secondExec
-  simpa [BExecution, VExecution, compile, compileWithKeyHash,
-    List.append_assoc] using ExecutesStackFrame.append firstFrame tail
+    VExecution (.andor first second third) (firstArgs ++ secondArgs)
+      flags ctx :=
+  VExecution.andor true firstExec minimal truth secondExec
 
 theorem VExecution.andor_false
     {first second third : CoreFragment} {firstArgs thirdArgs : Stack}
@@ -475,13 +574,27 @@ theorem VExecution.andor_false
     (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
     (falsy : castToBool selector = false)
     (thirdExec : VExecution third thirdArgs flags ctx) :
-    VExecution (.andor first second third) (firstArgs ++ thirdArgs) flags ctx := by
-  have firstFrame := firstExec.withSuffix (suffix := thirdArgs)
-  have tail := ExecutesStackFrame.notifElse_first
-    (compile_balancedControlFlow third) (compile_balancedControlFlow second)
-    minimal falsy thirdExec
-  simpa [BExecution, VExecution, compile, compileWithKeyHash,
-    List.append_assoc] using ExecutesStackFrame.append firstFrame tail
+    VExecution (.andor first second third) (firstArgs ++ thirdArgs)
+      flags ctx :=
+  VExecution.andor false firstExec minimal falsy thirdExec
+
+/-- A boolean first-child outcome selects the matching `andor` branch
+    outcome: truthy selects Y (the second child), falsy selects Z (the
+    third). -/
+theorem BExecutionOutcome.andor (branch : Bool)
+    {first second third : CoreFragment} {firstArgs branchArgs : Stack}
+    {selector : StackElement} {expected : Bool}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (firstExec : BExecution first firstArgs selector flags ctx)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector)
+    (outcome : castToBool selector = branch)
+    (branchExec : BExecutionOutcome (if branch then second else third)
+      branchArgs expected flags ctx) :
+    BExecutionOutcome (.andor first second third) (firstArgs ++ branchArgs)
+      expected flags ctx := by
+  obtain ⟨result, frame, resultTruth⟩ := branchExec
+  exact ⟨result, BExecution.andor branch firstExec minimal outcome frame,
+    resultTruth⟩
 
 theorem BExecutionOutcome.andor_true
     {first second third : CoreFragment} {firstArgs secondArgs : Stack}
@@ -492,9 +605,8 @@ theorem BExecutionOutcome.andor_true
     (truth : castToBool selector = true)
     (secondExec : BExecutionOutcome second secondArgs expected flags ctx) :
     BExecutionOutcome (.andor first second third) (firstArgs ++ secondArgs)
-      expected flags ctx := by
-  obtain ⟨result, frame, resultTruth⟩ := secondExec
-  exact ⟨result, firstExec.andor_true minimal truth frame, resultTruth⟩
+      expected flags ctx :=
+  BExecutionOutcome.andor true firstExec minimal truth secondExec
 
 theorem BExecutionOutcome.andor_false
     {first second third : CoreFragment} {firstArgs thirdArgs : Stack}
@@ -505,8 +617,7 @@ theorem BExecutionOutcome.andor_false
     (falsy : castToBool selector = false)
     (thirdExec : BExecutionOutcome third thirdArgs expected flags ctx) :
     BExecutionOutcome (.andor first second third) (firstArgs ++ thirdArgs)
-      expected flags ctx := by
-  obtain ⟨result, frame, resultTruth⟩ := thirdExec
-  exact ⟨result, firstExec.andor_false minimal falsy frame, resultTruth⟩
+      expected flags ctx :=
+  BExecutionOutcome.andor false firstExec minimal falsy thirdExec
 
 end LeanMiniscript.Miniscript

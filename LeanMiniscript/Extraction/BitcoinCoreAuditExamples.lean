@@ -91,10 +91,7 @@ private def dropFixtureJson : String := r#"
 
 /-- DROP covers stack order, empty main stacks, final acceptance, inactive
     branches, and scriptSig execution through the Core fixture importer. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle dropFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 6 && audit.matchedRows == 6 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle dropFixtureJson 6 6 0 := by native_decide
 
 private def depthFixtureJson : String := r#"
 [
@@ -108,10 +105,7 @@ private def depthFixtureJson : String := r#"
 
 /-- Verbatim rows from bitcoinCoreScriptTestsCommit cover DEPTH on empty and
     populated stacks, with non-numeric elements and preceding stack operations. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle depthFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 5 && audit.matchedRows == 5 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle depthFixtureJson 5 5 0 := by native_decide
 
 private def depthBoundaryFixtureJson : String := r#"
 [
@@ -126,10 +120,7 @@ private def depthBoundaryFixtureJson : String := r#"
 
 /-- Local Core-format regressions cover final truth, stack order, alt-stack
     exclusion, inactive execution, scriptSig and raw-byte parsing. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle depthBoundaryFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 6 && audit.matchedRows == 6 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle depthBoundaryFixtureJson 6 6 0 := by native_decide
 
 private def notFixtureJson : String := r#"
 [
@@ -152,10 +143,7 @@ private def notFixtureJson : String := r#"
 
 /-- Verbatim rows from bitcoinCoreScriptTestsCommit cover NOT in both scripts,
     canonical and non-minimal numbers, negative zero, underflow and overflow. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle notFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 14 && audit.matchedRows == 14 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle notFixtureJson 14 14 0 := by native_decide
 
 private def notBoundaryFixtureJson : String := r#"
 [
@@ -169,10 +157,7 @@ private def notBoundaryFixtureJson : String := r#"
 
 /-- Local Core-format rows pin the raw opcode, four/five-byte boundary and
     inactive underflow without changing the importer's support boundary. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle notBoundaryFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 5 && audit.matchedRows == 5 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle notBoundaryFixtureJson 5 5 0 := by native_decide
 
 private def withinFixtureJson : String := r#"
 [
@@ -197,10 +182,7 @@ private def withinFixtureJson : String := r#"
 /-- All fifteen verbatim WITHIN rows from bitcoinCoreScriptTestsCommit cover
     operand order, interval boundaries, signed numbers, underflow and each
     non-minimal operand position with minimal encoding enabled and disabled. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle withinFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 15 && audit.matchedRows == 15 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle withinFixtureJson 15 15 0 := by native_decide
 
 private def withinBoundaryFixtureJson : String := r#"
 [
@@ -223,10 +205,7 @@ private def withinBoundaryFixtureJson : String := r#"
 
 /-- Separate local Core-format rows exercise raw byte parsing, equal/reversed
     bounds, four/five-byte limits, negative zero, inactive code and scriptSig. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle withinBoundaryFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 14 && audit.matchedRows == 14 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle withinBoundaryFixtureJson 14 14 0 := by native_decide
 
 private def nipFixtureJson : String := r#"
 [
@@ -241,10 +220,7 @@ private def nipFixtureJson : String := r#"
 
 /-- All six verbatim NIP rows from bitcoinCoreScriptTestsCommit cover success,
     zero/one-input underflow and a false surviving top item. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle nipFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 6 && audit.matchedRows == 6 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle nipFixtureJson 6 6 0 := by native_decide
 
 private def nipBoundaryFixtureJson : String := r#"
 [
@@ -265,10 +241,7 @@ private def nipBoundaryFixtureJson : String := r#"
 
 /-- Separate local Core-format regressions cover raw byte parsing, unchanged
     non-minimal and five-byte numbers, lower/alt stacks, inactive code and suffixes. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle nipBoundaryFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 12 && audit.matchedRows == 12 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle nipBoundaryFixtureJson 12 12 0 := by native_decide
 
 private def overFixtureJson : String := r#"
 [
@@ -283,10 +256,7 @@ private def overFixtureJson : String := r#"
 
 /-- All six verbatim OVER rows from bitcoinCoreScriptTestsCommit cover copied
     values, stack depth, zero/one-input underflow and final truth. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle overFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 6 && audit.matchedRows == 6 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle overFixtureJson 6 6 0 := by native_decide
 
 private def overBoundaryFixtureJson : String := r#"
 [
@@ -307,10 +277,7 @@ private def overBoundaryFixtureJson : String := r#"
 
 /-- Separate local Core-format rows cover raw opcode parsing, original stack
     order, exact non-minimal/five-byte copies, alt stacks, inactive code and suffixes. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle overBoundaryFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 12 && audit.matchedRows == 12 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle overBoundaryFixtureJson 12 12 0 := by native_decide
 
 private def rotFixtureJson : String := r#"
 [
@@ -330,10 +297,7 @@ private def rotFixtureJson : String := r#"
 
 /-- Verbatim ROT rows from bitcoinCoreScriptTestsCommit cover operand order,
     repeated rotation, final truth and all three underflow lengths. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle rotFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 11 && audit.matchedRows == 11 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle rotFixtureJson 11 11 0 := by native_decide
 
 private def rotBoundaryFixtureJson : String := r#"
 [
@@ -356,10 +320,7 @@ private def rotBoundaryFixtureJson : String := r#"
 
 /-- Local Core-format regressions cover raw bytes, scriptSig, preserved numeric
     encodings, lower/alternate stacks and inactive branches. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle rotBoundaryFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 14 && audit.matchedRows == 14 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle rotBoundaryFixtureJson 14 14 0 := by native_decide
 
 private def twoDupFixtureJson : String := r#"
 [
@@ -373,10 +334,7 @@ private def twoDupFixtureJson : String := r#"
 
 /-- Verbatim 2DUP rows from bitcoinCoreScriptTestsCommit cover copy order,
     ROT continuation, final truth and zero/one-item underflow. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle twoDupFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 5 && audit.matchedRows == 5 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle twoDupFixtureJson 5 5 0 := by native_decide
 
 private def twoDupBoundaryFixtureJson : String := r#"
 [
@@ -397,10 +355,7 @@ private def twoDupBoundaryFixtureJson : String := r#"
 
 /-- Local Core-format rows cover raw opcode parsing, copy order, preserved
     byte encodings, scriptSig, alternate stacks and inactive execution. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle twoDupBoundaryFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 12 && audit.matchedRows == 12 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle twoDupBoundaryFixtureJson 12 12 0 := by native_decide
 
 private def tuckFixtureJson : String := r#"
 [
@@ -414,10 +369,7 @@ private def tuckFixtureJson : String := r#"
 "#
 
 /-- All six verbatim TUCK rows compare, including the two ending in 2DROP. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle tuckFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 6 && audit.matchedRows == 6 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle tuckFixtureJson 6 6 0 := by native_decide
 
 private def tuckBoundaryFixtureJson : String := r#"
 [
@@ -439,10 +391,7 @@ private def tuckBoundaryFixtureJson : String := r#"
 
 /-- Local Core-format rows check raw bytes, insertion order, exact numeric
     bytes, alternate stacks, inactive code and underflow before suffixes. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle tuckBoundaryFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 13 && audit.matchedRows == 13 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle tuckBoundaryFixtureJson 13 13 0 := by native_decide
 
 private def twoDropFixtureJson : String := r#"
 [
@@ -455,10 +404,7 @@ private def twoDropFixtureJson : String := r#"
 
 /-- Verbatim 2DROP blockers from bitcoinCoreScriptTestsCommit cover success,
     final false results, insufficient input, and TUCK continuations. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle twoDropFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 4 && audit.matchedRows == 4 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle twoDropFixtureJson 4 4 0 := by native_decide
 
 private def twoDropBoundaryFixtureJson : String := r#"
 [
@@ -481,10 +427,7 @@ private def twoDropBoundaryFixtureJson : String := r#"
 
 /-- Separate local Core-format rows check raw bytes, remaining stack order,
     numeric bytes without decoding, alt stacks, inactive code and suffixes. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle twoDropBoundaryFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 14 && audit.matchedRows == 14 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle twoDropBoundaryFixtureJson 14 14 0 := by native_decide
 
 private def twoRotFixtureJson : String := r#"
 [
@@ -504,10 +447,7 @@ private def twoRotFixtureJson : String := r#"
 
 /-- All eleven verbatim 2ROT rows from bitcoinCoreScriptTestsCommit cover
     pair order, repeated rotation, stack depth, final truth and underflow. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle twoRotFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 11 && audit.matchedRows == 11 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle twoRotFixtureJson 11 11 0 := by native_decide
 
 private def twoRotBoundaryFixtureJson : String := r#"
 [
@@ -534,10 +474,7 @@ private def twoRotBoundaryFixtureJson : String := r#"
 
 /-- Separate local Core-format rows check raw bytes, lower-stack order,
     numeric bytes without decoding, alt stacks, inactive code and every short input. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle twoRotBoundaryFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 18 && audit.matchedRows == 18 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle twoRotBoundaryFixtureJson 18 18 0 := by native_decide
 
 private def twoSwapFixtureJson : String := r#"
 [
@@ -551,10 +488,7 @@ private def twoSwapFixtureJson : String := r#"
 
 /-- All five verbatim 2SWAP rows from bitcoinCoreScriptTestsCommit cover
     pair order, truth and underflow before a continuation. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle twoSwapFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 5 && audit.matchedRows == 5 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle twoSwapFixtureJson 5 5 0 := by native_decide
 
 private def twoSwapBoundaryFixtureJson : String := r#"
 [
@@ -579,10 +513,7 @@ private def twoSwapBoundaryFixtureJson : String := r#"
 
 /-- Separate local Core-format rows check raw bytes, lower-stack order,
     numeric bytes without decoding, alt stacks, inactive code and every short input. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle twoSwapBoundaryFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 16 && audit.matchedRows == 16 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle twoSwapBoundaryFixtureJson 16 16 0 := by native_decide
 
 private def twoOverFixtureJson : String := r#"
 [
@@ -596,10 +527,7 @@ private def twoOverFixtureJson : String := r#"
 
 /-- All 5 verbatim 2OVER rows from bitcoinCoreScriptTestsCommit cover
     copy order, arithmetic continuations, final truth and underflow. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle twoOverFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 5 && audit.matchedRows == 5 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle twoOverFixtureJson 5 5 0 := by native_decide
 
 private def threeDupFixtureJson : String := r#"
 [
@@ -614,10 +542,7 @@ private def threeDupFixtureJson : String := r#"
 
 /-- All 6 verbatim 3DUP rows from bitcoinCoreScriptTestsCommit cover
     copy order, arithmetic continuations, final truth and underflow. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle threeDupFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 6 && audit.matchedRows == 6 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle threeDupFixtureJson 6 6 0 := by native_decide
 
 private def twoOverBoundaryFixtureJson : String := r#"
 [
@@ -644,10 +569,7 @@ private def twoOverBoundaryFixtureJson : String := r#"
 
 /-- Separate local Core-format rows check raw bytes, copy and lower-stack order,
     numeric bytes without decoding, scriptSig, alternate stacks and all short inputs. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle twoOverBoundaryFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 18 && audit.matchedRows == 18 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle twoOverBoundaryFixtureJson 18 18 0 := by native_decide
 
 private def threeDupBoundaryFixtureJson : String := r#"
 [
@@ -672,10 +594,7 @@ private def threeDupBoundaryFixtureJson : String := r#"
 
 /-- Separate local Core-format rows check raw bytes, copy and lower-stack order,
     numeric bytes without decoding, scriptSig, alternate stacks and all short inputs. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle threeDupBoundaryFixtureJson).toOption.map
-    fun audit => audit.comparedRows == 16 && audit.matchedRows == 16 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle threeDupBoundaryFixtureJson 16 16 0 := by native_decide
 
 -- Repetition reconstructs the exact source strings at pinned Core rows 299–301
 -- and 831–833 while keeping the 520-byte payloads compact in this file.
@@ -704,11 +623,7 @@ private def threeDupRawCoreRows : List (List String) :=
 
 /-- The three pinned raw-byte success rows compare through the unbounded importer.
     Runtime stack limits are checked separately in ThreeDupExamples. -/
-example : ((auditCoreScriptTests rejectingFixtureOracle
-    (Lean.toJson threeDupRawCoreRows).compress).toOption.map
-    fun audit => audit.comparedRows == 3 && audit.matchedRows == 3 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle (Lean.toJson threeDupRawCoreRows).compress 3 3 0 := by native_decide
 
 private def threeDupResourceErrorCoreRows : List (List String) :=
   [["1 2 3 4 5 " ++ rawThreeDups 165,
@@ -721,10 +636,6 @@ private def threeDupResourceErrorCoreRows : List (List String) :=
     "10,001-byte scriptPubKey"]]
 
 -- The fixture interpreter compares resource-limit errors in source order.
-example : ((auditCoreScriptTests rejectingFixtureOracle
-    (Lean.toJson threeDupResourceErrorCoreRows).compress).toOption.map
-    fun audit => audit.comparedRows == 3 && audit.matchedRows == 3 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle (Lean.toJson threeDupResourceErrorCoreRows).compress 3 3 0 := by native_decide
 
 end LeanMiniscript.Extraction

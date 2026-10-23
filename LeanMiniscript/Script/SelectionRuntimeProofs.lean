@@ -280,14 +280,7 @@ theorem runtimeStep_selection_preserves (oracle : CryptoOracle)
       next.stack.length +
         (if state.conditions.all id && decide (opcode ≠ .OP_PICK) then 1 else 0) =
         state.stack.length := by
-  unfold runtimeStep at stepped
-  cases executed : executeRuntimeElement oracle (.op opcode) state flags ctx with
-  | error error => simp [executed, bind, Except.bind] at stepped
-  | ok middle =>
-      simp only [executed, bind, Except.bind] at stepped
-      have same := (checkRuntimeStack_ok stepped).1
-      subst next
-      exact executeRuntimeElement_selection_preserves oracle opcode state middle flags ctx
-        selection executed
+  exact executeRuntimeElement_selection_preserves oracle opcode state next flags ctx
+    selection (executeRuntimeElement_eq_of_runtimeStep stepped)
 
 end LeanMiniscript.Script

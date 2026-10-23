@@ -116,22 +116,6 @@ private theorem choiceFrames_snoc_inv
       exact ⟨otherTruths, otherFrames, false, frame, rfl, rfl, prior,
         Or.inr ⟨rfl, selected⟩⟩
 
-private theorem listSnocInductionGenerated {α : Type}
-    {motive : List α → Prop} (nil : motive [])
-    (snoc : ∀ (items : List α) (item : α),
-      motive items → motive (items ++ [item])) :
-    ∀ items, motive items := by
-  intro items
-  have reversed : motive items.reverse.reverse := by
-    have aux : ∀ reversedItems : List α, motive reversedItems.reverse := by
-      intro reversedItems
-      induction reversedItems with
-      | nil => simpa using nil
-      | cons item reversedItems ih =>
-          simpa using snoc reversedItems.reverse item ih
-    exact aux items.reverse
-  simpa using reversed
-
 private theorem allKeysValid_append
     {scriptCtx : ScriptContext} {first second : List PubKey} :
     CoreFragment.allKeysValid scriptCtx (first ++ second) ↔
@@ -168,7 +152,7 @@ theorem CandidatePair.ChoiceFrames.toMultiASlots
     (modeled : ModeledContextFlags .tapscript flags)
     (sound : env.Sound) (encodings : env.EncodingSound flags) :
     ∃ signatures, MultiASlots flags env.txCtx keys truths frames signatures := by
-  induction keys using listSnocInductionGenerated generalizing truths frames with
+  induction keys using List.snocInduction generalizing truths frames with
   | nil =>
       obtain ⟨rfl, rfl⟩ := choiceFrames_nil_inv choices
       exact ⟨[], .nil⟩
@@ -548,7 +532,7 @@ theorem CandidatePair.ChoiceTrace.toOrderedMultiSignatures
       count frames witness) :
     OrderedMultiSignatures env witness keys.reverse ∧
       witness.length = count := by
-  induction keys using listSnocInductionGenerated generalizing count frames witness with
+  induction keys using List.snocInduction generalizing count frames witness with
   | nil =>
       simp only [List.map_nil] at trace
       generalize pairsEq : ([] : List CandidatePair) = pairs at trace
@@ -791,15 +775,6 @@ theorem checkMultiSigFor_all_empty_false
     positive (by simpa using atMost) reversedValid version modeled sound
   simpa using checked
 
-private theorem replicateFalse_snocGenerated (count : Nat) :
-    List.replicate count falseElement ++ [falseElement] =
-      List.replicate (count + 1) falseElement := by
-  induction count with
-  | zero => rfl
-  | succ count ih =>
-      simp only [List.replicate_succ, List.cons_append]
-      exact congrArg (falseElement :: ·) ih
-
 /-- Strong generated contract for a structurally valid legacy `multi` pair.
     Satisfaction follows the exact-count signature subsequence; dissatisfaction
     uses the canonical historical dummy and all-empty signature vector. -/
@@ -903,7 +878,7 @@ theorem generatedContract_multi_valid
       have executed := multi_dissatisfaction_execution versionNe
         keyBoundMax atMost checked
       simpa [Witness.toInitialStack, List.reverse_replicate,
-        replicateFalse_snocGenerated, boolToElement] using executed
+        List.replicate_snoc (a := falseElement), boolToElement] using executed
 
 /-- Every well-formed legacy `multi` exposes strong generated support. Its
     P2WSH context restriction supplies witness-v0 execution; well-formedness

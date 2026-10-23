@@ -2,6 +2,38 @@ import LeanMiniscript.Miniscript.Satisfaction
 
 /-! Simplification equations for satisfaction and dissatisfaction of each fragment. -/
 
+/-- Source-order list induction: prove a `List α` motive from its `[]` case and
+    one `snoc` step. -/
+theorem List.snocInduction {α : Type} {motive : List α → Prop}
+    (nil : motive [])
+    (snoc : ∀ (items : List α) (item : α),
+      motive items → motive (items ++ [item])) :
+    ∀ items, motive items := by
+  intro items
+  have reversed : motive items.reverse.reverse := by
+    have aux : ∀ reversedItems : List α, motive reversedItems.reverse := by
+      intro reversedItems
+      induction reversedItems with
+      | nil => simpa using nil
+      | cons item reversedItems ih =>
+          simpa using snoc reversedItems.reverse item ih
+    exact aux items.reverse
+  simpa using reversed
+
+/-- Appending the replicated element grows the replication by one. -/
+theorem List.replicate_snoc {α : Type} (count : Nat) (a : α) :
+    List.replicate count a ++ [a] = List.replicate (count + 1) a := by
+  induction count with
+  | zero => rfl
+  | succ count ih =>
+      simp only [List.replicate_succ, List.cons_append]
+      exact congrArg (a :: ·) ih
+
+/-- Appending one replicated element equals consing it onto the replication. -/
+theorem List.replicate_rotate {α : Type} (count : Nat) (a : α) :
+    List.replicate count a ++ [a] = a :: List.replicate count a := by
+  rw [List.replicate_snoc count a, List.replicate_succ]
+
 namespace LeanMiniscript.Miniscript
 
 open LeanMiniscript.Script

@@ -74,11 +74,7 @@ example : selectionFixtureSourceIndices.eraseDups.length = 49 := by
   native_decide
 
 -- Selected rows compare against their exact upstream expected result tags.
-example : ((auditCoreScriptTests rejectingFixtureOracle selectionFixtureJson).toOption.map
-    fun audit => audit.testRows == 49 && audit.comparedRows == 49 &&
-      audit.matchedRows == 49 && audit.unsupportedRows == 0 &&
-      audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle selectionFixtureJson 49 49 0 := by native_decide
 
 private def selectionSourceFixtures : List (String × String × Opcode) :=
   [("PICK", "0x79", .OP_PICK), ("ROLL", "0x7a", .OP_ROLL),
@@ -126,10 +122,6 @@ private def selectionBoundaryFixtureJson : String := r#"
 
 -- Local fixtures exercise raw bytes, scriptSig execution, canonical numeric outputs,
 -- untouched selected bytes, inactive branches and numeric-error ordering.
-example : ((auditCoreScriptTests rejectingFixtureOracle selectionBoundaryFixtureJson).toOption.map
-    fun audit => audit.testRows == 28 && audit.comparedRows == 28 &&
-      audit.matchedRows == 28 && audit.unsupportedRows == 0 &&
-      audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle selectionBoundaryFixtureJson 28 28 0 := by native_decide
 
 end LeanMiniscript.Extraction

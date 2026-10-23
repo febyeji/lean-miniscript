@@ -16,9 +16,9 @@ them as internal proof helpers, not stable API.
 -/
 
 private theorem hexNibble_hexDigit (n : Nat) (h : n < 16) :
-    hexNibble? (LeanMiniscript.Script.hexDigit n) = some n := by
+    LeanMiniscript.Script.hexNibble? (LeanMiniscript.Script.hexDigit n) = some n := by
   have hAll : ∀ value : Fin 16,
-      hexNibble? (LeanMiniscript.Script.hexDigit value.val) =
+      LeanMiniscript.Script.hexNibble? (LeanMiniscript.Script.hexDigit value.val) =
         some value.val := by
     decide
   exact hAll ⟨n, h⟩
@@ -36,22 +36,22 @@ private theorem byteHexValueUInt8 (byte : UInt8) :
 
 private theorem decodeHexChars_byteHexChars_append
     (byte : UInt8) (chars : List Char) :
-    decodeHexChars?
+    LeanMiniscript.Script.decodeHexChars?
         (LeanMiniscript.Script.byteHexChars byte ++ chars) =
-      match decodeHexChars? chars with
+      match LeanMiniscript.Script.decodeHexChars? chars with
       | some tail => some (byte :: tail)
       | none => none := by
   have hHigh : byte.toNat / 16 < 16 := by
     have := byte.toNat_lt
     omega
   have hLow : byte.toNat % 16 < 16 := Nat.mod_lt _ (by omega)
-  simp [LeanMiniscript.Script.byteHexChars, decodeHexChars?,
+  simp [LeanMiniscript.Script.byteHexChars, LeanMiniscript.Script.decodeHexChars?,
     hexNibble_hexDigit, hHigh, hLow]
   rw [byteHexValueUInt8]
-  cases decodeHexChars? chars <;> rfl
+  cases LeanMiniscript.Script.decodeHexChars? chars <;> rfl
 
 private theorem decodeHexChars_byteHexChars (bytes : List UInt8) :
-    decodeHexChars?
+    LeanMiniscript.Script.decodeHexChars?
         (bytes.flatMap LeanMiniscript.Script.byteHexChars) = some bytes := by
   induction bytes with
   | nil => rfl

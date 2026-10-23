@@ -4,16 +4,6 @@ namespace LeanMiniscript.Script
 
 open LeanMiniscript.Miniscript
 
-local instance {ε α : Type} [DecidableEq ε] [DecidableEq α] : DecidableEq (Except ε α) := by
-  intro a b
-  cases a <;> cases b
-  · rename_i x y
-    exact decidable_of_iff (x = y) (by simp)
-  · exact isFalse (by intro h; cases h)
-  · exact isFalse (by intro h; cases h)
-  · rename_i x y
-    exact decidable_of_iff (x = y) (by simp)
-
 /-! Boundary regressions for the modeled (no OP_SUCCESSx) Tapscript subset.
 Order and Core error tags follow ExecuteWitnessScript at Core commit
 9be056a8a72b624dae9623b2f7bded92c2a21c91. These are local regressions, not

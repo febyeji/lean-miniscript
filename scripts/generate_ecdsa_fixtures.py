@@ -6,12 +6,14 @@ import argparse
 import hashlib
 from pathlib import Path
 import re
+import sys
+sys.dont_write_bytecode = True
+import fixture_common
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('bip143', type=Path)
 args = parser.parse_args()
-if hashlib.sha256(args.bip143.read_bytes()).hexdigest() != '62bc71351563e68baeb12643c68355d217953ae9eb6a6e68b2b0323275b6beec':
-    raise SystemExit('Source checksum mismatch; expected SHA-256 62bc71351563e68baeb12643c68355d217953ae9eb6a6e68b2b0323275b6beec')
+fixture_common.require_sha256(args.bip143, fixture_common.BIP143_SHA256)
 text = args.bip143.read_text()
 rows = []
 for match in re.finditer(r'(?m)^\s+sigHash:\s+([0-9a-f]{64})', text):
@@ -65,5 +67,5 @@ for name, vectors in [('bip143Signatures', rows), ('compatibilitySignatures', co
     block += ']\n'
 block += '-- END GENERATED VECTORS'
 out = Path(__file__).resolve().parent.parent / 'LeanMiniscript/Bitcoin/ECDSAExamples.lean'
-out.write_text(re.sub(r'-- BEGIN GENERATED VECTORS.*?-- END GENERATED VECTORS', lambda _: block, out.read_text(), flags=re.S))
+fixture_common.rewrite_generated_block(out, block)
 print(f'Wrote {len(rows)} BIP143 signatures and {len(compatibility)} derived cases.')

@@ -69,38 +69,20 @@ private def tokenizeCoreSource (source : String) :
     Except CoreScriptSourceError (List CoreSourceToken) :=
   tokenizeCoreSourceAux source.toList [] [] false
 
-private def hexNibble? : Char → Option Nat
-  | '0' => some 0
-  | '1' => some 1
-  | '2' => some 2
-  | '3' => some 3
-  | '4' => some 4
-  | '5' => some 5
-  | '6' => some 6
-  | '7' => some 7
-  | '8' => some 8
-  | '9' => some 9
-  | 'a' | 'A' => some 10
-  | 'b' | 'B' => some 11
-  | 'c' | 'C' => some 12
-  | 'd' | 'D' => some 13
-  | 'e' | 'E' => some 14
-  | 'f' | 'F' => some 15
-  | _ => none
-
-private def decodeHexChars (token : String) : List Char →
-    Except CoreScriptSourceError (List UInt8)
-  | [] => .ok []
-  | [_] => .error (.oddHexLength token)
-  | high :: low :: rest => do
-      let highNibble ← match hexNibble? high with
-        | some value => pure value
-        | none => throw (.invalidHex token)
-      let lowNibble ← match hexNibble? low with
-        | some value => pure value
-        | none => throw (.invalidHex token)
-      return UInt8.ofNat (16 * highNibble + lowNibble) ::
-        (← decodeHexChars token rest)
+/-- Decode the hex digit pairs of a `0x` token through the shared Script hex
+    decoder. A malformed pair is reported before an odd trailing nibble,
+    matching the importer's original left-to-right pair scan. -/
+private def decodeHexChars (token : String) (chars : List Char) :
+    Except CoreScriptSourceError (List UInt8) :=
+  let pairChars := chars.take (2 * (chars.length / 2))
+  if pairChars.any (fun char => (hexNibble? char).isNone) then
+    .error (.invalidHex token)
+  else if chars.length % 2 = 1 then
+    .error (.oddHexLength token)
+  else
+    match decodeHexChars? chars with
+    | some bytes => .ok bytes
+    | none => .error (.invalidHex token)
 
 private def decodeRawHexToken (token : String) :
     Except CoreScriptSourceError ByteArray :=

@@ -27,6 +27,15 @@ abbrev andorModifiers (firstMods secondMods thirdMods : CorrectnessModifiers) :
   d := thirdMods.d
   u := secondMods.u && thirdMods.u
 
+/-- Correctness modifiers that `or_i first second` derives from its children
+    (`z` and `n` keep their default `false`). Proof-internal shorthand: public
+    statements spell the record out. -/
+abbrev orIModifiers (firstMods secondMods : CorrectnessModifiers) :
+    CorrectnessModifiers where
+  o := firstMods.z && secondMods.z
+  d := firstMods.d || secondMods.d
+  u := firstMods.u && secondMods.u
+
 namespace GeneratedContract
 
 private theorem andVInput
@@ -351,6 +360,33 @@ private theorem orIInput
   · exact sourceZero
   · simp
 
+/-- A canonical boolean selector chooses the matching `or_i` branch contract:
+    `true` selects the first child, `false` the second. -/
+theorem orI_b (selector : Bool)
+    {first second : CoreFragment} {witness : Witness} {expected : Bool}
+    {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (contract : GeneratedContract (if selector then first else second) witness
+      expected flags txCtx ⟨.B, if selector then firstMods else secondMods⟩) :
+    GeneratedContract (.or_i first second)
+      (witness.withSelector (boolToElement selector)) expected flags txCtx
+      ⟨.B, orIModifiers firstMods secondMods⟩ := by
+  cases selector with
+  | true =>
+      change GeneratedContract first witness expected flags txCtx
+        ⟨.B, firstMods⟩ at contract
+      cases contract with
+      | b input facts executed =>
+          exact .b (orIInput input trueElement_size_le (by simp_all))
+            (facts.retype (by simp_all)) (by simpa [boolToElement] using executed.or_i_left)
+  | false =>
+      change GeneratedContract second witness expected flags txCtx
+        ⟨.B, secondMods⟩ at contract
+      cases contract with
+      | b input facts executed =>
+          exact .b (orIInput input falseElement_size_le (by simp_all))
+            (facts.retype (by simp_all)) (by simpa [boolToElement] using executed.or_i_right)
+
 theorem orILeft_b
     {first second : CoreFragment} {witness : Witness} {expected : Bool}
     {firstMods secondMods : CorrectnessModifiers}
@@ -362,11 +398,8 @@ theorem orILeft_b
         o := firstMods.z && secondMods.z
         d := firstMods.d || secondMods.d
         u := firstMods.u && secondMods.u
-      }⟩ := by
-  cases contract with
-  | b input facts executed =>
-      exact .b (orIInput input trueElement_size_le (by simp_all))
-        (facts.retype (by simp_all)) (by simpa using executed.or_i_left)
+      }⟩ :=
+  orI_b true contract
 
 theorem orIRight_b
     {first second : CoreFragment} {witness : Witness} {expected : Bool}
@@ -379,11 +412,45 @@ theorem orIRight_b
         o := firstMods.z && secondMods.z
         d := firstMods.d || secondMods.d
         u := firstMods.u && secondMods.u
-      }⟩ := by
-  cases contract with
-  | b input facts executed =>
-      exact .b (orIInput input falseElement_size_le (by simp_all))
-        (facts.retype (by simp_all)) (by simpa using executed.or_i_right)
+      }⟩ :=
+  orI_b false contract
+
+/-- A canonical boolean selector chooses the matching `or_i` branch contract:
+    `true` selects the first child, `false` the second. -/
+theorem orI_k (selector : Bool)
+    {first second : CoreFragment} {witness : Witness} {expected : Bool}
+    {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (contract : GeneratedContract (if selector then first else second) witness
+      expected flags txCtx ⟨.K, if selector then firstMods else secondMods⟩) :
+    GeneratedContract (.or_i first second)
+      (witness.withSelector (boolToElement selector)) expected flags txCtx
+      ⟨.K, orIModifiers firstMods secondMods⟩ := by
+  cases selector with
+  | true =>
+      change GeneratedContract first witness expected flags txCtx
+        ⟨.K, firstMods⟩ at contract
+      cases contract with
+      | k input ownArgs key signature stackShape executed checked =>
+          apply GeneratedContract.k
+            (input := orIInput input trueElement_size_le (by simp_all))
+            (ownArgs := trueElement :: ownArgs) (key := key)
+            (signature := signature)
+          · simp [stackShape]
+          · exact executed.or_i_left
+          · exact checked
+  | false =>
+      change GeneratedContract second witness expected flags txCtx
+        ⟨.K, secondMods⟩ at contract
+      cases contract with
+      | k input ownArgs key signature stackShape executed checked =>
+          apply GeneratedContract.k
+            (input := orIInput input falseElement_size_le (by simp_all))
+            (ownArgs := falseElement :: ownArgs) (key := key)
+            (signature := signature)
+          · simp [stackShape]
+          · exact executed.or_i_right
+          · exact checked
 
 theorem orILeft_k
     {first second : CoreFragment} {witness : Witness} {expected : Bool}
@@ -396,15 +463,8 @@ theorem orILeft_k
         o := firstMods.z && secondMods.z
         d := firstMods.d || secondMods.d
         u := firstMods.u && secondMods.u
-      }⟩ := by
-  cases contract with
-  | k input ownArgs key signature stackShape executed checked =>
-      apply GeneratedContract.k
-        (input := orIInput input trueElement_size_le (by simp_all))
-        (ownArgs := trueElement :: ownArgs) (key := key) (signature := signature)
-      · simp [stackShape]
-      · exact executed.or_i_left
-      · exact checked
+      }⟩ :=
+  orI_k true contract
 
 theorem orIRight_k
     {first second : CoreFragment} {witness : Witness} {expected : Bool}
@@ -417,15 +477,35 @@ theorem orIRight_k
         o := firstMods.z && secondMods.z
         d := firstMods.d || secondMods.d
         u := firstMods.u && secondMods.u
-      }⟩ := by
-  cases contract with
-  | k input ownArgs key signature stackShape executed checked =>
-      apply GeneratedContract.k
-        (input := orIInput input falseElement_size_le (by simp_all))
-        (ownArgs := falseElement :: ownArgs) (key := key) (signature := signature)
-      · simp [stackShape]
-      · exact executed.or_i_right
-      · exact checked
+      }⟩ :=
+  orI_k false contract
+
+/-- A canonical boolean selector chooses the matching `or_i` branch contract:
+    `true` selects the first child, `false` the second. -/
+theorem orI_v (selector : Bool)
+    {first second : CoreFragment} {witness : Witness} {expected : Bool}
+    {firstMods secondMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (contract : GeneratedContract (if selector then first else second) witness
+      expected flags txCtx ⟨.V, if selector then firstMods else secondMods⟩) :
+    GeneratedContract (.or_i first second)
+      (witness.withSelector (boolToElement selector)) expected flags txCtx
+      ⟨.V, orIModifiers firstMods secondMods⟩ := by
+  cases selector with
+  | true =>
+      change GeneratedContract first witness expected flags txCtx
+        ⟨.V, firstMods⟩ at contract
+      cases contract with
+      | v input expectedTrue executed =>
+          exact .v (orIInput input trueElement_size_le (by simp_all))
+            expectedTrue (by simpa [boolToElement] using executed.or_i_left)
+  | false =>
+      change GeneratedContract second witness expected flags txCtx
+        ⟨.V, secondMods⟩ at contract
+      cases contract with
+      | v input expectedTrue executed =>
+          exact .v (orIInput input falseElement_size_le (by simp_all))
+            expectedTrue (by simpa [boolToElement] using executed.or_i_right)
 
 theorem orILeft_v
     {first second : CoreFragment} {witness : Witness} {expected : Bool}
@@ -438,11 +518,8 @@ theorem orILeft_v
         o := firstMods.z && secondMods.z
         d := firstMods.d || secondMods.d
         u := firstMods.u && secondMods.u
-      }⟩ := by
-  cases contract with
-  | v input expectedTrue executed =>
-      exact .v (orIInput input trueElement_size_le (by simp_all)) expectedTrue
-        (by simpa using executed.or_i_left)
+      }⟩ :=
+  orI_v true contract
 
 theorem orIRight_v
     {first second : CoreFragment} {witness : Witness} {expected : Bool}
@@ -455,47 +532,78 @@ theorem orIRight_v
         o := firstMods.z && secondMods.z
         d := firstMods.d || secondMods.d
         u := firstMods.u && secondMods.u
-      }⟩ := by
-  cases contract with
-  | v input expectedTrue executed =>
-      exact .v (orIInput input falseElement_size_le (by simp_all)) expectedTrue
-        (by simpa using executed.or_i_right)
+      }⟩ :=
+  orI_v false contract
 
-private theorem andorTrueInput
-    {firstWitness secondWitness : Witness} {expected : Bool}
+private theorem andorInput (branch : Bool)
+    {firstWitness branchWitness : Witness} {expected : Bool}
     {firstMods secondMods thirdMods : CorrectnessModifiers}
-    (first : GeneratedInput firstWitness true firstMods)
-    (second : GeneratedInput secondWitness expected secondMods) :
-    GeneratedInput (Witness.combine firstWitness secondWitness) expected
+    (first : GeneratedInput firstWitness branch firstMods)
+    (branchInput : GeneratedInput branchWitness expected
+      (if branch then secondMods else thirdMods)) :
+    GeneratedInput (Witness.combine firstWitness branchWitness) expected
       (andorModifiers firstMods secondMods thirdMods) := by
-  apply first.combine second
+  apply first.combine branchInput
   · intro enabled
     simp only [Bool.and_eq_true] at enabled
-    exact ⟨enabled.1.1, enabled.1.2⟩
+    cases branch with
+    | true => exact ⟨enabled.1.1, enabled.1.2⟩
+    | false => exact ⟨enabled.1.1, enabled.2⟩
   · intro enabled
     simp only [Bool.or_eq_true, Bool.and_eq_true] at enabled
-    rcases enabled with left | right
-    · exact Or.inl ⟨left.1.1, left.1.2⟩
-    · exact Or.inr ⟨right.1.1, right.1.2⟩
+    cases branch with
+    | true =>
+        rcases enabled with left | right
+        · exact Or.inl ⟨left.1.1, left.1.2⟩
+        · exact Or.inr ⟨right.1.1, right.1.2⟩
+    | false =>
+        rcases enabled with left | right
+        · exact Or.inl ⟨left.1.1, left.2⟩
+        · exact Or.inr ⟨right.1.1, right.2⟩
   · simp
 
-private theorem andorFalseInput
-    {firstWitness thirdWitness : Witness} {expected : Bool}
-    {firstMods secondMods thirdMods : CorrectnessModifiers}
-    (first : GeneratedInput firstWitness false firstMods)
-    (third : GeneratedInput thirdWitness expected thirdMods) :
-    GeneratedInput (Witness.combine firstWitness thirdWitness) expected
-      (andorModifiers firstMods secondMods thirdMods) := by
-  apply first.combine third
-  · intro enabled
-    simp only [Bool.and_eq_true] at enabled
-    exact ⟨enabled.1.1, enabled.2⟩
-  · intro enabled
-    simp only [Bool.or_eq_true, Bool.and_eq_true] at enabled
-    rcases enabled with left | right
-    · exact Or.inl ⟨left.1.1, left.2⟩
-    · exact Or.inr ⟨right.1.1, right.2⟩
-  · simp
+/-- A boolean first-child outcome selects the matching `andor` branch
+    contract: truthy selects Y (the second child), falsy selects Z (the
+    third). -/
+theorem andor_b (branch : Bool)
+    {first second third : CoreFragment} {firstWitness branchWitness : Witness}
+    {expected : Bool} {firstMods secondMods thirdMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstContract : GeneratedContract first firstWitness branch flags txCtx
+      ⟨.B, firstMods⟩) (firstUnit : firstMods.u = true)
+    (branchContract : GeneratedContract (if branch then second else third)
+      branchWitness expected flags txCtx
+      ⟨.B, if branch then secondMods else thirdMods⟩) :
+    GeneratedContract (.andor first second third)
+      (Witness.combine firstWitness branchWitness) expected flags txCtx
+      ⟨.B, andorModifiers firstMods secondMods thirdMods⟩ := by
+  cases branch with
+  | true =>
+      change GeneratedContract second branchWitness expected flags txCtx
+        ⟨.B, secondMods⟩ at branchContract
+      cases firstContract with
+      | b firstInput firstFacts firstExec =>
+          cases branchContract with
+          | b secondInput secondFacts secondExec =>
+              exact .b (andorInput true firstInput secondInput)
+                (secondFacts.retype (by simp_all))
+                (by simpa using
+                  (BExecution.andor_true firstExec
+                    (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
+                    secondExec))
+  | false =>
+      change GeneratedContract third branchWitness expected flags txCtx
+        ⟨.B, thirdMods⟩ at branchContract
+      cases firstContract with
+      | b firstInput firstFacts firstExec =>
+          cases branchContract with
+          | b thirdInput thirdFacts thirdExec =>
+              exact .b (andorInput false firstInput thirdInput)
+                (thirdFacts.retype (by simp_all))
+                (by simpa using
+                  (BExecution.andor_false firstExec
+                    (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
+                    thirdExec))
 
 theorem andorTrue_b
     {first second third : CoreFragment} {firstWitness secondWitness : Witness}
@@ -513,17 +621,8 @@ theorem andorTrue_b
           (firstMods.o && secondMods.z && thirdMods.z)
         d := thirdMods.d
         u := secondMods.u && thirdMods.u
-      }⟩ := by
-  cases firstContract with
-  | b firstInput firstFacts firstExec =>
-      cases secondContract with
-      | b secondInput secondFacts secondExec =>
-          exact .b (andorTrueInput firstInput secondInput)
-            (secondFacts.retype (by simp_all))
-            (by simpa using
-              (BExecution.andor_true firstExec
-                (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
-                secondExec))
+      }⟩ :=
+  andor_b true firstContract firstUnit secondContract
 
 theorem andorFalse_b
     {first second third : CoreFragment} {firstWitness thirdWitness : Witness}
@@ -541,17 +640,59 @@ theorem andorFalse_b
           (firstMods.o && secondMods.z && thirdMods.z)
         d := thirdMods.d
         u := secondMods.u && thirdMods.u
-      }⟩ := by
-  cases firstContract with
-  | b firstInput firstFacts firstExec =>
-      cases thirdContract with
-      | b thirdInput thirdFacts thirdExec =>
-          exact .b (andorFalseInput firstInput thirdInput)
-            (thirdFacts.retype (by simp_all))
-            (by simpa using
-              (BExecution.andor_false firstExec
-                (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
-                thirdExec))
+      }⟩ :=
+  andor_b false firstContract firstUnit thirdContract
+
+/-- A boolean first-child outcome selects the matching `andor` branch
+    contract: truthy selects Y (the second child), falsy selects Z (the
+    third). -/
+theorem andor_k (branch : Bool)
+    {first second third : CoreFragment} {firstWitness branchWitness : Witness}
+    {expected : Bool} {firstMods secondMods thirdMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstContract : GeneratedContract first firstWitness branch flags txCtx
+      ⟨.B, firstMods⟩) (firstUnit : firstMods.u = true)
+    (branchContract : GeneratedContract (if branch then second else third)
+      branchWitness expected flags txCtx
+      ⟨.K, if branch then secondMods else thirdMods⟩) :
+    GeneratedContract (.andor first second third)
+      (Witness.combine firstWitness branchWitness) expected flags txCtx
+      ⟨.K, andorModifiers firstMods secondMods thirdMods⟩ := by
+  cases branch with
+  | true =>
+      change GeneratedContract second branchWitness expected flags txCtx
+        ⟨.K, secondMods⟩ at branchContract
+      cases firstContract with
+      | b firstInput firstFacts firstExec =>
+          cases branchContract with
+          | k secondInput ownArgs key signature stackShape secondExec
+              checked =>
+              apply GeneratedContract.k
+                (input := andorInput true firstInput secondInput)
+                (ownArgs := firstWitness.toInitialStack ++ ownArgs)
+                (key := key) (signature := signature)
+              · simp [stackShape, List.append_assoc]
+              · exact firstExec.andor_true
+                  (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
+                  secondExec
+              · exact checked
+  | false =>
+      change GeneratedContract third branchWitness expected flags txCtx
+        ⟨.K, thirdMods⟩ at branchContract
+      cases firstContract with
+      | b firstInput firstFacts firstExec =>
+          cases branchContract with
+          | k thirdInput ownArgs key signature stackShape thirdExec
+              checked =>
+              apply GeneratedContract.k
+                (input := andorInput false firstInput thirdInput)
+                (ownArgs := firstWitness.toInitialStack ++ ownArgs)
+                (key := key) (signature := signature)
+              · simp [stackShape, List.append_assoc]
+              · exact firstExec.andor_false
+                  (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
+                  thirdExec
+              · exact checked
 
 theorem andorTrue_k
     {first second third : CoreFragment} {firstWitness secondWitness : Witness}
@@ -569,19 +710,8 @@ theorem andorTrue_k
           (firstMods.o && secondMods.z && thirdMods.z)
         d := thirdMods.d
         u := secondMods.u && thirdMods.u
-      }⟩ := by
-  cases firstContract with
-  | b firstInput firstFacts firstExec =>
-      cases secondContract with
-      | k secondInput ownArgs key signature stackShape secondExec checked =>
-          apply GeneratedContract.k
-            (input := andorTrueInput firstInput secondInput)
-            (ownArgs := firstWitness.toInitialStack ++ ownArgs)
-            (key := key) (signature := signature)
-          · simp [stackShape, List.append_assoc]
-          · exact firstExec.andor_true
-              (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth secondExec
-          · exact checked
+      }⟩ :=
+  andor_k true firstContract firstUnit secondContract
 
 theorem andorFalse_k
     {first second third : CoreFragment} {firstWitness thirdWitness : Witness}
@@ -599,19 +729,49 @@ theorem andorFalse_k
           (firstMods.o && secondMods.z && thirdMods.z)
         d := thirdMods.d
         u := secondMods.u && thirdMods.u
-      }⟩ := by
-  cases firstContract with
-  | b firstInput firstFacts firstExec =>
-      cases thirdContract with
-      | k thirdInput ownArgs key signature stackShape thirdExec checked =>
-          apply GeneratedContract.k
-            (input := andorFalseInput firstInput thirdInput)
-            (ownArgs := firstWitness.toInitialStack ++ ownArgs)
-            (key := key) (signature := signature)
-          · simp [stackShape, List.append_assoc]
-          · exact firstExec.andor_false
-              (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth thirdExec
-          · exact checked
+      }⟩ :=
+  andor_k false firstContract firstUnit thirdContract
+
+/-- A boolean first-child outcome selects the matching `andor` branch
+    contract: truthy selects Y (the second child), falsy selects Z (the
+    third). -/
+theorem andor_v (branch : Bool)
+    {first second third : CoreFragment} {firstWitness branchWitness : Witness}
+    {expected : Bool} {firstMods secondMods thirdMods : CorrectnessModifiers}
+    {flags : ScriptFlags} {txCtx : TxContext}
+    (firstContract : GeneratedContract first firstWitness branch flags txCtx
+      ⟨.B, firstMods⟩) (firstUnit : firstMods.u = true)
+    (branchContract : GeneratedContract (if branch then second else third)
+      branchWitness expected flags txCtx
+      ⟨.V, if branch then secondMods else thirdMods⟩) :
+    GeneratedContract (.andor first second third)
+      (Witness.combine firstWitness branchWitness) expected flags txCtx
+      ⟨.V, andorModifiers firstMods secondMods thirdMods⟩ := by
+  cases branch with
+  | true =>
+      change GeneratedContract second branchWitness expected flags txCtx
+        ⟨.V, secondMods⟩ at branchContract
+      cases firstContract with
+      | b firstInput firstFacts firstExec =>
+          cases branchContract with
+          | v secondInput expectedTrue secondExec =>
+              exact .v (andorInput true firstInput secondInput) expectedTrue
+                (by simpa using
+                  (VExecution.andor_true firstExec
+                    (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
+                    secondExec))
+  | false =>
+      change GeneratedContract third branchWitness expected flags txCtx
+        ⟨.V, thirdMods⟩ at branchContract
+      cases firstContract with
+      | b firstInput firstFacts firstExec =>
+          cases branchContract with
+          | v thirdInput expectedTrue thirdExec =>
+              exact .v (andorInput false firstInput thirdInput) expectedTrue
+                (by simpa using
+                  (VExecution.andor_false firstExec
+                    (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
+                    thirdExec))
 
 theorem andorTrue_v
     {first second third : CoreFragment} {firstWitness secondWitness : Witness}
@@ -629,16 +789,8 @@ theorem andorTrue_v
           (firstMods.o && secondMods.z && thirdMods.z)
         d := thirdMods.d
         u := secondMods.u && thirdMods.u
-      }⟩ := by
-  cases firstContract with
-  | b firstInput firstFacts firstExec =>
-      cases secondContract with
-      | v secondInput expectedTrue secondExec =>
-          exact .v (andorTrueInput firstInput secondInput) expectedTrue
-            (by simpa using
-              (VExecution.andor_true firstExec
-                (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
-                secondExec))
+      }⟩ :=
+  andor_v true firstContract firstUnit secondContract
 
 theorem andorFalse_v
     {first second third : CoreFragment} {firstWitness thirdWitness : Witness}
@@ -656,16 +808,8 @@ theorem andorFalse_v
           (firstMods.o && secondMods.z && thirdMods.z)
         d := thirdMods.d
         u := secondMods.u && thirdMods.u
-      }⟩ := by
-  cases firstContract with
-  | b firstInput firstFacts firstExec =>
-      cases thirdContract with
-      | v thirdInput expectedTrue thirdExec =>
-          exact .v (andorFalseInput firstInput thirdInput) expectedTrue
-            (by simpa using
-              (VExecution.andor_false firstExec
-                (firstFacts.minimalIfSatisfied firstUnit) firstFacts.truth
-                thirdExec))
+      }⟩ :=
+  andor_v false firstContract firstUnit thirdContract
 
 end GeneratedContract
 

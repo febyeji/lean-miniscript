@@ -6,14 +6,15 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-import re
+import sys
+sys.dont_write_bytecode = True
+import fixture_common
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('script_tests', type=Path)
 args = parser.parse_args()
 source = args.script_tests.read_bytes()
-if hashlib.sha256(source).hexdigest() != 'bc23cb1dfa760d50042f534da23cbbe4b6fbb03d7def0b64f8de049453d6ead5':
-    raise SystemExit('Source checksum mismatch; expected SHA-256 bc23cb1dfa760d50042f534da23cbbe4b6fbb03d7def0b64f8de049453d6ead5')
+fixture_common.require_sha256(args.script_tests, 'bc23cb1dfa760d50042f534da23cbbe4b6fbb03d7def0b64f8de049453d6ead5')
 rows = json.loads(source)
 indices = [1028, 1029, 1032, 1033, 1043, 1045, 1047, 1049, 1080, 1082, 1084, 1090, 1095, 1097]
 
@@ -45,5 +46,5 @@ block += f'private def expectedCredit : String := "{credit.hex()}"\n'
 block += f'private def expectedSpend : String := "{spend.hex()}"\n'
 block += '-- END GENERATED VECTORS'
 out = Path(__file__).resolve().parent.parent / 'LeanMiniscript/Extraction/CoreFixtureTransactionExamples.lean'
-out.write_text(re.sub(r'-- BEGIN GENERATED VECTORS.*?-- END GENERATED VECTORS', lambda _: block, out.read_text(), flags=re.S))
+fixture_common.rewrite_generated_block(out, block)
 print(f'Wrote {len(indices)} exact Core signature cases and 2 transaction serializations.')

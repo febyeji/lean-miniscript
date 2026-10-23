@@ -89,11 +89,7 @@ private def limitFixtureJson : String := r#"
 example : limitSourceIndices.length = 10 ∧ limitSourceIndices.eraseDups.length = 10 := by
   native_decide
 
-example : ((auditCoreScriptTests rejectingFixtureOracle limitFixtureJson).toOption.map
-    fun audit => audit.testRows == 10 && audit.comparedRows == 10 &&
-      audit.matchedRows == 10 && audit.unsupportedRows == 0 &&
-      audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle limitFixtureJson 10 10 0 := by native_decide
 
 private def nops (count : Nat) : String := String.join (List.replicate count "NOP ")
 private def pushes (count : Nat) : String := String.join (List.replicate count "1 ")
@@ -152,11 +148,7 @@ private def localLimitRows : List (List String) :=
 
 example : localLimitRows.length = 45 := by native_decide
 
-example : ((auditCoreScriptTests rejectingFixtureOracle
-    (Lean.toJson localLimitRows).compress).toOption.map fun audit =>
-      audit.testRows == 45 && audit.matchedRows == 45 &&
-      audit.unsupportedRows == 0 && audit.allComparedRowsMatch) = some true := by
-  native_decide
+example : CoreFixtureAudit.matchesExpectation rejectingFixtureOracle (Lean.toJson localLimitRows).compress 45 45 0 := by native_decide
 
 private def fixture (script : String) (expected : String) : CoreScriptTest :=
   { witness := none, scriptSigSource := "", scriptPubKeySource := script,

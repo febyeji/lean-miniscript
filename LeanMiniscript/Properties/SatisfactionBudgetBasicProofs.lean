@@ -51,11 +51,9 @@ theorem n {fragment : CoreFragment} {witness : Witness} {expected : Bool}
   cases contract with
   | @b _ result value budget input facts executed frame funded =>
       have suffix : ExecutesBudgetFrame [.op .OP_0NOTEQUAL] [result]
-          [boolToElement (value != 0)] flags txCtx 0 := by
-        apply ExecutesBudgetFrame.of_zero
-        · intro rest alt
-          exact .zeroNotEqual _ _ _ _ [] _ _ _ facts.decoded Eval.done
-        · rfl
+          [boolToElement (value != 0)] flags txCtx 0 :=
+        .of_zero fun _ _ =>
+          .zeroNotEqual _ _ _ _ [] _ _ _ facts.decoded Eval.done
       apply generatedBudgetB_of_contract ((GeneratedContract.b input facts executed).n)
       · simpa [compile, compileWithKeyHash] using frame.append suffix
       · exact funded
@@ -67,11 +65,9 @@ theorem verify {fragment : CoreFragment} {witness : Witness}
       ⟨.V, { z := mods.z, o := mods.o, n := mods.n }⟩ := by
   cases contract with
   | @b _ result value budget input facts executed frame funded =>
-      have suffix : ExecutesBudgetFrame [.op .OP_VERIFY] [result] [] flags txCtx 0 := by
-        apply ExecutesBudgetFrame.of_zero
-        · intro rest alt
-          exact .verify_success _ _ [] _ _ _ _ facts.truth Eval.done
-        · rfl
+      have suffix : ExecutesBudgetFrame [.op .OP_VERIFY] [result] [] flags txCtx 0 :=
+        .of_zero fun _ _ =>
+          .verify_success _ _ [] _ _ _ _ facts.truth Eval.done
       apply generatedBudgetV_of_contract ((GeneratedContract.b input facts executed).verify)
       · simpa [compile, compileWithKeyHash] using
           (frame.append suffix).compileVerify (compile_balancedControlFlow fragment)

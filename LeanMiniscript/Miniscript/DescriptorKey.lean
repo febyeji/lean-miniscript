@@ -26,23 +26,8 @@ structure DescriptorKey where
   derivation : List DerivationStep := []
   wildcard : ChildWildcard := .none
 
-private def hexDigit (char : Char) : Option Nat :=
-  if '0' ≤ char && char ≤ '9' then some (char.toNat - '0'.toNat)
-  else if 'a' ≤ char && char ≤ 'f' then some (char.toNat - 'a'.toNat + 10)
-  else if 'A' ≤ char && char ≤ 'F' then some (char.toNat - 'A'.toNat + 10)
-  else none
-
-private def decodeHexChars : List Char → Option (List UInt8)
-  | [] => some []
-  | high :: low :: rest => do
-      let high ← hexDigit high
-      let low ← hexDigit low
-      let tail ← decodeHexChars rest
-      return UInt8.ofNat (16 * high + low) :: tail
-  | _ => none
-
 private def parseHex (text : String) : Except String ByteArray :=
-  match decodeHexChars text.toList with
+  match LeanMiniscript.Script.decodeHexChars? text.toList with
   | some bytes => .ok ⟨bytes.toArray⟩
   | none => .error "Expected hexadecimal key bytes"
 

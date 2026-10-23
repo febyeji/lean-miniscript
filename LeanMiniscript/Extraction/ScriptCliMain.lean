@@ -1,4 +1,5 @@
 import LeanMiniscript.Extraction.RefInterp
+import LeanMiniscript.CliSupport
 
 namespace LeanMiniscript.Extraction.ScriptCliMain
 
@@ -25,8 +26,8 @@ private def run (source : String) : IO UInt32 := do
 end LeanMiniscript.Extraction.ScriptCliMain
 
 def main (args : List String) : IO UInt32 := do
-  match args with
-  | ["--", source] | [source] =>
+  match LeanMiniscript.CliSupport.stripSeparator args with
+  | [source] =>
       LeanMiniscript.Extraction.ScriptCliMain.run source
   | _ =>
       IO.eprintln LeanMiniscript.Extraction.ScriptCliMain.usage

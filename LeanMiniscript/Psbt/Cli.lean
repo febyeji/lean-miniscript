@@ -1,5 +1,6 @@
 import LeanMiniscript.Psbt.Finalizer
 import LeanMiniscript.Miniscript.DescriptorParser
+import LeanMiniscript.CliSupport
 
 namespace LeanMiniscript.Psbt.Cli
 
@@ -47,7 +48,7 @@ private def parseCommand (command : String) (encoding : Encoding) (args : List S
   | _, _ => throw s!"unknown command '{command}'"
 
 def parseArgs (args : List String) : Except String Command := do
-  let args := match args with | "--" :: rest => rest | _ => args
+  let args := CliSupport.stripSeparator args
   match args with
   | ["--help"] | ["-h"] => return .help
   | ["inspect", "--help"] | ["finalize", "--help"] | ["extract", "--help"] => return .help

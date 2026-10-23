@@ -2,18 +2,6 @@ import LeanMiniscript.Script.TapscriptWitnessPolicy
 
 namespace LeanMiniscript.Script
 
-local instance tapscriptPolicyDecidableEqExcept
-    {ε α : Type} [DecidableEq ε] [DecidableEq α] :
-    DecidableEq (Except ε α) := by
-  intro left right
-  cases left <;> cases right
-  · rename_i leftError rightError
-    exact decidable_of_iff (leftError = rightError) (by simp)
-  · exact isFalse (by intro equality; cases equality)
-  · exact isFalse (by intro equality; cases equality)
-  · rename_i leftValue rightValue
-    exact decidable_of_iff (leftValue = rightValue) (by simp)
-
 private def bytes (size : Nat) : ByteArray :=
   ⟨Array.replicate size 1⟩
 
