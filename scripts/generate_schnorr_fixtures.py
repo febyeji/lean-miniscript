@@ -9,29 +9,20 @@ is added to Lean. Wallet/Core pins are verified by the existing hash generator.
 """
 import argparse
 import csv
-import hashlib
-import importlib.util
 import io
-import json
 from pathlib import Path
 import sys
 sys.dont_write_bytecode = True
+import fixture_common
 
 VECTORS_SHA256 = '34c9d1d9c3a88d524bc80778540dc43f8306ec249a7485293063c376db851c2d'
-REFERENCE_SHA256 = '4b1d4ad9e60820df4a6d239733d52b014bc03e4c47afd757a2fe4d3b586d892c'
-
-def load(name, path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 HEX_OPEN = "open LeanMiniscript.TestSupport (hex)\n"
 
 def generate(args):
-    assert hashlib.sha256(args.bip340_vectors.read_bytes()).hexdigest() == VECTORS_SHA256
-    assert hashlib.sha256(args.bip340_reference.read_bytes()).hexdigest() == REFERENCE_SHA256
-    ref = load('bip340_reference', args.bip340_reference)
+    fixture_common.check_sha256(args.bip340_vectors, VECTORS_SHA256)
+    fixture_common.check_sha256(args.bip340_reference, fixture_common.BIP340_REFERENCE_SHA256)
+    ref = fixture_common.load_module('bip340_reference', args.bip340_reference)
     rows = list(csv.DictReader(io.StringIO(args.bip340_vectors.read_text())))
     assert [int(row['index']) for row in rows] == list(range(19))
     for row in rows:
@@ -57,12 +48,9 @@ end LeanMiniscript.Bitcoin
 """
     args.vectors_output.write_text(text)
 
-    base = load('sighash_fixture_generator', Path(__file__).with_name('generate_taproot_sighash_fixtures.py'))
+    base = fixture_common.load_sighash_generator()
     base.generate(args.wallet_vectors, args.core_script)
-    group = json.loads(args.wallet_vectors.read_text())['keyPathSpending'][0]
-    tx = base.parse_transaction(group['given']['rawUnsignedTx'])
-    spent = [base.make_output(u['amountSats'], bytes.fromhex(u['scriptPubKey'])) for u in group['given']['utxosSpent']]
-    core = base.reference_functions(args.core_script.read_text())
+    group, tx, spent, core = fixture_common.bip341_keypath_group(base, args.wallet_vectors, args.core_script)
     secret = (3).to_bytes(32, 'big')  # Public test key from official vector zero.
     key = ref.pubkey_gen(secret)
     leaf = b'\x20' + key + b'\xac'

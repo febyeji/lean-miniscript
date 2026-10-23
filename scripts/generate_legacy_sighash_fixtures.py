@@ -8,15 +8,16 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import sys
+sys.dont_write_bytecode = True
+import fixture_common
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('core_json', type=Path)
 parser.add_argument('bip143', type=Path)
 args = parser.parse_args()
-if hashlib.sha256(args.core_json.read_bytes()).hexdigest() != '52cf23c2076e7f129c71d5508631d3e5ae3be1b1cb0585c0e23bbb4bb373e924':
-    raise SystemExit('Source checksum mismatch; expected SHA-256 52cf23c2076e7f129c71d5508631d3e5ae3be1b1cb0585c0e23bbb4bb373e924')
-if hashlib.sha256(args.bip143.read_bytes()).hexdigest() != '62bc71351563e68baeb12643c68355d217953ae9eb6a6e68b2b0323275b6beec':
-    raise SystemExit('Source checksum mismatch; expected SHA-256 62bc71351563e68baeb12643c68355d217953ae9eb6a6e68b2b0323275b6beec')
+fixture_common.require_sha256(args.core_json, '52cf23c2076e7f129c71d5508631d3e5ae3be1b1cb0585c0e23bbb4bb373e924')
+fixture_common.require_sha256(args.bip143, fixture_common.BIP143_SHA256)
 core = json.loads(args.core_json.read_text())[1:]
 assert len(core) == 500
 text = args.bip143.read_text()
@@ -66,10 +67,5 @@ for name, rows in [('coreVectorJson', core), ('witnessVectorJson', witness)]:
     block += '\n]\n"#\n'
 block += '-- END GENERATED VECTORS'
 out = Path(__file__).resolve().parent.parent / 'LeanMiniscript/Bitcoin/LegacySighashExamples.lean'
-content = out.read_text()
-if '-- VECTOR_DATA' in content:
-    content = content.replace('-- VECTOR_DATA', block)
-else:
-    content = re.sub(r'-- BEGIN GENERATED VECTORS.*?-- END GENERATED VECTORS', lambda _: block, content, flags=re.S)
-out.write_text(content)
+fixture_common.rewrite_generated_block(out, block)
 print(f'Wrote {len(core)} Core and {len(witness)} BIP143 vectors.')

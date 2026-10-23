@@ -6,11 +6,11 @@ sources as generate_schnorr_fixtures.py. All source hashes are checked. Public
 test keys only; verification is checked against every official control block.
 """
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import sys
 sys.dont_write_bytecode = True
+import fixture_common
 import generate_schnorr_fixtures as schnorr
 
 def leaves(tree):
@@ -21,9 +21,9 @@ def leaves(tree):
     return leaves(tree[0]) + leaves(tree[1])
 
 def generate(args):
-    assert hashlib.sha256(args.bip340_reference.read_bytes()).hexdigest() == schnorr.REFERENCE_SHA256
-    ref = schnorr.load('control_bip340_reference', args.bip340_reference)
-    base = schnorr.load('control_sighash_generator', Path(__file__).with_name('generate_taproot_sighash_fixtures.py'))
+    fixture_common.check_sha256(args.bip340_reference, fixture_common.BIP340_REFERENCE_SHA256)
+    ref = fixture_common.load_module('control_bip340_reference', args.bip340_reference)
+    base = fixture_common.load_sighash_generator('control_sighash_generator')
     base.generate(args.wallet_vectors, args.core_script)
     wallet = json.loads(args.wallet_vectors.read_text())
     def root_for(script, control):
@@ -124,10 +124,7 @@ example : [TaprootControlError.internalKey, .tweakRange, .infiniteOutput, .commi
     text += 'example : errorIs .controlSize (verifyTaprootControlBlock controlFixtureOutput (hex "51")\n  (maxDepthControl ++ zero)) = true := by native_decide\nend LeanMiniscript.Bitcoin\n'
     args.control_output.write_text(text)
 
-    group = wallet['keyPathSpending'][0]
-    tx = base.parse_transaction(group['given']['rawUnsignedTx'])
-    spent = [base.make_output(u['amountSats'], bytes.fromhex(u['scriptPubKey'])) for u in group['given']['utxosSpent']]
-    core = base.reference_functions(args.core_script.read_text())
+    group, tx, spent, core = fixture_common.bip341_keypath_group(base, args.wallet_vectors, args.core_script)
     secret = (3).to_bytes(32, 'big')
     signing_key = ref.pubkey_gen(secret)
     script = b'\x20' + signing_key + b'\xac'
@@ -210,15 +207,6 @@ example : (match execCommittedTapscriptTransaction CryptoOracle.pureLeanSchnorr 
     text += 'example : errorIs (.control .commitmentMismatch) (run [hex "51", flip futureControl 0] futurePrevouts) = true := by native_decide\n'
     text += """
 -- Final acceptance uses the same real commitment, digest and Schnorr signature.
-local instance {ε α : Type} [DecidableEq ε] [DecidableEq α] : DecidableEq (Except ε α) := by
-  intro a b
-  cases a <;> cases b
-  · rename_i x y
-    exact decidable_of_iff (x = y) (by simp)
-  · exact isFalse (by intro h; cases h)
-  · exact isFalse (by intro h; cases h)
-  · rename_i x y
-    exact decidable_of_iff (x = y) (by simp)
 private def verify (witness : List ByteArray) (flags : ScriptFlags := {}) :
     Except TaprootVerificationError Nat :=
   verifyCommittedTapscriptTransaction CryptoOracle.pureLeanSchnorr script witness flags
