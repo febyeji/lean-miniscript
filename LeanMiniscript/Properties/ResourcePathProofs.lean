@@ -351,29 +351,13 @@ private theorem CandidatePair.ChoiceTrace.toThresholdStackPath
         omega
 
 
-private theorem listSnocInductionPaths {α : Type} {motive : List α → Prop}
-    (nil : motive [])
-    (snoc : ∀ (items : List α) (item : α),
-      motive items → motive (items ++ [item])) :
-    ∀ items, motive items := by
-  intro items
-  have reversed : motive items.reverse.reverse := by
-    have aux : ∀ reversedItems : List α, motive reversedItems.reverse := by
-      intro reversedItems
-      induction reversedItems with
-      | nil => simpa using nil
-      | cons item reversedItems ih =>
-          simpa using snoc reversedItems.reverse item ih
-    exact aux items.reverse
-  simpa using reversed
-
 private theorem CandidatePair.ChoiceTrace.multiA_witness_length
     {env : SatEnv} {keys : List PubKey} {count : Nat}
     {frames : List Witness} {witness : Witness}
     (trace : CandidatePair.ChoiceTrace
       (keys.map fun key => multiAKeyChoice key env) count frames witness) :
     witness.length = keys.length := by
-  induction keys using listSnocInductionPaths generalizing count frames witness with
+  induction keys using List.snocInduction generalizing count frames witness with
   | nil =>
       simp only [List.map_nil] at trace
       generalize pairsEq : ([] : List CandidatePair) = pairs at trace

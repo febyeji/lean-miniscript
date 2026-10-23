@@ -16,12 +16,7 @@ theorem VExecution.d
   intro rest altStack
   have childExec := executed (trueElement :: rest) altStack
   have truth : castToBool trueElement = true := by decide
-  have split :
-      splitConditional (compile fragment ++ [.op .OP_ENDIF]) =
-        some { branches := [compile fragment], after := [] } := by
-    simpa using
-      (splitConditional_balanced_ifThen
-        (compile_balancedControlFlow fragment) (suffix := []))
+  have split := splitConditional_compile_ifThen fragment
   have ifExec :
       Eval (.op .OP_IF :: compile fragment ++ [.op .OP_ENDIF])
         (trueElement :: trueElement :: rest) altStack flags ctx
@@ -43,12 +38,7 @@ theorem d_dissatisfaction_execution
     BExecution (.d fragment) [falseElement] falseElement flags ctx := by
   intro rest altStack
   have falsehood : castToBool falseElement = false := by decide
-  have split :
-      splitConditional (compile fragment ++ [.op .OP_ENDIF]) =
-        some { branches := [compile fragment], after := [] } := by
-    simpa using
-      (splitConditional_balanced_ifThen
-        (compile_balancedControlFlow fragment) (suffix := []))
+  have split := splitConditional_compile_ifThen fragment
   have ifExec :
       Eval (.op .OP_IF :: compile fragment ++ [.op .OP_ENDIF])
         (falseElement :: falseElement :: rest) altStack flags ctx
@@ -82,12 +72,7 @@ theorem BExecution.j
     rw [nonzero]
     rfl
   have truth : castToBool trueElement = true := by decide
-  have split :
-      splitConditional (compile fragment ++ [.op .OP_ENDIF]) =
-        some { branches := [compile fragment], after := [] } := by
-    simpa using
-      (splitConditional_balanced_ifThen
-        (compile_balancedControlFlow fragment) (suffix := []))
+  have split := splitConditional_compile_ifThen fragment
   have ifExec :
       Eval (.op .OP_IF :: compile fragment ++ [.op .OP_ENDIF])
         (trueElement :: top :: args ++ rest) altStack flags ctx
@@ -145,12 +130,7 @@ theorem j_dissatisfaction_execution
     rw [zero]
     rfl
   have falsehood : castToBool falseElement = false := by decide
-  have split :
-      splitConditional (compile fragment ++ [.op .OP_ENDIF]) =
-        some { branches := [compile fragment], after := [] } := by
-    simpa using
-      (splitConditional_balanced_ifThen
-        (compile_balancedControlFlow fragment) (suffix := []))
+  have split := splitConditional_compile_ifThen fragment
   have ifExec :
       Eval (.op .OP_IF :: compile fragment ++ [.op .OP_ENDIF])
         (falseElement :: falseElement :: rest) altStack flags ctx

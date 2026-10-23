@@ -9,6 +9,14 @@ namespace LeanMiniscript.Miniscript
 
 open LeanMiniscript.Script
 
+/-- Balanced compilation identifies the exact `OP_IF` body when a fragment is
+    closed by `OP_ENDIF`. -/
+theorem splitConditional_compile_ifThen (fragment : CoreFragment) :
+    splitConditional (compile fragment ++ [.op .OP_ENDIF]) =
+      some { branches := [compile fragment], after := [] } := by
+  simpa using splitConditional_balanced_ifThen (compile_balancedControlFlow fragment)
+    (suffix := [])
+
 /-- A selected B-type execution consumes `args` and leaves one exact result. -/
 def BExecution (fragment : CoreFragment) (args : Stack) (result : StackElement)
     (flags : ScriptFlags) (ctx : TxContext) : Prop :=
