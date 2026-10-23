@@ -15,6 +15,53 @@ theorem checkRuntimeStack_ok {before after : RuntimeState}
     exact ⟨rfl, by omega⟩
 
 
+/-- Opcodes outside conditional control flow. Inactive execution of these is
+    the identity on the runtime state, while OP_IF, OP_NOTIF, OP_ELSE and
+    OP_ENDIF always update the condition list. -/
+def Opcode.isNonConditional (opcode : Opcode) : Bool :=
+  match opcode with
+  | .OP_IF | .OP_NOTIF | .OP_ELSE | .OP_ENDIF => false
+  | _ => true
+
+/-- Inactive execution of a non-conditional opcode leaves the entire state
+    unchanged, including malformed or missing operands. -/
+theorem executeRuntimeElement_op_inactive (oracle : CryptoOracle) (opcode : Opcode)
+    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (nonConditional : opcode.isNonConditional = true)
+    (inactive : state.conditions.all id = false) :
+    executeRuntimeElement oracle (.op opcode) state flags ctx = .ok state := by
+  cases opcode <;> simp_all [Opcode.isNonConditional, executeRuntimeElement,
+    ScriptElement.pushSize, maxScriptElementSize] <;> rfl
+
+/-- An inactive non-conditional opcode still performs the shared
+    post-instruction combined-stack check. -/
+theorem runtimeStep_op_inactive (oracle : CryptoOracle) (opcode : Opcode)
+    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (nonConditional : opcode.isNonConditional = true)
+    (inactive : state.conditions.all id = false) :
+    runtimeStep oracle (.op opcode) state flags ctx = checkRuntimeStack state := by
+  rw [runtimeStep,
+    executeRuntimeElement_op_inactive oracle opcode state flags ctx nonConditional inactive]
+  rfl
+
+/-- A successful step coincides with element-level execution: the shared
+    post-instruction stack check only rejects oversized states, it never
+    modifies the state it returns. -/
+theorem executeRuntimeElement_eq_of_runtimeStep
+    {oracle : CryptoOracle} {element : ScriptElement} {state next : RuntimeState}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (stepped : runtimeStep oracle element state flags ctx = .ok next) :
+    executeRuntimeElement oracle element state flags ctx = .ok next := by
+  unfold runtimeStep at stepped
+  cases executed : executeRuntimeElement oracle element state flags ctx with
+  | error error => simp [executed, bind, Except.bind] at stepped
+  | ok middle =>
+      simp only [executed, bind, Except.bind] at stepped
+      have same := (checkRuntimeStack_ok stepped).1
+      subst next
+      rfl
+
+
 /-- Active DEPTH changes only the main stack, preserving the condition stack,
     alternate stack and signature budget for every oracle. -/
 theorem executeRuntimeElement_depth (oracle : CryptoOracle) (state : RuntimeState)
@@ -58,13 +105,6 @@ theorem executeRuntimeElement_not (oracle : CryptoOracle) (state : RuntimeState)
         simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
           active, prepareValidationWeight, evaluate_not, stackEq, decoded] <;> rfl
 
-/-- Inactive NOT leaves the entire state unchanged, including malformed operands. -/
-theorem executeRuntimeElement_not_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    executeRuntimeElement oracle (.op .OP_NOT) state flags ctx = .ok state := by
-  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
-  rfl
-
 /-- Every successful NOT step before resource checking preserves stack count,
     alternate stack, conditions and signature budget, in active or inactive code. -/
 theorem executeRuntimeElement_not_preserves (oracle : CryptoOracle)
@@ -74,7 +114,7 @@ theorem executeRuntimeElement_not_preserves (oracle : CryptoOracle)
       next.conditions = state.conditions ∧ next.weight = state.weight := by
   cases active : state.conditions.all id with
   | false =>
-      rw [executeRuntimeElement_not_inactive oracle state flags ctx active] at executed
+      rw [executeRuntimeElement_op_inactive oracle .OP_NOT state flags ctx rfl active] at executed
       cases executed
       exact ⟨rfl, rfl, rfl, rfl⟩
   | true =>
@@ -108,21 +148,6 @@ theorem runtimeStep_not (oracle : CryptoOracle) (state : RuntimeState)
       cases decoded : decodeScriptNum operand flags.minimalData maxArithmeticScriptNumBytes <;>
         simp [decoded, bind, Except.bind, checkRuntimeStack]
 
-/-- The post-instruction stack check preserves the same NOT state invariants. -/
-theorem runtimeStep_not_preserves (oracle : CryptoOracle)
-    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
-    (stepped : runtimeStep oracle (.op .OP_NOT) state flags ctx = .ok next) :
-    next.stack.length = state.stack.length ∧ next.altStack = state.altStack ∧
-      next.conditions = state.conditions ∧ next.weight = state.weight := by
-  unfold runtimeStep at stepped
-  cases executed : executeRuntimeElement oracle (.op .OP_NOT) state flags ctx with
-  | error error => simp [executed, bind, Except.bind] at stepped
-  | ok middle =>
-      simp only [executed, bind, Except.bind] at stepped
-      have same := (checkRuntimeStack_ok stepped).1
-      subst next
-      exact executeRuntimeElement_not_preserves oracle state middle flags ctx executed
-
 /-- Active WITHIN decodes value, lower bound, then upper bound. Success removes
     two main-stack items and preserves every other runtime field. -/
 theorem executeRuntimeElement_within (oracle : CryptoOracle) (state : RuntimeState)
@@ -149,14 +174,6 @@ theorem executeRuntimeElement_within (oracle : CryptoOracle) (state : RuntimeSta
         active, prepareValidationWeight, evaluate_within, stackEq, decoded]
       rfl
 
-/-- Inactive WITHIN leaves the entire state unchanged, including malformed or
-    missing operands. -/
-theorem executeRuntimeElement_within_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    executeRuntimeElement oracle (.op .OP_WITHIN) state flags ctx = .ok state := by
-  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
-  rfl
-
 /-- Successful active WITHIN reduces stack count by two; inactive WITHIN keeps
     it unchanged. Both preserve the alternate stack, conditions and budget. -/
 theorem executeRuntimeElement_within_preserves (oracle : CryptoOracle)
@@ -167,7 +184,7 @@ theorem executeRuntimeElement_within_preserves (oracle : CryptoOracle)
       next.weight = state.weight := by
   cases active : state.conditions.all id with
   | false =>
-      rw [executeRuntimeElement_within_inactive oracle state flags ctx active] at executed
+      rw [executeRuntimeElement_op_inactive oracle .OP_WITHIN state flags ctx rfl active] at executed
       cases executed
       simp
   | true =>
@@ -205,30 +222,6 @@ theorem runtimeStep_within (oracle : CryptoOracle) (state : RuntimeState)
       rcases values with ⟨upper, lower, value⟩
       simp [decoded, bind, Except.bind, checkRuntimeStack]
 
-/-- An inactive WITHIN still performs the shared post-instruction stack check. -/
-theorem runtimeStep_within_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    runtimeStep oracle (.op .OP_WITHIN) state flags ctx = checkRuntimeStack state := by
-  rw [runtimeStep, executeRuntimeElement_within_inactive oracle state flags ctx inactive]
-  rfl
-
-/-- The post-instruction resource check retains WITHIN's state invariants. -/
-theorem runtimeStep_within_preserves (oracle : CryptoOracle)
-    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
-    (stepped : runtimeStep oracle (.op .OP_WITHIN) state flags ctx = .ok next) :
-    next.stack.length + (if state.conditions.all id then 2 else 0) = state.stack.length ∧
-      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
-      next.weight = state.weight := by
-  unfold runtimeStep at stepped
-  cases executed : executeRuntimeElement oracle (.op .OP_WITHIN) state flags ctx with
-  | error error => simp [executed, bind, Except.bind] at stepped
-  | ok middle =>
-      simp only [executed, bind, Except.bind] at stepped
-      have same := (checkRuntimeStack_ok stepped).1
-      subst next
-      exact executeRuntimeElement_within_preserves oracle state middle flags ctx executed
-
-
 /-- Active NIP removes the second main-stack item and keeps all other bytes
     and runtime fields. Underflow precedes the combined-stack limit. -/
 theorem executeRuntimeElement_nip (oracle : CryptoOracle) (state : RuntimeState)
@@ -243,13 +236,6 @@ theorem executeRuntimeElement_nip (oracle : CryptoOracle) (state : RuntimeState)
       active, prepareValidationWeight, evaluate_nip, stackEq]
     rfl
 
-/-- Inactive NIP leaves the entire runtime state unchanged, for every stack. -/
-theorem executeRuntimeElement_nip_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    executeRuntimeElement oracle (.op .OP_NIP) state flags ctx = .ok state := by
-  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
-  rfl
-
 /-- Successful active NIP reduces stack count by one; inactive NIP keeps it.
     Both preserve the alternate stack, conditions and signature budget. -/
 theorem executeRuntimeElement_nip_preserves (oracle : CryptoOracle)
@@ -260,7 +246,7 @@ theorem executeRuntimeElement_nip_preserves (oracle : CryptoOracle)
       next.weight = state.weight := by
   cases active : state.conditions.all id with
   | false =>
-      rw [executeRuntimeElement_nip_inactive oracle state flags ctx active] at executed
+      rw [executeRuntimeElement_op_inactive oracle .OP_NIP state flags ctx rfl active] at executed
       cases executed
       simp
   | true =>
@@ -285,29 +271,6 @@ theorem runtimeStep_nip (oracle : CryptoOracle) (state : RuntimeState)
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨discarded, rest⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack]
 
-/-- An inactive NIP still performs the shared combined-stack check. -/
-theorem runtimeStep_nip_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    runtimeStep oracle (.op .OP_NIP) state flags ctx = checkRuntimeStack state := by
-  rw [runtimeStep, executeRuntimeElement_nip_inactive oracle state flags ctx inactive]
-  rfl
-
-/-- The post-instruction stack check retains NIP's state invariants. -/
-theorem runtimeStep_nip_preserves (oracle : CryptoOracle)
-    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
-    (stepped : runtimeStep oracle (.op .OP_NIP) state flags ctx = .ok next) :
-    next.stack.length + (if state.conditions.all id then 1 else 0) = state.stack.length ∧
-      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
-      next.weight = state.weight := by
-  unfold runtimeStep at stepped
-  cases executed : executeRuntimeElement oracle (.op .OP_NIP) state flags ctx with
-  | error error => simp [executed, bind, Except.bind] at stepped
-  | ok middle =>
-      simp only [executed, bind, Except.bind] at stepped
-      have same := (checkRuntimeStack_ok stepped).1
-      subst next
-      exact executeRuntimeElement_nip_preserves oracle state middle flags ctx executed
-
 /-- Active 2DROP removes the top two main-stack items and keeps the remaining bytes
     and runtime fields. Underflow precedes the combined-stack limit. -/
 theorem executeRuntimeElement_twoDrop (oracle : CryptoOracle) (state : RuntimeState)
@@ -322,13 +285,6 @@ theorem executeRuntimeElement_twoDrop (oracle : CryptoOracle) (state : RuntimeSt
       active, prepareValidationWeight, evaluate_twoDrop, stackEq]
     rfl
 
-/-- Inactive 2DROP leaves the entire runtime state unchanged, for every stack. -/
-theorem executeRuntimeElement_twoDrop_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    executeRuntimeElement oracle (.op .OP_2DROP) state flags ctx = .ok state := by
-  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
-  rfl
-
 /-- Successful active 2DROP reduces stack count by two; inactive 2DROP keeps it.
     Both preserve the alternate stack, conditions and signature budget. -/
 theorem executeRuntimeElement_twoDrop_preserves (oracle : CryptoOracle)
@@ -339,7 +295,7 @@ theorem executeRuntimeElement_twoDrop_preserves (oracle : CryptoOracle)
       next.weight = state.weight := by
   cases active : state.conditions.all id with
   | false =>
-      rw [executeRuntimeElement_twoDrop_inactive oracle state flags ctx active] at executed
+      rw [executeRuntimeElement_op_inactive oracle .OP_2DROP state flags ctx rfl active] at executed
       cases executed
       simp
   | true =>
@@ -364,29 +320,6 @@ theorem runtimeStep_twoDrop (oracle : CryptoOracle) (state : RuntimeState)
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨discarded, rest⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack]
 
-/-- An inactive 2DROP still performs the shared combined-stack check. -/
-theorem runtimeStep_twoDrop_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    runtimeStep oracle (.op .OP_2DROP) state flags ctx = checkRuntimeStack state := by
-  rw [runtimeStep, executeRuntimeElement_twoDrop_inactive oracle state flags ctx inactive]
-  rfl
-
-/-- The post-instruction stack check retains 2DROP's state invariants. -/
-theorem runtimeStep_twoDrop_preserves (oracle : CryptoOracle)
-    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
-    (stepped : runtimeStep oracle (.op .OP_2DROP) state flags ctx = .ok next) :
-    next.stack.length + (if state.conditions.all id then 2 else 0) = state.stack.length ∧
-      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
-      next.weight = state.weight := by
-  unfold runtimeStep at stepped
-  cases executed : executeRuntimeElement oracle (.op .OP_2DROP) state flags ctx with
-  | error error => simp [executed, bind, Except.bind] at stepped
-  | ok middle =>
-      simp only [executed, bind, Except.bind] at stepped
-      have same := (checkRuntimeStack_ok stepped).1
-      subst next
-      exact executeRuntimeElement_twoDrop_preserves oracle state middle flags ctx executed
-
 /-- Active 2DUP copies the top pair in order, keeping the original stack
     and every other runtime field. Underflow precedes the combined-stack limit. -/
 theorem executeRuntimeElement_twoDup (oracle : CryptoOracle) (state : RuntimeState)
@@ -401,13 +334,6 @@ theorem executeRuntimeElement_twoDup (oracle : CryptoOracle) (state : RuntimeSta
       active, prepareValidationWeight, evaluate_twoDup, stackEq]
     rfl
 
-/-- Inactive 2DUP leaves the entire runtime state unchanged, for every stack. -/
-theorem executeRuntimeElement_twoDup_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    executeRuntimeElement oracle (.op .OP_2DUP) state flags ctx = .ok state := by
-  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
-  rfl
-
 /-- Successful active 2DUP increases stack count by two; inactive 2DUP keeps it.
     Both preserve the alternate stack, conditions and signature budget. -/
 theorem executeRuntimeElement_twoDup_preserves (oracle : CryptoOracle)
@@ -418,7 +344,7 @@ theorem executeRuntimeElement_twoDup_preserves (oracle : CryptoOracle)
       next.weight = state.weight := by
   cases active : state.conditions.all id with
   | false =>
-      rw [executeRuntimeElement_twoDup_inactive oracle state flags ctx active] at executed
+      rw [executeRuntimeElement_op_inactive oracle .OP_2DUP state flags ctx rfl active] at executed
       cases executed
       simp
   | true =>
@@ -443,29 +369,6 @@ theorem runtimeStep_twoDup (oracle : CryptoOracle) (state : RuntimeState)
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨below, rest⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
 
-/-- An inactive 2DUP still performs the shared combined-stack check. -/
-theorem runtimeStep_twoDup_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    runtimeStep oracle (.op .OP_2DUP) state flags ctx = checkRuntimeStack state := by
-  rw [runtimeStep, executeRuntimeElement_twoDup_inactive oracle state flags ctx inactive]
-  rfl
-
-/-- The post-instruction stack check retains 2DUP's state invariants. -/
-theorem runtimeStep_twoDup_preserves (oracle : CryptoOracle)
-    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
-    (stepped : runtimeStep oracle (.op .OP_2DUP) state flags ctx = .ok next) :
-    next.stack.length = state.stack.length + (if state.conditions.all id then 2 else 0) ∧
-      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
-      next.weight = state.weight := by
-  unfold runtimeStep at stepped
-  cases executed : executeRuntimeElement oracle (.op .OP_2DUP) state flags ctx with
-  | error error => simp [executed, bind, Except.bind] at stepped
-  | ok middle =>
-      simp only [executed, bind, Except.bind] at stepped
-      have same := (checkRuntimeStack_ok stepped).1
-      subst next
-      exact executeRuntimeElement_twoDup_preserves oracle state middle flags ctx executed
-
 /-- Active 2OVER copies the third and fourth items in order, keeping the original
     stack and every other runtime field. Underflow precedes the combined-stack limit. -/
 theorem executeRuntimeElement_twoOver (oracle : CryptoOracle) (state : RuntimeState)
@@ -481,13 +384,6 @@ theorem executeRuntimeElement_twoOver (oracle : CryptoOracle) (state : RuntimeSt
       active, prepareValidationWeight, evaluate_twoOver, stackEq]
     rfl
 
-/-- Inactive 2OVER leaves the entire runtime state unchanged, for every stack. -/
-theorem executeRuntimeElement_twoOver_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    executeRuntimeElement oracle (.op .OP_2OVER) state flags ctx = .ok state := by
-  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
-  rfl
-
 /-- Successful active 2OVER increases stack count by two; inactive 2OVER keeps it.
     Both preserve the alternate stack, conditions and signature budget. -/
 theorem executeRuntimeElement_twoOver_preserves (oracle : CryptoOracle)
@@ -498,7 +394,7 @@ theorem executeRuntimeElement_twoOver_preserves (oracle : CryptoOracle)
       next.weight = state.weight := by
   cases active : state.conditions.all id with
   | false =>
-      rw [executeRuntimeElement_twoOver_inactive oracle state flags ctx active] at executed
+      rw [executeRuntimeElement_op_inactive oracle .OP_2OVER state flags ctx rfl active] at executed
       cases executed
       simp
   | true =>
@@ -523,29 +419,6 @@ theorem runtimeStep_twoOver (oracle : CryptoOracle) (state : RuntimeState)
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ | ⟨fourth, rest⟩⟩⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
 
-/-- An inactive 2OVER still performs the shared combined-stack check. -/
-theorem runtimeStep_twoOver_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    runtimeStep oracle (.op .OP_2OVER) state flags ctx = checkRuntimeStack state := by
-  rw [runtimeStep, executeRuntimeElement_twoOver_inactive oracle state flags ctx inactive]
-  rfl
-
-/-- The post-instruction stack check retains 2OVER's state invariants. -/
-theorem runtimeStep_twoOver_preserves (oracle : CryptoOracle)
-    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
-    (stepped : runtimeStep oracle (.op .OP_2OVER) state flags ctx = .ok next) :
-    next.stack.length = state.stack.length + (if state.conditions.all id then 2 else 0) ∧
-      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
-      next.weight = state.weight := by
-  unfold runtimeStep at stepped
-  cases executed : executeRuntimeElement oracle (.op .OP_2OVER) state flags ctx with
-  | error error => simp [executed, bind, Except.bind] at stepped
-  | ok middle =>
-      simp only [executed, bind, Except.bind] at stepped
-      have same := (checkRuntimeStack_ok stepped).1
-      subst next
-      exact executeRuntimeElement_twoOver_preserves oracle state middle flags ctx executed
-
 /-- Active 3DUP copies the top three items in order, keeping the original stack
     and every other runtime field. Underflow precedes the combined-stack limit. -/
 theorem executeRuntimeElement_threeDup (oracle : CryptoOracle) (state : RuntimeState)
@@ -561,13 +434,6 @@ theorem executeRuntimeElement_threeDup (oracle : CryptoOracle) (state : RuntimeS
       active, prepareValidationWeight, evaluate_threeDup, stackEq]
     rfl
 
-/-- Inactive 3DUP leaves the entire runtime state unchanged, for every stack. -/
-theorem executeRuntimeElement_threeDup_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    executeRuntimeElement oracle (.op .OP_3DUP) state flags ctx = .ok state := by
-  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
-  rfl
-
 /-- Successful active 3DUP increases stack count by three; inactive 3DUP keeps it.
     Both preserve the alternate stack, conditions and signature budget. -/
 theorem executeRuntimeElement_threeDup_preserves (oracle : CryptoOracle)
@@ -578,7 +444,7 @@ theorem executeRuntimeElement_threeDup_preserves (oracle : CryptoOracle)
       next.weight = state.weight := by
   cases active : state.conditions.all id with
   | false =>
-      rw [executeRuntimeElement_threeDup_inactive oracle state flags ctx active] at executed
+      rw [executeRuntimeElement_op_inactive oracle .OP_3DUP state flags ctx rfl active] at executed
       cases executed
       simp
   | true =>
@@ -603,29 +469,6 @@ theorem runtimeStep_threeDup (oracle : CryptoOracle) (state : RuntimeState)
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, rest⟩⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
 
-/-- An inactive 3DUP still performs the shared combined-stack check. -/
-theorem runtimeStep_threeDup_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    runtimeStep oracle (.op .OP_3DUP) state flags ctx = checkRuntimeStack state := by
-  rw [runtimeStep, executeRuntimeElement_threeDup_inactive oracle state flags ctx inactive]
-  rfl
-
-/-- The post-instruction stack check retains 3DUP's state invariants. -/
-theorem runtimeStep_threeDup_preserves (oracle : CryptoOracle)
-    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
-    (stepped : runtimeStep oracle (.op .OP_3DUP) state flags ctx = .ok next) :
-    next.stack.length = state.stack.length + (if state.conditions.all id then 3 else 0) ∧
-      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
-      next.weight = state.weight := by
-  unfold runtimeStep at stepped
-  cases executed : executeRuntimeElement oracle (.op .OP_3DUP) state flags ctx with
-  | error error => simp [executed, bind, Except.bind] at stepped
-  | ok middle =>
-      simp only [executed, bind, Except.bind] at stepped
-      have same := (checkRuntimeStack_ok stepped).1
-      subst next
-      exact executeRuntimeElement_threeDup_preserves oracle state middle flags ctx executed
-
 /-- Active OVER copies the second item to the top, keeping the original stack
     and every other runtime field. Underflow precedes the combined-stack limit. -/
 theorem executeRuntimeElement_over (oracle : CryptoOracle) (state : RuntimeState)
@@ -640,13 +483,6 @@ theorem executeRuntimeElement_over (oracle : CryptoOracle) (state : RuntimeState
       active, prepareValidationWeight, evaluate_over, stackEq]
     rfl
 
-/-- Inactive OVER leaves the entire runtime state unchanged, for every stack. -/
-theorem executeRuntimeElement_over_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    executeRuntimeElement oracle (.op .OP_OVER) state flags ctx = .ok state := by
-  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
-  rfl
-
 /-- Successful active OVER increases stack count by one; inactive OVER keeps it.
     Both preserve the alternate stack, conditions and signature budget. -/
 theorem executeRuntimeElement_over_preserves (oracle : CryptoOracle)
@@ -657,7 +493,7 @@ theorem executeRuntimeElement_over_preserves (oracle : CryptoOracle)
       next.weight = state.weight := by
   cases active : state.conditions.all id with
   | false =>
-      rw [executeRuntimeElement_over_inactive oracle state flags ctx active] at executed
+      rw [executeRuntimeElement_op_inactive oracle .OP_OVER state flags ctx rfl active] at executed
       cases executed
       simp
   | true =>
@@ -682,29 +518,6 @@ theorem runtimeStep_over (oracle : CryptoOracle) (state : RuntimeState)
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨below, rest⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
 
-/-- An inactive OVER still performs the shared combined-stack check. -/
-theorem runtimeStep_over_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    runtimeStep oracle (.op .OP_OVER) state flags ctx = checkRuntimeStack state := by
-  rw [runtimeStep, executeRuntimeElement_over_inactive oracle state flags ctx inactive]
-  rfl
-
-/-- The post-instruction stack check retains OVER's state invariants. -/
-theorem runtimeStep_over_preserves (oracle : CryptoOracle)
-    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
-    (stepped : runtimeStep oracle (.op .OP_OVER) state flags ctx = .ok next) :
-    next.stack.length = state.stack.length + (if state.conditions.all id then 1 else 0) ∧
-      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
-      next.weight = state.weight := by
-  unfold runtimeStep at stepped
-  cases executed : executeRuntimeElement oracle (.op .OP_OVER) state flags ctx with
-  | error error => simp [executed, bind, Except.bind] at stepped
-  | ok middle =>
-      simp only [executed, bind, Except.bind] at stepped
-      have same := (checkRuntimeStack_ok stepped).1
-      subst next
-      exact executeRuntimeElement_over_preserves oracle state middle flags ctx executed
-
 /-- Active TUCK inserts a top-item copy beneath the top two, preserving the
     remaining stack and every other runtime field. Underflow precedes the combined-stack limit. -/
 theorem executeRuntimeElement_tuck (oracle : CryptoOracle) (state : RuntimeState)
@@ -719,13 +532,6 @@ theorem executeRuntimeElement_tuck (oracle : CryptoOracle) (state : RuntimeState
       active, prepareValidationWeight, evaluate_tuck, stackEq]
     rfl
 
-/-- Inactive TUCK leaves the entire runtime state unchanged, for every stack. -/
-theorem executeRuntimeElement_tuck_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    executeRuntimeElement oracle (.op .OP_TUCK) state flags ctx = .ok state := by
-  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
-  rfl
-
 /-- Successful active TUCK increases stack count by one; inactive TUCK keeps it.
     Both preserve the alternate stack, conditions and signature budget. -/
 theorem executeRuntimeElement_tuck_preserves (oracle : CryptoOracle)
@@ -736,7 +542,7 @@ theorem executeRuntimeElement_tuck_preserves (oracle : CryptoOracle)
       next.weight = state.weight := by
   cases active : state.conditions.all id with
   | false =>
-      rw [executeRuntimeElement_tuck_inactive oracle state flags ctx active] at executed
+      rw [executeRuntimeElement_op_inactive oracle .OP_TUCK state flags ctx rfl active] at executed
       cases executed
       simp
   | true =>
@@ -761,29 +567,6 @@ theorem runtimeStep_tuck (oracle : CryptoOracle) (state : RuntimeState)
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨below, rest⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
 
-/-- An inactive TUCK still performs the shared combined-stack check. -/
-theorem runtimeStep_tuck_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    runtimeStep oracle (.op .OP_TUCK) state flags ctx = checkRuntimeStack state := by
-  rw [runtimeStep, executeRuntimeElement_tuck_inactive oracle state flags ctx inactive]
-  rfl
-
-/-- The post-instruction stack check retains TUCK's state invariants. -/
-theorem runtimeStep_tuck_preserves (oracle : CryptoOracle)
-    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
-    (stepped : runtimeStep oracle (.op .OP_TUCK) state flags ctx = .ok next) :
-    next.stack.length = state.stack.length + (if state.conditions.all id then 1 else 0) ∧
-      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
-      next.weight = state.weight := by
-  unfold runtimeStep at stepped
-  cases executed : executeRuntimeElement oracle (.op .OP_TUCK) state flags ctx with
-  | error error => simp [executed, bind, Except.bind] at stepped
-  | ok middle =>
-      simp only [executed, bind, Except.bind] at stepped
-      have same := (checkRuntimeStack_ok stepped).1
-      subst next
-      exact executeRuntimeElement_tuck_preserves oracle state middle flags ctx executed
-
 /-- Active ROT moves the third item to the top, preserving all other runtime
     fields. Underflow precedes the combined-stack limit. -/
 theorem executeRuntimeElement_rot (oracle : CryptoOracle) (state : RuntimeState)
@@ -799,13 +582,6 @@ theorem executeRuntimeElement_rot (oracle : CryptoOracle) (state : RuntimeState)
       active, prepareValidationWeight, evaluate_rot, stackEq]
     rfl
 
-/-- Inactive ROT leaves the entire runtime state unchanged, for every stack. -/
-theorem executeRuntimeElement_rot_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    executeRuntimeElement oracle (.op .OP_ROT) state flags ctx = .ok state := by
-  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
-  rfl
-
 /-- Successful ROT preserves stack count, alternate stack, conditions and
     signature budget, in both active and inactive branches. -/
 theorem executeRuntimeElement_rot_preserves (oracle : CryptoOracle)
@@ -816,7 +592,7 @@ theorem executeRuntimeElement_rot_preserves (oracle : CryptoOracle)
       next.weight = state.weight := by
   cases active : state.conditions.all id with
   | false =>
-      rw [executeRuntimeElement_rot_inactive oracle state flags ctx active] at executed
+      rw [executeRuntimeElement_op_inactive oracle .OP_ROT state flags ctx rfl active] at executed
       cases executed
       simp
   | true =>
@@ -841,29 +617,6 @@ theorem runtimeStep_rot (oracle : CryptoOracle) (state : RuntimeState)
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, rest⟩⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
 
-/-- An inactive ROT still performs the shared combined-stack check. -/
-theorem runtimeStep_rot_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    runtimeStep oracle (.op .OP_ROT) state flags ctx = checkRuntimeStack state := by
-  rw [runtimeStep, executeRuntimeElement_rot_inactive oracle state flags ctx inactive]
-  rfl
-
-/-- The post-instruction stack check retains ROT's state invariants. -/
-theorem runtimeStep_rot_preserves (oracle : CryptoOracle)
-    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
-    (stepped : runtimeStep oracle (.op .OP_ROT) state flags ctx = .ok next) :
-    next.stack.length = state.stack.length ∧
-      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
-      next.weight = state.weight := by
-  unfold runtimeStep at stepped
-  cases executed : executeRuntimeElement oracle (.op .OP_ROT) state flags ctx with
-  | error error => simp [executed, bind, Except.bind] at stepped
-  | ok middle =>
-      simp only [executed, bind, Except.bind] at stepped
-      have same := (checkRuntimeStack_ok stepped).1
-      subst next
-      exact executeRuntimeElement_rot_preserves oracle state middle flags ctx executed
-
 /-- Active 2ROT moves the fifth and sixth items to the top, preserving all other runtime
     fields. Underflow precedes the combined-stack limit. -/
 theorem executeRuntimeElement_twoRot (oracle : CryptoOracle) (state : RuntimeState)
@@ -879,13 +632,6 @@ theorem executeRuntimeElement_twoRot (oracle : CryptoOracle) (state : RuntimeSta
       active, prepareValidationWeight, evaluate_twoRot, stackEq]
     rfl
 
-/-- Inactive 2ROT leaves the entire runtime state unchanged, for every stack. -/
-theorem executeRuntimeElement_twoRot_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    executeRuntimeElement oracle (.op .OP_2ROT) state flags ctx = .ok state := by
-  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
-  rfl
-
 /-- Successful 2ROT preserves stack count, alternate stack, conditions and
     signature budget, in both active and inactive branches. -/
 theorem executeRuntimeElement_twoRot_preserves (oracle : CryptoOracle)
@@ -896,7 +642,7 @@ theorem executeRuntimeElement_twoRot_preserves (oracle : CryptoOracle)
       next.weight = state.weight := by
   cases active : state.conditions.all id with
   | false =>
-      rw [executeRuntimeElement_twoRot_inactive oracle state flags ctx active] at executed
+      rw [executeRuntimeElement_op_inactive oracle .OP_2ROT state flags ctx rfl active] at executed
       cases executed
       simp
   | true =>
@@ -921,29 +667,6 @@ theorem runtimeStep_twoRot (oracle : CryptoOracle) (state : RuntimeState)
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ | ⟨fourth, _ | ⟨fifth, _ | ⟨sixth, rest⟩⟩⟩⟩⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
 
-/-- An inactive 2ROT still performs the shared combined-stack check. -/
-theorem runtimeStep_twoRot_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    runtimeStep oracle (.op .OP_2ROT) state flags ctx = checkRuntimeStack state := by
-  rw [runtimeStep, executeRuntimeElement_twoRot_inactive oracle state flags ctx inactive]
-  rfl
-
-/-- The post-instruction stack check retains 2ROT's state invariants. -/
-theorem runtimeStep_twoRot_preserves (oracle : CryptoOracle)
-    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
-    (stepped : runtimeStep oracle (.op .OP_2ROT) state flags ctx = .ok next) :
-    next.stack.length = state.stack.length ∧
-      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
-      next.weight = state.weight := by
-  unfold runtimeStep at stepped
-  cases executed : executeRuntimeElement oracle (.op .OP_2ROT) state flags ctx with
-  | error error => simp [executed, bind, Except.bind] at stepped
-  | ok middle =>
-      simp only [executed, bind, Except.bind] at stepped
-      have same := (checkRuntimeStack_ok stepped).1
-      subst next
-      exact executeRuntimeElement_twoRot_preserves oracle state middle flags ctx executed
-
 /-- Active 2SWAP exchanges the top two pairs, preserving all other runtime
     fields. Underflow precedes the combined-stack limit. -/
 theorem executeRuntimeElement_twoSwap (oracle : CryptoOracle) (state : RuntimeState)
@@ -959,13 +682,6 @@ theorem executeRuntimeElement_twoSwap (oracle : CryptoOracle) (state : RuntimeSt
       active, prepareValidationWeight, evaluate_twoSwap, stackEq]
     rfl
 
-/-- Inactive 2SWAP leaves the entire runtime state unchanged, for every stack. -/
-theorem executeRuntimeElement_twoSwap_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    executeRuntimeElement oracle (.op .OP_2SWAP) state flags ctx = .ok state := by
-  simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize, inactive]
-  rfl
-
 /-- Successful 2SWAP preserves stack count, alternate stack, conditions and
     signature budget, in both active and inactive branches. -/
 theorem executeRuntimeElement_twoSwap_preserves (oracle : CryptoOracle)
@@ -976,7 +692,7 @@ theorem executeRuntimeElement_twoSwap_preserves (oracle : CryptoOracle)
       next.weight = state.weight := by
   cases active : state.conditions.all id with
   | false =>
-      rw [executeRuntimeElement_twoSwap_inactive oracle state flags ctx active] at executed
+      rw [executeRuntimeElement_op_inactive oracle .OP_2SWAP state flags ctx rfl active] at executed
       cases executed
       simp
   | true =>
@@ -1000,29 +716,6 @@ theorem runtimeStep_twoSwap (oracle : CryptoOracle) (state : RuntimeState)
   rw [runtimeStep, executeRuntimeElement_twoSwap oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ | ⟨fourth, rest⟩⟩⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
-
-/-- An inactive 2SWAP still performs the shared combined-stack check. -/
-theorem runtimeStep_twoSwap_inactive (oracle : CryptoOracle) (state : RuntimeState)
-    (flags : ScriptFlags) (ctx : TxContext) (inactive : state.conditions.all id = false) :
-    runtimeStep oracle (.op .OP_2SWAP) state flags ctx = checkRuntimeStack state := by
-  rw [runtimeStep, executeRuntimeElement_twoSwap_inactive oracle state flags ctx inactive]
-  rfl
-
-/-- The post-instruction stack check retains 2SWAP's state invariants. -/
-theorem runtimeStep_twoSwap_preserves (oracle : CryptoOracle)
-    (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
-    (stepped : runtimeStep oracle (.op .OP_2SWAP) state flags ctx = .ok next) :
-    next.stack.length = state.stack.length ∧
-      next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
-      next.weight = state.weight := by
-  unfold runtimeStep at stepped
-  cases executed : executeRuntimeElement oracle (.op .OP_2SWAP) state flags ctx with
-  | error error => simp [executed, bind, Except.bind] at stepped
-  | ok middle =>
-      simp only [executed, bind, Except.bind] at stepped
-      have same := (checkRuntimeStack_ok stepped).1
-      subst next
-      exact executeRuntimeElement_twoSwap_preserves oracle state middle flags ctx executed
 
 theorem runtimeStep_stackBound
     {oracle : CryptoOracle} {element : ScriptElement} {before after : RuntimeState}
