@@ -126,27 +126,67 @@ theorem Unconditional.notSigned {result : CandidateResult}
   have hasSignature := signed candidate equal
   simp [noSignature] at hasSignature
 
-theorem Signed.withSelector {result : CandidateResult}
-    (signed : result.Signed) (selector : StackElement) :
-    (result.withSelector selector).Signed := by
+/-- Pointwise candidate maps transport pointwise candidate predicates: a
+    property of every candidate carried by `result` transfers to the mapped
+    result whenever the candidate-level map preserves the property. -/
+theorem forallCandidate_of_map {P : SatisfactionCandidate → Prop}
+    {result : CandidateResult}
+    (property : ∀ candidate, result = .candidate candidate → P candidate)
+    {candidateMap : SatisfactionCandidate → SatisfactionCandidate}
+    {transform : CandidateResult → CandidateResult}
+    (impossibleEq : transform .impossible = .impossible)
+    (candidateEq : ∀ candidate,
+      transform (.candidate candidate) = .candidate (candidateMap candidate))
+    (preserved : ∀ candidate, P candidate → P (candidateMap candidate)) :
+    ∀ candidate, transform result = .candidate candidate → P candidate := by
   cases result with
-  | impossible => exact signed_impossible
+  | impossible =>
+      rw [impossibleEq]
+      intro candidate equal
+      cases equal
   | candidate source =>
       intro candidate equal
-      simp [CandidateResult.withSelector] at equal
+      rw [candidateEq] at equal
       cases equal
-      exact signed source rfl
+      exact preserved source (property source rfl)
+
+/-- When every mapped candidate satisfies `P` outright, the mapped result
+    satisfies the pointwise predicate regardless of the input result. -/
+theorem forallCandidate_of_map_output {P : SatisfactionCandidate → Prop}
+    {candidateMap : SatisfactionCandidate → SatisfactionCandidate}
+    {transform : CandidateResult → CandidateResult}
+    (impossibleEq : transform .impossible = .impossible)
+    (candidateEq : ∀ candidate,
+      transform (.candidate candidate) = .candidate (candidateMap candidate))
+    (output : ∀ candidate, P (candidateMap candidate))
+    (result : CandidateResult) :
+    ∀ candidate, transform result = .candidate candidate → P candidate := by
+  cases result with
+  | impossible =>
+      rw [impossibleEq]
+      intro candidate equal
+      cases equal
+  | candidate source =>
+      intro candidate equal
+      rw [candidateEq] at equal
+      cases equal
+      exact output source
+
+theorem Signed.withSelector {result : CandidateResult}
+    (signed : result.Signed) (selector : StackElement) :
+    (result.withSelector selector).Signed :=
+  forallCandidate_of_map signed
+    (transform := fun result => result.withSelector selector)
+    (candidateMap := fun candidate => candidate.withSelector selector)
+    rfl (fun _ => rfl) fun _ hasSig => hasSig
 
 theorem CanonicalWhenUsable.withSelector {result : CandidateResult}
     (canonical : result.CanonicalWhenUsable) (selector : StackElement) :
-    (result.withSelector selector).CanonicalWhenUsable := by
-  cases result with
-  | impossible => exact canonicalWhenUsable_impossible
-  | candidate source =>
-      intro candidate equal usable
-      simp [CandidateResult.withSelector] at equal
-      cases equal
-      exact canonical source rfl usable
+    (result.withSelector selector).CanonicalWhenUsable :=
+  forallCandidate_of_map canonical
+    (transform := fun result => result.withSelector selector)
+    (candidateMap := fun candidate => candidate.withSelector selector)
+    rfl (fun _ => rfl) fun _ canonical => canonical
 
 theorem Unconditional.withSelector {result : CandidateResult}
     (unconditional : result.Unconditional) (selector : StackElement) :
@@ -156,44 +196,32 @@ theorem Unconditional.withSelector {result : CandidateResult}
     canonical.withSelector selector⟩
 
 theorem Signed.markNonCanonical {result : CandidateResult}
-    (signed : result.Signed) : result.markNonCanonical.Signed := by
-  cases result with
-  | impossible => exact signed_impossible
-  | candidate source =>
-      intro candidate equal
-      simp [CandidateResult.markNonCanonical] at equal
-      cases equal
-      exact signed source rfl
+    (signed : result.Signed) : result.markNonCanonical.Signed :=
+  forallCandidate_of_map signed
+    (transform := CandidateResult.markNonCanonical)
+    (candidateMap := SatisfactionCandidate.markNonCanonical)
+    rfl (fun _ => rfl) fun _ hasSig => hasSig
 
 theorem Signed.markDontUse {result : CandidateResult}
-    (signed : result.Signed) : result.markDontUse.Signed := by
-  cases result with
-  | impossible => exact signed_impossible
-  | candidate source =>
-      intro candidate equal
-      simp [CandidateResult.markDontUse] at equal
-      cases equal
-      exact signed source rfl
+    (signed : result.Signed) : result.markDontUse.Signed :=
+  forallCandidate_of_map signed
+    (transform := CandidateResult.markDontUse)
+    (candidateMap := SatisfactionCandidate.markDontUse)
+    rfl (fun _ => rfl) fun _ hasSig => hasSig
 
 theorem canonicalWhenUsable_markDontUse (result : CandidateResult) :
-    result.markDontUse.CanonicalWhenUsable := by
-  cases result with
-  | impossible => exact canonicalWhenUsable_impossible
-  | candidate source =>
-      intro candidate equal usable
-      simp [CandidateResult.markDontUse] at equal
-      cases equal
-      simp at usable
+    result.markDontUse.CanonicalWhenUsable :=
+  forallCandidate_of_map_output
+    (transform := CandidateResult.markDontUse)
+    (candidateMap := SatisfactionCandidate.markDontUse)
+    rfl (fun _ => rfl) (fun _ usable => by simp at usable) result
 
 theorem Signed.markOvercomplete {result : CandidateResult}
-    (signed : result.Signed) : result.markOvercomplete.Signed := by
-  cases result with
-  | impossible => exact signed_impossible
-  | candidate source =>
-      intro candidate equal
-      simp [CandidateResult.markOvercomplete] at equal
-      cases equal
-      exact signed source rfl
+    (signed : result.Signed) : result.markOvercomplete.Signed :=
+  forallCandidate_of_map signed
+    (transform := CandidateResult.markOvercomplete)
+    (candidateMap := SatisfactionCandidate.markOvercomplete)
+    rfl (fun _ => rfl) fun _ hasSig => hasSig
 
 theorem Signed.requireNonemptyRuntimeTop {result : CandidateResult}
     (signed : result.Signed) : result.requireNonemptyRuntimeTop.Signed := by
@@ -235,14 +263,11 @@ theorem CanonicalWhenUsable.requireNonemptyRuntimeTop
             exact canonical _ rfl usable
 
 theorem canonicalWhenUsable_markOvercomplete (result : CandidateResult) :
-    result.markOvercomplete.CanonicalWhenUsable := by
-  cases result with
-  | impossible => exact canonicalWhenUsable_impossible
-  | candidate source =>
-      intro candidate equal usable
-      simp [CandidateResult.markOvercomplete] at equal
-      cases equal
-      simp at usable
+    result.markOvercomplete.CanonicalWhenUsable :=
+  forallCandidate_of_map_output
+    (transform := CandidateResult.markOvercomplete)
+    (candidateMap := SatisfactionCandidate.markOvercomplete)
+    rfl (fun _ => rfl) (fun _ usable => by simp at usable) result
 
 theorem Signed.combine_left {left right : CandidateResult}
     (signed : left.Signed) : (left.combine right).Signed := by
@@ -415,23 +440,21 @@ theorem Unconditional.select_markOvercomplete {left right : CandidateResult}
         exact ⟨leftCandidate, rfl, leftHasSig, leftCanonical⟩
 
 theorem Signed.finalizeLegacyMulti {result : CandidateResult}
-    (signed : result.Signed) : (finalizeLegacyMulti result).Signed := by
-  cases result with
-  | impossible => exact signed_impossible
-  | candidate source =>
-      intro candidate equal
-      cases equal
-      exact signed source rfl
+    (signed : result.Signed) : (finalizeLegacyMulti result).Signed :=
+  forallCandidate_of_map signed
+    (transform := _root_.LeanMiniscript.Miniscript.finalizeLegacyMulti)
+    (candidateMap := fun candidate =>
+      { candidate with witness := falseElement :: candidate.witness.reverse })
+    rfl (fun _ => rfl) fun _ hasSig => hasSig
 
 theorem CanonicalWhenUsable.finalizeLegacyMulti {result : CandidateResult}
     (canonical : result.CanonicalWhenUsable) :
-    (finalizeLegacyMulti result).CanonicalWhenUsable := by
-  cases result with
-  | impossible => exact canonicalWhenUsable_impossible
-  | candidate source =>
-      intro candidate equal usable
-      cases equal
-      exact canonical source rfl usable
+    (finalizeLegacyMulti result).CanonicalWhenUsable :=
+  forallCandidate_of_map canonical
+    (transform := _root_.LeanMiniscript.Miniscript.finalizeLegacyMulti)
+    (candidateMap := fun candidate =>
+      { candidate with witness := falseElement :: candidate.witness.reverse })
+    rfl (fun _ => rfl) fun _ canonical => canonical
 
 end CandidateResult
 
@@ -487,6 +510,15 @@ where
     induction left with
     | nil => simpa using right
     | cons head tail ih => exact .cons head ih
+
+/-- Signature-only projection of pointwise choice security. -/
+theorem toSignatureSecurityList {pairs : List CandidatePair}
+    {signedFlags : List Bool}
+    (security : ChoiceSecurityList pairs signedFlags) :
+    SignatureSecurityList pairs signedFlags := by
+  induction security with
+  | nil => exact .nil
+  | cons head tail ih => exact .cons ⟨head.satSigned⟩ ih
 
 end ChoiceSecurityList
 
@@ -669,53 +701,24 @@ theorem selectExactly_signed_of_countUnsigned_lt
   have result := helper reversed (count := count) (by simpa using fewer)
   simpa using result
 
-/-- Every legacy multisig key choice has a canonical satisfaction, a signature
-    whenever it is satisfiable, and the empty unconditional dissatisfaction. -/
-theorem legacyMultiChoiceSecurity (keys : List PubKey) (env : SatEnv) :
-    ChoiceSecurityList (keys.map (fun key => legacyMultiKeyChoice key env))
-      (List.replicate keys.length true) := by
-  induction keys with
-  | nil => exact .nil
-  | cons key keys ih =>
-      apply ChoiceSecurityList.cons
-      · refine {
-          satCanonical := ?_
-          satSigned := ?_
-          dsatUnconditional := CandidateResult.unconditional_usable [] }
-        · cases selected : env.signatureFor key with
-          | none => simpa [legacyMultiKeyChoice, selected] using
-              CandidateResult.canonicalWhenUsable_impossible
-          | some signature => simpa [legacyMultiKeyChoice, selected] using
-              CandidateResult.canonicalWhenUsable_usable [signature] true
-        · intro _
-          cases selected : env.signatureFor key with
-          | none => simpa [legacyMultiKeyChoice, selected] using
-              CandidateResult.signed_impossible
-          | some signature => simpa [legacyMultiKeyChoice, selected] using
-              CandidateResult.signed_usable [signature]
-      · simpa using ih
+/-- Shared per-key multisig choice shape: the key's available signature or
+    impossibility for satisfaction, and a fixed unconditional dissatisfaction
+    witness. Legacy `multi` uses the empty dissatisfaction, Tapscript
+    `multi_a` the canonical empty signature. -/
+private def multiKeyChoice (dsatWitness : Witness) (key : PubKey)
+    (env : SatEnv) : CandidatePair where
+  sat := match env.signatureFor key with
+    | none => CandidateResult.impossible
+    | some signature => CandidateResult.usable [signature] true
+  dsat := CandidateResult.usable dsatWitness false
 
-/-- Signature-only projection of legacy key-choice security. -/
-theorem legacyMultiSignatureSecurity (keys : List PubKey) (env : SatEnv) :
-    SignatureSecurityList (keys.map (fun key => legacyMultiKeyChoice key env))
-      (List.replicate keys.length true) := by
-  induction keys with
-  | nil => exact .nil
-  | cons key keys ih =>
-      apply SignatureSecurityList.cons
-      · refine ⟨?_⟩
-        intro _
-        cases selected : env.signatureFor key with
-        | none => simpa [legacyMultiKeyChoice, selected] using
-            CandidateResult.signed_impossible
-        | some signature => simpa [legacyMultiKeyChoice, selected] using
-            CandidateResult.signed_usable [signature]
-      · simpa using ih
-
-/-- Every Tapscript multisig key choice has the same security summary, with a
-    canonical empty-signature dissatisfaction. -/
-theorem multiAChoiceSecurity (keys : List PubKey) (env : SatEnv) :
-    ChoiceSecurityList (keys.map (fun key => multiAKeyChoice key env))
+/-- Every per-key multisig choice has a canonical satisfaction, a signature
+    whenever it is satisfiable, and the chosen unconditional dissatisfaction.
+    Shared by legacy `multi` and Tapscript `multi_a`. -/
+theorem keyChoiceSecurity (dsatWitness : Witness) (keys : List PubKey)
+    (env : SatEnv) :
+    ChoiceSecurityList
+      (keys.map (fun key => multiKeyChoice dsatWitness key env))
       (List.replicate keys.length true) := by
   induction keys with
   | nil => exact .nil
@@ -725,36 +728,53 @@ theorem multiAChoiceSecurity (keys : List PubKey) (env : SatEnv) :
           satCanonical := ?_
           satSigned := ?_
           dsatUnconditional :=
-            CandidateResult.unconditional_usable [falseElement] }
+            CandidateResult.unconditional_usable dsatWitness }
         · cases selected : env.signatureFor key with
-          | none => simpa [multiAKeyChoice, selected] using
+          | none => simpa [multiKeyChoice, selected] using
               CandidateResult.canonicalWhenUsable_impossible
-          | some signature => simpa [multiAKeyChoice, selected] using
+          | some signature => simpa [multiKeyChoice, selected] using
               CandidateResult.canonicalWhenUsable_usable [signature] true
         · intro _
           cases selected : env.signatureFor key with
-          | none => simpa [multiAKeyChoice, selected] using
+          | none => simpa [multiKeyChoice, selected] using
               CandidateResult.signed_impossible
-          | some signature => simpa [multiAKeyChoice, selected] using
+          | some signature => simpa [multiKeyChoice, selected] using
               CandidateResult.signed_usable [signature]
       · simpa using ih
+
+/-- Signature-only projection of per-key multisig security. -/
+theorem keySignatureSecurity (dsatWitness : Witness) (keys : List PubKey)
+    (env : SatEnv) :
+    SignatureSecurityList
+      (keys.map (fun key => multiKeyChoice dsatWitness key env))
+      (List.replicate keys.length true) :=
+  (keyChoiceSecurity dsatWitness keys env).toSignatureSecurityList
+
+/-- Every legacy multisig key choice has a canonical satisfaction, a signature
+    whenever it is satisfiable, and the empty unconditional dissatisfaction. -/
+theorem legacyMultiChoiceSecurity (keys : List PubKey) (env : SatEnv) :
+    ChoiceSecurityList (keys.map (fun key => legacyMultiKeyChoice key env))
+      (List.replicate keys.length true) :=
+  keyChoiceSecurity [] keys env
+
+/-- Signature-only projection of legacy key-choice security. -/
+theorem legacyMultiSignatureSecurity (keys : List PubKey) (env : SatEnv) :
+    SignatureSecurityList (keys.map (fun key => legacyMultiKeyChoice key env))
+      (List.replicate keys.length true) :=
+  keySignatureSecurity [] keys env
+
+/-- Every Tapscript multisig key choice has the same security summary, with a
+    canonical empty-signature dissatisfaction. -/
+theorem multiAChoiceSecurity (keys : List PubKey) (env : SatEnv) :
+    ChoiceSecurityList (keys.map (fun key => multiAKeyChoice key env))
+      (List.replicate keys.length true) :=
+  keyChoiceSecurity [falseElement] keys env
 
 /-- Signature-only projection of Tapscript key-choice security. -/
 theorem multiASignatureSecurity (keys : List PubKey) (env : SatEnv) :
     SignatureSecurityList (keys.map (fun key => multiAKeyChoice key env))
-      (List.replicate keys.length true) := by
-  induction keys with
-  | nil => exact .nil
-  | cons key keys ih =>
-      apply SignatureSecurityList.cons
-      · refine ⟨?_⟩
-        intro _
-        cases selected : env.signatureFor key with
-        | none => simpa [multiAKeyChoice, selected] using
-            CandidateResult.signed_impossible
-        | some signature => simpa [multiAKeyChoice, selected] using
-            CandidateResult.signed_usable [signature]
-      · simpa using ih
+      (List.replicate keys.length true) :=
+  keySignatureSecurity [falseElement] keys env
 
 @[simp] theorem countUnsigned_replicate_true (count : Nat) :
     countUnsigned (List.replicate count true) = 0 := by
