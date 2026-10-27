@@ -4,101 +4,154 @@
 
 # lean-miniscript
 
-- Lean 4 models, executable verification, and proofs for Bitcoin Miniscript.
-- The codebase covers:
-  - Miniscript syntax, parsing, pretty-printing, normalization, type inference, and validation.
-  - Miniscript compilation, concrete compilation, malleability analysis, satisfaction availability, and metrics.
-  - Spending policies: parsing and printing, denotational semantics, and a cost-based policy-to-Miniscript compiler whose output provably preserves the policy's meaning.
-  - Bitcoin Script execution, control flow, signatures, Taproot, timelocks, and runtime limits.
-  - Bitcoin transaction, descriptor, ECDSA, Schnorr, and Taproot serialization utilities.
-  - PSBT (BIP174, BIP370, BIP371) parsing, serialization, roles, and descriptor-based finalization.
+`lean-miniscript` models Bitcoin Miniscript and the surrounding Bitcoin execution and data boundaries in Lean 4. The repository combines executable models, proofs, and conformance checks against pinned external fixtures.
 
-## Getting started
+## Quick start
 
-- Install the Lean version pinned in [`lean-toolchain`](lean-toolchain).
-- Build the libraries, proofs, examples, and tests:
+Install the Lean version selected by `lean-toolchain`, then run:
 
-  ```sh
-  lake build
-  ```
+```sh
+lake build
+```
 
-- Run the Bitcoin Core fixture audit:
+The build checks the library, proofs, executable examples, and tests.
 
-  ```sh
-  curl --fail --location \
-    https://raw.githubusercontent.com/bitcoin/bitcoin/f13ae519de94394314cd63a27924b0998ac65d45/src/test/data/script_tests.json \
-    --output /tmp/script_tests.json
-  lake exe core_fixture_audit -- --show-details /tmp/script_tests.json
-  ```
+### Policy CLI
 
-- The audit downloads the fixture from the pinned Bitcoin Core revision and checks all 1,258 cases.
-- The pinned `script_tests.json` comes from Bitcoin Core commit
-  [`f13ae519de94394314cd63a27924b0998ac65d45`](https://github.com/bitcoin/bitcoin/commit/f13ae519de94394314cd63a27924b0998ac65d45),
-  dated 2026-10-14, and contains 1,258 executable tests plus 60 documentation rows.
-- PSBT test vectors are generated from pinned BIP174, BIP370, and BIP371 sources by
-  `scripts/generate_psbt_fixtures.py`.
+Parse a policy and print its canonical form:
 
-- Parse a hexadecimal-key policy into its Lean AST and print canonical text:
+```sh
+lake exe policy_cli -- \
+  'and(pk(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798),older(100))'
+```
 
-  ```sh
-  lake exe policy_cli -- \
-    'and(pk(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798),older(100))'
-  ```
+Compile a Miniscript policy for P2WSH or Tapscript:
 
-- Compile a policy for P2WSH or Tapscript:
+```sh
+lake exe policy_cli -- compile --context tapscript \
+  'and(pk(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798),older(100))'
+```
 
-  ```sh
-  lake exe policy_cli -- compile --context tapscript \
-    'and(pk(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798),older(100))'
-  ```
+The `compile` output includes canonical Miniscript, Script hex, script size, static opcode count, and the maximum satisfaction-stack bound. Run `lake exe policy_cli -- --help` for all commands.
 
-- `compile` defaults to `p2wsh`. Its output includes canonical Miniscript,
-  concrete Script hex, script size in bytes, static opcode count, and maximum
-  satisfaction stack bounds. P2WSH also reports the maximum opcode charge.
-- `lake exe policy_cli -- --help` lists the commands; `parse POLICY_TEXT` and the
-  original single-policy invocation print the AST and canonical policy text.
+### PSBT CLI
 
-- Inspect, finalize, or extract a PSBT:
+Inspect a PSBT, finalize an input from a descriptor, and extract the final transaction:
 
-  ```sh
-  lake exe psbt_cli -- inspect --encoding hex "$PSBT_HEX"
-  lake exe psbt_cli -- finalize "$SIGNED_PSBT_BASE64" "0=$DESCRIPTOR" |
-    lake exe psbt_cli -- extract -
-  ```
+```sh
+lake exe psbt_cli -- inspect --encoding hex "$PSBT_HEX"
+lake exe psbt_cli -- finalize "$SIGNED_PSBT_BASE64" "0=$DESCRIPTOR" \
+  | lake exe psbt_cli -- extract -
+```
 
-- Set the variables above to PSBT text and a descriptor with resolved keys.
-  Input defaults to Base64; `--encoding hex` selects hex and `-` reads stdin.
-  `finalize` uses existing signatures and accepts zero-based `INDEX=DESCRIPTOR`
-  assignments. Unspecified inputs and existing final fields are preserved.
-  Its output is a Base64 PSBT; `extract` requires final fields for every input
-  and prints transaction hex. `inspect` reports PSBT version, input/output
-  counts, and final-field presence. It does not verify existing final fields.
-- `lake exe psbt_cli -- --help` lists the commands.
-  Run `python3 scripts/test_psbt_cli.py` after building to check the executable
-  against the pinned BIP174 and BIP370 vectors.
+Input descriptors use the zero-based `INDEX=DESCRIPTOR` form. Use `--encoding hex` for hex input and `-` for standard input.
 
-- Focused cross-module conformance checks live under `LeanMiniscript/Conformance/`,
-  split by policy, descriptor, and PSBT behavior.
+```sh
+python3 scripts/test_psbt_cli.py
+```
 
-## Repository layout
+This check uses pinned BIP174 and BIP370 fixtures.
 
-- `LeanMiniscript/` — Lean libraries, executable models, examples, and proofs.
-- `LeanMiniscript/Conformance/` — focused cross-module conformance checks.
-- `LeanMiniscript.lean` — public module that imports the main library surface.
-- `scripts/` — fixture generation helpers and CLI checks.
-- `assets/` — project artwork, including the repository logo.
+### Bitcoin Core fixture audit
 
-## Verification scope
+Download and run the Script fixture from a pinned Bitcoin Core revision:
 
-- Proofs establish the contracts stated by their Lean declarations.
-- PSBT finalization preserves the decoded unsigned transaction and resolved
-  UTXOs, including v2 transaction fields and locktime. Generated final inputs
-  pass a CompactSize length check; `finalizeAndExtract_spec` and
-  `finalizeAndExtract_preserves` require no caller-supplied witness length bound.
-- Fixture matches provide conformance coverage against the pinned Bitcoin Core data.
-- General consensus equivalence and cryptographic correctness are outside those results.
-- Private-key derivation uses variable-time arithmetic.
+```sh
+curl --fail --location \
+  https://raw.githubusercontent.com/bitcoin/bitcoin/f13ae519de94394314cd63a27924b0998ac65d45/src/test/data/script_tests.json \
+  --output /tmp/script_tests.json
+lake exe core_fixture_audit -- --show-details /tmp/script_tests.json
+```
+
+The pinned fixture contains 1,258 executable rows and 60 documentation rows. The audit reports matching rows and rows outside the model scope separately. The fixture source is pinned to [Bitcoin Core commit `f13ae519de94394314cd63a27924b0998ac65d45`](https://github.com/bitcoin/bitcoin/commit/f13ae519de94394314cd63a27924b0998ac65d45). Regenerate the PSBT fixtures from the pinned BIP174, BIP370, and BIP371 sources with `scripts/generate_psbt_fixtures.py`.
+
+## Scope and layers
+
+These sections describe different abstractions. Miniscript describes spending policies, Bitcoin Script executes bytecode, Taproot defines a spending protocol around a P2TR output and Tapscript, and descriptors, transactions, and PSBT connect these pieces to wallet data.
+
+### Miniscript and policy
+
+- Miniscript syntax, surface parsing, pretty-printing, and normalization
+- Type inference, validation, and context checks
+- Concrete compilation and compilation-agreement proofs
+- Satisfaction and dissatisfaction candidates, availability, and resource bounds
+- Malleability analysis and BIP379-related properties
+- Policy parsing, denotational semantics, and cost-based policy compilation
+
+Miniscript is the policy language layer. It can compile a policy into Bitcoin Script or Tapscript, but it does not define Taproot's output commitment or transaction rules.
+
+### Bitcoin Script and Tapscript execution
+
+- Legacy Script and witness-v0 execution
+- Conditional flow, numeric and indexed stack operations, timelocks, and signature encoding
+- Script serialization and deserialization
+- Tapscript initial and runtime resource limits and validation weight
+
+This layer defines how script bytes execute once a spending path has selected a script and witness.
+
+### Taproot protocol
+
+- Native P2TR output keys and key-path/script-path spending
+- BIP341 signature hashing
+- Annex handling, control-block commitments, Merkle paths, and leaf versions
+- `OP_SUCCESSx` and future-leaf semantics at the modeled Bitcoin Core witness boundary
+
+Transaction-backed native Taproot verification uses [`verifyNativeTaprootTransaction`](LeanMiniscript/Extraction/TaprootTransaction.lean). This entry point handles key-path and script-path witnesses at the same Core witness boundary.
+
+For canonical byte-to-AST checking, use [`verifyCanonicalTapscriptTransaction`](LeanMiniscript/Extraction/TaprootBytes.lean). This API checks canonical encoding together with the current model's `0xc0` Tapscript AST.
+
+Taproot is a Bitcoin spending protocol, not a Miniscript language. Miniscript can provide a policy for a Taproot script path, while Taproot also supports key-path spending and defines the output, commitment, witness, and signature-hash rules around both paths.
+
+### Descriptors and transaction data
+
+- `raw`, `pk`, `pkh`, `wpkh`, `multi`, and `sortedmulti`
+- `sh`, `wsh`, `sh(wpkh)`, `sh(wsh)`, and `tr`
+- Taproot tree compilation, Merkle paths, control blocks, and descriptor satisfactions
+- Transaction, sighash, ECDSA, Schnorr, and Taproot serialization utilities
+- PSBT BIP174, BIP370, and BIP371 codecs and role transitions
+- Descriptor-based PSBT finalization and transaction extraction
+
+This layer carries the serialized keys, scripts, transactions, and PSBT state used by the policy, Script, and Taproot layers.
+
+### Executables and conformance
+
+- `core_fixture_audit` — Bitcoin Core Script fixture audit
+- `script_cli` — Script parsing and execution-boundary checks
+- `policy_cli` — policy parsing and compilation
+- `psbt_cli` — PSBT inspection, finalization, and extraction
+- `LeanMiniscript/Conformance/` — cross-module policy, descriptor, and PSBT checks
+
+## How to read the verification results
+
+Lean theorems prove the contracts stated by their declarations. A theorem implementation is considered complete when `lake build` succeeds and the declaration contains no `sorry`, `admit`, placeholder axiom, or hidden assumption.
+
+The current verification results include:
+
+- Matching results for the executable rows in the pinned Bitcoin Core Script fixture
+- Theorems that PSBT finalization preserves the unsigned transaction, UTXO data, v2 transaction fields, and locktime
+- CompactSize witness-length checks for generated final inputs
+- Commitment and execution checks for Taproot script-path witnesses generated by descriptor satisfaction
+- Transaction-backed Core witness verification for native Taproot key-path and script-path spending
+
+These results do not establish general Bitcoin consensus equivalence or cryptographic correctness. Transaction validity and prevout provenance are caller-provided premises of the transaction-backed API. Private-key derivation uses variable-time arithmetic.
+
+## Current roadmap
+
+The repository has no separate roadmap file or open issues. Based on the current code, the next items are:
+
+1. Add standard `combo()` and `addr()` descriptor support, then connect the parser, compiler, CLI, and conformance checks.
+2. Expand raw fixture and BIP341/BIP342 vector coverage for the native Taproot verifier.
+3. Move the partial semantics and theorem targets under `Experimental.lean` into stable APIs where appropriate.
+
+## Repository structure
+
+- `LeanMiniscript/` — Lean library, executable models, examples, and proofs
+- `LeanMiniscript/Conformance/` — cross-module conformance checks
+- `LeanMiniscript.lean` — stable library surface
+- `LeanMiniscript/Experimental.lean` — extraction and proof-oriented modules under active change
+- `scripts/` — pinned-source fixture generators and CLI checks
+- `assets/` — repository artwork
 
 ## License
 
-- [MIT](LICENSE)
+[MIT](LICENSE)
