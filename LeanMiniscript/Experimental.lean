@@ -15,6 +15,7 @@ import LeanMiniscript.Extraction.DescriptorSatisfaction
 import LeanMiniscript.Extraction.RefInterp
 import LeanMiniscript.Extraction.Taproot
 import LeanMiniscript.Extraction.TaprootBytes
+import LeanMiniscript.Extraction.TaprootTransaction
 import LeanMiniscript.Psbt.Roles
 import LeanMiniscript.Psbt.Finalizer
 

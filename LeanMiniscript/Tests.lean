@@ -83,6 +83,7 @@ import LeanMiniscript.Extraction.DescriptorMaterialExamples
 import LeanMiniscript.Extraction.SignatureEncodingCoreExamples
 import LeanMiniscript.Extraction.TaprootBytesExamples
 import LeanMiniscript.Extraction.TaprootExamples
+import LeanMiniscript.Extraction.TaprootTransactionExamples
 import LeanMiniscript.Psbt.CodecExamples
 import LeanMiniscript.Psbt.CliExamples
 import LeanMiniscript.Psbt.FieldsExamples
