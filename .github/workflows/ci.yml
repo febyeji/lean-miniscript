@@ -20,6 +20,7 @@ jobs:
         with:
           auto-config: false
           build: true
+          build-args: --wfail
       - name: Check PSBT CLI against pinned BIP vectors
         run: python3 scripts/test_psbt_cli.py
       - name: Download pinned Bitcoin Core fixtures
