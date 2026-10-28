@@ -18,3 +18,13 @@
 - For non-trivial changes, include a concise commit body when useful.
 - Keep rationale and tradeoffs in the user-facing explanation, not in the
   commit body.
+
+## Boundaries
+
+- Changes land through pull requests against `main`.
+- `lean-toolchain`, `lake-manifest.json`, the `lean_hash160` revision in
+  `lakefile.lean`, and the Bitcoin Core revision pinned in
+  `.github/workflows/ci.yml` change only when the task asks for it.
+- Regenerate fixtures only through the `scripts/generate_*` generators, and
+  name the generator and pinned source in the commit body.
+- `AI_USAGE.md` sets the verification rules for AI-written proofs; follow it.
