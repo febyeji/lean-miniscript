@@ -1,15 +1,8 @@
 import LeanMiniscript.Extraction.EquivalenceObligations
 
 /-!
-Count the opcode equivalence obligations that have no theorem or whose theorem
-depends on `sorry`. Run after `lake build`:
-
-    lake env lean --run scripts/equivalence_obligations.lean [--list]
-
-The command prints one integer, or with `--list` one line per obligation
-followed by that integer. It fails when `equivalenceObligations` misses or
-repeats an (opcode, signature version) pair, or names a declaration whose type
-is not the obligation.
+Print the number of unproved equivalence obligations (`--list`: each one).
+Fails when `equivalenceObligations` misses or repeats an opcode × version pair.
 -/
 
 open Lean

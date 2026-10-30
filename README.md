@@ -67,13 +67,11 @@ The pinned fixture contains 1,258 executable rows and 60 documentation rows. The
 
 ### Equivalence obligations
 
-After `lake build`, count the open opcode equivalence obligations:
-
 ```sh
 lake env lean --run scripts/equivalence_obligations.lean
 ```
 
-The command prints one integer: the number of (opcode, signature version) pairs in `equivalenceObligations` whose theorem is missing or depends on `sorry`. Each pair covers one opcode of `Script.Opcode` under BASE, witness v0, or Tapscript, and its theorem states `OpcodeAgreement opcode version`: Core's byte-level step `coreRawStep` and the typed `runtimeStep` return the same runtime state or Script error. The statement assumes both timelock opcodes are enabled, CONST_SCRIPTCODE is off, the signature oracle does not depend on the FindAndDelete script code, and the step does not stop at the BASE/witness-v0 operation limit. Add `--list` to print each pair's status and theorem name before the count. The command exits with an error when the list misses or repeats a pair or names a declaration of another type. The obligations are in `LeanMiniscript/Extraction/EquivalenceObligations.lean`.
+After `lake build`, prints how many (opcode, signature version) pairs in `LeanMiniscript/Extraction/EquivalenceObligations.lean` lack a `sorry`-free proof that Core's `coreRawStep` and the typed `runtimeStep` agree. `--list` prints each pair. The command fails when the list misses a pair.
 
 ## Scope and layers
 

@@ -3,12 +3,9 @@ import LeanMiniscript.Extraction.BitcoinCoreExecutionProofs
 /-!
 # Opcode equivalence obligations
 
-`OpcodeAgreement opcode version` states that Core's byte-level step
-(`coreRawStep`, the reference transcription of `EvalScript`) and the typed
-runtime step (`runtimeStep`) agree on one modeled opcode under one signature
-version. `equivalenceObligations` lists one theorem name for every
-(opcode, signature version) pair; `scripts/equivalence_obligations.lean` counts
-the pairs whose theorem is missing or depends on `sorry`.
+One theorem per (opcode, signature version): Core's `coreRawStep` and the typed
+`runtimeStep` agree on that opcode. `scripts/equivalence_obligations.lean`
+counts the unproved ones.
 -/
 
 namespace LeanMiniscript.Extraction
@@ -16,12 +13,9 @@ namespace LeanMiniscript.Extraction
 open LeanMiniscript.Script
 open CoreScriptExecution
 
-/-- Core's raw step and the typed runtime step return the same runtime state or
-Script error for an instruction encoding `opcode` under `version`. The premises
-fix the boundary of the claim: both timelock opcodes are enabled,
-CONST_SCRIPTCODE is off, the oracle does not depend on the FindAndDelete
-script code, and the step does not stop at the BASE/witness-v0 operation
-limit, which the typed step does not count. -/
+/-- Core's raw step and the typed step give the same state or error. Assumes
+both timelock opcodes on, CONST_SCRIPTCODE off, an oracle independent of the
+script code, and no BASE/witness-v0 operation-limit error. -/
 def OpcodeAgreement (opcode : Opcode) (version : SignatureVersion) : Prop :=
   ∀ (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle) (oracle : CryptoOracle)
@@ -51,9 +45,7 @@ theorem opcodeAgreement_tapscript (opcode : Opcode) :
   all_goals split <;> split <;> simp_all <;> (subst_vars; rfl)
 
 set_option maxHeartbeats 4000000 in
-/-- BASE and witness-v0 charge one operation per opcode before the typed step.
-CHECKMULTISIG also charges its key count and checks it first, so it is
-excluded here. -/
+/-- CHECKMULTISIG charges its key count before the typed step, so it is excluded. -/
 theorem opcodeAgreement_legacy (opcode : Opcode) (version : SignatureVersion)
     (legacy : version ≠ .tapscript)
     (singleCount : opcode ≠ .OP_CHECKMULTISIG ∧ opcode ≠ .OP_CHECKMULTISIGVERIFY) :
@@ -75,8 +67,7 @@ theorem opcodeAgreement_legacy (opcode : Opcode) (version : SignatureVersion)
 
 namespace OpcodeAgreement
 
--- TODO(equivalence): prove OP_CHECKMULTISIG and OP_CHECKMULTISIGVERIFY under
--- `.base` and `.witnessV0`; Core's key-count charge runs before the typed step.
+-- TODO(equivalence): OP_CHECKMULTISIG{,VERIFY} under `.base` and `.witnessV0`.
 
 theorem OP_NOP_base : OpcodeAgreement .OP_NOP .base :=
   opcodeAgreement_legacy _ _ (by decide) (by decide)
@@ -618,8 +609,8 @@ structure EquivalenceObligation where
   version : SignatureVersion
   theoremName : Lean.Name
 
-/-- Every modeled opcode under every signature version. The theorem for an entry
-must have type `OpcodeAgreement opcode version`. -/
+/-- Every `Opcode` × `SignatureVersion`, each with a theorem of type
+`OpcodeAgreement opcode version`. -/
 def equivalenceObligations : List EquivalenceObligation := [
   ⟨.OP_NOP, .base, `LeanMiniscript.Extraction.OpcodeAgreement.OP_NOP_base⟩,
   ⟨.OP_NOP, .witnessV0, `LeanMiniscript.Extraction.OpcodeAgreement.OP_NOP_witnessV0⟩,
