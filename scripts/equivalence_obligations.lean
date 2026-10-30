@@ -17,6 +17,7 @@ def ctors (env : Environment) (type : Name) : IO (List Name) :=
   | some (.inductInfo info) => pure info.ctors
   | _ => throw <| IO.userError s!"{type} is not an inductive type"
 
+/-- `sorry` covers `sorryAx` and any other nonstandard axiom. -/
 inductive Status where
   | proved | missing | sorry
   deriving BEq
@@ -32,7 +33,8 @@ def status (obligation : EquivalenceObligation) : CoreM Status := do
     (mkConst (ctorName obligation.opcode)) (mkConst (ctorName obligation.version))
   unless info.type == expected do
     throwError "{obligation.theoremName} does not have type {expected}"
-  if (← collectAxioms obligation.theoremName).contains ``sorryAx then
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  if (← collectAxioms obligation.theoremName).any (!standard.contains ·) then
     return .sorry
   return .proved
 

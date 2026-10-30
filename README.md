@@ -71,7 +71,7 @@ The pinned fixture contains 1,258 executable rows and 60 documentation rows. The
 lake env lean --run scripts/equivalence_obligations.lean
 ```
 
-After `lake build`, prints how many (opcode, signature version) pairs in `LeanMiniscript/Extraction/EquivalenceObligations.lean` lack a `sorry`-free proof that Core's `coreRawStep` and the typed `runtimeStep` agree. `--list` prints each pair. The command fails when the list misses a pair.
+After `lake build`, prints how many (opcode, signature version) pairs lack a proof without `sorry` or added axioms that Core's `coreRawStep` and the typed `runtimeStep` agree on that opcode for every flag set, oracle, and state. `--list` prints each pair.
 
 ## Scope and layers
 
