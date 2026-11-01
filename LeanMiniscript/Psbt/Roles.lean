@@ -302,7 +302,7 @@ private def descriptorInternalKey : OutputDescriptor → Option ByteArray
   | _ => none
 
 private def descriptorKeys : OutputDescriptor → List ByteArray
-  | .raw _ | .shRaw _ => []
+  | .raw _ | .addr _ | .shRaw _ => []
   | .pk key | .pkh key | .wpkh key | .shWpkh key => [key.bytes]
   | .multi _ keys => keys.map (·.bytes)
   | .sh fragment | .wsh fragment | .shWsh fragment => (desugar fragment).keys.map (·.bytes)
@@ -339,7 +339,7 @@ def Psbt.updateInputFromDescriptor (psbt : Psbt) (index : Nat) (descriptor : Out
   | .error error => throw error
   let keys := descriptorKeys descriptor
   let records : KeyValueMap := match descriptor with
-    | .raw _ =>
+    | .raw _ | .addr _ =>
         bip32Records KeyType.inBip32Derivation []
     | .shRaw script =>
         [⟨recordKey KeyType.inRedeemScript, script⟩]
@@ -373,7 +373,7 @@ def Psbt.updateOutputFromDescriptor (psbt : Psbt) (index : Nat) (descriptor : Ou
     throw (.scriptMismatch "output script is not the descriptor output")
   let keys := descriptorKeys descriptor
   let records : KeyValueMap := match descriptor with
-    | .raw _ => []
+    | .raw _ | .addr _ => []
     | .shRaw script => [⟨recordKey KeyType.outRedeemScript, script⟩]
     | .pk _ | .pkh _ | .multi _ _ | .wpkh _ =>
         bip32Records KeyType.outBip32Derivation (origins.filter fun (key, _) => keys.contains key)

@@ -13,7 +13,8 @@ def usage : String :=
   "       lake exe psbt_cli -- --help\n" ++
   "Input defaults to Base64; use - to read PSBT text from stdin.\n" ++
   "finalize prints Base64 PSBT; extract prints transaction hex.\n" ++
-  "Unspecified inputs are preserved. Descriptors must have resolved keys."
+  "Unspecified inputs are preserved. Descriptors must have resolved keys.\n" ++
+  "A combo() descriptor finalizes with the output matching the input's UTXO."
 
 inductive Encoding where
   | base64
@@ -70,16 +71,33 @@ def parsePsbt (encoding : Encoding) (source : String) : Except String Psbt := do
     let some bytes := SurfaceParser.decodeHex? source | throw "PSBT parse error: invalid hex"
     (Psbt.parse bytes).mapError (fun error => s!"PSBT parse error: {repr error}")
 
-/-- Validate all assignments before finalizing any input. Missing assignments skip inputs. -/
+/-- Validate all assignments before finalizing any input. Missing assignments
+skip inputs. Each assignment keeps every output its descriptor describes. -/
 def resolveDescriptors (count : Nat) (bindings : List (Nat × String)) :
-    Except String (List (Option OutputDescriptor)) := do
+    Except String (List (Option (List OutputDescriptor))) := do
   let mut descriptors := List.replicate count none
   for (index, source) in bindings do
     if index ≥ count then throw s!"input {index}: index out of range (input count: {count})"
     if ((descriptors[index]?).getD none).isSome then throw s!"input {index}: duplicate descriptor"
-    let descriptor ← (parseOutputDescriptor source).mapError (fun error => s!"input {index}: {error}")
-    descriptors := descriptors.modify index (fun _ => some descriptor)
+    let outputs ← (parseOutputDescriptors source).mapError (fun error => s!"input {index}: {error}")
+    descriptors := descriptors.modify index (fun _ => some outputs)
   return descriptors
+
+/-- A single output is used as given. Among several outputs, select the first
+whose script is the input's UTXO script. -/
+def selectDescriptor (psbt : Psbt) (index : Nat) :
+    List OutputDescriptor → Except String OutputDescriptor
+  | [descriptor] => pure descriptor
+  | outputs => do
+    let decoded ← psbt.decode.mapError (fun error => s!"PSBT decode error: {repr error}")
+    let spent ← (decoded.spentOutput index).mapError
+      (fun error => s!"input {index}: UTXO error: {repr error}")
+    let some descriptor := outputs.find? (fun descriptor =>
+        match compileOutputDescriptor descriptor with
+        | .ok compiled => compiled.scriptPubKey == spent.scriptPubKey
+        | .error _ => false)
+      | throw s!"input {index}: no descriptor output matches the UTXO script"
+    return descriptor
 
 def inspect (psbt : Psbt) : Except String String := do
   let decoded ← psbt.decode.mapError (fun error => s!"PSBT decode error: {repr error}")
@@ -105,7 +123,8 @@ def execute : Command → Except String String
     let result ← descriptors.zipIdx.foldlM (fun stage (descriptor, index) => do
       match descriptor with
       | none => pure stage
-      | some descriptor =>
+      | some outputs =>
+        let descriptor ← selectDescriptor stage index outputs
         (stage.finalizeInput {} index descriptor).mapError
           (fun error => s!"input {index}: finalization error: {repr error}")) psbt
     return result.toBase64

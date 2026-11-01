@@ -50,4 +50,29 @@ example : (compileReport .p2wsh s!"pk({x})").toBool = false := by native_decide
 example : (compileReport .p2wsh "older(100)").toBool = false := by native_decide
 example : (compileReport .tapscript "pk(").toBool = false := by native_decide
 
+
+example : (parseArgs ["--", "descriptor", s!"combo({key})"]).toOption =
+    some (.descriptor none s!"combo({key})") := by native_decide
+
+example : (parseArgs ["descriptor", "--index", "7", s!"pkh({key})"]).toOption =
+    some (.descriptor (some 7) s!"pkh({key})") := by native_decide
+
+example : (parseArgs ["descriptor", "--index", "x", s!"pkh({key})"]).toBool = false := by
+  native_decide
+
+example : (parseArgs ["descriptor"]).toBool = false := by native_decide
+
+/-- combo() prints its P2PK, P2PKH, P2WPKH, and P2SH-P2WPKH scripts in order. -/
+example : execute (.descriptor none s!"combo({key})") = .ok (String.intercalate "\n" [
+    s!"script_pubkey: 21{key}ac",
+    "script_pubkey: 76a914751e76e8199196d454941c45d1b3a323f1433bd688ac",
+    "script_pubkey: 0014751e76e8199196d454941c45d1b3a323f1433bd6",
+    "script_pubkey: a914bcfeb728b584253d5f3f70bcb780e9ef218a68f487"]) := by native_decide
+
+example : execute (.descriptor none "addr(1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMH)") =
+    .ok "script_pubkey: 76a914751e76e8199196d454941c45d1b3a323f1433bd688ac" := by native_decide
+
+example : (execute (.descriptor none "addr(1BgGZ9tcN4rm9KBzDn7KprQz87SZ26SAMx)")).toBool =
+    false := by native_decide
+
 end LeanMiniscript.Policy.Cli

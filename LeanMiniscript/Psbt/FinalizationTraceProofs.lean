@@ -10,7 +10,7 @@ context used when that input was finalized. -/
 def FinalInputVerified (config : FinalizerConfig) (decoded : DecodedPsbt)
     (index : Nat) (descriptor : OutputDescriptor) (final : FinalInput) : Prop :=
   match descriptor with
-  | .raw _ | .shRaw _ => False
+  | .raw _ | .addr _ | .shRaw _ => False
   | .pk _ | .pkh _ | .multi _ _ | .sh _ =>
       LegacyFinalVerified config decoded index descriptor final
   | .wpkh key | .shWpkh key => WpkhFinalVerified config decoded index descriptor key final

@@ -32,7 +32,16 @@ lake exe policy_cli -- compile --context tapscript \
   'and(pk(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798),older(100))'
 ```
 
-The `compile` output includes canonical Miniscript, Script hex, script size, static opcode count, and the maximum satisfaction-stack bound. Run `lake exe policy_cli -- --help` for all commands.
+The `compile` output includes canonical Miniscript, Script hex, script size, static opcode count, and the maximum satisfaction-stack bound.
+
+Print the scriptPubKey of each output a descriptor describes. `combo()` prints one line per output, and `--index` resolves `*` wildcards:
+
+```sh
+lake exe policy_cli -- descriptor \
+  'combo(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798)'
+```
+
+Run `lake exe policy_cli -- --help` for all commands.
 
 ### PSBT CLI
 
@@ -44,7 +53,7 @@ lake exe psbt_cli -- finalize "$SIGNED_PSBT_BASE64" "0=$DESCRIPTOR" \
   | lake exe psbt_cli -- extract -
 ```
 
-Input descriptors use the zero-based `INDEX=DESCRIPTOR` form. Use `--encoding hex` for hex input and `-` for standard input.
+Input descriptors use the zero-based `INDEX=DESCRIPTOR` form. A `combo()` descriptor finalizes with the output whose script matches the input's UTXO. Use `--encoding hex` for hex input and `-` for standard input.
 
 ```sh
 python3 scripts/test_psbt_cli.py
@@ -112,7 +121,9 @@ Taproot is a Bitcoin spending protocol, not a Miniscript language. Miniscript ca
 
 ### Descriptors and transaction data
 
-- `raw`, `pk`, `pkh`, `wpkh`, `multi`, and `sortedmulti`
+- `raw`, `addr`, `pk`, `pkh`, `wpkh`, `multi`, and `sortedmulti`
+- `combo`, expanded to P2PK, P2PKH, and, for compressed keys, P2WPKH and P2SH-P2WPKH outputs
+- Base58Check, Bech32, and Bech32m address decoding for mainnet, testnet, signet, and regtest
 - `sh`, `wsh`, `sh(wpkh)`, `sh(wsh)`, and `tr`
 - Taproot tree compilation, Merkle paths, control blocks, and descriptor satisfactions
 - Transaction, sighash, ECDSA, Schnorr, and Taproot serialization utilities
@@ -147,9 +158,8 @@ These results do not establish general Bitcoin consensus equivalence or cryptogr
 
 The repository has no separate roadmap file or open issues. Based on the current code, the next items are:
 
-1. Add standard `combo()` and `addr()` descriptor support, then connect the parser, compiler, CLI, and conformance checks.
-2. Expand raw fixture and BIP341/BIP342 vector coverage for the native Taproot verifier.
-3. Move the partial semantics and theorem targets under `Experimental.lean` into stable APIs where appropriate.
+1. Expand raw fixture and BIP341/BIP342 vector coverage for the native Taproot verifier.
+2. Move the partial semantics and theorem targets under `Experimental.lean` into stable APIs where appropriate.
 
 ## Repository structure
 

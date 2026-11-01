@@ -27,9 +27,12 @@ def DescriptorTree.fragments : DescriptorTree → List SurfaceFragment
 The legacy forms use the same B-typed Miniscript fragments as P2WSH for
 script-hash spends.  Raw scripts remain available as an explicit byte
 boundary, while the single-key and P2WPKH forms are represented directly so
-their key encoding rules can follow Bitcoin Core's descriptor rules. -/
+their key encoding rules can follow Bitcoin Core's descriptor rules.
+`addr` keeps the scriptPubKey decoded from an address; like `raw`, it carries
+no spending information. -/
 inductive OutputDescriptor where
   | raw (script : ByteArray)
+  | addr (scriptPubKey : ByteArray)
   | shRaw (script : ByteArray)
   | pk (key : PubKey)
   | multi (threshold : Nat) (keys : List PubKey)
@@ -149,6 +152,11 @@ def DescriptorTree.compile (tree : DescriptorTree) (maxDepth : Nat := 128) :
       let rightInfo ← right.compile remaining
       return leftInfo.branch rightInfo
 
+/-- Bitcoin Core's `combo(KEY)` outputs in its order: P2PK and P2PKH, then
+P2WPKH and P2SH-P2WPKH when the key is compressed. -/
+def comboDescriptors (key : PubKey) : List OutputDescriptor :=
+  [.pk key, .pkh key] ++ if key.size == 33 then [.wpkh key, .shWpkh key] else []
+
 private def descriptorInternalKey (key : PubKey) : Except String ByteArray := do
   if key.size == 32 then
     if (Secp256k1.liftX (Secp256k1.decodeBE key.bytes)).isNone then
@@ -169,7 +177,7 @@ correctness. -/
 def compileOutputDescriptor (descriptor : OutputDescriptor) :
     Except String CompiledDescriptor := do
   match descriptor with
-  | .raw script =>
+  | .raw script | .addr script =>
       return { scriptPubKey := script }
   | .shRaw script =>
       if script.size > 520 then throw "P2SH redeem script exceeds 520 bytes"
