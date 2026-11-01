@@ -65,6 +65,14 @@ lake exe core_fixture_audit -- --show-details /tmp/script_tests.json
 
 The pinned fixture contains 1,258 executable rows and 60 documentation rows. The audit reports matching rows and rows outside the model scope separately. The fixture source is pinned to [Bitcoin Core commit `f13ae519de94394314cd63a27924b0998ac65d45`](https://github.com/bitcoin/bitcoin/commit/f13ae519de94394314cd63a27924b0998ac65d45). Regenerate the PSBT fixtures from the pinned BIP174, BIP370, and BIP371 sources with `scripts/generate_psbt_fixtures.py`.
 
+### Equivalence obligations
+
+```sh
+lake env lean --run scripts/equivalence_obligations.lean
+```
+
+After `lake build`, prints how many (opcode, signature version) pairs lack a proof without `sorry` or added axioms that Core's `coreRawStep` and the typed `runtimeStep` agree on that opcode for every flag set, oracle, and state. `--list` prints each pair.
+
 ## Scope and layers
 
 These sections describe different abstractions. Miniscript describes spending policies, Bitcoin Script executes bytecode, Taproot defines a spending protocol around a P2TR output and Tapscript, and descriptors, transactions, and PSBT connect these pieces to wallet data.
