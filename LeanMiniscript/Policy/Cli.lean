@@ -1,5 +1,6 @@
 import LeanMiniscript.Policy.Compiler
 import LeanMiniscript.Miniscript.CompileConcreteChecked
+import LeanMiniscript.Miniscript.DescriptorParser
 import LeanMiniscript.CliSupport
 
 namespace LeanMiniscript.Policy.Cli
@@ -9,12 +10,15 @@ open LeanMiniscript.Miniscript LeanMiniscript.Script LeanMiniscript.Properties
 def usage : String :=
   "usage: lake exe policy_cli -- [parse] POLICY_TEXT\n" ++
   "       lake exe policy_cli -- compile [--context p2wsh|tapscript] POLICY_TEXT\n" ++
+  "       lake exe policy_cli -- descriptor [--index N] DESCRIPTOR\n" ++
   "       lake exe policy_cli -- --help\n" ++
-  "The compile command defaults to p2wsh."
+  "The compile command defaults to p2wsh. The descriptor command prints one\n" ++
+  "scriptPubKey per output; combo() prints each of its outputs."
 
 inductive Command where
   | parse (source : String)
   | compile (context : ScriptContext) (source : String)
+  | descriptor (wildcardIndex : Option Nat) (source : String)
   | help
   deriving Repr, DecidableEq
 
@@ -30,6 +34,12 @@ def parseArgs (args : List String) : Except String Command :=
       .error s!"unknown context '{context}'; expected p2wsh or tapscript"
   | ["compile", source] => .ok (.compile .p2wsh source)
   | ["parse", source] => .ok (.parse source)
+  | ["descriptor", "--index", index, source] =>
+      match index.toNat? with
+      | some index => .ok (.descriptor (some index) source)
+      | none => .error s!"invalid wildcard index '{index}'"
+  | ["descriptor", source] => .ok (.descriptor none source)
+  | ["descriptor"] => .error "missing descriptor text"
   | ["compile"] | ["parse"] => .error "missing policy text"
   | [source] => .ok (.parse source)
   | _ => .error "invalid arguments"
@@ -81,5 +91,10 @@ def execute : Command → Except String String
       let policy ← (parsePolicyHex source).mapError (fun error => s!"parse error: {repr error}")
       return s!"ast: {repr policy}\ncanonical: {prettyPolicy policy}"
   | .compile context source => return (← compileReport context source).render
+  | .descriptor wildcardIndex source => do
+      let outputs ← (deriveOutputDescriptors source wildcardIndex).mapError
+        (fun error => s!"descriptor error: {error}")
+      return String.intercalate "\n"
+        (outputs.map fun output => s!"script_pubkey: {byteArrayHex output.scriptPubKey}")
 
 end LeanMiniscript.Policy.Cli

@@ -281,7 +281,7 @@ theorem finalInput_spec {config : FinalizerConfig} {decoded : DecodedPsbt} {inde
     (finalized : decoded.finalInput config index descriptor = .ok final) :
     ∃ input, decoded.inputs[index]? = some input ∧ input.sighashTypesMatch = true ∧
       match descriptor with
-      | .raw _ | .shRaw _ => False
+      | .raw _ | .addr _ | .shRaw _ => False
       | .multi threshold keys =>
           finalizeLegacyMulti config decoded index input descriptor threshold keys = .ok final
       | .pk key => finalizeLegacySingle config decoded index input descriptor key false = .ok final
@@ -306,6 +306,7 @@ theorem finalInput_spec {config : FinalizerConfig} {decoded : DecodedPsbt} {inde
       refine ⟨input, found, by simpa using agree, ?_⟩
       cases descriptor with
       | raw _ => simp at finalized
+      | addr _ => simp at finalized
       | shRaw _ => simp at finalized
       | multi _ _ => exact (checkWitness_bind_eq_ok.mp finalized).1
       | pk _ => exact (checkWitness_bind_eq_ok.mp finalized).1

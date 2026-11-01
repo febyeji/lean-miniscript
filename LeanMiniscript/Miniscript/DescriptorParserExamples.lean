@@ -155,4 +155,59 @@ example : !succeeds (parseOutputDescriptor
 example : !succeeds (parseOutputDescriptor
     ("wsh(" ++ String.ofList (List.replicate 403 'n') ++ ":1)")) = true := by native_decide
 
+
+/-! ## `combo()` and `addr()` -/
+
+private def outputShapes : Except String (List OutputDescriptor) → List String
+  | .ok outputs => outputs.map fun
+      | .pk _ => "pk" | .pkh _ => "pkh" | .wpkh _ => "wpkh" | .shWpkh _ => "sh(wpkh)"
+      | _ => "other"
+  | .error _ => []
+
+example : outputShapes (parseOutputDescriptors ("combo(" ++ compressed ++ ")")) =
+    ["pk", "pkh", "wpkh", "sh(wpkh)"] := by native_decide
+example : outputShapes (parseOutputDescriptors ("combo(" ++ uncompressed ++ ")")) =
+    ["pk", "pkh"] := by native_decide
+
+-- combo() describes several outputs, so the single-output parser rejects it.
+example : !succeeds (parseOutputDescriptor ("combo(" ++ compressed ++ ")")) = true := by
+  native_decide
+example : !succeeds (parseOutputDescriptors ("combo(" ++ xOnly ++ ")")) = true := by
+  native_decide
+example : !succeeds (parseOutputDescriptors
+    ("combo(" ++ compressed ++ "," ++ compressed ++ ")")) = true := by native_decide
+example : !succeeds (parseOutputDescriptors ("wsh(combo(" ++ compressed ++ "))")) = true := by
+  native_decide
+
+-- A ranged combo() key uses the shared wildcard index; the derived key is the
+-- one checked for `sharedWildcard` above.
+example : (match parseOutputDescriptors ("combo(" ++ extended ++ "/3/4/5/*)") (some 7) with
+    | .ok [.pk key, .pkh _, .wpkh _, .shWpkh _] =>
+        Script.byteArrayHex (key.bytes.extract 1 33) ==
+          "3853242d8e41d3e5aa7ab185d260eed57a38b0155340a06eeb36af80092a02b5"
+    | _ => false) = true := by native_decide
+example : !succeeds (parseOutputDescriptors ("combo(" ++ extended ++ "/3/4/5/*)")) = true := by
+  native_decide
+
+private def comboChecksummed : Bool :=
+  match DescriptorChecksum.addChecksum ("combo(" ++ compressed ++ ")") with
+  | .error _ => false
+  | .ok text => (outputShapes (parseOutputDescriptors text none true)).length == 4
+
+example : comboChecksummed = true := by native_decide
+example : !succeeds (parseOutputDescriptors ("combo(" ++ compressed ++ ")") none true) = true := by
+  native_decide
+
+private def p2trAddress : String :=
+  "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0"
+
+example : (match parseOutputDescriptors ("addr(" ++ p2trAddress ++ ")") with
+    | .ok [.addr script] => Script.byteArrayHex script == "5120" ++ xOnly
+    | _ => false) = true := by native_decide
+example : !succeeds (parseOutputDescriptor ("addr(" ++ p2trAddress ++ "," ++ p2trAddress ++ ")")) =
+    true := by native_decide
+example : !succeeds (parseOutputDescriptor ("sh(addr(" ++ p2trAddress ++ "))")) = true := by
+  native_decide
+example : !succeeds (parseOutputDescriptor "addr()") = true := by native_decide
+
 end LeanMiniscript.Miniscript.DescriptorParserExamples

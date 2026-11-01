@@ -417,7 +417,7 @@ def DecodedPsbt.finalInput (config : FinalizerConfig) (decoded : DecodedPsbt) (i
   let input ← (decoded.input index).mapError .role
   if !input.sighashTypesMatch then throw .sighashMismatch
   let final ← match descriptor with
-    | .raw _ | .shRaw _ => throw .unavailable
+    | .raw _ | .addr _ | .shRaw _ => throw .unavailable
     | .pk key => finalizeLegacySingle config decoded index input descriptor key false
     | .pkh key => finalizeLegacySingle config decoded index input descriptor key true
     | .multi threshold keys =>

@@ -1,3 +1,4 @@
+import LeanMiniscript.Bitcoin.Address
 import LeanMiniscript.Bitcoin.Base64
 import LeanMiniscript.Bitcoin.Deserialization
 import LeanMiniscript.Bitcoin.Schnorr

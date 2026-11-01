@@ -1,10 +1,12 @@
+import LeanMiniscript.Bitcoin.Address
 import LeanMiniscript.Bitcoin.DescriptorChecksum
 import LeanMiniscript.Miniscript.DescriptorKey
 import LeanMiniscript.Miniscript.OutputDescriptor
 
 namespace LeanMiniscript.Miniscript
 
-/-! Output-descriptor parsing for legacy, witness-v0, raw, and Taproot outputs.
+/-! Output-descriptor parsing for legacy, witness-v0, raw, address, and
+Taproot outputs, plus the multi-output `combo()` descriptor.
 The checksum is checked on the original text before parsing. Miniscript leaves
 use the existing context-aware parser and must have base type B. Taproot trees
 retain their binary shape and allow at most 128 branch levels.
@@ -140,6 +142,10 @@ def parseOutputDescriptor (input : String) (wildcardIndex : Option Nat := none)
       let [script] ← splitArguments body | throw "raw requires exactly one hex script"
       let some bytes := SurfaceParser.decodeHex? script | throw "Invalid raw script hex"
       return .raw bytes
+  | "addr" =>
+      let [address] ← splitArguments body | throw "addr requires exactly one address"
+      return .addr (← Bitcoin.Address.scriptPubKey address)
+  | "combo" => throw "combo expands to several outputs; use parseOutputDescriptors"
   | "pk" => return .pk (← parseSingleKey body wildcardIndex)
   | "pkh" => return .pkh (← parseSingleKey body wildcardIndex)
   | "wpkh" => return .wpkh (← parseSingleKey body wildcardIndex true)
@@ -174,11 +180,25 @@ def parseOutputDescriptor (input : String) (wildcardIndex : Option Nat := none)
       | _ => throw "tr requires an internal key and an optional script tree"
   | _ => throw "Unsupported output descriptor"
 
+/-- Parse a descriptor into the outputs it describes. `combo(KEY)` expands to
+`comboDescriptors`; every other descriptor yields one output. -/
+def parseOutputDescriptors (input : String) (wildcardIndex : Option Nat := none)
+    (requireChecksum : Bool := false) : Except String (List OutputDescriptor) := do
+  let text ← Bitcoin.DescriptorChecksum.validate input requireChecksum
+  match parseCall text with
+  | .ok ("combo", body) => return comboDescriptors (← parseSingleKey body wildcardIndex)
+  | _ => return [← parseOutputDescriptor input wildcardIndex requireChecksum]
+
 /-- Parse a descriptor and compile its output and associated spend scripts.
 Taproot results include each leaf's script, Merkle path, and control block in
 left-to-right tree order, retaining repeated leaf occurrences. -/
 def deriveOutputDescriptor (input : String) (wildcardIndex : Option Nat := none)
     (requireChecksum : Bool := false) : Except String CompiledDescriptor := do
   compileOutputDescriptor (← parseOutputDescriptor input wildcardIndex requireChecksum)
+
+/-- Compile every output of `parseOutputDescriptors` in the same order. -/
+def deriveOutputDescriptors (input : String) (wildcardIndex : Option Nat := none)
+    (requireChecksum : Bool := false) : Except String (List CompiledDescriptor) := do
+  (← parseOutputDescriptors input wildcardIndex requireChecksum).mapM compileOutputDescriptor
 
 end LeanMiniscript.Miniscript
