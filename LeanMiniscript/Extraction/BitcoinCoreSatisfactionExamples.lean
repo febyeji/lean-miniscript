@@ -24,7 +24,6 @@ private def signature := hex
   "8c05c0ee555979c2de9025bc3664cb322783a198339d3d458c3d73b4364f235444e98c7661e6010ac1ffbb07a2c68f87a407ac4f089a5dd1ff88574524a53a48"
 private def flags : CoreVerificationFlags :=
   { witness := true, taproot := true, cleanStack := true, sigPushOnly := true
-    checkLockTimeVerify := true, checkSequenceVerify := true
     discourageOpSuccess := true, discourageUpgradableTaprootVersion := true }
 
 private def material : DescriptorSatisfactionMaterial :=

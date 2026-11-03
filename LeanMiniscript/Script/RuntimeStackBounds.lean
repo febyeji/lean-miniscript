@@ -13,13 +13,20 @@ theorem executeRuntimeElement_stackGrowthAllowance
     next.stack.length + next.altStack.length ≤
       state.stack.length + state.altStack.length + element.stackGrowthAllowance := by
   have opcodeBound (stack alt : Stack)
-      (success : evaluate oracle [element] state.stack state.altStack flags ctx =
-        .success stack alt) :
+      (success : evaluate oracle [element.underTimelockFlags flags] state.stack state.altStack
+        flags ctx = .success stack alt) :
       stack.length + alt.length ≤ state.stack.length + state.altStack.length +
         element.stackGrowthAllowance := by
-    have evaluated := evaluate_sound agreement [element] state.stack state.altStack flags ctx
+    have evaluated := evaluate_sound agreement [element.underTimelockFlags flags] state.stack
+      state.altStack flags ctx
     rw [success] at evaluated
-    simpa [stackGrowthAllowance] using evaluated.stackGrowth_le_allowance
+    have growth : (element.underTimelockFlags flags).stackGrowthAllowance ≤
+        element.stackGrowthAllowance := by
+      unfold ScriptElement.underTimelockFlags
+      split <;> (try split) <;> simp [ScriptElement.stackGrowthAllowance]
+    have bound := evaluated.stackGrowth_le_allowance
+    simp only [stackGrowthAllowance] at bound
+    omega
   simp only [executeRuntimeElement, bind, Except.bind, pure, Except.pure] at executed
   repeat' (split at executed <;>
     try simp only [bind, Except.bind, pure, Except.pure] at executed)

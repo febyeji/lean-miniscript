@@ -30,6 +30,8 @@ theorem satisfyFinal_runtime_cleanStack
     (sound : env.Sound) (encodings : env.EncodingSound flags)
     (version : ModeledContextVersion .tapscript env.txCtx)
     (modeled : ModeledContextFlags .tapscript flags)
+    (locktime : flags.checkLockTimeVerify = true)
+    (sequence : flags.checkSequenceVerify = true)
     (generated : satisfyFinal fragment env = some arguments)
     (agreement : oracle.RefinesModel)
     (executed : evaluateWithRuntimeLimits oracle (compile fragment)
@@ -38,7 +40,7 @@ theorem satisfyFinal_runtime_cleanStack
     ∃ top, stack = [top] ∧ castToBool top = true := by
   obtain ⟨_, _, top, finalAlt, satisfied, truth⟩ :=
     satisfyFinalCorrectnessCore valid sound encodings version modeled generated
-  have observed := evaluateWithRuntimeLimits_eval_success agreement executed
+  have observed := evaluateWithRuntimeLimits_eval_success agreement locktime sequence executed
   have same := (evaluate_model_iff.mp observed).symm.trans
     (evaluate_model_iff.mp satisfied)
   exact ⟨top, (ExecResult.success.inj same).1, truth⟩
@@ -61,8 +63,8 @@ theorem verifyCoreScripts_of_descriptor_satisfaction
     (selected : descriptor.taprootOutputKey = some output)
     (outputTruth : castToBool output = true)
     (enabled : flags.witness = true) (taproot : flags.taproot = true)
-    (locktime : flags.checkLockTimeVerify = true)
-    (sequence : flags.checkSequenceVerify = true)
+    (locktime : flags.script.checkLockTimeVerify = true)
+    (sequence : flags.script.checkSequenceVerify = true)
     (valid : ValidMiniscript .tapscript fragment)
     (sound : env.Sound) (encodings : env.EncodingSound flags.script)
     (modeled : ModeledContextFlags .tapscript flags.script)
@@ -86,7 +88,7 @@ theorem verifyCoreScripts_of_descriptor_satisfaction
   have version : ModeledContextVersion .tapscript env.txCtx := by
     simp [ModeledContextVersion, context, coreTapscriptContext]
   obtain ⟨top, stackEq, truth⟩ := satisfyFinal_runtime_cleanStack valid sound encodings
-    version modeled generated agreement executed
+    version modeled locktime sequence generated agreement executed
   obtain ⟨compiledOutput, root, outputEq, _, commitments⟩ :=
     compileOutputDescriptor_taprootCommitments compiled
   have outputSame : compiledOutput = output := Option.some.inj (outputEq.symm.trans selected)
@@ -94,7 +96,7 @@ theorem verifyCoreScripts_of_descriptor_satisfaction
   rw [(compileOutputDescriptor_taprootScriptPubKey compiled selected).1]
   apply verifyCoreScripts_of_taproot_runtime flags ctx oracles keyPath arguments
     leaf.script leaf.controlBlock output root (compile fragment) enabled taproot
-    locktime sequence (commitments leaf member) outputTruth encoded count sizes
+    (commitments leaf member) outputTruth encoded count sizes
     (top := top) (alt := alt) (weight := weight)
   · simpa only [← context, stackEq, Witness.toInitialStack] using executed
   · exact truth
@@ -114,8 +116,8 @@ theorem verifyCoreScripts_of_sane_descriptor_satisfaction
     (selected : descriptor.taprootOutputKey = some output)
     (outputTruth : castToBool output = true)
     (enabled : flags.witness = true) (taproot : flags.taproot = true)
-    (locktime : flags.checkLockTimeVerify = true)
-    (sequence : flags.checkSequenceVerify = true)
+    (locktime : flags.script.checkLockTimeVerify = true)
+    (sequence : flags.script.checkSequenceVerify = true)
     (sound : env.Sound) (encodings : env.EncodingSound flags.script)
     (modeled : ModeledContextFlags .tapscript flags.script)
     (generated : satisfyFinal sane.checked.fragment env = some arguments)
@@ -178,8 +180,8 @@ theorem verifyCoreScripts_of_compiled_descriptor_satisfaction
     (selected : descriptor.taprootOutputKey = some output)
     (outputTruth : castToBool output = true)
     (enabled : flags.witness = true) (taproot : flags.taproot = true)
-    (locktime : flags.checkLockTimeVerify = true)
-    (sequence : flags.checkSequenceVerify = true)
+    (locktime : flags.script.checkLockTimeVerify = true)
+    (sequence : flags.script.checkSequenceVerify = true)
     (sound : env.Sound) (encodings : env.EncodingSound flags.script)
     (modeled : ModeledContextFlags .tapscript flags.script)
     (generated : satisfyFinal sane.checked.fragment env = some arguments)

@@ -80,7 +80,7 @@ The pinned fixture contains 1,258 executable rows and 60 documentation rows. The
 lake env lean --run scripts/equivalence_obligations.lean
 ```
 
-After `lake build`, prints how many (opcode, signature version) pairs lack a proof without `sorry` or added axioms that Core's `coreRawStep` and the typed `runtimeStep` agree on that opcode for every flag set, oracle, and state. `--list` prints each pair. The witness-v0 and Tapscript pairs are proved except for `OP_CHECKLOCKTIMEVERIFY` and `OP_CHECKSEQUENCEVERIFY`. The BASE pairs are proved except for those two and `OP_CHECKSIG`, `OP_CHECKSIGVERIFY`, `OP_CHECKMULTISIG`, and `OP_CHECKMULTISIGVERIFY`, whose BASE step removes signatures from the script code with FindAndDelete.
+After `lake build`, prints how many (opcode, signature version) pairs lack a proof without `sorry` or added axioms that Core's `coreRawStep` and the typed `runtimeStep` agree on that opcode for every flag set, oracle, and state. `--list` prints each pair. Every witness-v0 and Tapscript pair is proved. The BASE pairs are proved except for `OP_CHECKSIG`, `OP_CHECKSIGVERIFY`, `OP_CHECKMULTISIG`, and `OP_CHECKMULTISIGVERIFY`, whose BASE step removes signatures from the script code with FindAndDelete. Like Core, `runtimeStep` runs `OP_CHECKLOCKTIMEVERIFY` and `OP_CHECKSEQUENCEVERIFY` as `OP_NOP` when `ScriptFlags.checkLockTimeVerify` or `checkSequenceVerify` is off; the evaluator and `Eval` always check them, so theorems that erase runtime success to `Eval` require both flags on.
 
 ## Scope and layers
 

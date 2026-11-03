@@ -14,7 +14,9 @@ private def plainFlags : CoreVerificationFlags :=
       minimalData := false
       nullDummy := false
       nullFail := false
-      strictEncoding := false } }
+      strictEncoding := false
+      checkLockTimeVerify := false
+      checkSequenceVerify := false } }
 
 private def fixtureRun (sig pub : ByteArray) (flags : CoreVerificationFlags := plainFlags)
     (witness : List ByteArray := []) : Except CoreVerificationError Unit :=
@@ -44,11 +46,11 @@ example : fixtureRun ByteArray.empty (raw "CHECKLOCKTIMEVERIFY CHECKSEQUENCEVERI
       .ok () := by native_decide
 
 example : fixtureRun ByteArray.empty (raw "CHECKLOCKTIMEVERIFY 1")
-    { plainFlags with checkLockTimeVerify := true } = .error (.script .stackUnderflow) := by
+    { plainFlags with script := { plainFlags.script with checkLockTimeVerify := true } } = .error (.script .stackUnderflow) := by
   native_decide
 
 example : fixtureRun ByteArray.empty (raw "CHECKSEQUENCEVERIFY 1")
-    { plainFlags with checkSequenceVerify := true } = .error (.script .stackUnderflow) := by
+    { plainFlags with script := { plainFlags.script with checkSequenceVerify := true } } = .error (.script .stackUnderflow) := by
   native_decide
 
 -- FindAndDelete removes matching complete byte strings only at opcode boundaries.

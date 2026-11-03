@@ -83,8 +83,8 @@ theorem executeRuntimeElement_normalizeSerializedElement
   apply normalizeSerializedElement_preserves
     (fun element => executeRuntimeElement oracle element state flags ctx)
   intro value
-  simp [executeRuntimeElement, ScriptElement.pushSize, prepareValidationWeight,
-    evaluate.eq_1, evaluate.eq_2, evaluate.eq_3]
+  simp [executeRuntimeElement, ScriptElement.pushSize, ScriptElement.underTimelockFlags,
+    prepareValidationWeight, evaluate.eq_1, evaluate.eq_2, evaluate.eq_3]
 
 theorem runtimeStep_normalizeSerializedElement
     (oracle : CryptoOracle) (element : ScriptElement) (state : RuntimeState)

@@ -38,6 +38,15 @@ def checkRuntimeStack (state : RuntimeState) : Except ScriptError RuntimeState :
   if state.stack.length + state.altStack.length > maxStackSize then .error .stackSize
   else .ok state
 
+/-- The instruction the runtime executes: like Core, OP_CHECKLOCKTIMEVERIFY
+    and OP_CHECKSEQUENCEVERIFY run as OP_NOP when their flag is off. -/
+def ScriptElement.underTimelockFlags (flags : ScriptFlags) : ScriptElement → ScriptElement
+  | .op .OP_CHECKLOCKTIMEVERIFY =>
+      if flags.checkLockTimeVerify then .op .OP_CHECKLOCKTIMEVERIFY else .op .OP_NOP
+  | .op .OP_CHECKSEQUENCEVERIFY =>
+      if flags.checkSequenceVerify then .op .OP_CHECKSEQUENCEVERIFY else .op .OP_NOP
+  | element => element
+
 /-- One source instruction, before the combined stack check. Push size precedes
     control handling and execution, including in an inactive branch. -/
 def executeRuntimeElement (oracle : CryptoOracle) (element : ScriptElement)
@@ -68,7 +77,8 @@ def executeRuntimeElement (oracle : CryptoOracle) (element : ScriptElement)
   | _ =>
       if active then
         let weight ← prepareValidationWeight element state.stack flags ctx state.weight
-        match evaluate oracle [element] state.stack state.altStack flags ctx with
+        match evaluate oracle [element.underTimelockFlags flags] state.stack state.altStack
+            flags ctx with
         | .failure error => throw error
         | .success stack alt => return { state with stack := stack, altStack := alt, weight := weight }
       else return state

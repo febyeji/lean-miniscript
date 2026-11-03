@@ -44,8 +44,7 @@ inductive FinalizeError where
 structure FinalizerConfig where
   oracle : CryptoOracle := CryptoOracle.pureLeanSchnorr
   flags : CoreVerificationFlags :=
-    { witness := true, taproot := true, cleanStack := true
-      checkLockTimeVerify := true, checkSequenceVerify := true }
+    { witness := true, taproot := true, cleanStack := true }
   /-- ECDSA verification of a signature without its hash-type byte. -/
   verifyECDSA : ByteArray → ByteArray → ByteArray → Bool := ECDSA.verify
 

@@ -82,6 +82,8 @@ private def flagsForCoreFixture (names : List String) : ScriptFlags where
   derSig := names.contains "DERSIG"
   lowS := names.contains "LOW_S"
   discourageUpgradableNops := names.contains "DISCOURAGE_UPGRADABLE_NOPS"
+  checkLockTimeVerify := names.contains "CHECKLOCKTIMEVERIFY"
+  checkSequenceVerify := names.contains "CHECKSEQUENCEVERIFY"
 
 /-- Bitcoin Core `ScriptErrorString` tag corresponding to each modeled
     evaluator failure. Several Lean errors intentionally share one Core tag. Boundary-only
@@ -214,8 +216,6 @@ def coreVerificationFlagsForFixture (names : List String) : CoreVerificationFlag
   cleanStack := names.contains "CLEANSTACK"
   witness := names.contains "WITNESS" || names.contains "CLEANSTACK"
   taproot := names.contains "TAPROOT"
-  checkLockTimeVerify := names.contains "CHECKLOCKTIMEVERIFY"
-  checkSequenceVerify := names.contains "CHECKSEQUENCEVERIFY"
   discourageUpgradableWitnessProgram := names.contains "DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM"
   discourageUpgradableTaprootVersion := names.contains "DISCOURAGE_UPGRADABLE_TAPROOT_VERSION"
   discourageOpSuccess := names.contains "DISCOURAGE_OP_SUCCESS"

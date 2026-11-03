@@ -106,8 +106,9 @@ def coreRawStep (flags : CoreVerificationFlags) (ctx : TxContext)
         -- Core charges multisig keys before FindAndDelete. `runtimeStep` below
         -- charges the same count again from `state.runtime`.
         let _ ← (chargeOperations (.op opcode) state.runtime flags.script ctx).mapError .script
-        let opcode := if (opcode == .OP_CHECKLOCKTIMEVERIFY && !flags.checkLockTimeVerify) ||
-            (opcode == .OP_CHECKSEQUENCEVERIFY && !flags.checkSequenceVerify) then .OP_NOP else opcode
+        let opcode := if (opcode == .OP_CHECKLOCKTIMEVERIFY && !flags.script.checkLockTimeVerify) ||
+            (opcode == .OP_CHECKSEQUENCEVERIFY && !flags.script.checkSequenceVerify) then .OP_NOP
+          else opcode
         let signatures := if active && request.sigVersion == .base then
             instructionSignatures opcode state.runtime flags.script else []
         let (scriptCode, removed) := removeSignatures scriptCode signatures
