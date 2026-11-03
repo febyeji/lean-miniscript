@@ -91,7 +91,14 @@ theorem runtimeStep_normalizeSerializedElement
     (flags : ScriptFlags) (ctx : TxContext) :
     runtimeStep oracle (normalizeSerializedElement element) state flags ctx =
       runtimeStep oracle element state flags ctx := by
-  simp only [runtimeStep, executeRuntimeElement_normalizeSerializedElement]
+  have charged : chargeOperations (normalizeSerializedElement element) state flags ctx =
+      chargeOperations element state flags ctx := by
+    apply normalizeSerializedElement_preserves
+      (fun element => chargeOperations element state flags ctx)
+    intro value
+    rfl
+  simp only [runtimeStep, runtimeInstruction, charged,
+    executeRuntimeElement_normalizeSerializedElement]
 
 /-- Every source-order step, including skipped pushes, preserves its state or
     exact error. Open conditionals and arbitrary initial resource states are covered. -/

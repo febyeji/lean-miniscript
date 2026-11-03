@@ -60,7 +60,8 @@ theorem executeCoreScript_taprootOutput (flags : CoreVerificationFlags) (ctx : T
   change executeCoreScript flags ctx oracles { scriptBytes := nativeOutput output } = _
   simp +decide [executeCoreScript, nativeOutput_size, size, executeCoreRawLoop,
     first, second, coreRawStep, coreLegacyDisabledOpcode, coreLegacyMinimalPush,
-    runtimeStep, executeRuntimeElement, ScriptElement.pushSize, prepareValidationWeight,
+    runtimeStep_pushData, runtimeStep_pushNumber, runtimeInstruction, executeRuntimeElement,
+    ScriptElement.pushSize, prepareValidationWeight,
     evaluate.eq_1, evaluate.eq_2, evaluate.eq_3, checkRuntimeStack,
     maxScriptElementSize, maxStackSize, scriptNum, trueElement,
     Except.mapError, bind, Except.bind, pure, Except.pure]

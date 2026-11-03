@@ -80,7 +80,7 @@ The pinned fixture contains 1,258 executable rows and 60 documentation rows. The
 lake env lean --run scripts/equivalence_obligations.lean
 ```
 
-After `lake build`, prints how many (opcode, signature version) pairs lack a proof without `sorry` or added axioms that Core's `coreRawStep` and the typed `runtimeStep` agree on that opcode for every flag set, oracle, and state. `--list` prints each pair.
+After `lake build`, prints how many (opcode, signature version) pairs lack a proof without `sorry` or added axioms that Core's `coreRawStep` and the typed `runtimeStep` agree on that opcode for every flag set, oracle, and state. `--list` prints each pair. The witness-v0 and Tapscript pairs are proved except for `OP_CHECKLOCKTIMEVERIFY` and `OP_CHECKSEQUENCEVERIFY`; the BASE pairs are open.
 
 ## Scope and layers
 
@@ -103,6 +103,7 @@ Miniscript is the policy language layer. It can compile a policy into Bitcoin Sc
 - Conditional flow, numeric and indexed stack operations, timelocks, and signature encoding
 - Script serialization and deserialization
 - Tapscript initial and runtime resource limits and validation weight
+- The legacy and witness-v0 limit of 201 operations, including multisig public-key counts
 
 This layer defines how script bytes execute once a spending path has selected a script and witness.
 

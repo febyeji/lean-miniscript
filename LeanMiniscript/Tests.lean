@@ -24,6 +24,7 @@ import LeanMiniscript.Script.NopOpcodeExamples
 import LeanMiniscript.Script.NotExamples
 import LeanMiniscript.Script.NullFailExamples
 import LeanMiniscript.Script.NumericOpcodeExamples
+import LeanMiniscript.Script.OperationCountExamples
 import LeanMiniscript.Script.OverExamples
 import LeanMiniscript.Script.RotExamples
 import LeanMiniscript.Script.RuntimeLimitsExamples

@@ -1,24 +1,31 @@
 import LeanMiniscript.Script.ValidationWeightCore
 
-/-! Source-order execution with stack, push-size and signature-weight limits.
-Bounds, refinement and opcode lemmas are in RuntimeLimitsProofs. -/
+/-! Source-order execution with stack, push-size, operation-count and
+signature-weight limits. Bounds, refinement and opcode lemmas are in
+RuntimeLimitsProofs. -/
 
 namespace LeanMiniscript.Script
 
 /-!
 Runtime limits for the modeled opcode subset. Instructions are visited in source
-order, including inactive branches: oversized pushes fail when encountered,
-while signature debits and ordinary opcode execution only occur in active code.
+order, including inactive branches: oversized pushes fail and BASE or
+witness-v0 opcodes count when encountered, while signature debits, multisig key
+counts and ordinary opcode execution only occur in active code.
 The branch-projection evaluator remains available for budget-only reasoning.
 -/
 
-/-- Runtime state; the condition list is innermost-first. -/
+/-- Runtime state; the condition list is innermost-first. `operationCount` is
+Core's per-script `nOpCount`, charged only by BASE and witness-v0 steps. -/
 structure RuntimeState where
   stack : Stack
   altStack : Stack
   conditions : List Bool := []
   weight : Nat
+  operationCount : Nat := 0
   deriving Repr
+
+/-- Core's `MAX_OPS_PER_SCRIPT` for BASE and witness-v0 Script. -/
+def maxOpsPerScript : Nat := 201
 
 /-- Numeric pushes use the same byte representation as canonical serialization. -/
 def ScriptElement.pushSize : ScriptElement → Nat
@@ -66,12 +73,58 @@ def executeRuntimeElement (oracle : CryptoOracle) (element : ScriptElement)
         | .success stack alt => return { state with stack := stack, altStack := alt, weight := weight }
       else return state
 
-/-- Shared step boundary: opcode errors precede the post-instruction stack limit. -/
-def runtimeStep (oracle : CryptoOracle) (element : ScriptElement)
+/-- Core's multisig key count, decoded from the top item and bounded before
+the rest of the multisig frame is read. -/
+def multisigKeyCount (flags : ScriptFlags) : Stack → Except ScriptError Nat
+  | [] => .error .stackUnderflow
+  | keyBytes :: _ => do
+      let keys ← decodeScriptNum keyBytes flags.minimalData maxArithmeticScriptNumBytes
+      if keys < 0 ∨ (maxPubKeysPerMultiSig : Int) < keys then throw .pubkeyCount
+      return keys.toNat
+
+/-- Public keys an opcode adds to the operation count: an active multisig's
+key count, otherwise zero. -/
+def opcodeKeyCount (opcode : Opcode) (flags : ScriptFlags) (active : Bool)
+    (stack : Stack) : Except ScriptError Nat :=
+  match opcode with
+  | .OP_CHECKMULTISIG | .OP_CHECKMULTISIGVERIFY =>
+      if active then multisigKeyCount flags stack else .ok 0
+  | _ => .ok 0
+
+/-- The operation count after one BASE or witness-v0 opcode. Every opcode is
+above OP_16, so each one counts, active or not, before its keys. -/
+def chargedOperationCount (opcode : Opcode) (state : RuntimeState)
+    (flags : ScriptFlags) : Except ScriptError Nat := do
+  let count := state.operationCount + 1
+  if count > maxOpsPerScript then throw .opCount
+  let keys ← opcodeKeyCount opcode flags (state.conditions.all id) state.stack
+  if count + keys > maxOpsPerScript then throw .opCount
+  return count + keys
+
+/-- Core's operation count outside Tapscript. Pushes do not count. -/
+def chargeOperations (element : ScriptElement) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) : Except ScriptError RuntimeState :=
+  match element with
+  | .op opcode =>
+      if ctx.sigVersion = .tapscript then .ok state
+      else (chargedOperationCount opcode state flags).map
+        fun count => { state with operationCount := count }
+  | _ => .ok state
+
+/-- One instruction after its operation charge: opcode errors precede the
+post-instruction stack limit. -/
+def runtimeInstruction (oracle : CryptoOracle) (element : ScriptElement)
     (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
     Except ScriptError RuntimeState := do
   let next ← executeRuntimeElement oracle element state flags ctx
   checkRuntimeStack next
+
+/-- Shared step boundary: the operation count precedes the instruction. -/
+def runtimeStep (oracle : CryptoOracle) (element : ScriptElement)
+    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
+    Except ScriptError RuntimeState := do
+  let charged ← chargeOperations element state flags ctx
+  runtimeInstruction oracle element charged flags ctx
 
 /-- EOF reports an unclosed conditional only after earlier runtime checks pass. -/
 def finishRuntime (state : RuntimeState) : WeightedResult :=

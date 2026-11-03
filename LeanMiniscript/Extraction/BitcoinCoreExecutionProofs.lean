@@ -97,10 +97,74 @@ private theorem runtimeStep_pushNum (oracle : CryptoOracle) (number : Int)
     (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
     runtimeStep oracle (.pushNum number) state flags ctx =
       runtimeStep oracle (.pushData (scriptNum number)) state flags ctx := by
-  simp [runtimeStep, executeRuntimeElement, ScriptElement.pushSize,
-    prepareValidationWeight, evaluate.eq_1, evaluate.eq_2, evaluate.eq_3]
+  simp [runtimeStep_pushNumber, runtimeStep_pushData, runtimeInstruction, executeRuntimeElement,
+    ScriptElement.pushSize, prepareValidationWeight, evaluate.eq_1, evaluate.eq_2, evaluate.eq_3]
 
-set_option maxHeartbeats 2000000 in
+/-- Byte facts shared by every modeled opcode: it lies above OP_16 and is
+neither disabled, reserved, SHA1 nor CODESEPARATOR. -/
+theorem opcodeByte_modeled (opcode : Opcode) :
+    0x60 < (opcodeByte opcode).toNat ∧
+      coreLegacyDisabledOpcode (opcodeByte opcode).toNat = false ∧
+      (opcodeByte opcode).toNat ≠ 0x65 ∧ (opcodeByte opcode).toNat ≠ 0x66 ∧
+      (opcodeByte opcode).toNat ≠ 0xa7 ∧ (opcodeByte opcode).toNat ≠ 0xab := by
+  cases opcode <;> decide
+
+/-- Outside BASE, the raw step of a modeled opcode is the typed step on the same
+runtime state, when neither timelock opcode falls back to OP_NOP. -/
+theorem coreRawStep_op (flags : CoreVerificationFlags) (ctx : TxContext)
+    (oracles : SignatureVersion → ByteArray → CryptoOracle)
+    (request : CoreScriptExecutionRequest) (state : CoreRawState)
+    (instruction : CoreRawInstruction) (opcode : Opcode)
+    (notBase : request.sigVersion ≠ .base)
+    (locktime : opcode = .OP_CHECKLOCKTIMEVERIFY → flags.checkLockTimeVerify = true)
+    (sequence : opcode = .OP_CHECKSEQUENCEVERIFY → flags.checkSequenceVerify = true)
+    (encoded : instruction.Encodes (.op opcode)) :
+    coreRawStep flags ctx oracles request state instruction =
+      ((runtimeStep
+        (oracles request.sigVersion
+          (request.scriptBytes.extract state.codeSeparatorOffset request.scriptBytes.size))
+        (.op opcode) state.runtime flags.script (instructionContext ctx request state)).mapError
+          CoreVerificationError.script).map fun runtime =>
+            { state with
+              runtime := runtime
+              offset := instruction.nextOffset
+              opcodePosition := state.opcodePosition + 1 } := by
+  obtain ⟨byte, payload⟩ := encoded
+  obtain ⟨high, enabled, not65, not66, notSha1, notSeparator⟩ := opcodeByte_modeled opcode
+  have mapped : (if (opcode == .OP_CHECKLOCKTIMEVERIFY && !flags.checkLockTimeVerify) ||
+      (opcode == .OP_CHECKSEQUENCEVERIFY && !flags.checkSequenceVerify) then .OP_NOP else opcode) =
+      opcode := by
+    cases opcode <;> simp_all +decide
+  have notPush : ¬ (opcodeByte opcode).toNat ≤ 78 := by omega
+  have not79 : (opcodeByte opcode).toNat ≠ 79 := by omega
+  have notSmall : ¬ (opcodeByte opcode).toNat ≤ 96 := by omega
+  have version : (instructionContext ctx request state).sigVersion = request.sigVersion := rfl
+  have notBaseBool : (request.sigVersion == .base) = false := by
+    cases versionEq : request.sigVersion <;> simp_all <;> rfl
+  unfold coreRawStep
+  simp only [payload, byte, ByteArray.size_empty, maxScriptElementSize, enabled,
+    opcodeFromByte_opcodeByte, mapped, removeSignatures]
+  simp [notPush, not79, notSmall, not65, not66, notSha1, notSeparator, high, notBaseBool,
+    bind, Except.bind, Except.mapError, Except.map, pure, Except.pure, throw, throwThe,
+    MonadExceptOf.throw]
+  have overflow : maxOpsPerScript < state.runtime.operationCount + 1 →
+      request.sigVersion ≠ .tapscript →
+      chargeOperations (.op opcode) state.runtime flags.script (instructionContext ctx request state) =
+        .error .opCount := by
+    intro over tap
+    simp [chargeOperations, chargedOperationCount, version, tap, over, bind, Except.bind,
+      throw, throwThe, MonadExceptOf.throw, Except.map]
+  by_cases tap : request.sigVersion = .tapscript
+  · cases charging : chargeOperations (.op opcode) state.runtime flags.script
+        (instructionContext ctx request state) <;>
+      simp [tap, charging, runtimeStep, bind, Except.bind,
+        show (SignatureVersion.tapscript != SignatureVersion.tapscript) = false from rfl]
+  · by_cases over : maxOpsPerScript < state.runtime.operationCount + 1
+    · simp [over, runtimeStep, overflow over tap, bind, Except.bind]
+    · cases charging : chargeOperations (.op opcode) state.runtime flags.script
+          (instructionContext ctx request state) <;>
+        simp [over, charging, runtimeStep, bind, Except.bind]
+
 private theorem coreRawStep_tapscript (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (state : CoreRawState)
@@ -125,13 +189,8 @@ private theorem coreRawStep_tapscript (flags : CoreVerificationFlags) (ctx : TxC
       request.scriptBytes := by simp [separatorOffset]
   cases element with
   | op opcode =>
-      obtain ⟨byte, payload⟩ := encoded
-      cases opcode <;>
-        simp +decide [coreRawStep, byte, payload, version, locktime, sequence, context, code,
-          opcodeByte, opcodeFromByte?, coreLegacyDisabledOpcode, maxScriptElementSize,
-          removeSignatures, bind, Except.bind, Except.mapError, Except.map,
-          pure, Except.pure]
-      all_goals split <;> rfl
+      rw [coreRawStep_op flags ctx oracles request state instruction opcode
+        (by simp [version]) (fun _ => locktime) (fun _ => sequence) encoded, context, code, version]
   | pushData data =>
       simp only [CoreRawInstruction.Encodes, encodesPush] at encoded
       split at encoded
@@ -143,7 +202,7 @@ private theorem coreRawStep_tapscript (flags : CoreVerificationFlags) (ctx : TxC
         have low : instruction.opcode.toNat ≠ 0x65 ∧ instruction.opcode.toNat ≠ 0x66 ∧
             instruction.opcode.toNat ≠ 0xab := by omega
         by_cases large : data.size > maxScriptElementSize
-        · simp +decide [coreRawStep, payload, large, runtimeStep,
+        · simp +decide [coreRawStep, payload, large, runtimeStep_pushData, runtimeInstruction,
             executeRuntimeElement, ScriptElement.pushSize, bind, Except.bind,
             Except.mapError, Except.map, pure, Except.pure, throw]
           rfl

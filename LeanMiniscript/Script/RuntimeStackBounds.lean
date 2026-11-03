@@ -41,13 +41,15 @@ theorem executeRuntimeElement_stackGrowth
   omega
 
 /-- Source-order prefix execution before combined-stack checks. All other
-    instruction checks remain in force. A prefix may leave conditionals open;
-    no final-condition check or successful continuation is assumed. -/
+    instruction checks, including the operation count, remain in force. A
+    prefix may leave conditionals open; no final-condition check or successful
+    continuation is assumed. -/
 inductive RuntimePrefix (oracle : CryptoOracle) (flags : ScriptFlags) (ctx : TxContext) :
     Script → RuntimeState → RuntimeState → Prop where
   | nil (state : RuntimeState) : RuntimePrefix oracle flags ctx [] state state
-  | cons {element : ScriptElement} {rest : Script} {before middle after : RuntimeState}
-      (executed : executeRuntimeElement oracle element before flags ctx = .ok middle)
+  | cons {element : ScriptElement} {rest : Script} {before charged middle after : RuntimeState}
+      (charging : chargeOperations element before flags ctx = .ok charged)
+      (executed : executeRuntimeElement oracle element charged flags ctx = .ok middle)
       (tail : RuntimePrefix oracle flags ctx rest middle after) :
       RuntimePrefix oracle flags ctx (element :: rest) before after
 
@@ -62,9 +64,11 @@ theorem RuntimePrefix.stackGrowth_le_allowance
         LeanMiniscript.Script.stackGrowthAllowance visited := by
   induction reached with
   | nil => simp [LeanMiniscript.Script.stackGrowthAllowance]
-  | cons executed tail ih =>
+  | cons charging executed tail ih =>
       have step := executeRuntimeElement_stackGrowthAllowance agreement executed
-      simp only [LeanMiniscript.Script.stackGrowthAllowance]
+      have same := chargeOperations_ok charging
+      rw [same] at step
+      simp only [LeanMiniscript.Script.stackGrowthAllowance] at step ⊢
       omega
 
 /-- A prefix whose elements have allowance at most one satisfies the
@@ -144,7 +148,8 @@ def runRuntimePrefix (oracle : CryptoOracle) : Script → RuntimeState →
     ScriptFlags → TxContext → Except ScriptError RuntimeState
   | [], state, _, _ => .ok state
   | element :: rest, state, flags, ctx => do
-      let next ← executeRuntimeElement oracle element state flags ctx
+      let charged ← chargeOperations element state flags ctx
+      let next ← executeRuntimeElement oracle element charged flags ctx
       runRuntimePrefix oracle rest next flags ctx
 
 /-- The prefix relation describes exactly the states returned by the prefix
@@ -158,7 +163,8 @@ theorem runtimePrefix_iff
   · intro reached
     induction reached with
     | nil => rfl
-    | cons executed tail ih => simp [runRuntimePrefix, executed, ih, bind, Except.bind]
+    | cons charging executed tail ih =>
+        simp [runRuntimePrefix, charging, executed, ih, bind, Except.bind]
   · intro executed
     induction visited generalizing before with
     | nil =>
@@ -166,12 +172,16 @@ theorem runtimePrefix_iff
         subst after
         exact .nil _
     | cons element rest ih =>
-        cases step : executeRuntimeElement oracle element before flags ctx with
-        | error error => simp [runRuntimePrefix, step, bind, Except.bind] at executed
-        | ok next =>
-            apply RuntimePrefix.cons step
-            apply ih
-            simpa [runRuntimePrefix, step, bind, Except.bind] using executed
+        cases charging : chargeOperations element before flags ctx with
+        | error error => simp [runRuntimePrefix, charging, bind, Except.bind] at executed
+        | ok charged =>
+            cases step : executeRuntimeElement oracle element charged flags ctx with
+            | error error =>
+                simp [runRuntimePrefix, charging, step, bind, Except.bind] at executed
+            | ok next =>
+                apply RuntimePrefix.cons charging step
+                apply ih
+                simpa [runRuntimePrefix, charging, step, bind, Except.bind] using executed
 
 /-- The opcode-weighted allowance makes every combined-stack check redundant.
     Other runtime failures remain observable in their original order. -/
@@ -187,18 +197,26 @@ theorem evaluateRuntime_eq_runRuntimePrefix_of_allowance
   induction script generalizing state with
   | nil => rfl
   | cons element rest ih =>
-      cases step : executeRuntimeElement oracle element state flags ctx with
+      cases charging : chargeOperations element state flags ctx with
       | error error =>
-          simp [evaluateRuntime, runtimeStep, runRuntimePrefix, step, bind, Except.bind]
+          simp [evaluateRuntime, runtimeStep, runRuntimePrefix, charging, bind, Except.bind]
+      | ok charged =>
+      have same := chargeOperations_ok charging
+      cases step : executeRuntimeElement oracle element charged flags ctx with
+      | error error =>
+          simp [evaluateRuntime, runtimeStep, runtimeInstruction, runRuntimePrefix, charging,
+            step, bind, Except.bind]
       | ok next =>
           have growth := executeRuntimeElement_stackGrowthAllowance agreement step
+          rw [same] at growth
+          simp only at growth
           have nextBudget : next.stack.length + next.altStack.length +
               LeanMiniscript.Script.stackGrowthAllowance rest ≤ maxStackSize := by
             simp only [LeanMiniscript.Script.stackGrowthAllowance] at budget
             omega
           have bounded : next.stack.length + next.altStack.length ≤ maxStackSize := by
             omega
-          simpa [evaluateRuntime, runtimeStep, runRuntimePrefix, step,
+          simpa [evaluateRuntime, runtimeStep, runtimeInstruction, runRuntimePrefix, charging, step,
             checkRuntimeStack, Nat.not_lt_of_le bounded, bind, Except.bind] using ih nextBudget
 
 /-- The instruction-count budget suffices when every element has allowance

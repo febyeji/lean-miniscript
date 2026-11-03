@@ -29,24 +29,36 @@ def OpcodeAgreement (opcode : Opcode) (version : SignatureVersion) : Prop :=
         (.op opcode) state.runtime flags.script
         (instructionContext ctx request state)).mapError .script
 
-set_option maxHeartbeats 2000000 in
+/-- Outside BASE, every opcode except the two timelocks agrees: Core's
+operation count and multisig key count are the typed step's charge. -/
+theorem opcodeAgreement_of_ne_base (opcode : Opcode) (version : SignatureVersion)
+    (notBase : version ≠ .base)
+    (timelock : opcode ≠ .OP_CHECKLOCKTIMEVERIFY ∧ opcode ≠ .OP_CHECKSEQUENCEVERIFY) :
+    OpcodeAgreement opcode version := by
+  intro flags ctx oracles request state instruction requested encoded
+  rw [coreRawStep_op flags ctx oracles request state instruction opcode (requested ▸ notBase)
+    (fun same => absurd same timelock.1) (fun same => absurd same timelock.2) encoded, requested]
+  cases runtimeStep (oracles version
+      (request.scriptBytes.extract state.codeSeparatorOffset request.scriptBytes.size))
+    (.op opcode) state.runtime flags.script (instructionContext ctx request state) <;> rfl
+
 theorem opcodeAgreement_tapscript (opcode : Opcode)
     (timelock : opcode ≠ .OP_CHECKLOCKTIMEVERIFY ∧ opcode ≠ .OP_CHECKSEQUENCEVERIFY) :
-    OpcodeAgreement opcode .tapscript := by
-  intro flags ctx oracles request state instruction version encoded
-  obtain ⟨byte, payload⟩ := encoded
-  cases opcode <;> simp at timelock <;>
-    simp +decide [coreRawStep, byte, payload, version,
-      opcodeByte, opcodeFromByte?, coreLegacyDisabledOpcode, maxScriptElementSize,
-      removeSignatures, bind, Except.bind, Except.mapError, Except.map,
-      pure, Except.pure]
-  all_goals split <;> split <;> simp_all <;> (subst_vars; rfl)
+    OpcodeAgreement opcode .tapscript :=
+  opcodeAgreement_of_ne_base opcode .tapscript (by decide) timelock
+
+theorem opcodeAgreement_witnessV0 (opcode : Opcode)
+    (timelock : opcode ≠ .OP_CHECKLOCKTIMEVERIFY ∧ opcode ≠ .OP_CHECKSEQUENCEVERIFY) :
+    OpcodeAgreement opcode .witnessV0 :=
+  opcodeAgreement_of_ne_base opcode .witnessV0 (by decide) timelock
 
 namespace OpcodeAgreement
 
-/- TODO(equivalence): the remaining pairs are false for the current typed step.
-- `.base`, `.witnessV0`: Core fails with `opCount` past 201 operations, and
-  under `.base` CONST_SCRIPTCODE and FindAndDelete change the result.
+/- TODO(equivalence): the remaining pairs are open.
+- `.base` signature opcodes: FindAndDelete removes the signatures from the
+  script code given to the oracle, and CONST_SCRIPTCODE fails when it finds
+  one. The typed step has no such check.
+- `.base` other opcodes: `coreRawStep_op` does not cover BASE yet.
 - CLTV and CSV: Core runs them as OP_NOP when their flag is off. -/
 
 theorem OP_NOP_tapscript : OpcodeAgreement .OP_NOP .tapscript :=
@@ -246,6 +258,204 @@ theorem OP_VERIFY_tapscript : OpcodeAgreement .OP_VERIFY .tapscript :=
 
 theorem OP_SIZE_tapscript : OpcodeAgreement .OP_SIZE .tapscript :=
   opcodeAgreement_tapscript _ (by decide)
+
+theorem OP_NOP_witnessV0 : OpcodeAgreement .OP_NOP .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_NOP1_witnessV0 : OpcodeAgreement .OP_NOP1 .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_NOP4_witnessV0 : OpcodeAgreement .OP_NOP4 .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_NOP5_witnessV0 : OpcodeAgreement .OP_NOP5 .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_NOP6_witnessV0 : OpcodeAgreement .OP_NOP6 .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_NOP7_witnessV0 : OpcodeAgreement .OP_NOP7 .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_NOP8_witnessV0 : OpcodeAgreement .OP_NOP8 .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_NOP9_witnessV0 : OpcodeAgreement .OP_NOP9 .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_NOP10_witnessV0 : OpcodeAgreement .OP_NOP10 .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_RETURN_witnessV0 : OpcodeAgreement .OP_RETURN .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_IF_witnessV0 : OpcodeAgreement .OP_IF .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_NOTIF_witnessV0 : OpcodeAgreement .OP_NOTIF .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_ELSE_witnessV0 : OpcodeAgreement .OP_ELSE .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_ENDIF_witnessV0 : OpcodeAgreement .OP_ENDIF .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_2DROP_witnessV0 : OpcodeAgreement .OP_2DROP .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_2DUP_witnessV0 : OpcodeAgreement .OP_2DUP .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_3DUP_witnessV0 : OpcodeAgreement .OP_3DUP .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_2OVER_witnessV0 : OpcodeAgreement .OP_2OVER .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_2ROT_witnessV0 : OpcodeAgreement .OP_2ROT .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_2SWAP_witnessV0 : OpcodeAgreement .OP_2SWAP .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_IFDUP_witnessV0 : OpcodeAgreement .OP_IFDUP .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_DEPTH_witnessV0 : OpcodeAgreement .OP_DEPTH .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_DROP_witnessV0 : OpcodeAgreement .OP_DROP .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_DUP_witnessV0 : OpcodeAgreement .OP_DUP .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_NIP_witnessV0 : OpcodeAgreement .OP_NIP .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_OVER_witnessV0 : OpcodeAgreement .OP_OVER .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_PICK_witnessV0 : OpcodeAgreement .OP_PICK .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_ROLL_witnessV0 : OpcodeAgreement .OP_ROLL .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_ROT_witnessV0 : OpcodeAgreement .OP_ROT .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_SWAP_witnessV0 : OpcodeAgreement .OP_SWAP .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_TUCK_witnessV0 : OpcodeAgreement .OP_TUCK .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_TOALTSTACK_witnessV0 : OpcodeAgreement .OP_TOALTSTACK .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_FROMALTSTACK_witnessV0 : OpcodeAgreement .OP_FROMALTSTACK .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_1ADD_witnessV0 : OpcodeAgreement .OP_1ADD .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_1SUB_witnessV0 : OpcodeAgreement .OP_1SUB .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_NEGATE_witnessV0 : OpcodeAgreement .OP_NEGATE .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_ABS_witnessV0 : OpcodeAgreement .OP_ABS .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_ADD_witnessV0 : OpcodeAgreement .OP_ADD .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_SUB_witnessV0 : OpcodeAgreement .OP_SUB .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_BOOLAND_witnessV0 : OpcodeAgreement .OP_BOOLAND .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_BOOLOR_witnessV0 : OpcodeAgreement .OP_BOOLOR .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_NOT_witnessV0 : OpcodeAgreement .OP_NOT .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_0NOTEQUAL_witnessV0 : OpcodeAgreement .OP_0NOTEQUAL .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_EQUAL_witnessV0 : OpcodeAgreement .OP_EQUAL .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_EQUALVERIFY_witnessV0 : OpcodeAgreement .OP_EQUALVERIFY .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_NUMEQUAL_witnessV0 : OpcodeAgreement .OP_NUMEQUAL .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_NUMEQUALVERIFY_witnessV0 : OpcodeAgreement .OP_NUMEQUALVERIFY .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_NUMNOTEQUAL_witnessV0 : OpcodeAgreement .OP_NUMNOTEQUAL .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_LESSTHAN_witnessV0 : OpcodeAgreement .OP_LESSTHAN .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_GREATERTHAN_witnessV0 : OpcodeAgreement .OP_GREATERTHAN .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_LESSTHANOREQUAL_witnessV0 : OpcodeAgreement .OP_LESSTHANOREQUAL .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_GREATERTHANOREQUAL_witnessV0 : OpcodeAgreement .OP_GREATERTHANOREQUAL .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_MIN_witnessV0 : OpcodeAgreement .OP_MIN .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_MAX_witnessV0 : OpcodeAgreement .OP_MAX .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_WITHIN_witnessV0 : OpcodeAgreement .OP_WITHIN .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_SHA256_witnessV0 : OpcodeAgreement .OP_SHA256 .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_HASH256_witnessV0 : OpcodeAgreement .OP_HASH256 .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_RIPEMD160_witnessV0 : OpcodeAgreement .OP_RIPEMD160 .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_HASH160_witnessV0 : OpcodeAgreement .OP_HASH160 .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_CHECKSIG_witnessV0 : OpcodeAgreement .OP_CHECKSIG .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_CHECKSIGVERIFY_witnessV0 : OpcodeAgreement .OP_CHECKSIGVERIFY .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_CHECKSIGADD_witnessV0 : OpcodeAgreement .OP_CHECKSIGADD .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_CHECKMULTISIG_witnessV0 : OpcodeAgreement .OP_CHECKMULTISIG .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_CHECKMULTISIGVERIFY_witnessV0 : OpcodeAgreement .OP_CHECKMULTISIGVERIFY .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_VERIFY_witnessV0 : OpcodeAgreement .OP_VERIFY .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_SIZE_witnessV0 : OpcodeAgreement .OP_SIZE .witnessV0 :=
+  opcodeAgreement_witnessV0 _ (by decide)
 
 end OpcodeAgreement
 

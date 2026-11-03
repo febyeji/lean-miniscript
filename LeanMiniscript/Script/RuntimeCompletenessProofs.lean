@@ -116,10 +116,50 @@ private theorem prepareValidationWeight_exact
         all_goals exact ⟨weight, by simp [prepareValidationWeight, version], by simp [executedSignatureWeight]⟩
   · exact ⟨weight, by simp [prepareValidationWeight, version], by simp [executedSignatureWeight, version]⟩
 
+private theorem multisigKeyCount_of_decode {flags : ScriptFlags} {stack : Stack}
+    {operands : CheckMultiSigOperands}
+    (decoded : decodeCheckMultiSigOperands flags stack = .ok operands) :
+    ∃ keys, multisigKeyCount flags stack = .ok keys := by
+  cases stack with
+  | nil => simp [decodeCheckMultiSigOperands, bind, Except.bind] at decoded
+  | cons top rest =>
+      simp only [decodeCheckMultiSigOperands, bind, Except.bind] at decoded
+      cases number : decodeScriptNum top flags.minimalData maxArithmeticScriptNumBytes with
+      | error => simp [number] at decoded
+      | ok value =>
+          simp only [number] at decoded
+          by_cases negative : value < 0
+          · simp [negative] at decoded
+          · by_cases large : (maxPubKeysPerMultiSig : Int) < value
+            · simp [negative, large] at decoded
+            · exact ⟨value.toNat, by
+                simp [multisigKeyCount, number, negative, large, bind, Except.bind, pure,
+                  Except.pure]⟩
+
+/-- A successful executed opcode has a decodable key count outside Tapscript. -/
+private theorem opcodeKeyCount_of_eval
+    {element : ScriptElement} {stack alt nextStack nextAlt : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (evaluated : Eval [element] stack alt flags ctx (.success nextStack nextAlt))
+    (version : ctx.sigVersion ≠ .tapscript) :
+    ∀ opcode, element = .op opcode → ∃ keys, opcodeKeyCount opcode flags true stack = .ok keys := by
+  intro opcode same
+  subst same
+  cases opcode
+  case OP_CHECKMULTISIG | OP_CHECKMULTISIGVERIFY =>
+    cases evaluated <;> try simp_all [Opcode.isUpgradeableNop]
+    all_goals
+      obtain ⟨_, decoded⟩ : ∃ operands,
+          decodeCheckMultiSigOperandsFor flags ctx stack = .ok operands := ⟨_, by assumption⟩
+      simp only [decodeCheckMultiSigOperandsFor, version, ↓reduceIte] at decoded
+      exact multisigKeyCount_of_decode decoded
+  all_goals exact ⟨0, rfl⟩
+
 /-- Runtime completion with the exact debit observed on the active path.
 Skipped opcodes and empty signatures consume zero; source push bounds still
-cover inactive branches. The final weight plus the observed debit equals the
-initial budget. -/
+cover inactive branches. Outside Tapscript the source operation bound must fit
+`maxOpsPerScript`. The final weight plus the observed debit equals the initial
+budget. -/
 theorem EvalResources.runtime_complete_exact
     {script : Script} {stack alt finalStack finalAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext} {resources : ExecutionResources}
@@ -127,6 +167,7 @@ theorem EvalResources.runtime_complete_exact
     (observed : EvalResources script stack alt flags ctx finalStack finalAlt resources)
     (pushes : ∀ element ∈ script, element.pushSize ≤ maxScriptElementSize)
     (peak : resources.peakStackItems ≤ maxStackSize)
+    (operations : ctx.sigVersion = .tapscript ∨ staticOperationCount script ≤ maxOpsPerScript)
     (weight : Nat) (enough : resources.signatureWeight ≤ weight) :
     ∃ remaining,
       evaluateWithRuntimeLimits oracle script stack alt flags ctx weight =
@@ -136,67 +177,133 @@ theorem EvalResources.runtime_complete_exact
   | empty => exact ⟨weight, rfl, by simp⟩
   | @step element rest stack alt nextStack nextAlt finalStack finalAlt flags ctx resources head tail ih =>
       simp only [ExecutionResources.prepend_signatureWeight] at enough ⊢
+      rw [staticOperationCount_cons] at operations
       obtain ⟨nextWeight, charged, debit⟩ := prepareValidationWeight_exact (weight := weight) head (by omega)
       have tailPeak : resources.peakStackItems ≤ maxStackSize := by
         simp only [ExecutionResources.prepend_peakStackItems] at peak
         omega
       obtain ⟨remaining, completed, spent⟩ := ih
-        (fun element member => pushes element (by simp [member])) tailPeak nextWeight (by omega)
+        (fun element member => pushes element (by simp [member])) tailPeak
+        (by rcases operations with version | operations
+            · exact .inl version
+            · exact .inr (by omega))
+        nextWeight (by omega)
+      obtain ⟨count, _, below, charging⟩ := chargeOperations_of_keys
+        (state := ({ stack := stack, altStack := alt, weight := weight } : RuntimeState))
+        (fun version => opcodeKeyCount_of_eval head version)
+        (by rcases operations with version | operations
+            · exact .inl version
+            · exact .inr (by simp only; omega))
       refine ⟨remaining, ?_, by omega⟩
-      apply runtime_cons_success
-        (next := { stack := nextStack, altStack := nextAlt, weight := nextWeight })
+      apply runtime_cons_success charging
+        (next := { stack := nextStack, altStack := nextAlt, weight := nextWeight
+                   operationCount := count })
       · rw [execute_ordinary element head.singleton_nonConditional]
         simp [Nat.not_lt.mpr (pushes element (by simp)), charged,
           evaluate_eq_of_eval agreement head, bind, Except.bind, pure, Except.pure]
       · exact Nat.le_trans tail.initial_le_peak tailPeak
-      · exact completed
+      · exact evaluateRuntime_raise completed (Nat.zero_le _)
+          (by rcases operations with version | operations
+              · exact .inl version
+              · exact .inr (by simp only at below; omega))
   | @if_execute top stack alt script frame flags ctx finalStack finalAlt resources split minimal selected ih =>
       have projected : selectConditionalTail 0 (castToBool top) script =
           some (frame.select (castToBool top)) := by simp [selectConditionalTail_eq, split]
       have sub := selectConditionalTail_sublist projected
+      rw [staticOperationCount_cons] at operations
       have selectedPeak : resources.peakStackItems ≤ maxStackSize := by
         simp only [ExecutionResources.prepend_peakStackItems] at peak
         omega
       obtain ⟨remaining, completed, spent⟩ := ih
-        (fun element member => pushes element (by simp [sub.subset member])) selectedPeak weight
-        (by simpa using enough)
+        (fun element member => pushes element (by simp [sub.subset member])) selectedPeak
+        (by rcases operations with version | operations
+            · exact .inl version
+            · have := staticOperationCount_sublist sub
+              exact .inr (by omega))
+        weight (by simpa using enough)
       refine ⟨remaining, ?_, by simpa using spent⟩
       have initial := Nat.le_trans selected.initial_le_peak selectedPeak
-      apply runtime_cons_success
-        (next := { stack := stack, altStack := alt, conditions := [castToBool top], weight := weight })
+      obtain ⟨count, _, below, charging⟩ := chargeOperations_quiet (element := .op .OP_IF) (flags := flags)
+        (state := ({ stack := top :: stack, altStack := alt, weight := weight } : RuntimeState))
+        (fun _ same => by cases same; rfl)
+        (by rcases operations with version | operations
+            · exact .inl version
+            · exact .inr (by simp only; omega))
+      have below : count ≤ 1 := by simpa [ScriptElement.operationBound] using below
+      have raised := evaluateRuntime_raise (count := count)
+        (by simpa [evaluateWithRuntimeLimits] using completed) (Nat.zero_le _)
+        (by rcases operations with version | operations
+            · exact .inl version
+            · have := staticOperationCount_sublist sub
+              simp only [ScriptElement.operationBound] at operations
+              exact .inr (by omega))
+      apply runtime_cons_success charging
+        (next := { stack := stack, altStack := alt, conditions := [castToBool top]
+                   weight := weight, operationCount := count })
       · simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
           minimal, ScriptElement.branchChoice, pure, Except.pure]
       · exact initial
       · exact runtime_restore_conditional script _
-          { stack := stack, altStack := alt, weight := weight } [] [] (castToBool top)
-          projected (fun element member => pushes element (by simp [member])) initial
-          (by simpa [evaluateWithRuntimeLimits] using completed)
+          { stack := stack, altStack := alt, weight := weight, operationCount := count } [] []
+          (castToBool top) projected (fun element member => pushes element (by simp [member]))
+          initial
+          (by rcases operations with version | operations
+              · exact .inl version
+              · simp only [ScriptElement.operationBound] at operations
+                exact .inr (by simp only; omega))
+          (by simpa using raised)
   | @notif_execute top stack alt script frame flags ctx finalStack finalAlt resources split minimal selected ih =>
       have projected : selectConditionalTail 0 (!castToBool top) script =
           some (frame.select (!castToBool top)) := by simp [selectConditionalTail_eq, split]
       have sub := selectConditionalTail_sublist projected
+      rw [staticOperationCount_cons] at operations
       have selectedPeak : resources.peakStackItems ≤ maxStackSize := by
         simp only [ExecutionResources.prepend_peakStackItems] at peak
         omega
       obtain ⟨remaining, completed, spent⟩ := ih
-        (fun element member => pushes element (by simp [sub.subset member])) selectedPeak weight
-        (by simpa using enough)
+        (fun element member => pushes element (by simp [sub.subset member])) selectedPeak
+        (by rcases operations with version | operations
+            · exact .inl version
+            · have := staticOperationCount_sublist sub
+              exact .inr (by omega))
+        weight (by simpa using enough)
       refine ⟨remaining, ?_, by simpa using spent⟩
       have initial := Nat.le_trans selected.initial_le_peak selectedPeak
-      apply runtime_cons_success
-        (next := { stack := stack, altStack := alt, conditions := [!castToBool top], weight := weight })
+      obtain ⟨count, _, below, charging⟩ := chargeOperations_quiet (element := .op .OP_NOTIF) (flags := flags)
+        (state := ({ stack := top :: stack, altStack := alt, weight := weight } : RuntimeState))
+        (fun _ same => by cases same; rfl)
+        (by rcases operations with version | operations
+            · exact .inl version
+            · exact .inr (by simp only; omega))
+      have below : count ≤ 1 := by simpa [ScriptElement.operationBound] using below
+      have raised := evaluateRuntime_raise (count := count)
+        (by simpa [evaluateWithRuntimeLimits] using completed) (Nat.zero_le _)
+        (by rcases operations with version | operations
+            · exact .inl version
+            · have := staticOperationCount_sublist sub
+              simp only [ScriptElement.operationBound] at operations
+              exact .inr (by omega))
+      apply runtime_cons_success charging
+        (next := { stack := stack, altStack := alt, conditions := [!castToBool top]
+                   weight := weight, operationCount := count })
       · simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
           minimal, ScriptElement.branchChoice, pure, Except.pure]
       · exact initial
       · exact runtime_restore_conditional script _
-          { stack := stack, altStack := alt, weight := weight } [] [] (!castToBool top)
-          projected (fun element member => pushes element (by simp [member])) initial
-          (by simpa [evaluateWithRuntimeLimits] using completed)
+          { stack := stack, altStack := alt, weight := weight, operationCount := count } [] []
+          (!castToBool top) projected (fun element member => pushes element (by simp [member]))
+          initial
+          (by rcases operations with version | operations
+              · exact .inl version
+              · simp only [ScriptElement.operationBound] at operations
+                exact .inr (by simp only; omega))
+          (by simpa using raised)
 
 /-- Resource-free execution completes in the source-order runtime when its
-observed stack peak fits, every source push fits, and the initial weight covers
-the static signature bound. This includes limits on skipped source pushes.
-The unused weight is at least the initial weight minus that bound. -/
+observed stack peak fits, every source push fits, the initial weight covers
+the static signature bound, and, outside Tapscript, the static operation bound
+fits. This includes limits on skipped source pushes and opcodes. The unused
+weight is at least the initial weight minus that bound. -/
 theorem EvalResources.runtime_complete
     {script : Script} {stack alt finalStack finalAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext} {resources : ExecutionResources}
@@ -204,6 +311,7 @@ theorem EvalResources.runtime_complete
     (observed : EvalResources script stack alt flags ctx finalStack finalAlt resources)
     (pushes : ∀ element ∈ script, element.pushSize ≤ maxScriptElementSize)
     (peak : resources.peakStackItems ≤ maxStackSize)
+    (operations : ctx.sigVersion = .tapscript ∨ staticOperationCount script ≤ maxOpsPerScript)
     (weight : Nat) (enough : staticValidationWeight script ≤ weight) :
     ∃ remaining,
       evaluateWithRuntimeLimits oracle script stack alt flags ctx weight =
@@ -211,7 +319,7 @@ theorem EvalResources.runtime_complete
       weight ≤ remaining + staticValidationWeight script := by
   have bound := observed.signatureWeight_le_static
   obtain ⟨remaining, completed, spent⟩ := observed.runtime_complete_exact agreement
-    pushes peak weight (Nat.le_trans bound enough)
+    pushes peak operations weight (Nat.le_trans bound enough)
   exact ⟨remaining, completed, by omega⟩
 
 end LeanMiniscript.Script

@@ -145,7 +145,8 @@ theorem tapscript_satisfyFinal_runtime_complete_exact
   have sameResult := Eval.result_unique observed.toEval generatedRun.toEval
   have topEq : top = generatedTop := by simpa using (ExecResult.success.inj sameResult).1
   rw [← sameResources] at peak
-  obtain ⟨remaining, completed, spent⟩ := observed.runtime_complete_exact agreement pushes peak weight budget
+  obtain ⟨remaining, completed, spent⟩ :=
+    observed.runtime_complete_exact agreement pushes peak (.inl version) weight budget
   refine ⟨remaining, completed, topEq ▸ truth, ?_, spent⟩
   simpa [Witness.toInitialStack, MAX_STACK_SIZE] using Nat.le_trans observed.initial_le_peak peak
 
@@ -171,7 +172,7 @@ theorem tapscript_satisfyFinal_runtime_complete_witness
   have funded := satisfyFinal_signatureWeight_le_payload sane.validMiniscript sound encodings
     version modeled generated observed
   obtain ⟨remaining, completed, _⟩ := runtime_complete_of_witness_funding agreement
-    observed pushes peak included funded
+    observed pushes peak (.inl version) included funded
   refine ⟨top, remaining, completed, truth, ?_⟩
   simpa [Witness.toInitialStack, MAX_STACK_SIZE] using Nat.le_trans observed.initial_le_peak peak
 
@@ -196,7 +197,8 @@ theorem tapscript_satisfyFinal_runtime_complete
       weight ≤ remaining + staticValidationWeight sane.compile := by
   obtain ⟨top, resources, observed, truth, peak⟩ :=
     sane.tapscript_satisfyFinal_executionStack_le sound encodings version modeled generated
-  obtain ⟨remaining, completed, spent⟩ := observed.runtime_complete agreement pushes peak weight budget
+  obtain ⟨remaining, completed, spent⟩ :=
+    observed.runtime_complete agreement pushes peak (.inl version) weight budget
   refine ⟨top, remaining, completed, truth, ?_, spent⟩
   simpa [Witness.toInitialStack, MAX_STACK_SIZE] using Nat.le_trans observed.initial_le_peak peak
 

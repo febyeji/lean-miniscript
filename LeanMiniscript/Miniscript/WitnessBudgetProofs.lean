@@ -97,13 +97,14 @@ theorem runtime_complete_of_witness_funding
       finalStack finalAlt resources)
     (pushes : ∀ element ∈ script, element.pushSize ≤ maxScriptElementSize)
     (peak : resources.peakStackItems ≤ maxStackSize)
+    (operations : ctx.sigVersion = .tapscript ∨ staticOperationCount script ≤ maxOpsPerScript)
     (included : arguments.Sublist fullWitness)
     (funded : resources.signatureWeight ≤ (arguments.map ByteArray.size).sum) :
     ∃ remaining,
       evaluateWithRuntimeLimits oracle script arguments.toInitialStack [] flags ctx
         (initialValidationWeight fullWitness) = .success finalStack finalAlt remaining ∧
       remaining + resources.signatureWeight = initialValidationWeight fullWitness :=
-  observed.runtime_complete_exact agreement pushes peak _
+  observed.runtime_complete_exact agreement pushes peak operations _
     (Witness.signatureWeight_le_initialValidationWeight included funded)
 
 end LeanMiniscript.Miniscript
