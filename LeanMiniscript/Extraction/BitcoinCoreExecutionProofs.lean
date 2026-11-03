@@ -109,13 +109,23 @@ theorem opcodeByte_modeled (opcode : Opcode) :
       (opcodeByte opcode).toNat ≠ 0xa7 ∧ (opcodeByte opcode).toNat ≠ 0xab := by
   cases opcode <;> decide
 
-/-- Outside BASE, the raw step of a modeled opcode is the typed step on the same
-runtime state, when neither timelock opcode falls back to OP_NOP. -/
+/-- Only the four legacy signature opcodes hand signatures to FindAndDelete. -/
+theorem instructionSignatures_eq_nil (opcode : Opcode) (state : RuntimeState)
+    (flags : ScriptFlags)
+    (signature : opcode ≠ .OP_CHECKSIG ∧ opcode ≠ .OP_CHECKSIGVERIFY ∧
+      opcode ≠ .OP_CHECKMULTISIG ∧ opcode ≠ .OP_CHECKMULTISIGVERIFY) :
+    instructionSignatures opcode state flags = [] := by
+  cases opcode <;> simp_all [instructionSignatures]
+
+/-- The raw step of a modeled opcode is the typed step on the same runtime
+state, when neither timelock opcode falls back to OP_NOP and, in BASE, the
+opcode gives FindAndDelete no signature to remove. -/
 theorem coreRawStep_op (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (state : CoreRawState)
     (instruction : CoreRawInstruction) (opcode : Opcode)
-    (notBase : request.sigVersion ≠ .base)
+    (signatures : request.sigVersion = .base →
+      instructionSignatures opcode state.runtime flags.script = [])
     (locktime : opcode = .OP_CHECKLOCKTIMEVERIFY → flags.checkLockTimeVerify = true)
     (sequence : opcode = .OP_CHECKSEQUENCEVERIFY → flags.checkSequenceVerify = true)
     (encoded : instruction.Encodes (.op opcode)) :
@@ -139,12 +149,13 @@ theorem coreRawStep_op (flags : CoreVerificationFlags) (ctx : TxContext)
   have not79 : (opcodeByte opcode).toNat ≠ 79 := by omega
   have notSmall : ¬ (opcodeByte opcode).toNat ≤ 96 := by omega
   have version : (instructionContext ctx request state).sigVersion = request.sigVersion := rfl
-  have notBaseBool : (request.sigVersion == .base) = false := by
-    cases versionEq : request.sigVersion <;> simp_all <;> rfl
+  have noSignatures : (if (state.runtime.conditions.all id && request.sigVersion == .base) = true
+      then instructionSignatures opcode state.runtime flags.script else []) = [] := by
+    cases versionEq : request.sigVersion <;> simp +decide [signatures, versionEq]
   unfold coreRawStep
   simp only [payload, byte, ByteArray.size_empty, maxScriptElementSize, enabled,
-    opcodeFromByte_opcodeByte, mapped, removeSignatures]
-  simp [notPush, not79, notSmall, not65, not66, notSha1, notSeparator, high, notBaseBool,
+    opcodeFromByte_opcodeByte, mapped, noSignatures, removeSignatures]
+  simp [notPush, not79, notSmall, not65, not66, notSha1, notSeparator, high,
     bind, Except.bind, Except.mapError, Except.map, pure, Except.pure, throw, throwThe,
     MonadExceptOf.throw]
   have overflow : maxOpsPerScript < state.runtime.operationCount + 1 →
@@ -190,7 +201,8 @@ private theorem coreRawStep_tapscript (flags : CoreVerificationFlags) (ctx : TxC
   cases element with
   | op opcode =>
       rw [coreRawStep_op flags ctx oracles request state instruction opcode
-        (by simp [version]) (fun _ => locktime) (fun _ => sequence) encoded, context, code, version]
+        (fun base => by simp [version] at base) (fun _ => locktime) (fun _ => sequence) encoded,
+        context, code, version]
   | pushData data =>
       simp only [CoreRawInstruction.Encodes, encodesPush] at encoded
       split at encoded
