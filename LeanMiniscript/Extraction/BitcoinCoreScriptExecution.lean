@@ -16,11 +16,12 @@ def removeSignatures (bytes : ByteArray) (signatures : Stack) : ByteArray × Nat
     let (next, removed) := coreFindAndDelete scriptCode (coreSignaturePush signature)
     (next, count + removed)) (bytes, 0)
 
+/-- Core's loop state. The operation count is `runtime.operationCount`, which
+the typed step charges for modeled opcodes. -/
 structure CoreRawState where
   runtime : RuntimeState
   offset : Nat := 0
   opcodePosition : Nat := 0
-  operationCount : Nat := 0
   codeSeparatorOffset : Nat := 0
   codeSeparatorPosition : UInt32 := 0xffffffff
 
@@ -54,18 +55,18 @@ def coreRawStep (flags : CoreVerificationFlags) (ctx : TxContext)
   if instruction.payload.size > maxScriptElementSize then throw (.script .pushSize)
   let value := instruction.opcode.toNat
   let active := state.runtime.conditions.all id
-  let mut count := state.operationCount
+  let mut count := state.runtime.operationCount
   if request.sigVersion != .tapscript && value > 0x60 then
     count := count + 1
-    if count > 201 then throw (.script .opCount)
+    if count > maxOpsPerScript then throw (.script .opCount)
   if coreLegacyDisabledOpcode value then throw (.script .disabledOpcode)
   if value == 0x65 || value == 0x66 then throw (.script .badOpcode)
   if value == 0xab && request.sigVersion == .base && flags.constScriptCode then
     throw .opCodeSeparator
   let mut next := { state with
     offset := instruction.nextOffset
-    opcodePosition := state.opcodePosition + 1
-    operationCount := count }
+    opcodePosition := state.opcodePosition + 1 }
+  let counted := { state.runtime with operationCount := count }
   let ctx := instructionContext ctx request state
   let scriptCode := request.scriptBytes.extract state.codeSeparatorOffset request.scriptBytes.size
   let fallbackOracle := oracleForScript request.sigVersion scriptCode
@@ -82,31 +83,29 @@ def coreRawStep (flags : CoreVerificationFlags) (ctx : TxContext)
     return { next with runtime := runtime }
   else if value == 0xa7 then
     let runtime ← (if active then
-        match state.runtime.stack with
+        match counted.stack with
         | [] => .error .stackUnderflow
         | top :: rest => checkRuntimeStack
-            { state.runtime with stack := Bitcoin.SHA1.hash top :: rest }
-      else checkRuntimeStack state.runtime).mapError CoreVerificationError.script
+            { counted with stack := Bitcoin.SHA1.hash top :: rest }
+      else checkRuntimeStack counted).mapError CoreVerificationError.script
     return { next with runtime := runtime }
   else if value == 0xab then
     if active then
       next := { next with
         codeSeparatorOffset := instruction.nextOffset
         codeSeparatorPosition := UInt32.ofNat state.opcodePosition }
-    let runtime ← (checkRuntimeStack state.runtime).mapError .script
+    let runtime ← (checkRuntimeStack counted).mapError .script
     return { next with runtime := runtime }
   else
     match opcodeFromByte? value with
     | none =>
         if active then throw (.script .badOpcode)
-        let runtime ← (checkRuntimeStack state.runtime).mapError .script
+        let runtime ← (checkRuntimeStack counted).mapError .script
         return { next with runtime := runtime }
     | some opcode =>
-        if request.sigVersion != .tapscript then
-          -- This also charges active multisig key counts before the remaining operands.
-          let total ← (coreLegacyNextCount (.modeled (.op opcode)) state.runtime
-            flags.script state.operationCount).mapError .script
-          next := { next with operationCount := total }
+        -- Core charges multisig keys before FindAndDelete. `runtimeStep` below
+        -- charges the same count again from `state.runtime`.
+        let _ ← (chargeOperations (.op opcode) state.runtime flags.script ctx).mapError .script
         let opcode := if (opcode == .OP_CHECKLOCKTIMEVERIFY && !flags.checkLockTimeVerify) ||
             (opcode == .OP_CHECKSEQUENCEVERIFY && !flags.checkSequenceVerify) then .OP_NOP else opcode
         let signatures := if active && request.sigVersion == .base then

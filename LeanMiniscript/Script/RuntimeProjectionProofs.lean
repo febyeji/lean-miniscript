@@ -49,7 +49,9 @@ private theorem map_cons_eq_some {source : Option Script} {element : ScriptEleme
 /-- Restore one removed conditional to a successful projected execution.
 Every source push must fit, including pushes in inactive segments. The initial
 stack bound covers skipped instructions and same-depth delimiters that are
-absent from the projection. Nested and repeated ELSE delimiters are supported. -/
+absent from the projection. Outside Tapscript the source operation bound must
+fit, since skipped opcodes still count. Nested and repeated ELSE delimiters are
+supported. -/
 theorem runtime_restore_conditional
     {oracle : CryptoOracle} {flags : ScriptFlags} {ctx : TxContext}
     {stack alt : Stack} {weight : Nat}
@@ -58,6 +60,8 @@ theorem runtime_restore_conditional
     (projected : selectConditionalTail nested.length choice script = some selected)
     (pushes : ∀ element ∈ script, element.pushSize ≤ maxScriptElementSize)
     (bounded : state.stack.length + state.altStack.length ≤ maxStackSize)
+    (fits : ctx.sigVersion = .tapscript ∨
+      state.operationCount + staticOperationCount script ≤ maxOpsPerScript)
     (success : evaluateRuntime oracle selected
       { state with conditions := (if choice then nested else []) ++ outer } flags ctx =
         .success stack alt weight) :
@@ -71,19 +75,66 @@ theorem runtime_restore_conditional
         Nat.not_lt.mpr (pushes element (by simp))
       have tailPushes : ∀ element ∈ rest, element.pushSize ≤ maxScriptElementSize :=
         fun element member => pushes element (by simp [member])
+      rw [staticOperationCount_cons] at fits
+      have headFits : ∀ conditions : List Bool, ctx.sigVersion = .tapscript ∨
+          ({ state with conditions := conditions } : RuntimeState).operationCount +
+            element.operationBound ≤ maxOpsPerScript := by
+        intro conditions
+        rcases fits with version | fits
+        · exact .inl version
+        · exact .inr (by simp only; omega)
+      have restFits : ∀ {count : Nat}, count ≤ state.operationCount + element.operationBound →
+          ctx.sigVersion = .tapscript ∨
+            ({ state with operationCount := count } : RuntimeState).operationCount +
+              staticOperationCount rest ≤ maxOpsPerScript := by
+        intro count below
+        rcases fits with version | fits
+        · exact .inl version
+        · exact .inr (by simp only; omega)
+      -- The projection skips this element, so it starts from the lower count.
+      have raise : ∀ {selected : Script} {conditions : List Bool} {count : Nat},
+          selected.Sublist rest → state.operationCount ≤ count →
+          count ≤ state.operationCount + element.operationBound →
+          evaluateRuntime oracle selected { state with conditions := conditions } flags ctx =
+            .success stack alt weight →
+          evaluateRuntime oracle selected
+            { state with operationCount := count, conditions := conditions } flags ctx =
+              .success stack alt weight := by
+        intro selected conditions count sub higher below result
+        apply evaluateRuntime_raise result higher
+        rcases fits with version | fits
+        · exact .inl version
+        · have := staticOperationCount_sublist sub
+          exact .inr (by omega)
+      -- A kept element has the projection's charge in the restored conditions.
+      have keepFits : ∀ {count : Nat} {conditions : List Bool},
+          chargeOperations element { state with conditions := conditions } flags ctx =
+            .ok { state with conditions := conditions, operationCount := count } →
+          count ≤ state.operationCount + element.operationBound := by
+        intro count conditions charging
+        simpa using chargeOperations_bound charging
       by_cases ordinary : NonConditional element
       · cases choice with
         | false =>
             have tailProjected : selectConditionalTail nested.length false rest = some selected := by
               simpa [select_ordinary element ordinary] using projected
-            apply runtime_cons_success (next := { state with conditions := nested ++ false :: outer })
+            obtain ⟨count, above, below, charging⟩ := chargeOperations_inactive
+              (state := { state with conditions := nested ++ false :: outer })
+              (by simp [List.all_append]) (headFits _)
+            apply runtime_cons_success charging
+              (next := { state with
+                operationCount := count
+                conditions := nested ++ false :: outer })
             · simp [execute_ordinary element ordinary, pushBound, List.all_append, pure, Except.pure]
             · exact bounded
-            · exact ih selected state nested outer false tailProjected tailPushes bounded success
+            · exact ih selected { state with operationCount := count } nested outer false
+                tailProjected tailPushes bounded (restFits below)
+                (raise (selectConditionalTail_sublist tailProjected) above below success)
         | true =>
             obtain ⟨selectedTail, tailProjected, rfl⟩ := map_cons_eq_some
               (by simpa [select_ordinary element ordinary] using projected)
-            obtain ⟨next, executed, nextBound, tail⟩ := runtime_success_cons success
+            obtain ⟨count, next, charging, _, executed, nextBound, tail⟩ :=
+              runtime_success_cons success
             obtain ⟨moved, conditions⟩ := ordinary_conditions (nested ++ true :: outer) ordinary
               (by simp [List.all_append]) executed
             have same : { next with conditions := nested ++ outer } = next := by
@@ -91,24 +142,39 @@ theorem runtime_restore_conditional
               simp only at conditions
               cases conditions
               rfl
-            apply runtime_cons_success moved nextBound
+            have counted := executeRuntimeElement_operationCount_eq executed
+            apply runtime_cons_success
+              (chargeOperations_conditions (state := { state with conditions := nested ++ outer })
+                (nested ++ true :: outer) (by simp [List.all_append]) charging)
+              moved nextBound
             apply ih selectedTail next nested outer true tailProjected tailPushes nextBound
-            simpa [same] using tail
+            · rcases restFits (keepFits charging) with version | fits
+              · exact .inl version
+              · exact .inr (by simp only at counted fits; omega)
+            · simpa [same] using tail
       · by_cases branch : element.isBranch = true
         · cases choice with
           | false =>
               have tailProjected : selectConditionalTail (false :: nested).length false rest =
                   some selected := by
                 simpa [select_branch element branch] using projected
-              apply runtime_cons_success
-                (next := { state with conditions := false :: (nested ++ false :: outer) })
+              obtain ⟨count, above, below, charging⟩ := chargeOperations_inactive
+                (state := { state with conditions := nested ++ false :: outer })
+                (by simp [List.all_append]) (headFits _)
+              apply runtime_cons_success charging
+                (next := { state with
+                  operationCount := count
+                  conditions := false :: (nested ++ false :: outer) })
               · simp [execute_branch element branch, List.all_append, pure, Except.pure]
               · exact bounded
-              · exact ih selected state (false :: nested) outer false tailProjected tailPushes bounded success
+              · exact ih selected { state with operationCount := count } (false :: nested) outer false
+                  tailProjected tailPushes bounded (restFits below)
+                  (raise (selectConditionalTail_sublist tailProjected) above below success)
           | true =>
               obtain ⟨selectedTail, tailProjected, rfl⟩ := map_cons_eq_some
                 (by simpa [select_branch element branch] using projected)
-              obtain ⟨next, executed, nextBound, tail⟩ := runtime_success_cons success
+              obtain ⟨count, next, charging, _, executed, nextBound, tail⟩ :=
+                runtime_success_cons success
               obtain ⟨inner, conditions, moved⟩ := branch_conditions (nested ++ true :: outer) branch
                 (by simp [List.all_append]) executed
               have same : { next with conditions := (inner :: nested) ++ outer } = next := by
@@ -116,10 +182,17 @@ theorem runtime_restore_conditional
                 simp only at conditions
                 cases conditions
                 rfl
-              apply runtime_cons_success moved nextBound
+              have counted := executeRuntimeElement_operationCount_eq executed
+              apply runtime_cons_success
+                (chargeOperations_conditions (state := { state with conditions := nested ++ outer })
+                  (nested ++ true :: outer) (by simp [List.all_append]) charging)
+                moved nextBound
               apply ih selectedTail next (inner :: nested) outer true
                 (by simpa using tailProjected) tailPushes nextBound
-              exact (congrArg (fun s => evaluateRuntime oracle selectedTail s flags ctx) same).trans tail
+              · rcases restFits (keepFits charging) with version | fits
+                · exact .inl version
+                · exact .inr (by simp only at counted fits; omega)
+              · exact (congrArg (fun s => evaluateRuntime oracle selectedTail s flags ctx) same).trans tail
         · cases element with
           | pushData => exact False.elim (ordinary trivial)
           | pushNum => exact False.elim (ordinary trivial)
@@ -128,72 +201,120 @@ theorem runtime_restore_conditional
               case OP_ELSE =>
                 cases nested with
                 | nil =>
-                    apply runtime_cons_success (next := { state with conditions := (!choice) :: outer })
+                    have tailSub := selectConditionalTail_sublist (script := rest) (depth := 0)
+                      (choice := !choice) projected
+                    obtain ⟨count, above, below, charging⟩ := chargeOperations_quiet
+                      (element := .op .OP_ELSE)
+                      (state := { state with conditions := [] ++ choice :: outer })
+                      (fun _ same => by cases same; rfl) (headFits _)
+                    apply runtime_cons_success charging
+                      (next := { state with
+                        operationCount := count
+                        conditions := (!choice) :: outer })
                     · simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
                         pure, Except.pure]
                     · exact bounded
-                    · apply ih selected state [] outer (!choice) projected tailPushes bounded
+                    · apply ih selected { state with operationCount := count } [] outer (!choice)
+                        projected tailPushes bounded (restFits below)
+                      apply raise tailSub above below
                       simpa using success
                 | cons inner nested =>
                     cases choice with
                     | false =>
-                        apply runtime_cons_success
-                          (next := { state with conditions := (!inner) :: (nested ++ false :: outer) })
+                        have tailProjected : selectConditionalTail ((!inner) :: nested).length false
+                            rest = some selected := by
+                          simpa [selectConditionalTail] using projected
+                        obtain ⟨count, above, below, charging⟩ := chargeOperations_inactive
+                          (state := { state with conditions := (inner :: nested) ++ false :: outer })
+                          (by simp [List.all_append]) (headFits _)
+                        apply runtime_cons_success charging
+                          (next := { state with
+                            operationCount := count
+                            conditions := (!inner) :: (nested ++ false :: outer) })
                         · simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
                             pure, Except.pure]
                         · exact bounded
-                        · apply ih selected state ((!inner) :: nested) outer false
-                            (by simpa [selectConditionalTail] using projected) tailPushes bounded
-                          exact success
+                        · exact ih selected { state with operationCount := count }
+                            ((!inner) :: nested) outer false tailProjected tailPushes bounded
+                            (restFits below)
+                            (raise (selectConditionalTail_sublist tailProjected) above below success)
                     | true =>
                         obtain ⟨selectedTail, tailProjected, rfl⟩ := map_cons_eq_some
                           (by simpa [selectConditionalTail] using projected)
-                        obtain ⟨next, executed, nextBound, tail⟩ := runtime_success_cons success
+                        obtain ⟨count, next, charging, _, executed, nextBound, tail⟩ :=
+                          runtime_success_cons success
                         simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
                           pure, Except.pure] at executed
                         subst next
                         apply runtime_cons_success
-                          (next := { state with conditions := (!inner) :: (nested ++ true :: outer) })
+                          (chargeOperations_conditions
+                            (state := { state with conditions := inner :: (nested ++ outer) })
+                            (inner :: (nested ++ true :: outer)) (by simp [List.all_append]) charging)
+                          (next := { state with
+                            operationCount := count
+                            conditions := (!inner) :: (nested ++ true :: outer) })
                         · simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
                             pure, Except.pure]
                         · exact bounded
-                        · apply ih selectedTail state ((!inner) :: nested) outer true
-                            (by simpa using tailProjected) tailPushes bounded
+                        · apply ih selectedTail { state with operationCount := count }
+                            ((!inner) :: nested) outer true
+                            (by simpa using tailProjected) tailPushes bounded (restFits (keepFits charging))
                           exact tail
               case OP_ENDIF =>
                 cases nested with
                 | nil =>
                     have selectedEq : selected = rest := (Option.some.inj projected).symm
                     subst selected
-                    apply runtime_cons_success (next := { state with conditions := outer })
+                    obtain ⟨count, above, below, charging⟩ := chargeOperations_quiet
+                      (element := .op .OP_ENDIF)
+                      (state := { state with conditions := [] ++ choice :: outer })
+                      (fun _ same => by cases same; rfl) (headFits _)
+                    apply runtime_cons_success charging
+                      (next := { state with operationCount := count, conditions := outer })
                     · simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
                         pure, Except.pure]
                     · exact bounded
-                    · simpa using success
+                    · apply raise (List.Sublist.refl rest) above below
+                      simpa using success
                 | cons inner nested =>
                     cases choice with
                     | false =>
-                        apply runtime_cons_success
-                          (next := { state with conditions := nested ++ false :: outer })
+                        have tailProjected : selectConditionalTail nested.length false rest =
+                            some selected := by
+                          simpa [selectConditionalTail] using projected
+                        obtain ⟨count, above, below, charging⟩ := chargeOperations_inactive
+                          (state := { state with conditions := (inner :: nested) ++ false :: outer })
+                          (by simp [List.all_append]) (headFits _)
+                        apply runtime_cons_success charging
+                          (next := { state with
+                            operationCount := count
+                            conditions := nested ++ false :: outer })
                         · simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
                             pure, Except.pure]
                         · exact bounded
-                        · apply ih selected state nested outer false
-                            (by simpa [selectConditionalTail] using projected) tailPushes bounded
-                          exact success
+                        · exact ih selected { state with operationCount := count } nested outer false
+                            tailProjected tailPushes bounded (restFits below)
+                            (raise (selectConditionalTail_sublist tailProjected) above below success)
                     | true =>
                         obtain ⟨selectedTail, tailProjected, rfl⟩ := map_cons_eq_some
                           (by simpa [selectConditionalTail] using projected)
-                        obtain ⟨next, executed, nextBound, tail⟩ := runtime_success_cons success
+                        obtain ⟨count, next, charging, _, executed, nextBound, tail⟩ :=
+                          runtime_success_cons success
                         simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
                           pure, Except.pure] at executed
                         subst next
                         apply runtime_cons_success
-                          (next := { state with conditions := nested ++ true :: outer })
+                          (chargeOperations_conditions
+                            (state := { state with conditions := inner :: (nested ++ outer) })
+                            (inner :: (nested ++ true :: outer)) (by simp [List.all_append]) charging)
+                          (next := { state with
+                            operationCount := count
+                            conditions := nested ++ true :: outer })
                         · simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
                             pure, Except.pure]
                         · exact bounded
-                        · exact ih selectedTail state nested outer true tailProjected tailPushes bounded tail
+                        · exact ih selectedTail { state with operationCount := count } nested outer true
+                            tailProjected tailPushes bounded (restFits (keepFits charging)) tail
               all_goals contradiction
 
 end LeanMiniscript.Script

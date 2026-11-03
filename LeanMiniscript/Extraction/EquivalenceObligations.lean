@@ -29,24 +29,33 @@ def OpcodeAgreement (opcode : Opcode) (version : SignatureVersion) : Prop :=
         (.op opcode) state.runtime flags.script
         (instructionContext ctx request state)).mapError .script
 
-set_option maxHeartbeats 2000000 in
+/-- Outside BASE, every opcode except the two timelocks agrees: Core's
+operation count and multisig key count are the typed step's charge. -/
+theorem opcodeAgreement_of_ne_base (opcode : Opcode) (version : SignatureVersion)
+    (notBase : version ≠ .base)
+    (timelock : opcode ≠ .OP_CHECKLOCKTIMEVERIFY ∧ opcode ≠ .OP_CHECKSEQUENCEVERIFY) :
+    OpcodeAgreement opcode version := by
+  intro flags ctx oracles request state instruction requested encoded
+  rw [coreRawStep_op flags ctx oracles request state instruction opcode (requested ▸ notBase)
+    (fun same => absurd same timelock.1) (fun same => absurd same timelock.2) encoded, requested]
+  cases runtimeStep (oracles version
+      (request.scriptBytes.extract state.codeSeparatorOffset request.scriptBytes.size))
+    (.op opcode) state.runtime flags.script (instructionContext ctx request state) <;> rfl
+
 theorem opcodeAgreement_tapscript (opcode : Opcode)
     (timelock : opcode ≠ .OP_CHECKLOCKTIMEVERIFY ∧ opcode ≠ .OP_CHECKSEQUENCEVERIFY) :
-    OpcodeAgreement opcode .tapscript := by
-  intro flags ctx oracles request state instruction version encoded
-  obtain ⟨byte, payload⟩ := encoded
-  cases opcode <;> simp at timelock <;>
-    simp +decide [coreRawStep, byte, payload, version,
-      opcodeByte, opcodeFromByte?, coreLegacyDisabledOpcode, maxScriptElementSize,
-      removeSignatures, bind, Except.bind, Except.mapError, Except.map,
-      pure, Except.pure]
-  all_goals split <;> split <;> simp_all <;> (subst_vars; rfl)
+    OpcodeAgreement opcode .tapscript :=
+  opcodeAgreement_of_ne_base opcode .tapscript (by decide) timelock
 
 namespace OpcodeAgreement
 
-/- TODO(equivalence): the remaining pairs are false for the current typed step.
-- `.base`, `.witnessV0`: Core fails with `opCount` past 201 operations, and
-  under `.base` CONST_SCRIPTCODE and FindAndDelete change the result.
+/- TODO(equivalence): the remaining pairs are open.
+- `.base` signature opcodes: FindAndDelete removes the signatures from the
+  script code given to the oracle, and CONST_SCRIPTCODE fails when it finds
+  one. The typed step has no such check.
+- `.base` other opcodes: `coreRawStep_op` does not cover BASE yet.
+- `.witnessV0`: `opcodeAgreement_of_ne_base` covers these; they are not
+  stated per opcode yet.
 - CLTV and CSV: Core runs them as OP_NOP when their flag is off. -/
 
 theorem OP_NOP_tapscript : OpcodeAgreement .OP_NOP .tapscript :=

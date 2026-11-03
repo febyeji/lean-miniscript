@@ -103,6 +103,7 @@ Miniscript is the policy language layer. It can compile a policy into Bitcoin Sc
 - Conditional flow, numeric and indexed stack operations, timelocks, and signature encoding
 - Script serialization and deserialization
 - Tapscript initial and runtime resource limits and validation weight
+- The legacy and witness-v0 limit of 201 operations, including multisig public-key counts
 
 This layer defines how script bytes execute once a spending path has selected a script and witness.
 

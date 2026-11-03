@@ -14,6 +14,219 @@ theorem checkRuntimeStack_ok {before after : RuntimeState}
   · cases checked
     exact ⟨rfl, by omega⟩
 
+/-- Tapscript has no operation limit. -/
+theorem chargeOperations_tapscript (element : ScriptElement) (state : RuntimeState)
+    (flags : ScriptFlags) {ctx : TxContext} (version : ctx.sigVersion = .tapscript) :
+    chargeOperations element state flags ctx = .ok state := by
+  cases element <;> simp [chargeOperations, version]
+
+theorem chargeOperations_pushData (data : ByteArray) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    chargeOperations (.pushData data) state flags ctx = .ok state := rfl
+
+theorem chargeOperations_pushNum (number : Int) (state : RuntimeState)
+    (flags : ScriptFlags) (ctx : TxContext) :
+    chargeOperations (.pushNum number) state flags ctx = .ok state := rfl
+
+/-- Charging changes only the operation count. -/
+theorem chargeOperations_ok {element : ScriptElement} {state charged : RuntimeState}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (charging : chargeOperations element state flags ctx = .ok charged) :
+    charged = { state with operationCount := charged.operationCount } := by
+  unfold chargeOperations at charging
+  split at charging
+  · split at charging
+    · cases charging; rfl
+    · cases counted : chargedOperationCount _ state flags <;>
+        rw [counted] at charging <;> cases charging
+      rfl
+  · cases charging; rfl
+
+/-- Tapscript steps are the uncounted instruction. -/
+theorem runtimeStep_tapscript (oracle : CryptoOracle) (element : ScriptElement)
+    (state : RuntimeState) (flags : ScriptFlags) {ctx : TxContext}
+    (version : ctx.sigVersion = .tapscript) :
+    runtimeStep oracle element state flags ctx =
+      runtimeInstruction oracle element state flags ctx := by
+  simp [runtimeStep, chargeOperations_tapscript element state flags version, bind, Except.bind]
+
+theorem runtimeStep_pushData (oracle : CryptoOracle) (data : ByteArray)
+    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
+    runtimeStep oracle (.pushData data) state flags ctx =
+      runtimeInstruction oracle (.pushData data) state flags ctx := rfl
+
+theorem runtimeStep_pushNumber (oracle : CryptoOracle) (number : Int)
+    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
+    runtimeStep oracle (.pushNum number) state flags ctx =
+      runtimeInstruction oracle (.pushNum number) state flags ctx := rfl
+
+/-- A successful step charged the operation count, then ran the instruction on
+the charged state. -/
+theorem runtimeStep_ok {oracle : CryptoOracle} {element : ScriptElement}
+    {state next : RuntimeState} {flags : ScriptFlags} {ctx : TxContext}
+    (stepped : runtimeStep oracle element state flags ctx = .ok next) :
+    ∃ count, chargeOperations element state flags ctx =
+        .ok { state with operationCount := count } ∧
+      runtimeInstruction oracle element { state with operationCount := count } flags ctx =
+        .ok next := by
+  unfold runtimeStep at stepped
+  cases charging : chargeOperations element state flags ctx with
+  | error error => simp [charging, bind, Except.bind] at stepped
+  | ok charged =>
+      simp only [charging, bind, Except.bind] at stepped
+      have same := chargeOperations_ok charging
+      exact ⟨charged.operationCount, by rw [← same], by rw [← same]; exact stepped⟩
+
+
+theorem executeRuntimeElement_operationCount (oracle : CryptoOracle) (element : ScriptElement)
+    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) (count : Nat) :
+    executeRuntimeElement oracle element { state with operationCount := count } flags ctx =
+      (executeRuntimeElement oracle element state flags ctx).map
+        ({ · with operationCount := count }) := by
+  obtain ⟨stack, alt, conditions, weight, n⟩ := state
+  unfold executeRuntimeElement
+  simp only [bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw]
+  split
+  · rfl
+  · split
+    all_goals
+      by_cases active : conditions.all id = true <;>
+        (try simp only [active, ↓reduceIte, Bool.false_eq_true])
+    all_goals first
+      | rfl
+      | (cases stack with
+          | nil => rfl
+          | cons top rest => simp only; split <;> rfl)
+      | (cases conditions <;> rfl)
+      | (cases prepareValidationWeight element stack flags ctx weight with
+          | error => rfl
+          | ok weight => simp only; cases evaluate oracle [element] stack alt flags ctx <;> rfl)
+
+theorem runtimeInstruction_operationCount (oracle : CryptoOracle) (element : ScriptElement)
+    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) (count : Nat) :
+    runtimeInstruction oracle element { state with operationCount := count } flags ctx =
+      (runtimeInstruction oracle element state flags ctx).map
+        ({ · with operationCount := count }) := by
+  simp only [runtimeInstruction, executeRuntimeElement_operationCount]
+  cases executeRuntimeElement oracle element state flags ctx with
+  | error => rfl
+  | ok next =>
+      simp only [Except.map, bind, Except.bind, checkRuntimeStack]
+      split <;> rfl
+
+theorem chargedOperationCount_ok {opcode : Opcode} {state : RuntimeState}
+    {flags : ScriptFlags} {total : Nat}
+    (counted : chargedOperationCount opcode state flags = .ok total) :
+    ∃ keys, opcodeKeyCount opcode flags (state.conditions.all id) state.stack = .ok keys ∧
+      total = state.operationCount + 1 + keys ∧ total ≤ maxOpsPerScript := by
+  unfold chargedOperationCount at counted
+  simp only [bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw] at counted
+  split at counted
+  · contradiction
+  · cases keys : opcodeKeyCount opcode flags (state.conditions.all id) state.stack with
+    | error => simp [keys] at counted
+    | ok keys' =>
+        simp only [keys] at counted
+        split at counted
+        · contradiction
+        · cases counted
+          exact ⟨keys', rfl, rfl, by omega⟩
+
+theorem chargedOperationCount_of_keys {opcode : Opcode} {state : RuntimeState}
+    {flags : ScriptFlags} {keys : Nat}
+    (decoded : opcodeKeyCount opcode flags (state.conditions.all id) state.stack = .ok keys)
+    (bounded : state.operationCount + 1 + keys ≤ maxOpsPerScript) :
+    chargedOperationCount opcode state flags = .ok (state.operationCount + 1 + keys) := by
+  unfold chargedOperationCount
+  simp only [bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw,
+    decoded]
+  rw [if_neg (by omega), if_neg (by omega)]
+
+/-- Charging only raises the count. -/
+theorem chargeOperations_le {element : ScriptElement} {state charged : RuntimeState}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (charging : chargeOperations element state flags ctx = .ok charged) :
+    state.operationCount ≤ charged.operationCount := by
+  unfold chargeOperations at charging
+  split at charging
+  · split at charging
+    · cases charging; exact Nat.le_refl _
+    · cases counted : chargedOperationCount _ state flags with
+      | error => rw [counted] at charging; cases charging
+      | ok total =>
+          rw [counted] at charging; cases charging
+          obtain ⟨keys, _, rfl, _⟩ := chargedOperationCount_ok counted
+          simp only; omega
+  · cases charging; exact Nat.le_refl _
+
+/-- A lower starting count charges the same keys and stays within the limit. -/
+theorem chargeOperations_lower {element : ScriptElement} {state charged : RuntimeState}
+    {flags : ScriptFlags} {ctx : TxContext} {count : Nat}
+    (charging : chargeOperations element state flags ctx = .ok charged)
+    (lower : count ≤ state.operationCount) :
+    ∃ lowered, lowered ≤ charged.operationCount ∧
+      chargeOperations element { state with operationCount := count } flags ctx =
+        .ok { charged with operationCount := lowered } := by
+  have same := chargeOperations_ok charging
+  unfold chargeOperations at charging ⊢
+  split at charging
+  · rename_i opcode
+    split at charging
+    · rename_i version
+      cases charging
+      exact ⟨count, lower, by simp [version]⟩
+    · rename_i version
+      cases counted : chargedOperationCount opcode state flags with
+      | error => rw [counted] at charging; cases charging
+      | ok total =>
+          rw [counted] at charging; cases charging
+          obtain ⟨keys, decoded, rfl, bounded⟩ := chargedOperationCount_ok counted
+          refine ⟨count + 1 + keys, by simp only; omega, ?_⟩
+          rw [if_neg version, chargedOperationCount_of_keys (state := { state with operationCount := count })
+            decoded (by simp only; omega)]
+          rfl
+  · cases charging
+    exact ⟨count, lower, rfl⟩
+
+theorem runtimeInstruction_operationCount_eq {oracle : CryptoOracle} {element : ScriptElement}
+    {state next : RuntimeState} {flags : ScriptFlags} {ctx : TxContext}
+    (stepped : runtimeInstruction oracle element state flags ctx = .ok next) :
+    next.operationCount = state.operationCount := by
+  have moved := runtimeInstruction_operationCount oracle element state flags ctx state.operationCount
+  rw [show ({ state with operationCount := state.operationCount } : RuntimeState) = state from rfl,
+    stepped] at moved
+  simp only [Except.map] at moved
+  injection moved with moved
+  have counted := congrArg RuntimeState.operationCount moved
+  exact counted
+
+/-- Charging reads the conditions only through whether the step is active. -/
+theorem chargeOperations_conditions {element : ScriptElement} {state charged : RuntimeState}
+    {flags : ScriptFlags} {ctx : TxContext} (conditions : List Bool)
+    (active : conditions.all id = state.conditions.all id)
+    (charging : chargeOperations element state flags ctx = .ok charged) :
+    chargeOperations element { state with conditions := conditions } flags ctx =
+      .ok { charged with conditions := conditions } := by
+  have same := chargeOperations_ok charging
+  unfold chargeOperations at charging ⊢
+  split at charging
+  · rename_i opcode
+    split at charging
+    · rename_i version
+      cases charging
+      simp [version]
+    · rename_i version
+      cases counted : chargedOperationCount opcode state flags with
+      | error => rw [counted] at charging; cases charging
+      | ok total =>
+          rw [counted] at charging; cases charging
+          obtain ⟨keys, decoded, rfl, bounded⟩ := chargedOperationCount_ok counted
+          rw [if_neg version, chargedOperationCount_of_keys (state := { state with conditions := conditions })
+            (by simpa only [active] using decoded) bounded]
+          rfl
+  · cases charging
+    rfl
+
 
 /-- Opcodes outside conditional control flow. Inactive execution of these is
     the identity on the runtime state, while OP_IF, OP_NOTIF, OP_ELSE and
@@ -35,24 +248,24 @@ theorem executeRuntimeElement_op_inactive (oracle : CryptoOracle) (opcode : Opco
 
 /-- An inactive non-conditional opcode still performs the shared
     post-instruction combined-stack check. -/
-theorem runtimeStep_op_inactive (oracle : CryptoOracle) (opcode : Opcode)
+theorem runtimeInstruction_op_inactive (oracle : CryptoOracle) (opcode : Opcode)
     (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
     (nonConditional : opcode.isNonConditional = true)
     (inactive : state.conditions.all id = false) :
-    runtimeStep oracle (.op opcode) state flags ctx = checkRuntimeStack state := by
-  rw [runtimeStep,
+    runtimeInstruction oracle (.op opcode) state flags ctx = checkRuntimeStack state := by
+  rw [runtimeInstruction,
     executeRuntimeElement_op_inactive oracle opcode state flags ctx nonConditional inactive]
   rfl
 
 /-- A successful step coincides with element-level execution: the shared
     post-instruction stack check only rejects oversized states, it never
     modifies the state it returns. -/
-theorem executeRuntimeElement_eq_of_runtimeStep
+theorem executeRuntimeElement_eq_of_runtimeInstruction
     {oracle : CryptoOracle} {element : ScriptElement} {state next : RuntimeState}
     {flags : ScriptFlags} {ctx : TxContext}
-    (stepped : runtimeStep oracle element state flags ctx = .ok next) :
+    (stepped : runtimeInstruction oracle element state flags ctx = .ok next) :
     executeRuntimeElement oracle element state flags ctx = .ok next := by
-  unfold runtimeStep at stepped
+  unfold runtimeInstruction at stepped
   cases executed : executeRuntimeElement oracle element state flags ctx with
   | error error => simp [executed, bind, Except.bind] at stepped
   | ok middle =>
@@ -74,13 +287,13 @@ theorem executeRuntimeElement_depth (oracle : CryptoOracle) (state : RuntimeStat
 
 /-- The extra DEPTH item must fit in the combined main/alternate stack limit.
     The check runs after the push and retains the remaining signature budget. -/
-theorem runtimeStep_depth (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_depth (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_DEPTH) state flags ctx =
+    runtimeInstruction oracle (.op .OP_DEPTH) state flags ctx =
       if state.stack.length + state.altStack.length < maxStackSize then
         .ok { state with stack := scriptNat state.stack.length :: state.stack }
       else .error .stackSize := by
-  rw [runtimeStep, executeRuntimeElement_depth oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_depth oracle state flags ctx active]
   simp only [bind, Except.bind, checkRuntimeStack, List.length_cons]
   split <;> split <;> first | rfl | omega
 
@@ -129,9 +342,9 @@ theorem executeRuntimeElement_not_preserves (oracle : CryptoOracle)
 
 /-- For active NOT, numeric errors precede the combined-stack limit; successful
     decoding keeps the stack count and succeeds exactly within that limit. -/
-theorem runtimeStep_not (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_not (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_NOT) state flags ctx =
+    runtimeInstruction oracle (.op .OP_NOT) state flags ctx =
       match state.stack with
       | [] => .error .stackUnderflow
       | operand :: rest =>
@@ -141,7 +354,7 @@ theorem runtimeStep_not (oracle : CryptoOracle) (state : RuntimeState)
               if state.stack.length + state.altStack.length > maxStackSize then
                 .error .stackSize
               else .ok { state with stack := boolToElement (value == 0) :: rest } := by
-  rw [runtimeStep, executeRuntimeElement_not oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_not oracle state flags ctx active]
   cases stackEq : state.stack with
   | nil => rfl
   | cons operand rest =>
@@ -201,9 +414,9 @@ theorem executeRuntimeElement_within_preserves (oracle : CryptoOracle)
 
 /-- Underflow and all three decoder errors precede the post-instruction stack
     check. The successful result has one item above the untouched suffix. -/
-theorem runtimeStep_within (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_within (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_WITHIN) state flags ctx =
+    runtimeInstruction oracle (.op .OP_WITHIN) state flags ctx =
       match state.stack with
       | upperBytes :: lowerBytes :: valueBytes :: rest =>
           match decodeWithinScriptNums flags upperBytes lowerBytes valueBytes with
@@ -213,7 +426,7 @@ theorem runtimeStep_within (oracle : CryptoOracle) (state : RuntimeState)
                 .error .stackSize
               else .ok { state with stack := boolToElement (decide (lower ≤ value ∧ value < upper)) :: rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_within oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_within oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨upperBytes, _ | ⟨lowerBytes, _ | ⟨valueBytes, rest⟩⟩⟩
   all_goals try rfl
   cases decoded : decodeWithinScriptNums flags upperBytes lowerBytes valueBytes with
@@ -258,16 +471,16 @@ theorem executeRuntimeElement_nip_preserves (oracle : CryptoOracle)
 
 /-- NIP underflow precedes resource checking. Success checks the combined
     main/alternate stack count after removing the second item. -/
-theorem runtimeStep_nip (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_nip (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_NIP) state flags ctx =
+    runtimeInstruction oracle (.op .OP_NIP) state flags ctx =
       match state.stack with
       | top :: _ :: rest =>
           if rest.length + 1 + state.altStack.length > maxStackSize then
             .error .stackSize
           else .ok { state with stack := top :: rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_nip oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_nip oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨discarded, rest⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack]
 
@@ -307,16 +520,16 @@ theorem executeRuntimeElement_twoDrop_preserves (oracle : CryptoOracle)
 
 /-- 2DROP underflow precedes resource checking. Success checks the combined
     main/alternate stack count after removing both items. -/
-theorem runtimeStep_twoDrop (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_twoDrop (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_2DROP) state flags ctx =
+    runtimeInstruction oracle (.op .OP_2DROP) state flags ctx =
       match state.stack with
       | _ :: _ :: rest =>
           if rest.length + state.altStack.length > maxStackSize then
             .error .stackSize
           else .ok { state with stack := rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_twoDrop oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_twoDrop oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨discarded, rest⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack]
 
@@ -356,16 +569,16 @@ theorem executeRuntimeElement_twoDup_preserves (oracle : CryptoOracle)
 
 /-- 2DUP underflow precedes resource checking. Success checks the combined
     main/alternate stack count after pushing both copied items. -/
-theorem runtimeStep_twoDup (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_twoDup (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_2DUP) state flags ctx =
+    runtimeInstruction oracle (.op .OP_2DUP) state flags ctx =
       match state.stack with
       | top :: below :: rest =>
           if rest.length + 4 + state.altStack.length > maxStackSize then
             .error .stackSize
           else .ok { state with stack := top :: below :: top :: below :: rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_twoDup oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_twoDup oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨below, rest⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
 
@@ -406,16 +619,16 @@ theorem executeRuntimeElement_twoOver_preserves (oracle : CryptoOracle)
 
 /-- 2OVER underflow precedes resource checking. Success checks the combined
     main/alternate stack count after pushing both copied items. -/
-theorem runtimeStep_twoOver (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_twoOver (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_2OVER) state flags ctx =
+    runtimeInstruction oracle (.op .OP_2OVER) state flags ctx =
       match state.stack with
       | top :: second :: third :: fourth :: rest =>
           if rest.length + 6 + state.altStack.length > maxStackSize then
             .error .stackSize
           else .ok { state with stack := third :: fourth :: top :: second :: third :: fourth :: rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_twoOver oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_twoOver oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ | ⟨fourth, rest⟩⟩⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
 
@@ -456,16 +669,16 @@ theorem executeRuntimeElement_threeDup_preserves (oracle : CryptoOracle)
 
 /-- 3DUP underflow precedes resource checking. Success checks the combined
     main/alternate stack count after pushing all three copied items. -/
-theorem runtimeStep_threeDup (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_threeDup (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_3DUP) state flags ctx =
+    runtimeInstruction oracle (.op .OP_3DUP) state flags ctx =
       match state.stack with
       | top :: second :: third :: rest =>
           if rest.length + 6 + state.altStack.length > maxStackSize then
             .error .stackSize
           else .ok { state with stack := top :: second :: third :: top :: second :: third :: rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_threeDup oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_threeDup oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, rest⟩⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
 
@@ -505,16 +718,16 @@ theorem executeRuntimeElement_over_preserves (oracle : CryptoOracle)
 
 /-- OVER underflow precedes resource checking. Success checks the combined
     main/alternate stack count after pushing the copied item. -/
-theorem runtimeStep_over (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_over (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_OVER) state flags ctx =
+    runtimeInstruction oracle (.op .OP_OVER) state flags ctx =
       match state.stack with
       | top :: below :: rest =>
           if rest.length + 3 + state.altStack.length > maxStackSize then
             .error .stackSize
           else .ok { state with stack := below :: top :: below :: rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_over oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_over oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨below, rest⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
 
@@ -554,16 +767,16 @@ theorem executeRuntimeElement_tuck_preserves (oracle : CryptoOracle)
 
 /-- TUCK underflow precedes resource checking. Success checks the combined
     main/alternate stack count after inserting the copied item. -/
-theorem runtimeStep_tuck (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_tuck (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_TUCK) state flags ctx =
+    runtimeInstruction oracle (.op .OP_TUCK) state flags ctx =
       match state.stack with
       | top :: below :: rest =>
           if rest.length + 3 + state.altStack.length > maxStackSize then
             .error .stackSize
           else .ok { state with stack := top :: below :: top :: rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_tuck oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_tuck oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨below, rest⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
 
@@ -604,16 +817,16 @@ theorem executeRuntimeElement_rot_preserves (oracle : CryptoOracle)
 
 /-- ROT checks its three inputs before the combined-stack bound; rotation
     preserves the count used by that bound. -/
-theorem runtimeStep_rot (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_rot (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_ROT) state flags ctx =
+    runtimeInstruction oracle (.op .OP_ROT) state flags ctx =
       match state.stack with
       | top :: second :: third :: rest =>
           if rest.length + 3 + state.altStack.length > maxStackSize then
             .error .stackSize
           else .ok { state with stack := third :: top :: second :: rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_rot oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_rot oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, rest⟩⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
 
@@ -654,16 +867,16 @@ theorem executeRuntimeElement_twoRot_preserves (oracle : CryptoOracle)
 
 /-- 2ROT checks its six inputs before the combined-stack bound; rotation
     preserves the count used by that bound. -/
-theorem runtimeStep_twoRot (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_twoRot (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_2ROT) state flags ctx =
+    runtimeInstruction oracle (.op .OP_2ROT) state flags ctx =
       match state.stack with
       | top :: second :: third :: fourth :: fifth :: sixth :: rest =>
           if rest.length + 6 + state.altStack.length > maxStackSize then
             .error .stackSize
           else .ok { state with stack := fifth :: sixth :: top :: second :: third :: fourth :: rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_twoRot oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_twoRot oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ | ⟨fourth, _ | ⟨fifth, _ | ⟨sixth, rest⟩⟩⟩⟩⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
 
@@ -704,30 +917,38 @@ theorem executeRuntimeElement_twoSwap_preserves (oracle : CryptoOracle)
 
 /-- 2SWAP checks its four inputs before the combined-stack bound; pair exchange
     preserves the count used by that bound. -/
-theorem runtimeStep_twoSwap (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_twoSwap (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_2SWAP) state flags ctx =
+    runtimeInstruction oracle (.op .OP_2SWAP) state flags ctx =
       match state.stack with
       | top :: second :: third :: fourth :: rest =>
           if rest.length + 4 + state.altStack.length > maxStackSize then
             .error .stackSize
           else .ok { state with stack := third :: fourth :: top :: second :: rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_twoSwap oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_twoSwap oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨second, _ | ⟨third, _ | ⟨fourth, rest⟩⟩⟩⟩
   all_goals simp [bind, Except.bind, checkRuntimeStack, Nat.add_assoc]
 
-theorem runtimeStep_stackBound
+theorem runtimeInstruction_stackBound
     {oracle : CryptoOracle} {element : ScriptElement} {before after : RuntimeState}
     {flags : ScriptFlags} {ctx : TxContext}
-    (stepped : runtimeStep oracle element before flags ctx = .ok after) :
+    (stepped : runtimeInstruction oracle element before flags ctx = .ok after) :
     after.stack.length + after.altStack.length ≤ maxStackSize := by
-  unfold runtimeStep at stepped
+  unfold runtimeInstruction at stepped
   cases computed : executeRuntimeElement oracle element before flags ctx with
   | error error => simp [computed, bind, Except.bind] at stepped
   | ok next =>
       simp only [computed, bind, Except.bind] at stepped
       exact (checkRuntimeStack_ok stepped).2
+
+theorem runtimeStep_stackBound
+    {oracle : CryptoOracle} {element : ScriptElement} {before after : RuntimeState}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (stepped : runtimeStep oracle element before flags ctx = .ok after) :
+    after.stack.length + after.altStack.length ≤ maxStackSize :=
+  let ⟨_, _, instruction⟩ := runtimeStep_ok stepped
+  runtimeInstruction_stackBound instruction
 
 /-- Every visited instruction, active or skipped, passes the push-size bound. -/
 theorem runtimeStep_pushBound
@@ -735,9 +956,19 @@ theorem runtimeStep_pushBound
     {flags : ScriptFlags} {ctx : TxContext}
     (stepped : runtimeStep oracle element before flags ctx = .ok after) :
     element.pushSize ≤ maxScriptElementSize := by
+  obtain ⟨_, _, instruction⟩ := runtimeStep_ok stepped
   by_cases exceeded : element.pushSize > maxScriptElementSize
-  · simp [runtimeStep, executeRuntimeElement, exceeded, bind, Except.bind] at stepped
+  · simp [runtimeInstruction, executeRuntimeElement, exceeded, bind, Except.bind] at instruction
   · exact Nat.le_of_not_gt exceeded
+
+theorem runtimeInstruction_eq_model
+    {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
+    (element : ScriptElement) (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
+    runtimeInstruction oracle element state flags ctx =
+      runtimeInstruction CryptoOracle.model element state flags ctx := by
+  have opcode := evaluate_eq_of_eval agreement
+    (evaluate_sound CryptoOracle.model_refines [element] state.stack state.altStack flags ctx)
+  simp only [runtimeInstruction, executeRuntimeElement, opcode]
 
 /-- Resource and control checks do not weaken the existing crypto boundary. -/
 theorem runtimeStep_eq_model
@@ -745,9 +976,7 @@ theorem runtimeStep_eq_model
     (element : ScriptElement) (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
     runtimeStep oracle element state flags ctx =
       runtimeStep CryptoOracle.model element state flags ctx := by
-  have opcode := evaluate_eq_of_eval agreement
-    (evaluate_sound CryptoOracle.model_refines [element] state.stack state.altStack flags ctx)
-  simp only [runtimeStep, executeRuntimeElement, opcode]
+  simp only [runtimeStep, runtimeInstruction_eq_model agreement]
 
 
 /-- These resource guarantees hold for every oracle, without a cryptographic
@@ -777,6 +1006,239 @@ theorem evaluateRuntime_bounds
           rcases List.mem_cons.mp member with same | tail
           · subst item; exact runtimeStep_pushBound stepped
           · exact pushes item tail
+
+
+/-- Starting from a lower operation count keeps every successful result. -/
+theorem evaluateRuntime_lower {oracle : CryptoOracle} {script : Script}
+    {state : RuntimeState} {flags : ScriptFlags} {ctx : TxContext}
+    {stack alt : Stack} {weight count : Nat}
+    (success : evaluateRuntime oracle script state flags ctx = .success stack alt weight)
+    (lower : count ≤ state.operationCount) :
+    evaluateRuntime oracle script { state with operationCount := count } flags ctx =
+      .success stack alt weight := by
+  induction script generalizing state count with
+  | nil => simpa [evaluateRuntime, finishRuntime] using success
+  | cons element rest ih =>
+      simp only [evaluateRuntime] at success ⊢
+      cases stepped : runtimeStep oracle element state flags ctx with
+      | error error => simp [stepped] at success
+      | ok next =>
+          simp only [stepped] at success
+          obtain ⟨charged, charging, instruction⟩ := runtimeStep_ok stepped
+          obtain ⟨lowered, below, charging'⟩ := chargeOperations_lower charging lower
+          have moved := runtimeInstruction_operationCount oracle element
+            { state with operationCount := charged } flags ctx lowered
+          rw [instruction] at moved
+          have counted := runtimeInstruction_operationCount_eq instruction
+          have next_step : runtimeStep oracle element { state with operationCount := count } flags ctx =
+              .ok { next with operationCount := lowered } := by
+            simp only [runtimeStep, charging', bind, Except.bind]
+            exact moved
+          rw [next_step]
+          exact ih success (by simp only at below counted; omega)
+
+
+/-- The most one source element adds to the BASE or witness-v0 operation
+count: one per opcode, plus at most `maxPubKeysPerMultiSig` multisig keys. -/
+def ScriptElement.operationBound : ScriptElement → Nat
+  | .op .OP_CHECKMULTISIG | .op .OP_CHECKMULTISIGVERIFY => 1 + maxPubKeysPerMultiSig
+  | .op _ => 1
+  | _ => 0
+
+/-- A source-only bound on the operations any run charges, skipped branches
+included. -/
+def staticOperationCount (script : Script) : Nat :=
+  (script.map ScriptElement.operationBound).sum
+
+theorem staticOperationCount_cons (element : ScriptElement) (rest : Script) :
+    staticOperationCount (element :: rest) =
+      element.operationBound + staticOperationCount rest := by
+  simp [staticOperationCount]
+
+theorem staticOperationCount_sublist {selected script : Script}
+    (sub : selected.Sublist script) :
+    staticOperationCount selected ≤ staticOperationCount script := by
+  induction sub <;> simp_all [staticOperationCount] <;> omega
+
+theorem multisigKeyCount_le {flags : ScriptFlags} {stack : Stack} {keys : Nat}
+    (decoded : multisigKeyCount flags stack = .ok keys) : keys ≤ maxPubKeysPerMultiSig := by
+  cases stack with
+  | nil => cases decoded
+  | cons top rest =>
+      simp only [multisigKeyCount, bind, Except.bind, pure, Except.pure, throw, throwThe,
+        MonadExceptOf.throw] at decoded
+      cases number : decodeScriptNum top flags.minimalData maxArithmeticScriptNumBytes with
+      | error => simp [number] at decoded
+      | ok value =>
+          by_cases outside : value < 0 ∨ (maxPubKeysPerMultiSig : Int) < value
+          · simp [number, outside] at decoded
+          · simp only [number, outside, ↓reduceIte, Except.ok.injEq] at decoded
+            subst keys
+            simp only [not_or, Int.not_lt] at outside
+            omega
+
+theorem opcodeKeyCount_le {opcode : Opcode} {flags : ScriptFlags} {active : Bool}
+    {stack : Stack} {keys : Nat}
+    (decoded : opcodeKeyCount opcode flags active stack = .ok keys) :
+    1 + keys ≤ (ScriptElement.op opcode).operationBound := by
+  cases opcode
+  case OP_CHECKMULTISIG | OP_CHECKMULTISIGVERIFY =>
+    simp only [opcodeKeyCount] at decoded
+    split at decoded
+    · have := multisigKeyCount_le decoded
+      simp [ScriptElement.operationBound]; omega
+    · cases decoded; simp [ScriptElement.operationBound]
+  all_goals
+    simp only [opcodeKeyCount] at decoded
+    cases decoded
+    simp [ScriptElement.operationBound]
+
+/-- One step charges at most the element's source bound. -/
+theorem chargeOperations_bound {element : ScriptElement} {state charged : RuntimeState}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (charging : chargeOperations element state flags ctx = .ok charged) :
+    charged.operationCount ≤ state.operationCount + element.operationBound := by
+  unfold chargeOperations at charging
+  split at charging
+  · split at charging
+    · cases charging; omega
+    · cases counted : chargedOperationCount _ state flags with
+      | error => rw [counted] at charging; cases charging
+      | ok total =>
+          rw [counted] at charging; cases charging
+          obtain ⟨keys, decoded, rfl, _⟩ := chargedOperationCount_ok counted
+          have := opcodeKeyCount_le decoded
+          simp only; omega
+  · cases charging; omega
+
+/-- A higher starting count charges the same keys when the element's source
+bound still fits. -/
+theorem chargeOperations_raise {element : ScriptElement} {state charged : RuntimeState}
+    {flags : ScriptFlags} {ctx : TxContext} {count : Nat}
+    (charging : chargeOperations element state flags ctx = .ok charged)
+    (higher : state.operationCount ≤ count)
+    (fits : ctx.sigVersion = .tapscript ∨ count + element.operationBound ≤ maxOpsPerScript) :
+    ∃ raised, charged.operationCount ≤ raised ∧ raised ≤ count + element.operationBound ∧
+      chargeOperations element { state with operationCount := count } flags ctx =
+        .ok { charged with operationCount := raised } := by
+  have same := chargeOperations_ok charging
+  unfold chargeOperations at charging ⊢
+  split at charging
+  · rename_i opcode
+    split at charging
+    · rename_i version
+      cases charging
+      exact ⟨count, higher, by omega, by simp [version]⟩
+    · rename_i version
+      have fits : count + (ScriptElement.op opcode).operationBound ≤ maxOpsPerScript := by
+        simpa [version] using fits
+      cases counted : chargedOperationCount opcode state flags with
+      | error => rw [counted] at charging; cases charging
+      | ok total =>
+          rw [counted] at charging; cases charging
+          obtain ⟨keys, decoded, rfl, bounded⟩ := chargedOperationCount_ok counted
+          have keyBound := opcodeKeyCount_le decoded
+          refine ⟨count + 1 + keys, by simp only; omega, by omega, ?_⟩
+          rw [if_neg version, chargedOperationCount_of_keys
+            (state := { state with operationCount := count }) decoded (by simp only; omega)]
+          rfl
+  · cases charging
+    exact ⟨count, higher, by omega, rfl⟩
+
+/-- A step whose key count decodes charges within the element's source bound. -/
+theorem chargeOperations_of_keys {element : ScriptElement} {state : RuntimeState}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (keys : ctx.sigVersion ≠ .tapscript → ∀ opcode, element = .op opcode → ∃ keys,
+      opcodeKeyCount opcode flags (state.conditions.all id) state.stack = .ok keys)
+    (fits : ctx.sigVersion = .tapscript ∨
+      state.operationCount + element.operationBound ≤ maxOpsPerScript) :
+    ∃ count, state.operationCount ≤ count ∧
+      count ≤ state.operationCount + element.operationBound ∧
+      chargeOperations element state flags ctx = .ok { state with operationCount := count } := by
+  cases element with
+  | pushData => exact ⟨state.operationCount, by omega, by omega, rfl⟩
+  | pushNum => exact ⟨state.operationCount, by omega, by omega, rfl⟩
+  | op opcode =>
+      by_cases version : ctx.sigVersion = .tapscript
+      · exact ⟨state.operationCount, by omega, by omega, by simp [chargeOperations, version]⟩
+      · have fits : state.operationCount + (ScriptElement.op opcode).operationBound ≤
+            maxOpsPerScript := by simpa [version] using fits
+        obtain ⟨keys, decoded⟩ := keys version opcode rfl
+        have keyBound := opcodeKeyCount_le decoded
+        refine ⟨state.operationCount + 1 + keys, by omega, by omega, ?_⟩
+        simp only [chargeOperations, version, ↓reduceIte,
+          chargedOperationCount_of_keys decoded (by omega)]
+        rfl
+
+/-- An opcode without a key charge adds one operation, active or not. -/
+theorem chargeOperations_quiet {element : ScriptElement} {state : RuntimeState}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (quiet : ∀ opcode, element = .op opcode →
+      opcodeKeyCount opcode flags (state.conditions.all id) state.stack = .ok 0)
+    (fits : ctx.sigVersion = .tapscript ∨
+      state.operationCount + element.operationBound ≤ maxOpsPerScript) :
+    ∃ count, state.operationCount ≤ count ∧
+      count ≤ state.operationCount + element.operationBound ∧
+      chargeOperations element state flags ctx = .ok { state with operationCount := count } :=
+  chargeOperations_of_keys (fun _ opcode same => ⟨0, quiet opcode same⟩) fits
+
+/-- Inactive code charges only the opcode itself. -/
+theorem chargeOperations_inactive {element : ScriptElement} {state : RuntimeState}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (inactive : state.conditions.all id = false)
+    (fits : ctx.sigVersion = .tapscript ∨
+      state.operationCount + element.operationBound ≤ maxOpsPerScript) :
+    ∃ count, state.operationCount ≤ count ∧
+      count ≤ state.operationCount + element.operationBound ∧
+      chargeOperations element state flags ctx = .ok { state with operationCount := count } :=
+  chargeOperations_quiet (fun opcode _ => by rw [inactive]; cases opcode <;> rfl) fits
+
+theorem executeRuntimeElement_operationCount_eq {oracle : CryptoOracle} {element : ScriptElement}
+    {state next : RuntimeState} {flags : ScriptFlags} {ctx : TxContext}
+    (executed : executeRuntimeElement oracle element state flags ctx = .ok next) :
+    next.operationCount = state.operationCount := by
+  have moved := executeRuntimeElement_operationCount oracle element state flags ctx
+    state.operationCount
+  rw [show ({ state with operationCount := state.operationCount } : RuntimeState) = state from rfl,
+    executed] at moved
+  simp only [Except.map] at moved
+  injection moved with moved
+  have counted := congrArg RuntimeState.operationCount moved
+  exact counted
+
+/-- Starting from a higher operation count keeps every successful result while
+the source bound still fits. -/
+theorem evaluateRuntime_raise {oracle : CryptoOracle} {script : Script}
+    {state : RuntimeState} {flags : ScriptFlags} {ctx : TxContext}
+    {stack alt : Stack} {weight count : Nat}
+    (success : evaluateRuntime oracle script state flags ctx = .success stack alt weight)
+    (higher : state.operationCount ≤ count)
+    (fits : ctx.sigVersion = .tapscript ∨ count + staticOperationCount script ≤ maxOpsPerScript) :
+    evaluateRuntime oracle script { state with operationCount := count } flags ctx =
+      .success stack alt weight := by
+  induction script generalizing state count with
+  | nil => simpa [evaluateRuntime, finishRuntime] using success
+  | cons element rest ih =>
+      rw [staticOperationCount_cons] at fits
+      simp only [evaluateRuntime] at success ⊢
+      cases stepped : runtimeStep oracle element state flags ctx with
+      | error error => simp [stepped] at success
+      | ok next =>
+          simp only [stepped] at success
+          obtain ⟨charged, charging, instruction⟩ := runtimeStep_ok stepped
+          obtain ⟨raised, above, below, charging'⟩ := chargeOperations_raise charging higher
+            (by rcases fits with fits | fits; exact .inl fits; exact .inr (by omega))
+          have moved := runtimeInstruction_operationCount oracle element
+            { state with operationCount := charged } flags ctx raised
+          rw [instruction] at moved
+          have counted := runtimeInstruction_operationCount_eq instruction
+          have next_step : runtimeStep oracle element { state with operationCount := count } flags ctx =
+              .ok { next with operationCount := raised } := by
+            simp only [runtimeStep, charging', bind, Except.bind]
+            exact moved
+          rw [next_step]
+          exact ih success (by simp only at above counted; omega)
+            (by rcases fits with fits | fits; exact .inl fits; exact .inr (by omega))
 
 
 theorem evaluateRuntime_eq_of_eval

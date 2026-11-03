@@ -34,9 +34,9 @@ theorem executeRuntimeElement_oneAdd (oracle : CryptoOracle) (state : RuntimeSta
 
 /-- The unary result is accepted exactly when the unchanged combined stack
     count fits. Numeric errors are returned before that count is checked. -/
-theorem runtimeStep_oneAdd (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_oneAdd (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_1ADD) state flags ctx =
+    runtimeInstruction oracle (.op .OP_1ADD) state flags ctx =
       match state.stack with
       | [] => .error .stackUnderflow
       | operand :: rest =>
@@ -46,7 +46,7 @@ theorem runtimeStep_oneAdd (oracle : CryptoOracle) (state : RuntimeState)
               if state.stack.length + state.altStack.length > maxStackSize then
                 .error .stackSize
               else .ok { state with stack := scriptNum (value + 1) :: rest } := by
-  rw [runtimeStep, executeRuntimeElement_oneAdd oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_oneAdd oracle state flags ctx active]
   cases stackEq : state.stack with
   | nil => rfl
   | cons operand rest =>
@@ -76,9 +76,9 @@ theorem executeRuntimeElement_oneSub (oracle : CryptoOracle) (state : RuntimeSta
 
 /-- The unary result is accepted exactly when the unchanged combined stack
     count fits. Numeric errors are returned before that count is checked. -/
-theorem runtimeStep_oneSub (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_oneSub (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_1SUB) state flags ctx =
+    runtimeInstruction oracle (.op .OP_1SUB) state flags ctx =
       match state.stack with
       | [] => .error .stackUnderflow
       | operand :: rest =>
@@ -88,7 +88,7 @@ theorem runtimeStep_oneSub (oracle : CryptoOracle) (state : RuntimeState)
               if state.stack.length + state.altStack.length > maxStackSize then
                 .error .stackSize
               else .ok { state with stack := scriptNum (value - 1) :: rest } := by
-  rw [runtimeStep, executeRuntimeElement_oneSub oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_oneSub oracle state flags ctx active]
   cases stackEq : state.stack with
   | nil => rfl
   | cons operand rest =>
@@ -118,9 +118,9 @@ theorem executeRuntimeElement_negate (oracle : CryptoOracle) (state : RuntimeSta
 
 /-- The unary result is accepted exactly when the unchanged combined stack
     count fits. Numeric errors are returned before that count is checked. -/
-theorem runtimeStep_negate (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_negate (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_NEGATE) state flags ctx =
+    runtimeInstruction oracle (.op .OP_NEGATE) state flags ctx =
       match state.stack with
       | [] => .error .stackUnderflow
       | operand :: rest =>
@@ -130,7 +130,7 @@ theorem runtimeStep_negate (oracle : CryptoOracle) (state : RuntimeState)
               if state.stack.length + state.altStack.length > maxStackSize then
                 .error .stackSize
               else .ok { state with stack := scriptNum (-value) :: rest } := by
-  rw [runtimeStep, executeRuntimeElement_negate oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_negate oracle state flags ctx active]
   cases stackEq : state.stack with
   | nil => rfl
   | cons operand rest =>
@@ -160,9 +160,9 @@ theorem executeRuntimeElement_abs (oracle : CryptoOracle) (state : RuntimeState)
 
 /-- The unary result is accepted exactly when the unchanged combined stack
     count fits. Numeric errors are returned before that count is checked. -/
-theorem runtimeStep_abs (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_abs (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_ABS) state flags ctx =
+    runtimeInstruction oracle (.op .OP_ABS) state flags ctx =
       match state.stack with
       | [] => .error .stackUnderflow
       | operand :: rest =>
@@ -172,7 +172,7 @@ theorem runtimeStep_abs (oracle : CryptoOracle) (state : RuntimeState)
               if state.stack.length + state.altStack.length > maxStackSize then
                 .error .stackSize
               else .ok { state with stack := scriptNum (if value < 0 then -value else value) :: rest } := by
-  rw [runtimeStep, executeRuntimeElement_abs oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_abs oracle state flags ctx active]
   cases stackEq : state.stack with
   | nil => rfl
   | cons operand rest =>
@@ -206,9 +206,9 @@ theorem executeRuntimeElement_sub (oracle : CryptoOracle) (state : RuntimeState)
 
 /-- Binary arithmetic/comparison errors precede the resource check. A successful
     decode removes one main-stack item before checking combined stack depth. -/
-theorem runtimeStep_sub (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_sub (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_SUB) state flags ctx =
+    runtimeInstruction oracle (.op .OP_SUB) state flags ctx =
       match state.stack with
       | top :: belowTop :: rest =>
           match decodeBinaryScriptNums flags top belowTop with
@@ -218,7 +218,7 @@ theorem runtimeStep_sub (oracle : CryptoOracle) (state : RuntimeState)
                 .error .stackSize
               else .ok { state with stack := scriptNum (b - a) :: rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_sub oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_sub oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨belowTop, rest⟩⟩
   all_goals try rfl
   cases decoded : decodeBinaryScriptNums flags top belowTop with
@@ -254,9 +254,9 @@ theorem executeRuntimeElement_numNotEqual (oracle : CryptoOracle) (state : Runti
 
 /-- Binary arithmetic/comparison errors precede the resource check. A successful
     decode removes one main-stack item before checking combined stack depth. -/
-theorem runtimeStep_numNotEqual (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_numNotEqual (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_NUMNOTEQUAL) state flags ctx =
+    runtimeInstruction oracle (.op .OP_NUMNOTEQUAL) state flags ctx =
       match state.stack with
       | top :: belowTop :: rest =>
           match decodeBinaryScriptNums flags top belowTop with
@@ -266,7 +266,7 @@ theorem runtimeStep_numNotEqual (oracle : CryptoOracle) (state : RuntimeState)
                 .error .stackSize
               else .ok { state with stack := boolToElement (decide (a ≠ b)) :: rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_numNotEqual oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_numNotEqual oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨belowTop, rest⟩⟩
   all_goals try rfl
   cases decoded : decodeBinaryScriptNums flags top belowTop with
@@ -302,9 +302,9 @@ theorem executeRuntimeElement_lessThan (oracle : CryptoOracle) (state : RuntimeS
 
 /-- Binary arithmetic/comparison errors precede the resource check. A successful
     decode removes one main-stack item before checking combined stack depth. -/
-theorem runtimeStep_lessThan (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_lessThan (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_LESSTHAN) state flags ctx =
+    runtimeInstruction oracle (.op .OP_LESSTHAN) state flags ctx =
       match state.stack with
       | top :: belowTop :: rest =>
           match decodeBinaryScriptNums flags top belowTop with
@@ -314,7 +314,7 @@ theorem runtimeStep_lessThan (oracle : CryptoOracle) (state : RuntimeState)
                 .error .stackSize
               else .ok { state with stack := boolToElement (decide (b < a)) :: rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_lessThan oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_lessThan oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨belowTop, rest⟩⟩
   all_goals try rfl
   cases decoded : decodeBinaryScriptNums flags top belowTop with
@@ -350,9 +350,9 @@ theorem executeRuntimeElement_greaterThan (oracle : CryptoOracle) (state : Runti
 
 /-- Binary arithmetic/comparison errors precede the resource check. A successful
     decode removes one main-stack item before checking combined stack depth. -/
-theorem runtimeStep_greaterThan (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_greaterThan (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_GREATERTHAN) state flags ctx =
+    runtimeInstruction oracle (.op .OP_GREATERTHAN) state flags ctx =
       match state.stack with
       | top :: belowTop :: rest =>
           match decodeBinaryScriptNums flags top belowTop with
@@ -362,7 +362,7 @@ theorem runtimeStep_greaterThan (oracle : CryptoOracle) (state : RuntimeState)
                 .error .stackSize
               else .ok { state with stack := boolToElement (decide (b > a)) :: rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_greaterThan oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_greaterThan oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨belowTop, rest⟩⟩
   all_goals try rfl
   cases decoded : decodeBinaryScriptNums flags top belowTop with
@@ -398,9 +398,9 @@ theorem executeRuntimeElement_lessThanOrEqual (oracle : CryptoOracle) (state : R
 
 /-- Binary arithmetic/comparison errors precede the resource check. A successful
     decode removes one main-stack item before checking combined stack depth. -/
-theorem runtimeStep_lessThanOrEqual (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_lessThanOrEqual (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_LESSTHANOREQUAL) state flags ctx =
+    runtimeInstruction oracle (.op .OP_LESSTHANOREQUAL) state flags ctx =
       match state.stack with
       | top :: belowTop :: rest =>
           match decodeBinaryScriptNums flags top belowTop with
@@ -410,7 +410,7 @@ theorem runtimeStep_lessThanOrEqual (oracle : CryptoOracle) (state : RuntimeStat
                 .error .stackSize
               else .ok { state with stack := boolToElement (decide (b ≤ a)) :: rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_lessThanOrEqual oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_lessThanOrEqual oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨belowTop, rest⟩⟩
   all_goals try rfl
   cases decoded : decodeBinaryScriptNums flags top belowTop with
@@ -446,9 +446,9 @@ theorem executeRuntimeElement_greaterThanOrEqual (oracle : CryptoOracle) (state 
 
 /-- Binary arithmetic/comparison errors precede the resource check. A successful
     decode removes one main-stack item before checking combined stack depth. -/
-theorem runtimeStep_greaterThanOrEqual (oracle : CryptoOracle) (state : RuntimeState)
+theorem runtimeInstruction_greaterThanOrEqual (oracle : CryptoOracle) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) (active : state.conditions.all id = true) :
-    runtimeStep oracle (.op .OP_GREATERTHANOREQUAL) state flags ctx =
+    runtimeInstruction oracle (.op .OP_GREATERTHANOREQUAL) state flags ctx =
       match state.stack with
       | top :: belowTop :: rest =>
           match decodeBinaryScriptNums flags top belowTop with
@@ -458,7 +458,7 @@ theorem runtimeStep_greaterThanOrEqual (oracle : CryptoOracle) (state : RuntimeS
                 .error .stackSize
               else .ok { state with stack := boolToElement (decide (b ≥ a)) :: rest }
       | _ => .error .stackUnderflow := by
-  rw [runtimeStep, executeRuntimeElement_greaterThanOrEqual oracle state flags ctx active]
+  rw [runtimeInstruction, executeRuntimeElement_greaterThanOrEqual oracle state flags ctx active]
   rcases stackEq : state.stack with _ | ⟨top, _ | ⟨belowTop, rest⟩⟩
   all_goals try rfl
   cases decoded : decodeBinaryScriptNums flags top belowTop with
@@ -477,12 +477,12 @@ theorem executeRuntimeElement_numericExtension_inactive (oracle : CryptoOracle)
     ScriptElement.pushSize, maxScriptElementSize] <;> rfl
 
 /-- Inactive numeric instructions still visit the shared combined-stack check. -/
-theorem runtimeStep_numericExtension_inactive (oracle : CryptoOracle)
+theorem runtimeInstruction_numericExtension_inactive (oracle : CryptoOracle)
     (opcode : Opcode) (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
     (numeric : opcode.isNumericExtension = true)
     (inactive : state.conditions.all id = false) :
-    runtimeStep oracle (.op opcode) state flags ctx = checkRuntimeStack state := by
-  rw [runtimeStep,
+    runtimeInstruction oracle (.op opcode) state flags ctx = checkRuntimeStack state := by
+  rw [runtimeInstruction,
     executeRuntimeElement_numericExtension_inactive oracle opcode state flags ctx numeric inactive]
   rfl
 
@@ -611,16 +611,16 @@ theorem executeRuntimeElement_numericExtension_preserves (oracle : CryptoOracle)
 
 /-- The post-instruction resource check retains numeric stack-length and
     runtime-field invariants. -/
-theorem runtimeStep_numericExtension_preserves (oracle : CryptoOracle)
+theorem runtimeInstruction_numericExtension_preserves (oracle : CryptoOracle)
     (opcode : Opcode) (state next : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
     (numeric : opcode.isNumericExtension = true)
-    (stepped : runtimeStep oracle (.op opcode) state flags ctx = .ok next) :
+    (stepped : runtimeInstruction oracle (.op opcode) state flags ctx = .ok next) :
     next.altStack = state.altStack ∧ next.conditions = state.conditions ∧
       next.weight = state.weight ∧
       next.stack.length +
         (if state.conditions.all id && !opcode.usesUnaryArithmetic then 1 else 0) =
         state.stack.length := by
   exact executeRuntimeElement_numericExtension_preserves oracle opcode state next flags ctx
-    numeric (executeRuntimeElement_eq_of_runtimeStep stepped)
+    numeric (executeRuntimeElement_eq_of_runtimeInstruction stepped)
 
 end LeanMiniscript.Script

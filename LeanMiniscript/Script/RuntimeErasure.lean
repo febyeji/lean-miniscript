@@ -17,30 +17,37 @@ theorem runtime_success_cons
     {stack alt : Stack} {weight : Nat}
     (success : evaluateRuntime oracle (element :: rest) state flags ctx =
       .success stack alt weight) :
-    ∃ next, executeRuntimeElement oracle element state flags ctx = .ok next ∧
+    ∃ count next, chargeOperations element state flags ctx =
+        .ok { state with operationCount := count } ∧ state.operationCount ≤ count ∧
+      executeRuntimeElement oracle element { state with operationCount := count } flags ctx =
+        .ok next ∧
       next.stack.length + next.altStack.length ≤ maxStackSize ∧
       evaluateRuntime oracle rest next flags ctx = .success stack alt weight := by
   simp only [evaluateRuntime] at success
   cases step : runtimeStep oracle element state flags ctx with
   | error error => simp [step] at success
   | ok next =>
-      refine ⟨next, ?_, runtimeStep_stackBound step, by simpa [step] using success⟩
-      unfold runtimeStep at step
-      cases executed : executeRuntimeElement oracle element state flags ctx with
-      | error error => simp [executed, bind, Except.bind] at step
+      obtain ⟨count, charging, instruction⟩ := runtimeStep_ok step
+      refine ⟨count, next, charging, by simpa using chargeOperations_le charging, ?_,
+        runtimeStep_stackBound step, by simpa [step] using success⟩
+      unfold runtimeInstruction at instruction
+      cases executed : executeRuntimeElement oracle element
+          { state with operationCount := count } flags ctx with
+      | error error => simp [executed, bind, Except.bind] at instruction
       | ok after =>
-          simp only [executed, bind, Except.bind] at step
-          exact congrArg Except.ok (checkRuntimeStack_ok step).1.symm
+          simp only [executed, bind, Except.bind] at instruction
+          exact congrArg Except.ok (checkRuntimeStack_ok instruction).1.symm
 
 theorem runtime_cons_success
     {oracle : CryptoOracle} {element : ScriptElement} {rest : Script}
-    {state next : RuntimeState} {flags : ScriptFlags} {ctx : TxContext}
+    {state charged next : RuntimeState} {flags : ScriptFlags} {ctx : TxContext}
     {stack alt : Stack} {weight : Nat}
-    (executed : executeRuntimeElement oracle element state flags ctx = .ok next)
+    (charging : chargeOperations element state flags ctx = .ok charged)
+    (executed : executeRuntimeElement oracle element charged flags ctx = .ok next)
     (bounded : next.stack.length + next.altStack.length ≤ maxStackSize)
     (tail : evaluateRuntime oracle rest next flags ctx = .success stack alt weight) :
     evaluateRuntime oracle (element :: rest) state flags ctx = .success stack alt weight := by
-  simpa [evaluateRuntime, runtimeStep, executed, checkRuntimeStack,
+  simpa [evaluateRuntime, runtimeStep, runtimeInstruction, charging, executed, checkRuntimeStack,
     Nat.not_lt_of_le bounded, bind, Except.bind] using tail
 
 theorem execute_ordinary (element : ScriptElement) (ordinary : NonConditional element)
@@ -179,7 +186,15 @@ private theorem runtime_select_success
   induction script generalizing state nested outer choice with
   | nil => simp [evaluateRuntime, finishRuntime] at success
   | cons element rest ih =>
-      obtain ⟨next, executed, bounded, tail⟩ := runtime_success_cons success
+      obtain ⟨count, next, charging, raised, executed, bounded, tail⟩ := runtime_success_cons success
+      -- A selected program that skips this element has not charged it.
+      have lowered : ∀ {selected : Script} {conditions : List Bool},
+          evaluateRuntime oracle selected
+            { state with operationCount := count, conditions := conditions } flags ctx =
+              .success stack alt weight →
+          evaluateRuntime oracle selected { state with conditions := conditions } flags ctx =
+            .success stack alt weight :=
+        fun result => evaluateRuntime_lower result raised
       by_cases ordinary : NonConditional element
       · cases choice with
         | false =>
@@ -187,8 +202,10 @@ private theorem runtime_select_success
             rw [execute_ordinary element ordinary] at executed
             simp [pushBound, List.all_append, pure, Except.pure] at executed
             subst next
-            obtain ⟨selected, projected, result⟩ := ih state nested outer false tail
-            exact ⟨selected, by simpa [select_ordinary element ordinary] using projected, result⟩
+            obtain ⟨selected, projected, result⟩ :=
+              ih { state with operationCount := count } nested outer false tail
+            exact ⟨selected, by simpa [select_ordinary element ordinary] using projected,
+              lowered result⟩
         | true =>
             obtain ⟨moved, conditions⟩ := ordinary_conditions (nested ++ outer) ordinary
               (by simp [List.all_append]) executed
@@ -196,15 +213,20 @@ private theorem runtime_select_success
               exact (congrArg (fun c => { next with conditions := c }) conditions).symm
             obtain ⟨selected, projected, result⟩ := ih next nested outer true (by rw [same]; exact tail)
             refine ⟨element :: selected, by simp [select_ordinary element ordinary, projected], ?_⟩
-            exact runtime_cons_success moved bounded result
+            exact runtime_cons_success
+              (chargeOperations_conditions (state := { state with conditions := nested ++ true :: outer })
+                (nested ++ outer) (by simp [List.all_append]) charging)
+              moved bounded result
       · by_cases branch : element.isBranch = true
         · cases choice with
           | false =>
               rw [execute_branch element branch] at executed
               simp [List.all_append, pure, Except.pure] at executed
               subst next
-              obtain ⟨selected, projected, result⟩ := ih state (false :: nested) outer false tail
-              exact ⟨selected, by simpa [select_branch element branch] using projected, result⟩
+              obtain ⟨selected, projected, result⟩ :=
+                ih { state with operationCount := count } (false :: nested) outer false tail
+              exact ⟨selected, by simpa [select_branch element branch] using projected,
+                lowered result⟩
           | true =>
               obtain ⟨inner, conditions, moved⟩ := branch_conditions (nested ++ outer) branch
                 (by simp [List.all_append]) executed
@@ -215,7 +237,11 @@ private theorem runtime_select_success
               refine ⟨element :: selected, ?_, ?_⟩
               · simpa only [select_branch element branch, List.length_cons, ↓reduceIte,
                   Option.map_some] using (congrArg (Option.map (element :: ·)) projected)
-              · exact runtime_cons_success moved bounded result
+              · exact runtime_cons_success
+                  (chargeOperations_conditions
+                    (state := { state with conditions := nested ++ true :: outer })
+                    (nested ++ outer) (by simp [List.all_append]) charging)
+                  moved bounded result
         · cases element with
           | pushData => exact False.elim (ordinary trivial)
           | pushNum => exact False.elim (ordinary trivial)
@@ -227,18 +253,28 @@ private theorem runtime_select_success
                     simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
                       pure, Except.pure] at executed
                     subst next
-                    obtain ⟨selected, projected, result⟩ := ih state [] outer (!choice) tail
-                    exact ⟨selected, projected, by simpa using result⟩
+                    obtain ⟨selected, projected, result⟩ :=
+                      ih { state with operationCount := count } [] outer (!choice) tail
+                    exact ⟨selected, projected, lowered (by simpa using result)⟩
                 | cons inner nested =>
                     simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
                       pure, Except.pure] at executed
                     subst next
-                    obtain ⟨selected, projected, result⟩ := ih state ((!inner) :: nested) outer choice tail
+                    obtain ⟨selected, projected, result⟩ :=
+                      ih { state with operationCount := count } ((!inner) :: nested) outer choice tail
                     cases choice with
-                    | false => exact ⟨selected, by simpa [selectConditionalTail] using projected, result⟩
+                    | false =>
+                        exact ⟨selected, by simpa [selectConditionalTail] using projected,
+                          lowered result⟩
                     | true =>
                         refine ⟨.op .OP_ELSE :: selected, by simp [selectConditionalTail] at projected ⊢; exact projected, ?_⟩
-                        apply runtime_cons_success (next := { state with conditions := (!inner) :: (nested ++ outer) })
+                        apply runtime_cons_success
+                          (chargeOperations_conditions
+                            (state := { state with conditions := inner :: (nested ++ true :: outer) })
+                            (inner :: (nested ++ outer)) (by simp [List.all_append]) charging)
+                          (next := { state with
+                            operationCount := count
+                            conditions := (!inner) :: (nested ++ outer) })
                         · simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
                             pure, Except.pure]
                         · exact bounded
@@ -249,17 +285,26 @@ private theorem runtime_select_success
                     simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
                       pure, Except.pure] at executed
                     subst next
-                    exact ⟨rest, rfl, by simpa using tail⟩
+                    exact ⟨rest, rfl, lowered (by simpa using tail)⟩
                 | cons inner nested =>
                     simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
                       pure, Except.pure] at executed
                     subst next
-                    obtain ⟨selected, projected, result⟩ := ih state nested outer choice tail
+                    obtain ⟨selected, projected, result⟩ :=
+                      ih { state with operationCount := count } nested outer choice tail
                     cases choice with
-                    | false => exact ⟨selected, by simpa [selectConditionalTail] using projected, result⟩
+                    | false =>
+                        exact ⟨selected, by simpa [selectConditionalTail] using projected,
+                          lowered result⟩
                     | true =>
                         refine ⟨.op .OP_ENDIF :: selected, by simp [selectConditionalTail, projected], ?_⟩
-                        apply runtime_cons_success (next := { state with conditions := nested ++ outer })
+                        apply runtime_cons_success
+                          (chargeOperations_conditions
+                            (state := { state with conditions := inner :: (nested ++ true :: outer) })
+                            (inner :: (nested ++ outer)) (by simp [List.all_append]) charging)
+                          (next := { state with
+                            operationCount := count
+                            conditions := nested ++ outer })
                         · simp [executeRuntimeElement, ScriptElement.pushSize, maxScriptElementSize,
                             pure, Except.pure]
                         · exact bounded
@@ -304,7 +349,7 @@ theorem evaluateWithRuntimeLimits_erase_success
   | nil => simpa [evaluateWithRuntimeLimits, evaluateRuntime, finishRuntime,
       evaluateWithValidationWeight] using success
   | cons element rest =>
-      obtain ⟨next, executed, bounded, tail⟩ := runtime_success_cons success
+      obtain ⟨count, next, _, _, executed, bounded, tail⟩ := runtime_success_cons success
       by_cases branch : element.isBranch = true
       · rw [execute_branch element branch] at executed
         simp only [List.all_nil, ↓reduceIte] at executed
@@ -316,9 +361,10 @@ theorem evaluateWithRuntimeLimits_erase_success
             · rename_i minimal
               cases executed
               obtain ⟨frame, frameSplit, selected⟩ := runtime_select_frame rest
-                { stack := stackRest, altStack := alt, weight := weight }
+                { stack := stackRest, altStack := alt, weight := weight, operationCount := count }
                 (element.branchChoice top) tail
-              have preserved := evaluateWithRuntimeLimits_erase_success selected
+              have preserved := evaluateWithRuntimeLimits_erase_success
+                (evaluateRuntime_lower (count := 0) selected (Nat.zero_le _))
               rw [evaluateWithValidationWeight.eq_def]
               simp only [branch, ↓reduceIte, minimal]
               rw [frameSplit]
@@ -337,7 +383,8 @@ theorem evaluateWithRuntimeLimits_erase_success
               | success nextStack nextAlt =>
                   simp [charged, opcode] at executed
                   subst next
-                  have preserved := evaluateWithRuntimeLimits_erase_success tail
+                  have preserved := evaluateWithRuntimeLimits_erase_success
+                    (evaluateRuntime_lower (count := 0) tail (Nat.zero_le _))
                   rw [evaluateWithValidationWeight.eq_def]
                   simpa [branch, charged, opcode] using preserved
         · cases element with
