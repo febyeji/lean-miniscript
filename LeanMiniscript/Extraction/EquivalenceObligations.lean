@@ -29,18 +29,38 @@ def OpcodeAgreement (opcode : Opcode) (version : SignatureVersion) : Prop :=
         (.op opcode) state.runtime flags.script
         (instructionContext ctx request state)).mapError .script
 
-/-- Outside BASE, every opcode except the two timelocks agrees: Core's
-operation count and multisig key count are the typed step's charge. -/
-theorem opcodeAgreement_of_ne_base (opcode : Opcode) (version : SignatureVersion)
-    (notBase : version ≠ .base)
+/-- Every opcode except the two timelocks agrees when, in BASE, it gives
+FindAndDelete no signature: Core's operation count and multisig key count are
+the typed step's charge, and the oracle gets the same script code. -/
+theorem opcodeAgreement_of_signatures (opcode : Opcode) (version : SignatureVersion)
+    (signatures : version = .base →
+      ∀ runtime flags, instructionSignatures opcode runtime flags = [])
     (timelock : opcode ≠ .OP_CHECKLOCKTIMEVERIFY ∧ opcode ≠ .OP_CHECKSEQUENCEVERIFY) :
     OpcodeAgreement opcode version := by
   intro flags ctx oracles request state instruction requested encoded
-  rw [coreRawStep_op flags ctx oracles request state instruction opcode (requested ▸ notBase)
+  rw [coreRawStep_op flags ctx oracles request state instruction opcode
+    (fun base => signatures (requested.symm.trans base) _ _)
     (fun same => absurd same timelock.1) (fun same => absurd same timelock.2) encoded, requested]
   cases runtimeStep (oracles version
       (request.scriptBytes.extract state.codeSeparatorOffset request.scriptBytes.size))
     (.op opcode) state.runtime flags.script (instructionContext ctx request state) <;> rfl
+
+/-- Outside BASE, every opcode except the two timelocks agrees. -/
+theorem opcodeAgreement_of_ne_base (opcode : Opcode) (version : SignatureVersion)
+    (notBase : version ≠ .base)
+    (timelock : opcode ≠ .OP_CHECKLOCKTIMEVERIFY ∧ opcode ≠ .OP_CHECKSEQUENCEVERIFY) :
+    OpcodeAgreement opcode version :=
+  opcodeAgreement_of_signatures opcode version (fun base => absurd base notBase) timelock
+
+/-- In BASE, every opcode except the four signature opcodes and the two
+timelocks agrees. -/
+theorem opcodeAgreement_base (opcode : Opcode)
+    (signature : opcode ≠ .OP_CHECKSIG ∧ opcode ≠ .OP_CHECKSIGVERIFY ∧
+      opcode ≠ .OP_CHECKMULTISIG ∧ opcode ≠ .OP_CHECKMULTISIGVERIFY)
+    (timelock : opcode ≠ .OP_CHECKLOCKTIMEVERIFY ∧ opcode ≠ .OP_CHECKSEQUENCEVERIFY) :
+    OpcodeAgreement opcode .base :=
+  opcodeAgreement_of_signatures opcode .base
+    (fun _ runtime flags => instructionSignatures_eq_nil opcode runtime flags signature) timelock
 
 theorem opcodeAgreement_tapscript (opcode : Opcode)
     (timelock : opcode ≠ .OP_CHECKLOCKTIMEVERIFY ∧ opcode ≠ .OP_CHECKSEQUENCEVERIFY) :
@@ -58,7 +78,6 @@ namespace OpcodeAgreement
 - `.base` signature opcodes: FindAndDelete removes the signatures from the
   script code given to the oracle, and CONST_SCRIPTCODE fails when it finds
   one. The typed step has no such check.
-- `.base` other opcodes: `coreRawStep_op` does not cover BASE yet.
 - CLTV and CSV: Core runs them as OP_NOP when their flag is off. -/
 
 theorem OP_NOP_tapscript : OpcodeAgreement .OP_NOP .tapscript :=
@@ -456,6 +475,192 @@ theorem OP_VERIFY_witnessV0 : OpcodeAgreement .OP_VERIFY .witnessV0 :=
 
 theorem OP_SIZE_witnessV0 : OpcodeAgreement .OP_SIZE .witnessV0 :=
   opcodeAgreement_witnessV0 _ (by decide)
+
+theorem OP_NOP_base : OpcodeAgreement .OP_NOP .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_NOP1_base : OpcodeAgreement .OP_NOP1 .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_NOP4_base : OpcodeAgreement .OP_NOP4 .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_NOP5_base : OpcodeAgreement .OP_NOP5 .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_NOP6_base : OpcodeAgreement .OP_NOP6 .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_NOP7_base : OpcodeAgreement .OP_NOP7 .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_NOP8_base : OpcodeAgreement .OP_NOP8 .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_NOP9_base : OpcodeAgreement .OP_NOP9 .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_NOP10_base : OpcodeAgreement .OP_NOP10 .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_RETURN_base : OpcodeAgreement .OP_RETURN .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_IF_base : OpcodeAgreement .OP_IF .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_NOTIF_base : OpcodeAgreement .OP_NOTIF .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_ELSE_base : OpcodeAgreement .OP_ELSE .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_ENDIF_base : OpcodeAgreement .OP_ENDIF .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_2DROP_base : OpcodeAgreement .OP_2DROP .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_2DUP_base : OpcodeAgreement .OP_2DUP .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_3DUP_base : OpcodeAgreement .OP_3DUP .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_2OVER_base : OpcodeAgreement .OP_2OVER .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_2ROT_base : OpcodeAgreement .OP_2ROT .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_2SWAP_base : OpcodeAgreement .OP_2SWAP .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_IFDUP_base : OpcodeAgreement .OP_IFDUP .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_DEPTH_base : OpcodeAgreement .OP_DEPTH .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_DROP_base : OpcodeAgreement .OP_DROP .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_DUP_base : OpcodeAgreement .OP_DUP .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_NIP_base : OpcodeAgreement .OP_NIP .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_OVER_base : OpcodeAgreement .OP_OVER .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_PICK_base : OpcodeAgreement .OP_PICK .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_ROLL_base : OpcodeAgreement .OP_ROLL .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_ROT_base : OpcodeAgreement .OP_ROT .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_SWAP_base : OpcodeAgreement .OP_SWAP .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_TUCK_base : OpcodeAgreement .OP_TUCK .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_TOALTSTACK_base : OpcodeAgreement .OP_TOALTSTACK .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_FROMALTSTACK_base : OpcodeAgreement .OP_FROMALTSTACK .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_1ADD_base : OpcodeAgreement .OP_1ADD .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_1SUB_base : OpcodeAgreement .OP_1SUB .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_NEGATE_base : OpcodeAgreement .OP_NEGATE .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_ABS_base : OpcodeAgreement .OP_ABS .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_ADD_base : OpcodeAgreement .OP_ADD .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_SUB_base : OpcodeAgreement .OP_SUB .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_BOOLAND_base : OpcodeAgreement .OP_BOOLAND .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_BOOLOR_base : OpcodeAgreement .OP_BOOLOR .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_NOT_base : OpcodeAgreement .OP_NOT .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_0NOTEQUAL_base : OpcodeAgreement .OP_0NOTEQUAL .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_EQUAL_base : OpcodeAgreement .OP_EQUAL .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_EQUALVERIFY_base : OpcodeAgreement .OP_EQUALVERIFY .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_NUMEQUAL_base : OpcodeAgreement .OP_NUMEQUAL .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_NUMEQUALVERIFY_base : OpcodeAgreement .OP_NUMEQUALVERIFY .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_NUMNOTEQUAL_base : OpcodeAgreement .OP_NUMNOTEQUAL .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_LESSTHAN_base : OpcodeAgreement .OP_LESSTHAN .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_GREATERTHAN_base : OpcodeAgreement .OP_GREATERTHAN .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_LESSTHANOREQUAL_base : OpcodeAgreement .OP_LESSTHANOREQUAL .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_GREATERTHANOREQUAL_base : OpcodeAgreement .OP_GREATERTHANOREQUAL .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_MIN_base : OpcodeAgreement .OP_MIN .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_MAX_base : OpcodeAgreement .OP_MAX .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_WITHIN_base : OpcodeAgreement .OP_WITHIN .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_SHA256_base : OpcodeAgreement .OP_SHA256 .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_HASH256_base : OpcodeAgreement .OP_HASH256 .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_RIPEMD160_base : OpcodeAgreement .OP_RIPEMD160 .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_HASH160_base : OpcodeAgreement .OP_HASH160 .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_CHECKSIGADD_base : OpcodeAgreement .OP_CHECKSIGADD .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_VERIFY_base : OpcodeAgreement .OP_VERIFY .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
+
+theorem OP_SIZE_base : OpcodeAgreement .OP_SIZE .base :=
+  opcodeAgreement_base _ (by decide) (by decide)
 
 end OpcodeAgreement
 
