@@ -65,8 +65,6 @@ theorem executeCoreWitnessScript_of_runtime
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (script : Script)
     (version : request.sigVersion = .tapscript)
-    (locktime : flags.checkLockTimeVerify = true)
-    (sequence : flags.checkSequenceVerify = true)
     (encoded : CoreTapscriptEncoding request.scriptBytes 0 script)
     (count : request.stack.length ≤ maxStackSize)
     (sizes : ∀ item ∈ request.stack, item.size ≤ maxScriptElementSize)
@@ -79,8 +77,7 @@ theorem executeCoreWitnessScript_of_runtime
   have elements : request.stack.any (fun item => item.size > maxScriptElementSize) = false := by
     simp only [List.any_eq_false]; intro item member
     simpa using Nat.not_lt.mpr (sizes item member)
-  have raw := executeCoreScript_eq_runtime flags ctx oracles request script
-    version locktime sequence encoded
+  have raw := executeCoreScript_eq_runtime flags ctx oracles request script version encoded
   rw [executed] at raw
   simp only [coreRuntimeResult] at raw
   simp [executeCoreWitnessScript, version, encoded.no_opSuccess,

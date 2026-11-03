@@ -117,17 +117,33 @@ theorem instructionSignatures_eq_nil (opcode : Opcode) (state : RuntimeState)
     instructionSignatures opcode state flags = [] := by
   cases opcode <;> simp_all [instructionSignatures]
 
+/-- Core's fallback of a disabled timelock to OP_NOP is the typed step's own. -/
+theorem runtimeStep_coreTimelockFallback (oracle : CryptoOracle) (opcode : Opcode)
+    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
+    runtimeStep oracle (.op (if (opcode == .OP_CHECKLOCKTIMEVERIFY && !flags.checkLockTimeVerify) ||
+        (opcode == .OP_CHECKSEQUENCEVERIFY && !flags.checkSequenceVerify) then .OP_NOP
+      else opcode)) state flags ctx = runtimeStep oracle (.op opcode) state flags ctx := by
+  cases opcode
+  case OP_CHECKLOCKTIMEVERIFY =>
+    cases off : flags.checkLockTimeVerify
+    · rw [runtimeStep_checkLockTimeVerify_off oracle state ctx off]
+      simp +decide
+    · simp +decide
+  case OP_CHECKSEQUENCEVERIFY =>
+    cases off : flags.checkSequenceVerify
+    · rw [runtimeStep_checkSequenceVerify_off oracle state ctx off]
+      simp +decide
+    · simp +decide
+  all_goals simp +decide
+
 /-- The raw step of a modeled opcode is the typed step on the same runtime
-state, when neither timelock opcode falls back to OP_NOP and, in BASE, the
-opcode gives FindAndDelete no signature to remove. -/
+state when, in BASE, the opcode gives FindAndDelete no signature to remove. -/
 theorem coreRawStep_op (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (state : CoreRawState)
     (instruction : CoreRawInstruction) (opcode : Opcode)
     (signatures : request.sigVersion = .base →
       instructionSignatures opcode state.runtime flags.script = [])
-    (locktime : opcode = .OP_CHECKLOCKTIMEVERIFY → flags.checkLockTimeVerify = true)
-    (sequence : opcode = .OP_CHECKSEQUENCEVERIFY → flags.checkSequenceVerify = true)
     (encoded : instruction.Encodes (.op opcode)) :
     coreRawStep flags ctx oracles request state instruction =
       ((runtimeStep
@@ -141,17 +157,25 @@ theorem coreRawStep_op (flags : CoreVerificationFlags) (ctx : TxContext)
               opcodePosition := state.opcodePosition + 1 } := by
   obtain ⟨byte, payload⟩ := encoded
   obtain ⟨high, enabled, not65, not66, notSha1, notSeparator⟩ := opcodeByte_modeled opcode
-  have mapped : (if (opcode == .OP_CHECKLOCKTIMEVERIFY && !flags.checkLockTimeVerify) ||
-      (opcode == .OP_CHECKSEQUENCEVERIFY && !flags.checkSequenceVerify) then .OP_NOP else opcode) =
-      opcode := by
-    cases opcode <;> simp_all +decide
+  have mapped := runtimeStep_coreTimelockFallback
+    (state := state.runtime) (flags := flags.script) (ctx := instructionContext ctx request state)
+    (opcode := opcode)
   have notPush : ¬ (opcodeByte opcode).toNat ≤ 78 := by omega
   have not79 : (opcodeByte opcode).toNat ≠ 79 := by omega
   have notSmall : ¬ (opcodeByte opcode).toNat ≤ 96 := by omega
   have version : (instructionContext ctx request state).sigVersion = request.sigVersion := rfl
   have noSignatures : (if (state.runtime.conditions.all id && request.sigVersion == .base) = true
-      then instructionSignatures opcode state.runtime flags.script else []) = [] := by
-    cases versionEq : request.sigVersion <;> simp +decide [signatures, versionEq]
+      then instructionSignatures
+        (if (opcode == .OP_CHECKLOCKTIMEVERIFY && !flags.script.checkLockTimeVerify) ||
+          (opcode == .OP_CHECKSEQUENCEVERIFY && !flags.script.checkSequenceVerify) then .OP_NOP
+        else opcode) state.runtime flags.script else []) = [] := by
+    cases versionEq : request.sigVersion
+    · split
+      · split
+        · rfl
+        · exact signatures versionEq
+      · rfl
+    all_goals simp +decide
   unfold coreRawStep
   simp only [payload, byte, ByteArray.size_empty, maxScriptElementSize, enabled,
     opcodeFromByte_opcodeByte, mapped, noSignatures, removeSignatures]
@@ -181,8 +205,6 @@ private theorem coreRawStep_tapscript (flags : CoreVerificationFlags) (ctx : TxC
     (request : CoreScriptExecutionRequest) (state : CoreRawState)
     (instruction : CoreRawInstruction) (element : ScriptElement)
     (version : request.sigVersion = .tapscript)
-    (locktime : flags.checkLockTimeVerify = true)
-    (sequence : flags.checkSequenceVerify = true)
     (separatorOffset : state.codeSeparatorOffset = 0)
     (separatorPosition : state.codeSeparatorPosition = 0xffffffff)
     (encoded : instruction.Encodes element) :
@@ -201,7 +223,7 @@ private theorem coreRawStep_tapscript (flags : CoreVerificationFlags) (ctx : TxC
   cases element with
   | op opcode =>
       rw [coreRawStep_op flags ctx oracles request state instruction opcode
-        (fun base => by simp [version] at base) (fun _ => locktime) (fun _ => sequence) encoded,
+        (fun base => by simp [version] at base) encoded,
         context, code, version]
   | pushData data =>
       simp only [CoreRawInstruction.Encodes, encodesPush] at encoded
@@ -241,7 +263,7 @@ private theorem coreRawStep_tapscript (flags : CoreVerificationFlags) (ctx : TxC
   | pushNum number =>
       rw [runtimeStep_pushNum]
       exact coreRawStep_tapscript flags ctx oracles request state instruction
-        (.pushData (scriptNum number)) version locktime sequence separatorOffset separatorPosition encoded
+        (.pushData (scriptNum number)) version separatorOffset separatorPosition encoded
 termination_by match element with | .pushNum _ => 1 | _ => 0
 
 /-- The Core executor exposes the main stack or Script error. The runtime
@@ -269,8 +291,6 @@ private theorem executeCoreRawLoop_tapscript (flags : CoreVerificationFlags) (ct
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest)
     (version : request.sigVersion = .tapscript)
-    (locktime : flags.checkLockTimeVerify = true)
-    (sequence : flags.checkSequenceVerify = true)
     (script : Script) (state : CoreRawState) (fuel : Nat)
     (enough : script.length < fuel)
     (separatorOffset : state.codeSeparatorOffset = 0)
@@ -299,7 +319,7 @@ private theorem executeCoreRawLoop_tapscript (flags : CoreVerificationFlags) (ct
               rw [executeCoreRawLoop, if_neg (Nat.not_le_of_lt encoded.1)]
               simp only [decoded, bind, Except.bind, Except.mapError]
               rw [coreRawStep_tapscript flags ctx oracles request state instruction element
-                version locktime sequence separatorOffset separatorPosition encoded.2.2.1]
+                version separatorOffset separatorPosition encoded.2.2.1]
               cases stepped : runtimeStep (oracles .tapscript request.scriptBytes) element
                   state.runtime flags.script (coreTapscriptContext ctx request) with
               | error error =>
@@ -310,15 +330,12 @@ private theorem executeCoreRawLoop_tapscript (flags : CoreVerificationFlags) (ct
 
 /-- Original-byte Tapscript execution and the typed runtime have the same
 main-stack result and exact Script error for every input stack and oracle.
-The byte-only certificate excludes CODESEPARATOR and nonminimal pushes;
-both timelock opcodes must be enabled, as in the typed evaluator. Witness
+The byte-only certificate excludes CODESEPARATOR and nonminimal pushes. Witness
 commitments, OP_SUCCESS scanning and initial witness limits are caller checks. -/
 theorem executeCoreScript_eq_runtime (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (script : Script)
     (version : request.sigVersion = .tapscript)
-    (locktime : flags.checkLockTimeVerify = true)
-    (sequence : flags.checkSequenceVerify = true)
     (encoded : CoreTapscriptEncoding request.scriptBytes 0 script) :
     executeCoreScript flags ctx oracles request =
       coreRuntimeResult (evaluateWithRuntimeLimits (oracles .tapscript request.scriptBytes)
@@ -327,7 +344,7 @@ theorem executeCoreScript_eq_runtime (flags : CoreVerificationFlags) (ctx : TxCo
   have bound := encoded.length_bound
   simp only [executeCoreScript, version, show (SignatureVersion.tapscript != .tapscript) = false from rfl,
     Bool.false_and, Bool.false_eq_true, ↓reduceIte, evaluateWithRuntimeLimits]
-  exact executeCoreRawLoop_tapscript flags ctx oracles request version locktime sequence
+  exact executeCoreRawLoop_tapscript flags ctx oracles request version
     script _ _ (by omega) rfl rfl encoded
 
 /-- Under the existing cryptographic refinement assumption, every successful
@@ -336,15 +353,14 @@ theorem executeCoreScript_eval_success (flags : CoreVerificationFlags) (ctx : Tx
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (script : Script)
     (version : request.sigVersion = .tapscript)
-    (locktime : flags.checkLockTimeVerify = true)
-    (sequence : flags.checkSequenceVerify = true)
+    (locktime : flags.script.checkLockTimeVerify = true)
+    (sequence : flags.script.checkSequenceVerify = true)
     (encoded : CoreTapscriptEncoding request.scriptBytes 0 script)
     (agreement : (oracles .tapscript request.scriptBytes).RefinesModel)
     (stack : Stack) (success : executeCoreScript flags ctx oracles request = .ok stack) :
     ∃ alt, Eval script request.stack [] flags.script (coreTapscriptContext ctx request)
       (.success stack alt) := by
-  rw [executeCoreScript_eq_runtime flags ctx oracles request script version locktime sequence encoded]
-    at success
+  rw [executeCoreScript_eq_runtime flags ctx oracles request script version encoded] at success
   cases evaluated : evaluateWithRuntimeLimits (oracles .tapscript request.scriptBytes)
       script request.stack [] flags.script (coreTapscriptContext ctx request)
       request.validationWeight with
@@ -352,7 +368,7 @@ theorem executeCoreScript_eval_success (flags : CoreVerificationFlags) (ctx : Tx
   | success result alt weight =>
       simp only [evaluated, coreRuntimeResult, Except.ok.injEq] at success
       subst result
-      exact ⟨alt, evaluateWithRuntimeLimits_eval_success agreement evaluated⟩
+      exact ⟨alt, evaluateWithRuntimeLimits_eval_success agreement locktime sequence evaluated⟩
 
 @[simp] private theorem singleton_size (byte : UInt8) : (⟨#[byte]⟩ : ByteArray).size = 1 := rfl
 private theorem get_middle (before data after : ByteArray) (i : Nat) (small : i < data.size) :
@@ -538,32 +554,28 @@ theorem executeCoreScript_serializeScript (flags : CoreVerificationFlags) (ctx :
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (script : Script)
     (version : request.sigVersion = .tapscript)
-    (locktime : flags.checkLockTimeVerify = true)
-    (sequence : flags.checkSequenceVerify = true)
     (small : ∀ element ∈ script, element.pushSize < 76)
     (serialized : serializeScript script = .ok request.scriptBytes) :
     executeCoreScript flags ctx oracles request =
       coreRuntimeResult (evaluateWithRuntimeLimits (oracles .tapscript request.scriptBytes)
         script request.stack [] flags.script (coreTapscriptContext ctx request)
         request.validationWeight) :=
-  executeCoreScript_eq_runtime flags ctx oracles request script version locktime sequence
+  executeCoreScript_eq_runtime flags ctx oracles request script version
     (CoreTapscriptEncoding.of_serializeScript script request.scriptBytes small serialized)
 
 /-- Concrete Miniscript compilation followed by raw Tapscript execution has
-the typed runtime's main stack or exact error, under the explicit push-size,
-serialization and timelock-activation premises. -/
+the typed runtime's main stack or exact error, under the explicit push-size
+and serialization premises. -/
 theorem executeCoreScript_compileConcrete (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (fragment : Miniscript.CoreFragment)
     (version : request.sigVersion = .tapscript)
-    (locktime : flags.checkLockTimeVerify = true)
-    (sequence : flags.checkSequenceVerify = true)
     (small : ∀ element ∈ Miniscript.compileConcrete fragment, element.pushSize < 76)
     (serialized : serializeScript (Miniscript.compileConcrete fragment) = .ok request.scriptBytes) :
     executeCoreScript flags ctx oracles request =
       coreRuntimeResult (evaluateWithRuntimeLimits (oracles .tapscript request.scriptBytes)
         (Miniscript.compileConcrete fragment) request.stack [] flags.script
         (coreTapscriptContext ctx request) request.validationWeight) :=
-  executeCoreScript_serializeScript flags ctx oracles request _ version locktime sequence small serialized
+  executeCoreScript_serializeScript flags ctx oracles request _ version small serialized
 
 end LeanMiniscript.Extraction

@@ -32,8 +32,6 @@ structure CoreVerificationFlags where
   cleanStack : Bool := false
   witness : Bool := false
   taproot : Bool := false
-  checkLockTimeVerify : Bool := false
-  checkSequenceVerify : Bool := false
   discourageUpgradableWitnessProgram : Bool := false
   discourageUpgradableTaprootVersion : Bool := false
   discourageOpSuccess : Bool := false

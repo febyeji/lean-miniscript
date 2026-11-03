@@ -60,6 +60,78 @@ theorem runtimeStep_pushNumber (oracle : CryptoOracle) (number : Int)
     runtimeStep oracle (.pushNum number) state flags ctx =
       runtimeInstruction oracle (.pushNum number) state flags ctx := rfl
 
+@[simp] theorem ScriptElement.underTimelockFlags_pushData (flags : ScriptFlags) (data : ByteArray) :
+    (ScriptElement.pushData data).underTimelockFlags flags = .pushData data := rfl
+
+@[simp] theorem ScriptElement.underTimelockFlags_pushNum (flags : ScriptFlags) (number : Int) :
+    (ScriptElement.pushNum number).underTimelockFlags flags = .pushNum number := rfl
+
+@[simp] theorem ScriptElement.underTimelockFlags_op (flags : ScriptFlags) {opcode : Opcode}
+    (locktime : opcode ≠ .OP_CHECKLOCKTIMEVERIFY) (sequence : opcode ≠ .OP_CHECKSEQUENCEVERIFY) :
+    (ScriptElement.op opcode).underTimelockFlags flags = .op opcode := by
+  cases opcode <;> first | rfl | contradiction
+
+@[simp] theorem ScriptElement.underTimelockFlags_checkLockTimeVerify (flags : ScriptFlags) :
+    (ScriptElement.op .OP_CHECKLOCKTIMEVERIFY).underTimelockFlags flags =
+      if flags.checkLockTimeVerify then .op .OP_CHECKLOCKTIMEVERIFY else .op .OP_NOP := rfl
+
+@[simp] theorem ScriptElement.underTimelockFlags_checkSequenceVerify (flags : ScriptFlags) :
+    (ScriptElement.op .OP_CHECKSEQUENCEVERIFY).underTimelockFlags flags =
+      if flags.checkSequenceVerify then .op .OP_CHECKSEQUENCEVERIFY else .op .OP_NOP := rfl
+
+/-- With both timelock flags on, the runtime executes every element as written. -/
+theorem ScriptElement.underTimelockFlags_eq (element : ScriptElement) {flags : ScriptFlags}
+    (locktime : flags.checkLockTimeVerify = true)
+    (sequence : flags.checkSequenceVerify = true) :
+    element.underTimelockFlags flags = element := by
+  unfold ScriptElement.underTimelockFlags
+  split <;> simp_all
+
+/-- A timelock that succeeds leaves both stacks unchanged, so OP_NOP gives the
+same result when its flag is off. -/
+theorem evaluate_underTimelockFlags_success {oracle : CryptoOracle} {element : ScriptElement}
+    {stack alt finalStack finalAlt : Stack} {flags : ScriptFlags} {ctx : TxContext}
+    (success : evaluate oracle [element] stack alt flags ctx = .success finalStack finalAlt) :
+    evaluate oracle [element.underTimelockFlags flags] stack alt flags ctx =
+      .success finalStack finalAlt := by
+  unfold ScriptElement.underTimelockFlags
+  split
+  · split
+    · exact success
+    · cases stack with
+      | nil => simp [evaluate] at success
+      | cons operand rest =>
+          simp only [evaluate] at success
+          split at success <;> (try split at success) <;> (try split at success) <;>
+            simp_all [evaluate]
+  · split
+    · exact success
+    · cases stack with
+      | nil => simp [evaluate] at success
+      | cons operand rest =>
+          simp only [evaluate] at success
+          split at success <;> (try split at success) <;> (try split at success) <;>
+            simp_all [evaluate]
+  · exact success
+
+/-- With its flag off, OP_CHECKLOCKTIMEVERIFY steps exactly like OP_NOP. -/
+theorem runtimeStep_checkLockTimeVerify_off (oracle : CryptoOracle) (state : RuntimeState)
+    {flags : ScriptFlags} (ctx : TxContext) (off : flags.checkLockTimeVerify = false) :
+    runtimeStep oracle (.op .OP_CHECKLOCKTIMEVERIFY) state flags ctx =
+      runtimeStep oracle (.op .OP_NOP) state flags ctx := by
+  simp [runtimeStep, chargeOperations, chargedOperationCount, opcodeKeyCount,
+    runtimeInstruction, executeRuntimeElement, ScriptElement.underTimelockFlags, off,
+    prepareValidationWeight, ScriptElement.pushSize]
+
+/-- With its flag off, OP_CHECKSEQUENCEVERIFY steps exactly like OP_NOP. -/
+theorem runtimeStep_checkSequenceVerify_off (oracle : CryptoOracle) (state : RuntimeState)
+    {flags : ScriptFlags} (ctx : TxContext) (off : flags.checkSequenceVerify = false) :
+    runtimeStep oracle (.op .OP_CHECKSEQUENCEVERIFY) state flags ctx =
+      runtimeStep oracle (.op .OP_NOP) state flags ctx := by
+  simp [runtimeStep, chargeOperations, chargedOperationCount, opcodeKeyCount,
+    runtimeInstruction, executeRuntimeElement, ScriptElement.underTimelockFlags, off,
+    prepareValidationWeight, ScriptElement.pushSize]
+
 /-- A successful step charged the operation count, then ran the instruction on
 the charged state. -/
 theorem runtimeStep_ok {oracle : CryptoOracle} {element : ScriptElement}
@@ -100,7 +172,9 @@ theorem executeRuntimeElement_operationCount (oracle : CryptoOracle) (element : 
       | (cases conditions <;> rfl)
       | (cases prepareValidationWeight element stack flags ctx weight with
           | error => rfl
-          | ok weight => simp only; cases evaluate oracle [element] stack alt flags ctx <;> rfl)
+          | ok weight =>
+              simp only
+              cases evaluate oracle [element.underTimelockFlags flags] stack alt flags ctx <;> rfl)
 
 theorem runtimeInstruction_operationCount (oracle : CryptoOracle) (element : ScriptElement)
     (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) (count : Nat) :
@@ -967,7 +1041,8 @@ theorem runtimeInstruction_eq_model
     runtimeInstruction oracle element state flags ctx =
       runtimeInstruction CryptoOracle.model element state flags ctx := by
   have opcode := evaluate_eq_of_eval agreement
-    (evaluate_sound CryptoOracle.model_refines [element] state.stack state.altStack flags ctx)
+    (evaluate_sound CryptoOracle.model_refines [element.underTimelockFlags flags] state.stack
+      state.altStack flags ctx)
   simp only [runtimeInstruction, executeRuntimeElement, opcode]
 
 /-- Resource and control checks do not weaken the existing crypto boundary. -/

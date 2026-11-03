@@ -56,7 +56,8 @@ theorem execute_ordinary (element : ScriptElement) (ordinary : NonConditional el
       if element.pushSize > maxScriptElementSize then throw .pushSize
       if state.conditions.all id then
         let weight ← prepareValidationWeight element state.stack flags ctx state.weight
-        match evaluate oracle [element] state.stack state.altStack flags ctx with
+        match evaluate oracle [element.underTimelockFlags flags] state.stack state.altStack
+            flags ctx with
         | .failure error => throw error
         | .success stack alt => return { state with stack := stack, altStack := alt, weight := weight }
       else return state) := by
@@ -101,7 +102,8 @@ theorem ordinary_conditions
     cases charged : prepareValidationWeight element state.stack flags ctx state.weight with
     | error error => simp [charged] at executed
     | ok weight =>
-        cases opcode : evaluate oracle [element] state.stack state.altStack flags ctx with
+        cases opcode : evaluate oracle [element.underTimelockFlags flags] state.stack
+            state.altStack flags ctx with
         | failure error => simp [charged, opcode] at executed
         | success stack alt =>
             simp [charged, opcode] at executed
@@ -336,11 +338,14 @@ open RuntimeProjection
 /-- Adding source-order runtime limits cannot introduce a successful result.
     Every successful run has exactly the same stacks and remaining signature
     budget in the existing branch-projection evaluator, for every crypto oracle.
-    No bound on script length or restriction on conditional nesting is assumed. -/
+    No bound on script length or restriction on conditional nesting is assumed.
+    The evaluator always checks timelocks, so both timelock flags are on. -/
 theorem evaluateWithRuntimeLimits_erase_success
     {oracle : CryptoOracle} {script : Script}
     {stack alt finalStack finalAlt : Stack} {flags : ScriptFlags} {ctx : TxContext}
     {weight finalWeight : Nat}
+    (locktime : flags.checkLockTimeVerify = true)
+    (sequence : flags.checkSequenceVerify = true)
     (success : evaluateWithRuntimeLimits oracle script stack alt flags ctx weight =
       .success finalStack finalAlt finalWeight) :
     evaluateWithValidationWeight oracle script stack alt flags ctx weight =
@@ -363,7 +368,7 @@ theorem evaluateWithRuntimeLimits_erase_success
               obtain ⟨frame, frameSplit, selected⟩ := runtime_select_frame rest
                 { stack := stackRest, altStack := alt, weight := weight, operationCount := count }
                 (element.branchChoice top) tail
-              have preserved := evaluateWithRuntimeLimits_erase_success
+              have preserved := evaluateWithRuntimeLimits_erase_success locktime sequence
                 (evaluateRuntime_lower (count := 0) selected (Nat.zero_le _))
               rw [evaluateWithValidationWeight.eq_def]
               simp only [branch, ↓reduceIte, minimal]
@@ -372,7 +377,8 @@ theorem evaluateWithRuntimeLimits_erase_success
             · contradiction
       · by_cases ordinary : NonConditional element
         · have pushBound := execute_push_bound executed
-          rw [execute_ordinary element ordinary] at executed
+          rw [execute_ordinary element ordinary,
+            ScriptElement.underTimelockFlags_eq element locktime sequence] at executed
           simp only [pushBound, ↓reduceIte, List.all_nil, bind, Except.bind,
             pure, Except.pure] at executed
           cases charged : prepareValidationWeight element stack flags ctx weight with
@@ -383,7 +389,7 @@ theorem evaluateWithRuntimeLimits_erase_success
               | success nextStack nextAlt =>
                   simp [charged, opcode] at executed
                   subst next
-                  have preserved := evaluateWithRuntimeLimits_erase_success
+                  have preserved := evaluateWithRuntimeLimits_erase_success locktime sequence
                     (evaluateRuntime_lower (count := 0) tail (Nat.zero_le _))
                   rw [evaluateWithValidationWeight.eq_def]
                   simpa [branch, charged, opcode] using preserved
@@ -407,22 +413,26 @@ decreasing_by
 theorem RuntimeEval.toWeightedEval
     {script : Script} {stack alt finalStack finalAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext} {weight finalWeight : Nat}
+    (locktime : flags.checkLockTimeVerify = true)
+    (sequence : flags.checkSequenceVerify = true)
     (evaluated : RuntimeEval script
       { stack := stack, altStack := alt, weight := weight } flags ctx
       (.success finalStack finalAlt finalWeight)) :
     WeightedEval script stack alt flags ctx weight (.success finalStack finalAlt finalWeight) := by
   exact weighted_model_iff.mpr
-    (evaluateWithRuntimeLimits_erase_success (runtime_model_iff.mp evaluated))
+    (evaluateWithRuntimeLimits_erase_success locktime sequence (runtime_model_iff.mp evaluated))
 
 /-- Resource checks introduce failures, never new successful opcode behavior. -/
 theorem RuntimeEval.erase_success
     {script : Script} {stack alt finalStack finalAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext} {weight finalWeight : Nat}
+    (locktime : flags.checkLockTimeVerify = true)
+    (sequence : flags.checkSequenceVerify = true)
     (evaluated : RuntimeEval script
       { stack := stack, altStack := alt, weight := weight } flags ctx
       (.success finalStack finalAlt finalWeight)) :
     Eval script stack alt flags ctx (.success finalStack finalAlt) := by
-  exact evaluated.toWeightedEval.erase_success
+  exact (evaluated.toWeightedEval locktime sequence).erase_success
 
 /-- Executable runtime success implies the old relational result whenever the
     supplied oracle agrees with the abstract cryptographic boundary. -/
@@ -430,10 +440,12 @@ theorem evaluateWithRuntimeLimits_eval_success
     {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
     {script : Script} {stack alt finalStack finalAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext} {weight finalWeight : Nat}
+    (locktime : flags.checkLockTimeVerify = true)
+    (sequence : flags.checkSequenceVerify = true)
     (success : evaluateWithRuntimeLimits oracle script stack alt flags ctx weight =
       .success finalStack finalAlt finalWeight) :
     Eval script stack alt flags ctx (.success finalStack finalAlt) := by
-  have preserved := evaluateWithRuntimeLimits_erase_success success
+  have preserved := evaluateWithRuntimeLimits_erase_success locktime sequence success
   have relational := evaluateWithValidationWeight_sound agreement script stack alt flags ctx weight
   rw [preserved] at relational
   exact relational.erase_success

@@ -8,8 +8,7 @@ open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
 open DescriptorMaterialFixtures
 
 private def flags : CoreVerificationFlags :=
-  { witness := true, taproot := true, cleanStack := true
-    checkLockTimeVerify := true, checkSequenceVerify := true }
+  { witness := true, taproot := true, cleanStack := true }
 
 private def keyA := PubKey.ofBytes key3
 private def keyB := PubKey.ofBytes key7

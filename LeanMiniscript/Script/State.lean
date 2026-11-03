@@ -40,6 +40,12 @@ structure ScriptFlags where
   discourageUpgradablePubKeyType : Bool := false
   /-- Policy flag rejecting active upgradeable NOP instructions. -/
   discourageUpgradableNops : Bool := false
+  /-- `SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY`: when off, the source-order runtime
+      runs OP_CHECKLOCKTIMEVERIFY as OP_NOP. The evaluator always checks it. -/
+  checkLockTimeVerify : Bool := true
+  /-- `SCRIPT_VERIFY_CHECKSEQUENCEVERIFY`: when off, the source-order runtime
+      runs OP_CHECKSEQUENCEVERIFY as OP_NOP. The evaluator always checks it. -/
+  checkSequenceVerify : Bool := true
   deriving Repr
 
 /-- Script signature algorithms and opcode availability. Taproot key-path

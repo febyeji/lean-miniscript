@@ -120,16 +120,19 @@ theorem Eval.stackGrowth
   have bound := stackGrowthAllowance_le_length script oneItem
   omega
 
-/-- Source-order success inherits the opcode-weighted bound through erasure. -/
+/-- Source-order success inherits the opcode-weighted bound through erasure,
+    which needs both timelock flags on. -/
 theorem RuntimeEval.stackGrowth_le_allowance
     {script : Script} {stack alt finalStack finalAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext} {weight finalWeight : Nat}
+    (locktime : flags.checkLockTimeVerify = true)
+    (sequence : flags.checkSequenceVerify = true)
     (evaluated : RuntimeEval script
       { stack := stack, altStack := alt, weight := weight } flags ctx
       (.success finalStack finalAlt finalWeight)) :
     finalStack.length + finalAlt.length ≤
       stack.length + alt.length + stackGrowthAllowance script :=
-  evaluated.erase_success.stackGrowth_le_allowance
+  (evaluated.erase_success locktime sequence).stackGrowth_le_allowance
 
 /-- Executable runtime success satisfies the weighted bound under the existing
     oracle refinement contract. -/
@@ -137,23 +140,28 @@ theorem evaluateWithRuntimeLimits_stackGrowth_le_allowance
     {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
     {script : Script} {stack alt finalStack finalAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext} {weight finalWeight : Nat}
+    (locktime : flags.checkLockTimeVerify = true)
+    (sequence : flags.checkSequenceVerify = true)
     (success : evaluateWithRuntimeLimits oracle script stack alt flags ctx weight =
       .success finalStack finalAlt finalWeight) :
     finalStack.length + finalAlt.length ≤
       stack.length + alt.length + stackGrowthAllowance script :=
-  (evaluateWithRuntimeLimits_eval_success agreement success).stackGrowth_le_allowance
+  (evaluateWithRuntimeLimits_eval_success agreement locktime sequence
+    success).stackGrowth_le_allowance
 
 /-- Source-order success inherits the instruction-count bound when source
     elements have one-item allowances, starting with no open conditional. -/
 theorem RuntimeEval.stackGrowth
     {script : Script} {stack alt finalStack finalAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext} {weight finalWeight : Nat}
+    (locktime : flags.checkLockTimeVerify = true)
+    (sequence : flags.checkSequenceVerify = true)
     (evaluated : RuntimeEval script
       { stack := stack, altStack := alt, weight := weight } flags ctx
       (.success finalStack finalAlt finalWeight))
     (oneItem : OneItemGrowth script) :
     finalStack.length + finalAlt.length ≤ stack.length + alt.length + script.length :=
-  evaluated.erase_success.stackGrowth oneItem
+  (evaluated.erase_success locktime sequence).stackGrowth oneItem
 
 /-- Executable runtime success satisfies the instruction-count bound for
     one-item source elements when the oracle refines the model. This does not assert that execution
@@ -162,10 +170,12 @@ theorem evaluateWithRuntimeLimits_stackGrowth
     {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
     {script : Script} {stack alt finalStack finalAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext} {weight finalWeight : Nat}
+    (locktime : flags.checkLockTimeVerify = true)
+    (sequence : flags.checkSequenceVerify = true)
     (success : evaluateWithRuntimeLimits oracle script stack alt flags ctx weight =
       .success finalStack finalAlt finalWeight)
     (oneItem : OneItemGrowth script) :
     finalStack.length + finalAlt.length ≤ stack.length + alt.length + script.length :=
-  (evaluateWithRuntimeLimits_eval_success agreement success).stackGrowth oneItem
+  (evaluateWithRuntimeLimits_eval_success agreement locktime sequence success).stackGrowth oneItem
 
 end LeanMiniscript.Script

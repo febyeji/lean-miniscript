@@ -6,8 +6,7 @@ open LeanMiniscript.Script LeanMiniscript.Miniscript
 
 private def bytes (size : Nat) : ByteArray := ⟨Array.replicate size 1⟩
 
-private def flags : CoreVerificationFlags :=
-  { checkLockTimeVerify := true, checkSequenceVerify := true }
+private def flags : CoreVerificationFlags := {}
 
 private def ctx : TxContext :=
   { version := 2, locktime := 0, sequence := 0, sigHash := ByteArray.empty }
@@ -27,9 +26,9 @@ private def raw (script : Script) (stack : Stack := []) (weight : Nat := 50)
     (verificationFlags : CoreVerificationFlags := flags) : Except CoreVerificationError Stack :=
   executeCoreScript verificationFlags ctx (fun _ _ => oracle) (request script stack weight)
 
-private def typed (script : Script) (stack : Stack := []) (weight : Nat := 50) :
-    Except CoreVerificationError Stack :=
-  coreRuntimeResult (evaluateWithRuntimeLimits oracle script stack [] flags.script
+private def typed (script : Script) (stack : Stack := []) (weight : Nat := 50)
+    (verificationFlags : CoreVerificationFlags := flags) : Except CoreVerificationError Stack :=
+  coreRuntimeResult (evaluateWithRuntimeLimits oracle script stack [] verificationFlags.script
     (coreTapscriptContext ctx (request script stack weight)) weight)
 
 private def conditional : Script :=
@@ -80,10 +79,16 @@ example : raw [.pushNum 1] (List.replicate 1000 trueElement) = .error (.script .
 example : raw (.pushNum 1 :: List.replicate 202 (.op .OP_NOP)) = .ok [trueElement] ∧
     typed (.pushNum 1 :: List.replicate 202 (.op .OP_NOP)) = .ok [trueElement] := by native_decide
 
--- Timelock activation is a necessary premise: the raw executor can treat
--- disabled CLTV as a NOP, while the typed runtime always checks it.
-example : raw [.pushNum 1, .op .OP_CHECKLOCKTIMEVERIFY] [] 50
-      { flags with checkLockTimeVerify := false } = .ok [trueElement] ∧
+private def timelocksOff : CoreVerificationFlags :=
+  { script := { checkLockTimeVerify := false, checkSequenceVerify := false } }
+
+-- Both executors run disabled CLTV and CSV as OP_NOP, even on an empty stack,
+-- and check them when their flags are on.
+example : raw [.op .OP_CHECKLOCKTIMEVERIFY, .op .OP_CHECKSEQUENCEVERIFY, .pushNum 1] [] 50
+      timelocksOff = .ok [trueElement] ∧
+    typed [.op .OP_CHECKLOCKTIMEVERIFY, .op .OP_CHECKSEQUENCEVERIFY, .pushNum 1] [] 50
+      timelocksOff = .ok [trueElement] ∧
+    raw [.pushNum 1, .op .OP_CHECKLOCKTIMEVERIFY] = .error (.script .checkLockTimeVerify) ∧
     typed [.pushNum 1, .op .OP_CHECKLOCKTIMEVERIFY] = .error (.script .checkLockTimeVerify) := by
   native_decide
 

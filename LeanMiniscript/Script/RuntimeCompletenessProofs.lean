@@ -200,7 +200,8 @@ theorem EvalResources.runtime_complete_exact
                    operationCount := count })
       · rw [execute_ordinary element head.singleton_nonConditional]
         simp [Nat.not_lt.mpr (pushes element (by simp)), charged,
-          evaluate_eq_of_eval agreement head, bind, Except.bind, pure, Except.pure]
+          evaluate_underTimelockFlags_success (evaluate_eq_of_eval agreement head), bind,
+          Except.bind, pure, Except.pure]
       · exact Nat.le_trans tail.initial_le_peak tailPeak
       · exact evaluateRuntime_raise completed (Nat.zero_le _)
           (by rcases operations with version | operations

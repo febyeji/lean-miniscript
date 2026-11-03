@@ -101,8 +101,6 @@ theorem verifyCoreScripts_of_taproot_runtime
     (keyPath : CoreKeyPathChecker) (arguments : List ByteArray)
     (bytes control output root : ByteArray) (script : Script)
     (enabled : flags.witness = true) (taproot : flags.taproot = true)
-    (locktime : flags.checkLockTimeVerify = true)
-    (sequence : flags.checkSequenceVerify = true)
     (committed : verifyTaprootControlBlock output bytes control =
       .ok { leafVersion := 0xc0, leafHash := tapleafHash bytes 0xc0, merkleRoot := root })
     (outputTruth : castToBool output = true)
@@ -126,7 +124,7 @@ theorem verifyCoreScripts_of_taproot_runtime
   apply verifyCoreWitnessProgram_scriptPath _ flags arguments bytes control output root
     keyPath taproot committed
   exact executeCoreWitnessScript_of_runtime flags ctx oracles
-    (coreTaprootRequest arguments bytes control) script rfl locktime sequence encoded
+    (coreTaprootRequest arguments bytes control) script rfl encoded
     (by simpa [coreTaprootRequest] using count)
     (by simpa [coreTaprootRequest] using sizes) executed truth
 

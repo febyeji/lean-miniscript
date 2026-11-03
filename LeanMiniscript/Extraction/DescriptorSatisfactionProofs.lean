@@ -105,8 +105,8 @@ theorem verify_of_prepareDescriptorSatisfaction
     (selected : descriptor.taprootOutputKey = some output)
     (outputTruth : castToBool output = true)
     (enabled : flags.witness = true) (taproot : flags.taproot = true)
-    (locktime : flags.checkLockTimeVerify = true)
-    (sequence : flags.checkSequenceVerify = true)
+    (locktime : flags.script.checkLockTimeVerify = true)
+    (sequence : flags.script.checkSequenceVerify = true)
     (nonPreimages : ∀ lock : HashLock, lock.Mismatches (material.nonPreimageFor lock))
     (modeled : ModeledContextFlags .tapscript flags.script)
     (agreement : (CryptoOracle.pureLeanHashes verifyECDSA verifySchnorr).RefinesModel) :
@@ -176,8 +176,8 @@ theorem satisfyDescriptorTransaction_of_preparation
     (selected : descriptor.taprootOutputKey = some output)
     (outputTruth : castToBool output = true)
     (enabled : flags.witness = true) (taproot : flags.taproot = true)
-    (locktime : flags.checkLockTimeVerify = true)
-    (sequence : flags.checkSequenceVerify = true)
+    (locktime : flags.script.checkLockTimeVerify = true)
+    (sequence : flags.script.checkSequenceVerify = true)
     (nonPreimages : ∀ lock : HashLock, lock.Mismatches (material.nonPreimageFor lock))
     (modeled : ModeledContextFlags .tapscript flags.script)
     (agreement : (CryptoOracle.pureLeanHashes verifyECDSA verifySchnorr).RefinesModel) :
