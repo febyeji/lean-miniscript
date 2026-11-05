@@ -14,7 +14,8 @@ open LeanMiniscript.Script
 open CoreScriptExecution
 
 /-- Core's raw step and the typed step give the same state or error. The typed
-step uses the oracle for the script code after the last OP_CODESEPARATOR. -/
+step gets the script code after the last OP_CODESEPARATOR and the oracle for
+each script code of the signature version. -/
 def OpcodeAgreement (opcode : Opcode) (version : SignatureVersion) : Prop :=
   ∀ (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
@@ -24,651 +25,637 @@ def OpcodeAgreement (opcode : Opcode) (version : SignatureVersion) : Prop :=
     instruction.Encodes (.op opcode) →
     (coreRawStep flags ctx oracles request state instruction).map CoreRawState.runtime =
       (runtimeStep
-        (oracles version (request.scriptBytes.extract state.codeSeparatorOffset
-          request.scriptBytes.size))
+        ⟨oracles version, request.scriptBytes.extract state.codeSeparatorOffset
+          request.scriptBytes.size⟩
         (.op opcode) state.runtime flags.script
         (instructionContext ctx request state)).mapError .script
 
-/-- An opcode agrees when, in BASE, it gives FindAndDelete no signature:
-Core's operation count and multisig key count are the typed step's charge, the
-oracle gets the same script code, and a disabled timelock runs as OP_NOP on
-both sides. -/
-theorem opcodeAgreement_of_signatures (opcode : Opcode) (version : SignatureVersion)
-    (signatures : version = .base →
-      ∀ runtime flags, instructionSignatures opcode runtime flags = []) :
+/-- Every opcode agrees in every signature version: Core's operation count and
+multisig key count are the typed step's charge, both remove the same
+signatures from the script code in BASE and fail under CONST_SCRIPTCODE when
+they find one, and a disabled timelock runs as OP_NOP on both sides. -/
+theorem opcodeAgreement (opcode : Opcode) (version : SignatureVersion) :
     OpcodeAgreement opcode version := by
   intro flags ctx oracles request state instruction requested encoded
-  rw [coreRawStep_op flags ctx oracles request state instruction opcode
-    (fun base => signatures (requested.symm.trans base) _ _) encoded, requested]
-  cases runtimeStep (oracles version
-      (request.scriptBytes.extract state.codeSeparatorOffset request.scriptBytes.size))
-    (.op opcode) state.runtime flags.script (instructionContext ctx request state) <;> rfl
-
-/-- Outside BASE, every opcode agrees. -/
-theorem opcodeAgreement_of_ne_base (opcode : Opcode) (version : SignatureVersion)
-    (notBase : version ≠ .base) :
-    OpcodeAgreement opcode version :=
-  opcodeAgreement_of_signatures opcode version (fun base => absurd base notBase)
-
-/-- In BASE, every opcode except the four signature opcodes agrees. -/
-theorem opcodeAgreement_base (opcode : Opcode)
-    (signature : opcode ≠ .OP_CHECKSIG ∧ opcode ≠ .OP_CHECKSIGVERIFY ∧
-      opcode ≠ .OP_CHECKMULTISIG ∧ opcode ≠ .OP_CHECKMULTISIGVERIFY) :
-    OpcodeAgreement opcode .base :=
-  opcodeAgreement_of_signatures opcode .base
-    (fun _ runtime flags => instructionSignatures_eq_nil opcode runtime flags signature)
-
-theorem opcodeAgreement_tapscript (opcode : Opcode) : OpcodeAgreement opcode .tapscript :=
-  opcodeAgreement_of_ne_base opcode .tapscript (by decide)
-
-theorem opcodeAgreement_witnessV0 (opcode : Opcode) : OpcodeAgreement opcode .witnessV0 :=
-  opcodeAgreement_of_ne_base opcode .witnessV0 (by decide)
+  rw [coreRawStep_op flags ctx oracles request state instruction opcode encoded, requested]
+  cases runtimeStep
+      ⟨oracles version, request.scriptBytes.extract state.codeSeparatorOffset
+        request.scriptBytes.size⟩
+      (.op opcode) state.runtime flags.script (instructionContext ctx request state) <;> rfl
 
 namespace OpcodeAgreement
 
-/- TODO(equivalence): the `.base` signature opcodes are open. FindAndDelete
-removes the signatures from the script code given to the oracle, and
-CONST_SCRIPTCODE fails when it finds one. The typed step has no such check. -/
-
 theorem OP_NOP_tapscript : OpcodeAgreement .OP_NOP .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_NOP1_tapscript : OpcodeAgreement .OP_NOP1 .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_NOP4_tapscript : OpcodeAgreement .OP_NOP4 .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_NOP5_tapscript : OpcodeAgreement .OP_NOP5 .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_NOP6_tapscript : OpcodeAgreement .OP_NOP6 .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_NOP7_tapscript : OpcodeAgreement .OP_NOP7 .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_NOP8_tapscript : OpcodeAgreement .OP_NOP8 .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_NOP9_tapscript : OpcodeAgreement .OP_NOP9 .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_NOP10_tapscript : OpcodeAgreement .OP_NOP10 .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_RETURN_tapscript : OpcodeAgreement .OP_RETURN .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_IF_tapscript : OpcodeAgreement .OP_IF .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_NOTIF_tapscript : OpcodeAgreement .OP_NOTIF .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_ELSE_tapscript : OpcodeAgreement .OP_ELSE .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_ENDIF_tapscript : OpcodeAgreement .OP_ENDIF .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_2DROP_tapscript : OpcodeAgreement .OP_2DROP .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_2DUP_tapscript : OpcodeAgreement .OP_2DUP .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_3DUP_tapscript : OpcodeAgreement .OP_3DUP .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_2OVER_tapscript : OpcodeAgreement .OP_2OVER .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_2ROT_tapscript : OpcodeAgreement .OP_2ROT .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_2SWAP_tapscript : OpcodeAgreement .OP_2SWAP .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_IFDUP_tapscript : OpcodeAgreement .OP_IFDUP .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_DEPTH_tapscript : OpcodeAgreement .OP_DEPTH .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_DROP_tapscript : OpcodeAgreement .OP_DROP .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_DUP_tapscript : OpcodeAgreement .OP_DUP .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_NIP_tapscript : OpcodeAgreement .OP_NIP .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_OVER_tapscript : OpcodeAgreement .OP_OVER .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_PICK_tapscript : OpcodeAgreement .OP_PICK .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_ROLL_tapscript : OpcodeAgreement .OP_ROLL .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_ROT_tapscript : OpcodeAgreement .OP_ROT .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_SWAP_tapscript : OpcodeAgreement .OP_SWAP .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_TUCK_tapscript : OpcodeAgreement .OP_TUCK .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_TOALTSTACK_tapscript : OpcodeAgreement .OP_TOALTSTACK .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_FROMALTSTACK_tapscript : OpcodeAgreement .OP_FROMALTSTACK .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_1ADD_tapscript : OpcodeAgreement .OP_1ADD .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_1SUB_tapscript : OpcodeAgreement .OP_1SUB .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_NEGATE_tapscript : OpcodeAgreement .OP_NEGATE .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_ABS_tapscript : OpcodeAgreement .OP_ABS .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_ADD_tapscript : OpcodeAgreement .OP_ADD .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_SUB_tapscript : OpcodeAgreement .OP_SUB .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_BOOLAND_tapscript : OpcodeAgreement .OP_BOOLAND .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_BOOLOR_tapscript : OpcodeAgreement .OP_BOOLOR .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_NOT_tapscript : OpcodeAgreement .OP_NOT .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_0NOTEQUAL_tapscript : OpcodeAgreement .OP_0NOTEQUAL .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_EQUAL_tapscript : OpcodeAgreement .OP_EQUAL .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_EQUALVERIFY_tapscript : OpcodeAgreement .OP_EQUALVERIFY .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_NUMEQUAL_tapscript : OpcodeAgreement .OP_NUMEQUAL .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_NUMEQUALVERIFY_tapscript : OpcodeAgreement .OP_NUMEQUALVERIFY .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_NUMNOTEQUAL_tapscript : OpcodeAgreement .OP_NUMNOTEQUAL .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_LESSTHAN_tapscript : OpcodeAgreement .OP_LESSTHAN .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_GREATERTHAN_tapscript : OpcodeAgreement .OP_GREATERTHAN .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_LESSTHANOREQUAL_tapscript : OpcodeAgreement .OP_LESSTHANOREQUAL .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_GREATERTHANOREQUAL_tapscript : OpcodeAgreement .OP_GREATERTHANOREQUAL .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_MIN_tapscript : OpcodeAgreement .OP_MIN .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_MAX_tapscript : OpcodeAgreement .OP_MAX .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_WITHIN_tapscript : OpcodeAgreement .OP_WITHIN .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_SHA256_tapscript : OpcodeAgreement .OP_SHA256 .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_HASH256_tapscript : OpcodeAgreement .OP_HASH256 .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_RIPEMD160_tapscript : OpcodeAgreement .OP_RIPEMD160 .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_HASH160_tapscript : OpcodeAgreement .OP_HASH160 .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_CHECKSIG_tapscript : OpcodeAgreement .OP_CHECKSIG .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_CHECKSIGVERIFY_tapscript : OpcodeAgreement .OP_CHECKSIGVERIFY .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_CHECKSIGADD_tapscript : OpcodeAgreement .OP_CHECKSIGADD .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_CHECKMULTISIG_tapscript : OpcodeAgreement .OP_CHECKMULTISIG .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_CHECKMULTISIGVERIFY_tapscript : OpcodeAgreement .OP_CHECKMULTISIGVERIFY .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_CHECKSEQUENCEVERIFY_tapscript : OpcodeAgreement .OP_CHECKSEQUENCEVERIFY .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_CHECKLOCKTIMEVERIFY_tapscript : OpcodeAgreement .OP_CHECKLOCKTIMEVERIFY .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_VERIFY_tapscript : OpcodeAgreement .OP_VERIFY .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_SIZE_tapscript : OpcodeAgreement .OP_SIZE .tapscript :=
-  opcodeAgreement_tapscript _
+  opcodeAgreement _ _
 
 theorem OP_NOP_witnessV0 : OpcodeAgreement .OP_NOP .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_NOP1_witnessV0 : OpcodeAgreement .OP_NOP1 .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_NOP4_witnessV0 : OpcodeAgreement .OP_NOP4 .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_NOP5_witnessV0 : OpcodeAgreement .OP_NOP5 .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_NOP6_witnessV0 : OpcodeAgreement .OP_NOP6 .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_NOP7_witnessV0 : OpcodeAgreement .OP_NOP7 .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_NOP8_witnessV0 : OpcodeAgreement .OP_NOP8 .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_NOP9_witnessV0 : OpcodeAgreement .OP_NOP9 .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_NOP10_witnessV0 : OpcodeAgreement .OP_NOP10 .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_RETURN_witnessV0 : OpcodeAgreement .OP_RETURN .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_IF_witnessV0 : OpcodeAgreement .OP_IF .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_NOTIF_witnessV0 : OpcodeAgreement .OP_NOTIF .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_ELSE_witnessV0 : OpcodeAgreement .OP_ELSE .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_ENDIF_witnessV0 : OpcodeAgreement .OP_ENDIF .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_2DROP_witnessV0 : OpcodeAgreement .OP_2DROP .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_2DUP_witnessV0 : OpcodeAgreement .OP_2DUP .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_3DUP_witnessV0 : OpcodeAgreement .OP_3DUP .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_2OVER_witnessV0 : OpcodeAgreement .OP_2OVER .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_2ROT_witnessV0 : OpcodeAgreement .OP_2ROT .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_2SWAP_witnessV0 : OpcodeAgreement .OP_2SWAP .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_IFDUP_witnessV0 : OpcodeAgreement .OP_IFDUP .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_DEPTH_witnessV0 : OpcodeAgreement .OP_DEPTH .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_DROP_witnessV0 : OpcodeAgreement .OP_DROP .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_DUP_witnessV0 : OpcodeAgreement .OP_DUP .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_NIP_witnessV0 : OpcodeAgreement .OP_NIP .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_OVER_witnessV0 : OpcodeAgreement .OP_OVER .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_PICK_witnessV0 : OpcodeAgreement .OP_PICK .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_ROLL_witnessV0 : OpcodeAgreement .OP_ROLL .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_ROT_witnessV0 : OpcodeAgreement .OP_ROT .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_SWAP_witnessV0 : OpcodeAgreement .OP_SWAP .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_TUCK_witnessV0 : OpcodeAgreement .OP_TUCK .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_TOALTSTACK_witnessV0 : OpcodeAgreement .OP_TOALTSTACK .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_FROMALTSTACK_witnessV0 : OpcodeAgreement .OP_FROMALTSTACK .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_1ADD_witnessV0 : OpcodeAgreement .OP_1ADD .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_1SUB_witnessV0 : OpcodeAgreement .OP_1SUB .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_NEGATE_witnessV0 : OpcodeAgreement .OP_NEGATE .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_ABS_witnessV0 : OpcodeAgreement .OP_ABS .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_ADD_witnessV0 : OpcodeAgreement .OP_ADD .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_SUB_witnessV0 : OpcodeAgreement .OP_SUB .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_BOOLAND_witnessV0 : OpcodeAgreement .OP_BOOLAND .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_BOOLOR_witnessV0 : OpcodeAgreement .OP_BOOLOR .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_NOT_witnessV0 : OpcodeAgreement .OP_NOT .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_0NOTEQUAL_witnessV0 : OpcodeAgreement .OP_0NOTEQUAL .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_EQUAL_witnessV0 : OpcodeAgreement .OP_EQUAL .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_EQUALVERIFY_witnessV0 : OpcodeAgreement .OP_EQUALVERIFY .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_NUMEQUAL_witnessV0 : OpcodeAgreement .OP_NUMEQUAL .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_NUMEQUALVERIFY_witnessV0 : OpcodeAgreement .OP_NUMEQUALVERIFY .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_NUMNOTEQUAL_witnessV0 : OpcodeAgreement .OP_NUMNOTEQUAL .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_LESSTHAN_witnessV0 : OpcodeAgreement .OP_LESSTHAN .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_GREATERTHAN_witnessV0 : OpcodeAgreement .OP_GREATERTHAN .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_LESSTHANOREQUAL_witnessV0 : OpcodeAgreement .OP_LESSTHANOREQUAL .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_GREATERTHANOREQUAL_witnessV0 : OpcodeAgreement .OP_GREATERTHANOREQUAL .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_MIN_witnessV0 : OpcodeAgreement .OP_MIN .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_MAX_witnessV0 : OpcodeAgreement .OP_MAX .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_WITHIN_witnessV0 : OpcodeAgreement .OP_WITHIN .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_SHA256_witnessV0 : OpcodeAgreement .OP_SHA256 .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_HASH256_witnessV0 : OpcodeAgreement .OP_HASH256 .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_RIPEMD160_witnessV0 : OpcodeAgreement .OP_RIPEMD160 .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_HASH160_witnessV0 : OpcodeAgreement .OP_HASH160 .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_CHECKSIG_witnessV0 : OpcodeAgreement .OP_CHECKSIG .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_CHECKSIGVERIFY_witnessV0 : OpcodeAgreement .OP_CHECKSIGVERIFY .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_CHECKSIGADD_witnessV0 : OpcodeAgreement .OP_CHECKSIGADD .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_CHECKMULTISIG_witnessV0 : OpcodeAgreement .OP_CHECKMULTISIG .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_CHECKMULTISIGVERIFY_witnessV0 : OpcodeAgreement .OP_CHECKMULTISIGVERIFY .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_CHECKSEQUENCEVERIFY_witnessV0 : OpcodeAgreement .OP_CHECKSEQUENCEVERIFY .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_CHECKLOCKTIMEVERIFY_witnessV0 : OpcodeAgreement .OP_CHECKLOCKTIMEVERIFY .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_VERIFY_witnessV0 : OpcodeAgreement .OP_VERIFY .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_SIZE_witnessV0 : OpcodeAgreement .OP_SIZE .witnessV0 :=
-  opcodeAgreement_witnessV0 _
+  opcodeAgreement _ _
 
 theorem OP_NOP_base : OpcodeAgreement .OP_NOP .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_NOP1_base : OpcodeAgreement .OP_NOP1 .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_NOP4_base : OpcodeAgreement .OP_NOP4 .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_NOP5_base : OpcodeAgreement .OP_NOP5 .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_NOP6_base : OpcodeAgreement .OP_NOP6 .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_NOP7_base : OpcodeAgreement .OP_NOP7 .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_NOP8_base : OpcodeAgreement .OP_NOP8 .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_NOP9_base : OpcodeAgreement .OP_NOP9 .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_NOP10_base : OpcodeAgreement .OP_NOP10 .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_RETURN_base : OpcodeAgreement .OP_RETURN .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_IF_base : OpcodeAgreement .OP_IF .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_NOTIF_base : OpcodeAgreement .OP_NOTIF .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_ELSE_base : OpcodeAgreement .OP_ELSE .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_ENDIF_base : OpcodeAgreement .OP_ENDIF .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_2DROP_base : OpcodeAgreement .OP_2DROP .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_2DUP_base : OpcodeAgreement .OP_2DUP .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_3DUP_base : OpcodeAgreement .OP_3DUP .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_2OVER_base : OpcodeAgreement .OP_2OVER .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_2ROT_base : OpcodeAgreement .OP_2ROT .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_2SWAP_base : OpcodeAgreement .OP_2SWAP .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_IFDUP_base : OpcodeAgreement .OP_IFDUP .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_DEPTH_base : OpcodeAgreement .OP_DEPTH .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_DROP_base : OpcodeAgreement .OP_DROP .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_DUP_base : OpcodeAgreement .OP_DUP .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_NIP_base : OpcodeAgreement .OP_NIP .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_OVER_base : OpcodeAgreement .OP_OVER .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_PICK_base : OpcodeAgreement .OP_PICK .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_ROLL_base : OpcodeAgreement .OP_ROLL .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_ROT_base : OpcodeAgreement .OP_ROT .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_SWAP_base : OpcodeAgreement .OP_SWAP .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_TUCK_base : OpcodeAgreement .OP_TUCK .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_TOALTSTACK_base : OpcodeAgreement .OP_TOALTSTACK .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_FROMALTSTACK_base : OpcodeAgreement .OP_FROMALTSTACK .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_1ADD_base : OpcodeAgreement .OP_1ADD .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_1SUB_base : OpcodeAgreement .OP_1SUB .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_NEGATE_base : OpcodeAgreement .OP_NEGATE .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_ABS_base : OpcodeAgreement .OP_ABS .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_ADD_base : OpcodeAgreement .OP_ADD .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_SUB_base : OpcodeAgreement .OP_SUB .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_BOOLAND_base : OpcodeAgreement .OP_BOOLAND .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_BOOLOR_base : OpcodeAgreement .OP_BOOLOR .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_NOT_base : OpcodeAgreement .OP_NOT .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_0NOTEQUAL_base : OpcodeAgreement .OP_0NOTEQUAL .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_EQUAL_base : OpcodeAgreement .OP_EQUAL .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_EQUALVERIFY_base : OpcodeAgreement .OP_EQUALVERIFY .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_NUMEQUAL_base : OpcodeAgreement .OP_NUMEQUAL .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_NUMEQUALVERIFY_base : OpcodeAgreement .OP_NUMEQUALVERIFY .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_NUMNOTEQUAL_base : OpcodeAgreement .OP_NUMNOTEQUAL .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_LESSTHAN_base : OpcodeAgreement .OP_LESSTHAN .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_GREATERTHAN_base : OpcodeAgreement .OP_GREATERTHAN .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_LESSTHANOREQUAL_base : OpcodeAgreement .OP_LESSTHANOREQUAL .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_GREATERTHANOREQUAL_base : OpcodeAgreement .OP_GREATERTHANOREQUAL .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_MIN_base : OpcodeAgreement .OP_MIN .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_MAX_base : OpcodeAgreement .OP_MAX .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_WITHIN_base : OpcodeAgreement .OP_WITHIN .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_SHA256_base : OpcodeAgreement .OP_SHA256 .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_HASH256_base : OpcodeAgreement .OP_HASH256 .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_RIPEMD160_base : OpcodeAgreement .OP_RIPEMD160 .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_HASH160_base : OpcodeAgreement .OP_HASH160 .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
+
+theorem OP_CHECKSIG_base : OpcodeAgreement .OP_CHECKSIG .base :=
+  opcodeAgreement _ _
+
+theorem OP_CHECKSIGVERIFY_base : OpcodeAgreement .OP_CHECKSIGVERIFY .base :=
+  opcodeAgreement _ _
 
 theorem OP_CHECKSIGADD_base : OpcodeAgreement .OP_CHECKSIGADD .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
+
+theorem OP_CHECKMULTISIG_base : OpcodeAgreement .OP_CHECKMULTISIG .base :=
+  opcodeAgreement _ _
+
+theorem OP_CHECKMULTISIGVERIFY_base : OpcodeAgreement .OP_CHECKMULTISIGVERIFY .base :=
+  opcodeAgreement _ _
 
 theorem OP_CHECKSEQUENCEVERIFY_base : OpcodeAgreement .OP_CHECKSEQUENCEVERIFY .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_CHECKLOCKTIMEVERIFY_base : OpcodeAgreement .OP_CHECKLOCKTIMEVERIFY .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_VERIFY_base : OpcodeAgreement .OP_VERIFY .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 theorem OP_SIZE_base : OpcodeAgreement .OP_SIZE .base :=
-  opcodeAgreement_base _ (by decide)
+  opcodeAgreement _ _
 
 end OpcodeAgreement
 

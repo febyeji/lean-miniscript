@@ -97,7 +97,7 @@ theorem runtimeStep_normalizeSerializedElement
       (fun element => chargeOperations element state flags ctx)
     intro value
     rfl
-  simp only [runtimeStep, runtimeInstruction, charged,
+  simp only [runtimeStep_withoutScriptCode, runtimeInstruction, charged,
     executeRuntimeElement_normalizeSerializedElement]
 
 /-- Every source-order step, including skipped pushes, preserves its state or

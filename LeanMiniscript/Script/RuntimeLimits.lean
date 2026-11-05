@@ -1,4 +1,5 @@
 import LeanMiniscript.Script.ValidationWeightCore
+import LeanMiniscript.Script.ScriptCode
 
 /-! Source-order execution with stack, push-size, operation-count and
 signature-weight limits. Bounds, refinement and opcode lemmas are in
@@ -129,19 +130,96 @@ def runtimeInstruction (oracle : CryptoOracle) (element : ScriptElement)
   let next ← executeRuntimeElement oracle element state flags ctx
   checkRuntimeStack next
 
-/-- Shared step boundary: the operation count precedes the instruction. -/
-def runtimeStep (oracle : CryptoOracle) (element : ScriptElement)
+/-- The signatures an opcode hands FindAndDelete: the item below the public key
+of OP_CHECKSIG and OP_CHECKSIGVERIFY, and the signatures of a multisig frame
+that decodes. -/
+def instructionSignatures (opcode : Opcode) (state : RuntimeState)
+    (flags : ScriptFlags) : Stack :=
+  match opcode with
+  | .OP_CHECKSIG | .OP_CHECKSIGVERIFY =>
+      match state.stack with
+      | _ :: sig :: _ => [sig]
+      | _ => []
+  | .OP_CHECKMULTISIG | .OP_CHECKMULTISIGVERIFY =>
+      match decodeCheckMultiSigOperands flags state.stack with
+      | .ok operands => operands.signatures
+      | .error _ => []
+  | _ => []
+
+/-- Core's FindAndDelete of each signature's push, with the number of pushes
+removed. -/
+def removeSignatures (bytes : ByteArray) (signatures : Stack) : ByteArray × Nat :=
+  signatures.foldl (fun (scriptCode, count) signature =>
+    let (next, removed) := coreFindAndDelete scriptCode (coreSignaturePush signature)
+    (next, count + removed)) (bytes, 0)
+
+/-- Signature checking for one script: an oracle for each script code, and the
+script code after the last executed OP_CODESEPARATOR. -/
+structure ScriptCodeOracles where
+  oracleFor : ByteArray → CryptoOracle
+  scriptCode : ByteArray
+
+/-- The same oracle for every script code, with an empty script code, from
+which FindAndDelete removes nothing. -/
+@[coe] def CryptoOracle.withoutScriptCode (oracle : CryptoOracle) : ScriptCodeOracles :=
+  ⟨fun _ => oracle, ByteArray.empty⟩
+
+instance : Coe CryptoOracle ScriptCodeOracles := ⟨CryptoOracle.withoutScriptCode⟩
+
+/-- The oracle a step checks signatures with. Like Core, an active BASE
+signature opcode first removes its signatures from the script code, and
+CONST_SCRIPTCODE rejects any removal. -/
+def ScriptCodeOracles.forStep (oracles : ScriptCodeOracles) (element : ScriptElement)
+    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
+    Except ScriptError CryptoOracle := do
+  let signatures := match element with
+    | .op opcode => if state.conditions.all id && ctx.sigVersion == .base then
+        instructionSignatures opcode state flags else []
+    | _ => []
+  let (scriptCode, removed) := removeSignatures oracles.scriptCode signatures
+  if removed > 0 && flags.constScriptCode then throw .sigFindAndDelete
+  return oracles.oracleFor scriptCode
+
+/-- Shared step boundary: the operation count precedes FindAndDelete, which
+precedes the instruction. -/
+def runtimeStep (oracles : ScriptCodeOracles) (element : ScriptElement)
     (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
     Except ScriptError RuntimeState := do
   let charged ← chargeOperations element state flags ctx
+  let oracle ← oracles.forStep element state flags ctx
   runtimeInstruction oracle element charged flags ctx
+
+/-- FindAndDelete removes nothing from an empty script code. -/
+theorem removeSignatures_empty (signatures : Stack) :
+    removeSignatures ByteArray.empty signatures = (ByteArray.empty, 0) := by
+  unfold removeSignatures
+  induction signatures with
+  | nil => rfl
+  | cons signature rest ih => simpa [List.foldl, coreFindAndDelete_empty] using ih
+
+/-- One oracle with no script code checks every step's signatures. -/
+@[simp] theorem ScriptCodeOracles.forStep_withoutScriptCode (oracle : CryptoOracle)
+    (element : ScriptElement) (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
+    (oracle : ScriptCodeOracles).forStep element state flags ctx = .ok oracle := by
+  simp [ScriptCodeOracles.forStep, CryptoOracle.withoutScriptCode, removeSignatures_empty,
+    pure, Except.pure]
+
+/-- A step with one oracle charges the operation count, then runs the
+instruction. -/
+theorem runtimeStep_withoutScriptCode (oracle : CryptoOracle) (element : ScriptElement)
+    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
+    runtimeStep oracle element state flags ctx =
+      (chargeOperations element state flags ctx).bind fun charged =>
+        runtimeInstruction oracle element charged flags ctx := by
+  simp only [runtimeStep, ScriptCodeOracles.forStep_withoutScriptCode, bind, Except.bind]
 
 /-- EOF reports an unclosed conditional only after earlier runtime checks pass. -/
 def finishRuntime (state : RuntimeState) : WeightedResult :=
   if state.conditions.isEmpty then .success state.stack state.altStack state.weight
   else .failure .unbalancedConditional
 
-/-- Structural recursion over literal source order retains inactive push checks. -/
+/-- Structural recursion over literal source order retains inactive push checks.
+Each step gets `oracle` with no script code, so it removes no signatures. -/
 def evaluateRuntime (oracle : CryptoOracle) : Script → RuntimeState →
     ScriptFlags → TxContext → WeightedResult
   | [], state, _, _ => finishRuntime state

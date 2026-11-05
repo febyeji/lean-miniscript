@@ -46,6 +46,9 @@ structure ScriptFlags where
   /-- `SCRIPT_VERIFY_CHECKSEQUENCEVERIFY`: when off, the source-order runtime
       runs OP_CHECKSEQUENCEVERIFY as OP_NOP. The evaluator always checks it. -/
   checkSequenceVerify : Bool := true
+  /-- `SCRIPT_VERIFY_CONST_SCRIPTCODE`: in BASE, a signature opcode fails when
+      FindAndDelete removes a signature from the script code. -/
+  constScriptCode : Bool := false
   deriving Repr
 
 /-- Script signature algorithms and opcode availability. Taproot key-path
@@ -151,6 +154,7 @@ inductive ScriptError where
   | minimalIf
   | tapscriptMinimalIf
   | unbalancedConditional
+  | sigFindAndDelete
   deriving Repr, DecidableEq, BEq
 
 /-- Fixed main-stack inputs consumed or inspected by a modeled opcode.

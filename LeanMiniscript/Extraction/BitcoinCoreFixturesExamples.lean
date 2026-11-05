@@ -134,7 +134,8 @@ private def coreErrorTagFixtures : List (ScriptError × String) :=
    (.checkLockTimeVerify, "UNSATISFIED_LOCKTIME"),
    (.minimalIf, "MINIMALIF"),
    (.tapscriptMinimalIf, "TAPSCRIPT_MINIMALIF"),
-   (.unbalancedConditional, "UNBALANCED_CONDITIONAL")]
+   (.unbalancedConditional, "UNBALANCED_CONDITIONAL"),
+   (.sigFindAndDelete, "SIG_FINDANDDELETE")]
 
 /-- Every modeled failure has an explicit Core or MODEL_ boundary tag. -/
 example : ∀ error, ∃ tag, (error, tag) ∈ coreErrorTagFixtures := by

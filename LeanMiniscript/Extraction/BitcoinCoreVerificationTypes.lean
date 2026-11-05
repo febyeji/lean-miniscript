@@ -19,7 +19,6 @@ inductive CoreVerificationError where
   | discourageUpgradableTaprootVersion
   | discourageOpSuccess
   | opCodeSeparator
-  | sigFindAndDelete
   /-- An execution boundary for which the caller has supplied no implementation. -/
   | unsupported (reason : String)
   deriving Repr, DecidableEq, BEq
@@ -35,7 +34,6 @@ structure CoreVerificationFlags where
   discourageUpgradableWitnessProgram : Bool := false
   discourageUpgradableTaprootVersion : Bool := false
   discourageOpSuccess : Bool := false
-  constScriptCode : Bool := false
   deriving Repr
 
 /-- One raw Script evaluation. Stacks are top-first; wire-order witnesses are
@@ -82,7 +80,6 @@ def CoreVerificationError.coreTag (error : CoreVerificationError)
   | .discourageUpgradableTaprootVersion => "DISCOURAGE_UPGRADABLE_TAPROOT_VERSION"
   | .discourageOpSuccess => "DISCOURAGE_OP_SUCCESS"
   | .opCodeSeparator => "OP_CODESEPARATOR"
-  | .sigFindAndDelete => "SIG_FINDANDDELETE"
   | .unsupported reason => "MODEL_UNSUPPORTED:" ++ reason
 
 end LeanMiniscript.Extraction
