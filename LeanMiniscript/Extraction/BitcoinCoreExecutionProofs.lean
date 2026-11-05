@@ -27,7 +27,8 @@ private def encodesPush (instruction : CoreRawInstruction) (data : ByteArray) : 
 
 /-- A raw instruction has the typed instruction's opcode or pushed bytes.
 Length-prefixed pushes must be minimal so MINIMALDATA is preserved as well. -/
-def CoreRawInstruction.Encodes (instruction : CoreRawInstruction) : ScriptElement → Prop
+def _root_.LeanMiniscript.Script.CoreRawInstruction.Encodes (instruction : CoreRawInstruction) :
+    ScriptElement → Prop
   | .pushData data => encodesPush instruction data
   | .pushNum number => encodesPush instruction (scriptNum number)
   | .op opcode => instruction.opcode = opcodeByte opcode ∧
@@ -38,7 +39,7 @@ instance (instruction : CoreRawInstruction) (element : ScriptElement) :
   cases element <;> unfold CoreRawInstruction.Encodes encodesPush <;> infer_instance
 
 /-- Modeled encodings contain only pushes, numeric constants, and AST opcodes. -/
-theorem CoreRawInstruction.Encodes.opcodeCases
+theorem _root_.LeanMiniscript.Script.CoreRawInstruction.Encodes.opcodeCases
     {instruction : CoreRawInstruction} {element : ScriptElement}
     (encoded : instruction.Encodes element) :
     instruction.opcode.toNat ≤ 0x4e ∨ instruction.opcode.toNat = 0x4f ∨

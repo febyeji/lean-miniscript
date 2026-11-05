@@ -11,11 +11,6 @@ open LeanMiniscript.Script
 raw byte loop to the typed runtime evaluator. -/
 namespace CoreScriptExecution
 
-def removeSignatures (bytes : ByteArray) (signatures : Stack) : ByteArray × Nat :=
-  signatures.foldl (fun (scriptCode, count) signature =>
-    let (next, removed) := coreFindAndDelete scriptCode (coreSignaturePush signature)
-    (next, count + removed)) (bytes, 0)
-
 /-- Core's loop state. The operation count is `runtime.operationCount`, which
 the typed step charges for modeled opcodes. -/
 structure CoreRawState where
@@ -35,19 +30,6 @@ def instructionContext (ctx : TxContext) (request : CoreScriptExecutionRequest)
         spendPath := .scriptPath request.scriptBytes request.leafVersion state.codeSeparatorPosition }
       else none }
 
-def instructionSignatures (opcode : Opcode) (state : RuntimeState)
-    (flags : ScriptFlags) : Stack :=
-  match opcode with
-  | .OP_CHECKSIG | .OP_CHECKSIGVERIFY =>
-      match state.stack with
-      | _ :: sig :: _ => [sig]
-      | _ => []
-  | .OP_CHECKMULTISIG | .OP_CHECKMULTISIGVERIFY =>
-      match decodeCheckMultiSigOperands flags state.stack with
-      | .ok operands => operands.signatures
-      | .error _ => []
-  | _ => []
-
 def coreRawStep (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracleForScript : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (state : CoreRawState)
@@ -61,7 +43,7 @@ def coreRawStep (flags : CoreVerificationFlags) (ctx : TxContext)
     if count > maxOpsPerScript then throw (.script .opCount)
   if coreLegacyDisabledOpcode value then throw (.script .disabledOpcode)
   if value == 0x65 || value == 0x66 then throw (.script .badOpcode)
-  if value == 0xab && request.sigVersion == .base && flags.constScriptCode then
+  if value == 0xab && request.sigVersion == .base && flags.script.constScriptCode then
     throw .opCodeSeparator
   let mut next := { state with
     offset := instruction.nextOffset
@@ -112,8 +94,9 @@ def coreRawStep (flags : CoreVerificationFlags) (ctx : TxContext)
         let signatures := if active && request.sigVersion == .base then
             instructionSignatures opcode state.runtime flags.script else []
         let (scriptCode, removed) := removeSignatures scriptCode signatures
-        if removed > 0 && flags.constScriptCode then throw .sigFindAndDelete
+        if removed > 0 && flags.script.constScriptCode then throw (.script .sigFindAndDelete)
         let oracle := oracleForScript request.sigVersion scriptCode
+        -- `oracle` comes with no script code, so `runtimeStep` removes nothing more.
         let runtime ← (runtimeStep oracle (.op opcode) state.runtime flags.script ctx).mapError .script
         return { next with runtime := runtime }
 

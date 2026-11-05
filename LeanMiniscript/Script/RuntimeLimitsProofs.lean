@@ -42,13 +42,74 @@ theorem chargeOperations_ok {element : ScriptElement} {state charged : RuntimeSt
       rfl
   · cases charging; rfl
 
+/-- When the step hands FindAndDelete no signature, it checks signatures with
+the oracle for the script code as given. -/
+theorem ScriptCodeOracles.forStep_of_signatures (oracles : ScriptCodeOracles)
+    (element : ScriptElement) (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (none : ∀ opcode, element = .op opcode →
+      (state.conditions.all id && ctx.sigVersion == .base) = true →
+        instructionSignatures opcode state flags = []) :
+    oracles.forStep element state flags ctx = .ok (oracles.oracleFor oracles.scriptCode) := by
+  unfold ScriptCodeOracles.forStep
+  cases element with
+  | op opcode =>
+      simp only
+      by_cases base : (state.conditions.all id && ctx.sigVersion == .base) = true
+      · simp only [base, ↓reduceIte, none opcode rfl base]
+        rfl
+      · simp only [base, Bool.false_eq_true, ↓reduceIte]
+        rfl
+  | pushData | pushNum => rfl
+
+/-- A step charges the operation count and picks its oracle, then runs as the
+step with that one oracle. -/
+theorem runtimeStep_eq_forStep (oracles : ScriptCodeOracles) (element : ScriptElement)
+    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
+    runtimeStep oracles element state flags ctx =
+      (chargeOperations element state flags ctx).bind fun _ =>
+        (oracles.forStep element state flags ctx).bind fun oracle =>
+          runtimeStep oracle element state flags ctx := by
+  conv => lhs; unfold runtimeStep
+  cases charging : chargeOperations element state flags ctx with
+  | error => rfl
+  | ok charged =>
+      cases oracles.forStep element state flags ctx with
+      | error => rfl
+      | ok oracle => simp [runtimeStep_withoutScriptCode, charging, bind, Except.bind]
+
+/-- When the step hands FindAndDelete no signature, it is the step with the
+oracle for the script code as given. -/
+theorem runtimeStep_of_signatures (oracles : ScriptCodeOracles) (element : ScriptElement)
+    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext)
+    (none : ∀ opcode, element = .op opcode →
+      (state.conditions.all id && ctx.sigVersion == .base) = true →
+        instructionSignatures opcode state flags = []) :
+    runtimeStep oracles element state flags ctx =
+      runtimeStep (oracles.oracleFor oracles.scriptCode) element state flags ctx := by
+  simp only [runtimeStep, oracles.forStep_of_signatures element state flags ctx none,
+    ScriptCodeOracles.forStep_withoutScriptCode]
+
+/-- Outside BASE, the step is the step with the oracle for the script code as
+given. -/
+theorem runtimeStep_of_ne_base (oracles : ScriptCodeOracles) (element : ScriptElement)
+    (state : RuntimeState) (flags : ScriptFlags) {ctx : TxContext}
+    (version : ctx.sigVersion ≠ .base) :
+    runtimeStep oracles element state flags ctx =
+      runtimeStep (oracles.oracleFor oracles.scriptCode) element state flags ctx :=
+  runtimeStep_of_signatures oracles element state flags ctx
+    (fun _ _ base => by
+      have other : (ctx.sigVersion == .base) = false := by
+        cases versionEq : ctx.sigVersion <;> first | exact absurd versionEq version | rfl
+      simp [other] at base)
+
 /-- Tapscript steps are the uncounted instruction. -/
 theorem runtimeStep_tapscript (oracle : CryptoOracle) (element : ScriptElement)
     (state : RuntimeState) (flags : ScriptFlags) {ctx : TxContext}
     (version : ctx.sigVersion = .tapscript) :
     runtimeStep oracle element state flags ctx =
       runtimeInstruction oracle element state flags ctx := by
-  simp [runtimeStep, chargeOperations_tapscript element state flags version, bind, Except.bind]
+  simp [runtimeStep_withoutScriptCode, chargeOperations_tapscript element state flags version,
+    Except.bind]
 
 theorem runtimeStep_pushData (oracle : CryptoOracle) (data : ByteArray)
     (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
@@ -141,11 +202,11 @@ theorem runtimeStep_ok {oracle : CryptoOracle} {element : ScriptElement}
         .ok { state with operationCount := count } ∧
       runtimeInstruction oracle element { state with operationCount := count } flags ctx =
         .ok next := by
-  unfold runtimeStep at stepped
+  rw [runtimeStep_withoutScriptCode] at stepped
   cases charging : chargeOperations element state flags ctx with
-  | error error => simp [charging, bind, Except.bind] at stepped
+  | error error => simp [charging, Except.bind] at stepped
   | ok charged =>
-      simp only [charging, bind, Except.bind] at stepped
+      simp only [charging, Except.bind] at stepped
       have same := chargeOperations_ok charging
       exact ⟨charged.operationCount, by rw [← same], by rw [← same]; exact stepped⟩
 
@@ -1051,7 +1112,7 @@ theorem runtimeStep_eq_model
     (element : ScriptElement) (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
     runtimeStep oracle element state flags ctx =
       runtimeStep CryptoOracle.model element state flags ctx := by
-  simp only [runtimeStep, runtimeInstruction_eq_model agreement]
+  simp only [runtimeStep_withoutScriptCode, runtimeInstruction_eq_model agreement]
 
 
 /-- These resource guarantees hold for every oracle, without a cryptographic
@@ -1107,7 +1168,7 @@ theorem evaluateRuntime_lower {oracle : CryptoOracle} {script : Script}
           have counted := runtimeInstruction_operationCount_eq instruction
           have next_step : runtimeStep oracle element { state with operationCount := count } flags ctx =
               .ok { next with operationCount := lowered } := by
-            simp only [runtimeStep, charging', bind, Except.bind]
+            simp only [runtimeStep_withoutScriptCode, charging', Except.bind]
             exact moved
           rw [next_step]
           exact ih success (by simp only at below counted; omega)
@@ -1309,7 +1370,7 @@ theorem evaluateRuntime_raise {oracle : CryptoOracle} {script : Script}
           have counted := runtimeInstruction_operationCount_eq instruction
           have next_step : runtimeStep oracle element { state with operationCount := count } flags ctx =
               .ok { next with operationCount := raised } := by
-            simp only [runtimeStep, charging', bind, Except.bind]
+            simp only [runtimeStep_withoutScriptCode, charging', Except.bind]
             exact moved
           rw [next_step]
           exact ih success (by simp only at above counted; omega)

@@ -134,6 +134,7 @@ def coreScriptErrorTag : ScriptError → String
   | .minimalIf => "MINIMALIF"
   | .tapscriptMinimalIf => "TAPSCRIPT_MINIMALIF"
   | .unbalancedConditional => "UNBALANCED_CONDITIONAL"
+  | .sigFindAndDelete => "SIG_FINDANDDELETE"
 
 private def supportedExpectedError : String → Bool
   | "SCRIPT_SIZE" | "OP_COUNT" | "PUSH_SIZE" | "STACK_SIZE" | "OK" | "EVAL_FALSE" | "BAD_OPCODE" | "OP_RETURN" | "DISABLED_OPCODE" |
@@ -210,7 +211,8 @@ private def firstUnsupportedVerificationFlag (names : List String) : Option Stri
 def coreVerificationFlagsForFixture (names : List String) : CoreVerificationFlags where
   script := { flagsForCoreFixture names with
     witnessPubKeyType := names.contains "WITNESS_PUBKEYTYPE"
-    discourageUpgradablePubKeyType := names.contains "DISCOURAGE_UPGRADABLE_PUBKEYTYPE" }
+    discourageUpgradablePubKeyType := names.contains "DISCOURAGE_UPGRADABLE_PUBKEYTYPE"
+    constScriptCode := names.contains "CONST_SCRIPTCODE" }
   p2sh := names.contains "P2SH" || names.contains "CLEANSTACK"
   sigPushOnly := names.contains "SIGPUSHONLY"
   cleanStack := names.contains "CLEANSTACK"
@@ -219,7 +221,6 @@ def coreVerificationFlagsForFixture (names : List String) : CoreVerificationFlag
   discourageUpgradableWitnessProgram := names.contains "DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM"
   discourageUpgradableTaprootVersion := names.contains "DISCOURAGE_UPGRADABLE_TAPROOT_VERSION"
   discourageOpSuccess := names.contains "DISCOURAGE_OP_SUCCESS"
-  constScriptCode := names.contains "CONST_SCRIPTCODE"
 
 /-- Prepare exact original bytes and concrete witness/transaction inputs.
 Admission is independent of the expected result and signature verification;

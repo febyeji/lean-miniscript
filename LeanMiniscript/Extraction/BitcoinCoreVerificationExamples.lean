@@ -90,13 +90,13 @@ example : traceCode "0 0x01aa 0x01cc 2 0x01dd 0x01ee 2 CHECKMULTISIG"
     "0 2 0x01dd 0x01ee 2 CHECKMULTISIG" .base = true := by native_decide
 
 example : fixtureRun ByteArray.empty (raw "0 IF CODESEPARATOR ENDIF 1")
-    { plainFlags with constScriptCode := true } = .error .opCodeSeparator := by native_decide
+    { plainFlags with script := { plainFlags.script with constScriptCode := true } } =
+    .error .opCodeSeparator := by native_decide
 
 example : fixtureRun ByteArray.empty (raw "0x01aa 0x01bb CHECKSIG")
     { plainFlags with
-      constScriptCode := true
-      script := { plainFlags.script with strictEncoding := true } } =
-    .error .sigFindAndDelete := by native_decide
+      script := { plainFlags.script with strictEncoding := true, constScriptCode := true } } =
+    .error (.script .sigFindAndDelete) := by native_decide
 
 private def p2sh (redeem : ByteArray) : ByteArray :=
   ⟨#[0xa9, 0x14]⟩ ++ LeanHash160.hash160 redeem ++ ⟨#[0x87]⟩
