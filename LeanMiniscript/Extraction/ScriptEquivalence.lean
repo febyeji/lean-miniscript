@@ -21,7 +21,7 @@ fails even in an unexecuted branch. It rejects:
 * a truncated push;
 * a push that is not minimal (Core checks MINIMALDATA against the original
   encoding, which a typed push does not keep);
-* OP_SHA1 and OP_CODESEPARATOR.
+* OP_CODESEPARATOR.
 
 Tapscript reads the disabled opcodes and the `badOpcode` bytes other than
 0xff as OP_SUCCESSx.

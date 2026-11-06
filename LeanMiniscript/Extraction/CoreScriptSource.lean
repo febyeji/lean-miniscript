@@ -106,7 +106,6 @@ def deserializeCoreScriptBytes (bytes : ByteArray) :
 /-- Legacy-only source aliases compile to their literal bytes, while the
 shared Script AST continues to reject the corresponding unmodeled opcodes. -/
 private def coreLegacyOpcodeByteFromName? : String → Option UInt8
-  | "SHA1" => some 0xa7
   | "CODESEPARATOR" => some 0xab
   | "RESERVED" => some 0x50
   | "VER" => some 0x62

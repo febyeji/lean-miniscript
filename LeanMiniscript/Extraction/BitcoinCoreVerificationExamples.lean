@@ -1,5 +1,6 @@
 import LeanMiniscript.Extraction.BitcoinCoreVerification
 import LeanMiniscript.Extraction.BitcoinCoreFixtures
+import LeanMiniscript.Extraction.ScriptEquivalence
 
 namespace LeanMiniscript.Extraction
 
@@ -26,8 +27,13 @@ private def fixtureRun (sig pub : ByteArray) (flags : CoreVerificationFlags := p
     (fun witness version program isP2SH => verifyCoreWitnessProgram execute flags witness
       version program isP2SH (checkCoreFixtureKeyPath fixture)) flags sig pub witness
 
--- Raw execution supports SHA1 in BASE, witness-v0 and Tapscript without adding
--- fixture-only opcodes to the shared typed Script model.
+-- The typed reader reads SHA1 as the modeled opcode.
+example : (match decodeTypedScript? ⟨#[0xa7]⟩ with
+    | some [.op .OP_SHA1] => true
+    | _ => false) = true := by
+  native_decide
+
+-- Raw execution supports SHA1 in BASE, witness-v0 and Tapscript.
 example : ([SignatureVersion.base, .witnessV0, .tapscript]).all (fun version =>
     (executeCoreFixtureScript (coreFixtureTransaction ByteArray.empty ByteArray.empty 0)
       plainFlags { scriptBytes := raw "'abc' SHA1", sigVersion := version }).toOption ==

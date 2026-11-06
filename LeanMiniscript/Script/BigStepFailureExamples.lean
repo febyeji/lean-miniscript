@@ -87,7 +87,8 @@ def opcodeArityFixtures : List OpcodeArityFixture := [
   ⟨.OP_CHECKSEQUENCEVERIFY, some 1⟩,
   ⟨.OP_CHECKLOCKTIMEVERIFY, some 1⟩,
   ⟨.OP_VERIFY, some 1⟩,
-  ⟨.OP_SIZE, some 1⟩
+  ⟨.OP_SIZE, some 1⟩,
+  ⟨.OP_SHA1, some 1⟩
 ]
 
 example : opcodeArityFixtures.all (fun fixture =>

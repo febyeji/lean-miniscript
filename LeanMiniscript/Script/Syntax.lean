@@ -71,6 +71,7 @@ inductive Opcode where
   | OP_HASH256
   | OP_RIPEMD160
   | OP_HASH160
+  | OP_SHA1
   -- Signature verification
   | OP_CHECKSIG
   | OP_CHECKSIGVERIFY

@@ -42,7 +42,7 @@ private def coreOpcodeNameFixtures : List (String × Opcode) :=
    ("EQUALVERIFY", .OP_EQUALVERIFY), ("NUMEQUAL", .OP_NUMEQUAL),
    ("NUMEQUALVERIFY", .OP_NUMEQUALVERIFY), ("WITHIN", .OP_WITHIN),
    ("SHA256", .OP_SHA256), ("HASH256", .OP_HASH256),
-   ("RIPEMD160", .OP_RIPEMD160), ("HASH160", .OP_HASH160),
+   ("RIPEMD160", .OP_RIPEMD160), ("HASH160", .OP_HASH160), ("SHA1", .OP_SHA1),
    ("CHECKSIG", .OP_CHECKSIG), ("CHECKSIGVERIFY", .OP_CHECKSIGVERIFY),
    ("CHECKSIGADD", .OP_CHECKSIGADD), ("CHECKMULTISIG", .OP_CHECKMULTISIG),
    ("CHECKMULTISIGVERIFY", .OP_CHECKMULTISIGVERIFY),
@@ -281,13 +281,21 @@ private def parsesDrop : Bool :=
 example : parsesDrop = true := by
   native_decide
 
-private def typedDecoderRejectsSha1 : Bool :=
+private def parsesSha1 : Bool :=
   match parseCoreScriptSource "1 SHA1" with
-  | .error (.unsupportedOpcode 1 0xa7) => true
+  | .ok [.pushNum 1, .op .OP_SHA1] => true
+  | _ => false
+
+example : parsesSha1 = true := by
+  native_decide
+
+private def typedDecoderRejectsCodeSeparator : Bool :=
+  match parseCoreScriptSource "1 CODESEPARATOR" with
+  | .error (.unsupportedOpcode 1 0xab) => true
   | _ => false
 
 /-- The typed AST decoder retains its opcode boundary; full fixtures execute raw bytes. -/
-example : typedDecoderRejectsSha1 = true := by
+example : typedDecoderRejectsCodeSeparator = true := by
   native_decide
 
 private def rejectsTruncatedPush : Bool :=

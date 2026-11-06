@@ -65,6 +65,7 @@ def opcodeFromByte? : Nat → Option Opcode
   | 0xaa => some .OP_HASH256
   | 0xa6 => some .OP_RIPEMD160
   | 0xa9 => some .OP_HASH160
+  | 0xa7 => some .OP_SHA1
   | 0xac => some .OP_CHECKSIG
   | 0xad => some .OP_CHECKSIGVERIFY
   | 0xba => some .OP_CHECKSIGADD

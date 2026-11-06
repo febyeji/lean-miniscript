@@ -1,5 +1,6 @@
 import LeanMiniscript.Script.Conditional
 import LeanMiniscript.Script.SignatureChecks
+import LeanMiniscript.Bitcoin.SHA1
 
 /-! Big-step evaluation relation for the modeled Script opcodes.
 Composition, determinism and opcode lemmas are in BigStepProofs. -/
@@ -507,6 +508,14 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       (result : ExecResult) →
       Eval script (hash160 x :: rest) altStack flags ctx result →
       Eval (.op .OP_HASH160 :: script) (x :: rest) altStack flags ctx result
+
+  -- OP_SHA1. Core computes SHA-1 itself, so the relation uses the executable
+  -- hash rather than an abstract one.
+  | op_sha1 : (x : StackElement) → (rest : Stack) → (script : Script) →
+      (altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      Eval script (Bitcoin.SHA1.hash x :: rest) altStack flags ctx result →
+      Eval (.op .OP_SHA1 :: script) (x :: rest) altStack flags ctx result
 
   -- OP_BOOLOR
   | boolor : (aBytes bBytes : StackElement) → (a b : Int) →

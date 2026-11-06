@@ -222,6 +222,9 @@ theorem OP_RIPEMD160_tapscript : OpcodeAgreement .OP_RIPEMD160 .tapscript :=
 theorem OP_HASH160_tapscript : OpcodeAgreement .OP_HASH160 .tapscript :=
   opcodeAgreement _ _
 
+theorem OP_SHA1_tapscript : OpcodeAgreement .OP_SHA1 .tapscript :=
+  opcodeAgreement _ _
+
 theorem OP_CHECKSIG_tapscript : OpcodeAgreement .OP_CHECKSIG .tapscript :=
   opcodeAgreement _ _
 
@@ -426,6 +429,9 @@ theorem OP_RIPEMD160_witnessV0 : OpcodeAgreement .OP_RIPEMD160 .witnessV0 :=
 theorem OP_HASH160_witnessV0 : OpcodeAgreement .OP_HASH160 .witnessV0 :=
   opcodeAgreement _ _
 
+theorem OP_SHA1_witnessV0 : OpcodeAgreement .OP_SHA1 .witnessV0 :=
+  opcodeAgreement _ _
+
 theorem OP_CHECKSIG_witnessV0 : OpcodeAgreement .OP_CHECKSIG .witnessV0 :=
   opcodeAgreement _ _
 
@@ -628,6 +634,9 @@ theorem OP_RIPEMD160_base : OpcodeAgreement .OP_RIPEMD160 .base :=
   opcodeAgreement _ _
 
 theorem OP_HASH160_base : OpcodeAgreement .OP_HASH160 .base :=
+  opcodeAgreement _ _
+
+theorem OP_SHA1_base : OpcodeAgreement .OP_SHA1 .base :=
   opcodeAgreement _ _
 
 theorem OP_CHECKSIG_base : OpcodeAgreement .OP_CHECKSIG .base :=
@@ -845,6 +854,9 @@ def equivalenceObligations : List EquivalenceObligation := [
   ⟨.OP_HASH160, .base, `LeanMiniscript.Extraction.OpcodeAgreement.OP_HASH160_base⟩,
   ⟨.OP_HASH160, .witnessV0, `LeanMiniscript.Extraction.OpcodeAgreement.OP_HASH160_witnessV0⟩,
   ⟨.OP_HASH160, .tapscript, `LeanMiniscript.Extraction.OpcodeAgreement.OP_HASH160_tapscript⟩,
+  ⟨.OP_SHA1, .base, `LeanMiniscript.Extraction.OpcodeAgreement.OP_SHA1_base⟩,
+  ⟨.OP_SHA1, .witnessV0, `LeanMiniscript.Extraction.OpcodeAgreement.OP_SHA1_witnessV0⟩,
+  ⟨.OP_SHA1, .tapscript, `LeanMiniscript.Extraction.OpcodeAgreement.OP_SHA1_tapscript⟩,
   ⟨.OP_CHECKSIG, .base, `LeanMiniscript.Extraction.OpcodeAgreement.OP_CHECKSIG_base⟩,
   ⟨.OP_CHECKSIG, .witnessV0, `LeanMiniscript.Extraction.OpcodeAgreement.OP_CHECKSIG_witnessV0⟩,
   ⟨.OP_CHECKSIG, .tapscript, `LeanMiniscript.Extraction.OpcodeAgreement.OP_CHECKSIG_tapscript⟩,
