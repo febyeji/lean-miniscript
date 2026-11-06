@@ -18,21 +18,16 @@ structure ScriptEquivalenceObligation where
   proposition : Lean.Name
   theoremName : Lean.Name
 
--- TODO(script-equivalence): prove the six VerifyScript obligations below.
 def scriptEquivalenceObligations : List ScriptEquivalenceObligation := [
   ⟨``BaseExecutionAgreement, ``baseExecutionAgreement⟩,
   ⟨``WitnessV0ExecutionAgreement, ``witnessV0ExecutionAgreement⟩,
   ⟨``TapscriptExecutionAgreement, ``tapscriptExecutionAgreement⟩,
-  ⟨``LegacyVerificationAgreement, `LeanMiniscript.Extraction.legacyVerificationAgreement⟩,
-  ⟨``P2SHVerificationAgreement, `LeanMiniscript.Extraction.p2shVerificationAgreement⟩,
-  ⟨``WitnessV0VerificationAgreement,
-    `LeanMiniscript.Extraction.witnessV0VerificationAgreement⟩,
-  ⟨``P2SHWitnessV0VerificationAgreement,
-    `LeanMiniscript.Extraction.p2shWitnessV0VerificationAgreement⟩,
-  ⟨``TaprootKeyPathVerificationAgreement,
-    `LeanMiniscript.Extraction.taprootKeyPathVerificationAgreement⟩,
-  ⟨``TaprootScriptPathVerificationAgreement,
-    `LeanMiniscript.Extraction.taprootScriptPathVerificationAgreement⟩
+  ⟨``LegacyVerificationAgreement, ``legacyVerificationAgreement⟩,
+  ⟨``P2SHVerificationAgreement, ``p2shVerificationAgreement⟩,
+  ⟨``WitnessV0VerificationAgreement, ``witnessV0VerificationAgreement⟩,
+  ⟨``P2SHWitnessV0VerificationAgreement, ``p2shWitnessV0VerificationAgreement⟩,
+  ⟨``TaprootKeyPathVerificationAgreement, ``taprootKeyPathVerificationAgreement⟩,
+  ⟨``TaprootScriptPathVerificationAgreement, ``taprootScriptPathVerificationAgreement⟩
 ]
 
 end LeanMiniscript.Extraction
