@@ -68,6 +68,7 @@ theorem normalizeSerializedElement_preserves {α : Type} (observe : ScriptElemen
   cases element with
   | op opcode => rfl
   | badOpcode opcode => rfl
+  | illegalOpcode opcode => rfl
   | pushData data => exact normalizeSerializedData_preserves observe push data
   | pushNum value =>
       simp only [normalizeSerializedElement]
@@ -81,6 +82,7 @@ theorem normalizeSerializedElement_control (element : ScriptElement) :
   cases element with
   | op opcode => exact Or.inl rfl
   | badOpcode opcode => exact Or.inl rfl
+  | illegalOpcode opcode => exact Or.inl rfl
   | pushData data =>
       right
       refine ⟨trivial, ?_⟩

@@ -177,6 +177,8 @@ theorem Eval.exists_result
                 .pushNum value rest stack altStack flags ctx result evaluated
           | badOpcode opcode =>
               exact ⟨.failure .badOpcode, .badOpcode opcode rest stack altStack flags ctx⟩
+          | illegalOpcode opcode =>
+              exact ⟨.failure opcode.error, .illegalOpcode opcode rest stack altStack flags ctx⟩
           | op opcode =>
               cases opcode with
               | OP_NOP =>

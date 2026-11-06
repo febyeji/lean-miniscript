@@ -54,6 +54,7 @@ private theorem bip379VerifyTerminal_cases (element : ScriptElement) :
   | pushData data => simp [Bip379VerifyFallbackTerminal]
   | pushNum number => simp [Bip379VerifyFallbackTerminal]
   | badOpcode opcode => simp [Bip379VerifyFallbackTerminal]
+  | illegalOpcode opcode => simp [Bip379VerifyFallbackTerminal]
 
 /-- Independent relational specification for compiling the `v:` wrapper.
     Verification is folded into a supported terminal opcode and otherwise
@@ -249,6 +250,7 @@ theorem compileVerify_conforms (script : Script) :
         | pushData data => simp [verifyReplacement?]
         | pushNum number => simp [verifyReplacement?]
         | badOpcode opcode => simp [verifyReplacement?]
+        | illegalOpcode opcode => simp [verifyReplacement?]
       rw [noReplacement]
       exact .fallback initScript terminal
 
@@ -382,6 +384,7 @@ theorem Bip379VerifyCompilation.eq_compileVerify
       | pushData data => simp [verifyReplacement?]
       | pushNum number => simp [verifyReplacement?]
       | badOpcode opcode => simp [verifyReplacement?]
+      | illegalOpcode opcode => simp [verifyReplacement?]
 
 mutual
 

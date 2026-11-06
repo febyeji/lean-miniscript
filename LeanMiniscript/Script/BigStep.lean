@@ -58,6 +58,11 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       (flags : ScriptFlags) → (ctx : TxContext) →
       Eval (.badOpcode opcode :: rest) stack altStack flags ctx (.failure .badOpcode)
 
+  -- A disabled opcode, OP_VERIF, or OP_VERNOTIF fails when reached.
+  | illegalOpcode : (opcode : IllegalOpcode) → (rest : Script) → (stack altStack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) →
+      Eval (.illegalOpcode opcode :: rest) stack altStack flags ctx (.failure opcode.error)
+
   -- Fixed-arity opcode failure. Variable-arity CHECKMULTISIG and malformed
   -- operand encodings have their own semantic boundaries.
   | stack_underflow : (opcode : Opcode) → (required : Nat) →

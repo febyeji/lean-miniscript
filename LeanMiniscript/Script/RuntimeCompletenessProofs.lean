@@ -32,6 +32,7 @@ theorem executedSignatureWeight_le (element : ScriptElement) (stack : Stack)
     | pushData => simp [ScriptElement.signatureWeightBound]
     | pushNum => simp [ScriptElement.signatureWeightBound]
     | badOpcode => simp [ScriptElement.signatureWeightBound]
+    | illegalOpcode => simp [ScriptElement.signatureWeightBound]
     | op opcode =>
         cases opcode <;> try { simp [ScriptElement.signatureWeightBound]; done }
         all_goals
@@ -95,6 +96,7 @@ private theorem prepareValidationWeight_exact
     | pushData => exact ⟨weight, by simp [prepareValidationWeight, version], by simp [executedSignatureWeight]⟩
     | pushNum => exact ⟨weight, by simp [prepareValidationWeight, version], by simp [executedSignatureWeight]⟩
     | badOpcode => exact ⟨weight, by simp [prepareValidationWeight, version], by simp [executedSignatureWeight]⟩
+    | illegalOpcode => exact ⟨weight, by simp [prepareValidationWeight, version], by simp [executedSignatureWeight]⟩
     | op opcode =>
         cases opcode
         case OP_CHECKSIG | OP_CHECKSIGVERIFY =>
@@ -159,15 +161,17 @@ private theorem opcodeKeyCount_of_eval
 
 /-- Runtime completion with the exact debit observed on the active path.
 Skipped opcodes and empty signatures consume zero; source push bounds still
-cover inactive branches. Outside Tapscript the source operation bound must fit
-`maxOpsPerScript`. The final weight plus the observed debit equals the initial
-budget. -/
+cover inactive branches, and no source element is an `illegalOpcode`, which
+fails in an inactive branch too. Outside Tapscript the source operation bound
+must fit `maxOpsPerScript`. The final weight plus the observed debit equals the
+initial budget. -/
 theorem EvalResources.runtime_complete_exact
     {script : Script} {stack alt finalStack finalAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext} {resources : ExecutionResources}
     {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
     (observed : EvalResources script stack alt flags ctx finalStack finalAlt resources)
     (pushes : ∀ element ∈ script, element.pushSize ≤ maxScriptElementSize)
+    (legal : ∀ element ∈ script, element.isIllegalOpcode = false)
     (peak : resources.peakStackItems ≤ maxStackSize)
     (operations : ctx.sigVersion = .tapscript ∨ staticOperationCount script ≤ maxOpsPerScript)
     (weight : Nat) (enough : resources.signatureWeight ≤ weight) :
@@ -185,7 +189,8 @@ theorem EvalResources.runtime_complete_exact
         simp only [ExecutionResources.prepend_peakStackItems] at peak
         omega
       obtain ⟨remaining, completed, spent⟩ := ih
-        (fun element member => pushes element (by simp [member])) tailPeak
+        (fun element member => pushes element (by simp [member]))
+        (fun element member => legal element (by simp [member])) tailPeak
         (by rcases operations with version | operations
             · exact .inl version
             · exact .inr (by omega))
@@ -200,7 +205,7 @@ theorem EvalResources.runtime_complete_exact
       apply runtime_cons_success charging
         (next := { stack := nextStack, altStack := nextAlt, weight := nextWeight
                    operationCount := count })
-      · rw [execute_ordinary element head.singleton_nonConditional]
+      · rw [execute_ordinary element head.singleton_nonConditional head.singleton_legal]
         simp [Nat.not_lt.mpr (pushes element (by simp)), charged,
           evaluate_underTimelockFlags_success (evaluate_eq_of_eval agreement head), bind,
           Except.bind, pure, Except.pure]
@@ -218,7 +223,8 @@ theorem EvalResources.runtime_complete_exact
         simp only [ExecutionResources.prepend_peakStackItems] at peak
         omega
       obtain ⟨remaining, completed, spent⟩ := ih
-        (fun element member => pushes element (by simp [sub.subset member])) selectedPeak
+        (fun element member => pushes element (by simp [sub.subset member]))
+        (fun element member => legal element (by simp [sub.subset member])) selectedPeak
         (by rcases operations with version | operations
             · exact .inl version
             · have := staticOperationCount_sublist sub
@@ -249,6 +255,7 @@ theorem EvalResources.runtime_complete_exact
       · exact runtime_restore_conditional script _
           { stack := stack, altStack := alt, weight := weight, operationCount := count } [] []
           (castToBool top) projected (fun element member => pushes element (by simp [member]))
+          (fun element member => legal element (by simp [member]))
           initial
           (by rcases operations with version | operations
               · exact .inl version
@@ -264,7 +271,8 @@ theorem EvalResources.runtime_complete_exact
         simp only [ExecutionResources.prepend_peakStackItems] at peak
         omega
       obtain ⟨remaining, completed, spent⟩ := ih
-        (fun element member => pushes element (by simp [sub.subset member])) selectedPeak
+        (fun element member => pushes element (by simp [sub.subset member]))
+        (fun element member => legal element (by simp [sub.subset member])) selectedPeak
         (by rcases operations with version | operations
             · exact .inl version
             · have := staticOperationCount_sublist sub
@@ -295,6 +303,7 @@ theorem EvalResources.runtime_complete_exact
       · exact runtime_restore_conditional script _
           { stack := stack, altStack := alt, weight := weight, operationCount := count } [] []
           (!castToBool top) projected (fun element member => pushes element (by simp [member]))
+          (fun element member => legal element (by simp [member]))
           initial
           (by rcases operations with version | operations
               · exact .inl version
@@ -303,16 +312,18 @@ theorem EvalResources.runtime_complete_exact
           (by simpa using raised)
 
 /-- Resource-free execution completes in the source-order runtime when its
-observed stack peak fits, every source push fits, the initial weight covers
-the static signature bound, and, outside Tapscript, the static operation bound
-fits. This includes limits on skipped source pushes and opcodes. The unused
-weight is at least the initial weight minus that bound. -/
+observed stack peak fits, every source push fits, no source element is an
+`illegalOpcode`, the initial weight covers the static signature bound, and,
+outside Tapscript, the static operation bound fits. This includes limits on
+skipped source pushes and opcodes. The unused weight is at least the initial
+weight minus that bound. -/
 theorem EvalResources.runtime_complete
     {script : Script} {stack alt finalStack finalAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext} {resources : ExecutionResources}
     {oracle : CryptoOracle} (agreement : oracle.RefinesModel)
     (observed : EvalResources script stack alt flags ctx finalStack finalAlt resources)
     (pushes : ∀ element ∈ script, element.pushSize ≤ maxScriptElementSize)
+    (legal : ∀ element ∈ script, element.isIllegalOpcode = false)
     (peak : resources.peakStackItems ≤ maxStackSize)
     (operations : ctx.sigVersion = .tapscript ∨ staticOperationCount script ≤ maxOpsPerScript)
     (weight : Nat) (enough : staticValidationWeight script ≤ weight) :
@@ -322,7 +333,7 @@ theorem EvalResources.runtime_complete
       weight ≤ remaining + staticValidationWeight script := by
   have bound := observed.signatureWeight_le_static
   obtain ⟨remaining, completed, spent⟩ := observed.runtime_complete_exact agreement
-    pushes peak operations weight (Nat.le_trans bound enough)
+    pushes legal peak operations weight (Nat.le_trans bound enough)
   exact ⟨remaining, completed, by omega⟩
 
 end LeanMiniscript.Script

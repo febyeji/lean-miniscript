@@ -24,6 +24,21 @@ theorem scriptAllowed_append {ctx : ScriptContext} {left right : Script} :
   | nil => simp [ScriptAllowed]
   | cons element left ih => simp [ScriptAllowed, ih, and_assoc]
 
+/-- A script allowed in a context has no `illegalOpcode`, so a skipped branch
+passes over each of its elements. -/
+theorem ScriptAllowed.legal {ctx : ScriptContext} :
+    ∀ {script : Script}, ScriptAllowed ctx script →
+      ∀ element ∈ script, element.isIllegalOpcode = false
+  | [], _, _, member => by simp at member
+  | head :: rest, allowed, element, member => by
+      simp only [ScriptAllowed] at allowed
+      rcases List.mem_cons.mp member with same | inRest
+      · subst same
+        cases element with
+        | illegalOpcode => exact allowed.1.elim
+        | _ => rfl
+      · exact ScriptAllowed.legal allowed.2 element inRest
+
 /-- Folding a terminal VERIFY into its specialized opcode preserves context
     availability. -/
 theorem Bip379VerifyCompilation.scriptAllowed
@@ -317,6 +332,11 @@ theorem compileVerify_balancedControlFlow {script : Script}
             (BalancedControlFlow.atom (by trivial))
             (BalancedControlFlow.atom (by trivial))
       | badOpcode number =>
+          simp [compileVerify, verifyReplacement?]
+          exact BalancedControlFlow.append
+            (BalancedControlFlow.atom (by trivial))
+            (BalancedControlFlow.atom (by trivial))
+      | illegalOpcode number =>
           simp [compileVerify, verifyReplacement?]
           exact BalancedControlFlow.append
             (BalancedControlFlow.atom (by trivial))

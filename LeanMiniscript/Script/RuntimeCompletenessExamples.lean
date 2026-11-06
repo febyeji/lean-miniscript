@@ -90,8 +90,8 @@ example (modelOracle : CryptoOracle) (agreement : modelOracle.RefinesModel) :
     evaluateWithRuntimeLimits modelOracle nested [falseElement] [] {} ctx 0 =
       .success [trueElement] [] 0 := by
   obtain ⟨remaining, completed, spent⟩ := nestedResources.runtime_complete_exact agreement
-    (by simp [nested, ScriptElement.pushSize, maxScriptElementSize]; decide) (by decide)
-    (.inl rfl) 0 (by decide)
+    (by simp [nested, ScriptElement.pushSize, maxScriptElementSize]; decide)
+    (by simp [nested, ScriptElement.isIllegalOpcode]) (by decide) (.inl rfl) 0 (by decide)
   have zero : remaining = 0 := by simpa using spent
   simpa [zero] using completed
 
@@ -112,7 +112,8 @@ example (modelOracle : CryptoOracle) (agreement : modelOracle.RefinesModel)
       ctx, bytes, ByteArray.size] using
       EvalResources.step head (EvalResources.empty [trueElement] [] {} ctx)
   obtain ⟨remaining, completed, spent⟩ := observed.runtime_complete_exact agreement
-    (by simp [ScriptElement.pushSize, maxScriptElementSize]) (by decide) (.inl rfl) 50 (by decide)
+    (by simp [ScriptElement.pushSize, maxScriptElementSize])
+    (by simp [ScriptElement.isIllegalOpcode]) (by decide) (.inl rfl) 50 (by decide)
   have zero : remaining = 0 := by simpa using spent
   simpa [zero] using completed
 

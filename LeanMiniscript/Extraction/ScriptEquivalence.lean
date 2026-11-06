@@ -14,13 +14,13 @@ The typed executor reads script bytes with `decodeTypedScript?`. Bytes that
 have no typed reading run on Core's raw loop on both sides, so every
 obligation is a claim about the bytes that do. The reader reads OP_RESERVED,
 OP_VER, OP_RESERVED1, OP_RESERVED2, and the undefined bytes 0xbb-0xff as
-`badOpcode`, which fails only when executed. It rejects:
+`badOpcode`, which fails only when executed, and the 15 disabled opcodes
+(OP_CAT and the other 14), OP_VERIF, and OP_VERNOTIF as `illegalOpcode`, which
+fails even in an unexecuted branch. It rejects:
 
 * a truncated push;
 * a push that is not minimal (Core checks MINIMALDATA against the original
   encoding, which a typed push does not keep);
-* OP_VERIF and OP_VERNOTIF, which fail even in an unexecuted branch;
-* the disabled opcodes (OP_CAT and the other 14);
 * OP_SHA1 and OP_CODESEPARATOR.
 
 Tapscript reads the disabled opcodes and the `badOpcode` bytes other than
@@ -36,10 +36,12 @@ open LeanMiniscript.Script
 open CoreScriptExecution
 
 /-- A raw instruction reads as a typed element when it encodes it or is the
-byte of a `badOpcode`. -/
+byte of a `badOpcode` or an `illegalOpcode`. -/
 def _root_.LeanMiniscript.Script.CoreRawInstruction.ReadsAs (instruction : CoreRawInstruction) :
     ScriptElement → Prop
   | .badOpcode opcode => instruction.opcode = opcode.byte ∧
+      instruction.payload = ByteArray.empty
+  | .illegalOpcode opcode => instruction.opcode = opcode.byte ∧
       instruction.payload = ByteArray.empty
   | element => instruction.Encodes element
 
@@ -48,8 +50,8 @@ instance (instruction : CoreRawInstruction) (element : ScriptElement) :
   cases element <;> unfold CoreRawInstruction.ReadsAs <;> infer_instance
 
 /-- The typed element a raw instruction reads as: a minimal push, a numeric
-constant, a modeled opcode, or a `badOpcode` with the same byte. `none` when
-the instruction reads as no typed element. -/
+constant, a modeled opcode, or a `badOpcode` or `illegalOpcode` with the same
+byte. `none` when the instruction reads as no typed element. -/
 def typedElement? (instruction : CoreRawInstruction) : Option ScriptElement :=
   let value := instruction.opcode.toNat
   let candidate : Option ScriptElement :=
@@ -58,8 +60,12 @@ def typedElement? (instruction : CoreRawInstruction) : Option ScriptElement :=
     else if 0x51 ≤ value && value ≤ 0x60 then some (.pushNum ((value : Int) - 0x50))
     else match opcodeFromByte? value with
       | some opcode => some (.op opcode)
-      | none => if bad : isBadOpcodeByte instruction.opcode then
-          some (.badOpcode ⟨instruction.opcode, bad⟩) else none
+      | none =>
+          if bad : isBadOpcodeByte instruction.opcode then
+            some (.badOpcode ⟨instruction.opcode, bad⟩)
+          else if illegal : isIllegalOpcodeByte instruction.opcode then
+            some (.illegalOpcode ⟨instruction.opcode, illegal⟩)
+          else none
   match candidate with
   | some element => if instruction.ReadsAs element then some element else none
   | none => none

@@ -46,6 +46,7 @@ theorem evaluate_normalizeSerializedScript
       cases element with
       | pushData | pushNum => exact tail _ _
       | badOpcode => rfl
+      | illegalOpcode => rfl
       | op opcode =>
           cases opcode <;> simp only [tail]
           all_goals

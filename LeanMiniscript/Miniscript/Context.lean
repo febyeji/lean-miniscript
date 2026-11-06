@@ -82,12 +82,14 @@ instance instDecidableOpcodeAllowed
 
 /-- Context safety for one generated Script element. Data and numeric pushes
     are valid in both modeled contexts; opcode restrictions are delegated to
-    `OpcodeAllowed`. A byte that fails when executed is valid in neither. -/
+    `OpcodeAllowed`. A byte that fails when executed or wherever it appears
+    is valid in neither. -/
 def ScriptElementAllowed (ctx : ScriptContext) : ScriptElement → Prop
   | .op opcode => OpcodeAllowed ctx opcode
   | .pushData _ => True
   | .pushNum _ => True
   | .badOpcode _ => False
+  | .illegalOpcode _ => False
 
 instance instDecidableScriptElementAllowed
     (ctx : ScriptContext) (element : ScriptElement) :

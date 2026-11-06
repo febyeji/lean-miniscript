@@ -157,6 +157,12 @@ inductive ScriptError where
   | sigFindAndDelete
   deriving Repr, DecidableEq, BEq
 
+/-- Core's error for an `IllegalOpcode`: BAD_OPCODE for OP_VERIF and
+OP_VERNOTIF, DISABLED_OPCODE for the disabled opcodes. -/
+def IllegalOpcode.error (opcode : IllegalOpcode) : ScriptError :=
+  if opcode.byte.toNat == 0x65 || opcode.byte.toNat == 0x66 then .badOpcode
+  else .disabledOpcode
+
 /-- Fixed main-stack inputs consumed or inspected by a modeled opcode.
 
     `OP_CHECKMULTISIG` and `OP_CHECKMULTISIGVERIFY` are the variable-arity

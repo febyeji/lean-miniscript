@@ -9,9 +9,10 @@ namespace LeanMiniscript.Script
 
 /-!
 Runtime limits for the modeled opcode subset. Instructions are visited in source
-order, including inactive branches: oversized pushes fail and BASE or
-witness-v0 opcodes count when encountered, while signature debits, multisig key
-counts and ordinary opcode execution only occur in active code.
+order, including inactive branches: oversized pushes fail, BASE or witness-v0
+opcodes count, and disabled opcodes, OP_VERIF, and OP_VERNOTIF fail when
+encountered, while signature debits, multisig key counts and ordinary opcode
+execution only occur in active code.
 The branch-projection evaluator remains available for budget-only reasoning.
 -/
 
@@ -32,7 +33,7 @@ def maxOpsPerScript : Nat := 201
 def ScriptElement.pushSize : ScriptElement → Nat
   | .pushData bytes => bytes.size
   | .pushNum number => (scriptNum number).size
-  | .op _ | .badOpcode _ => 0
+  | .op _ | .badOpcode _ | .illegalOpcode _ => 0
 
 /-- Core checks combined main/alt-stack depth after each visited instruction. -/
 def checkRuntimeStack (state : RuntimeState) : Except ScriptError RuntimeState :=
@@ -49,7 +50,8 @@ def ScriptElement.underTimelockFlags (flags : ScriptFlags) : ScriptElement → S
   | element => element
 
 /-- One source instruction, before the combined stack check. Push size precedes
-    control handling and execution, including in an inactive branch. -/
+    control handling and execution, including in an inactive branch. An
+    `illegalOpcode` fails in an inactive branch as well. -/
 def executeRuntimeElement (oracle : CryptoOracle) (element : ScriptElement)
     (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
     Except ScriptError RuntimeState := do
@@ -75,6 +77,7 @@ def executeRuntimeElement (oracle : CryptoOracle) (element : ScriptElement)
       match state.conditions with
       | [] => throw .unbalancedConditional
       | _ :: rest => return { state with conditions := rest }
+  | .illegalOpcode opcode => throw opcode.error
   | _ =>
       if active then
         let weight ← prepareValidationWeight element state.stack flags ctx state.weight
@@ -113,7 +116,8 @@ def chargedOperationCount (opcode : Opcode) (state : RuntimeState)
   return count + keys
 
 /-- Core's operation count outside Tapscript. Pushes do not count, nor does
-OP_RESERVED, the one byte of `badOpcode` at or below OP_16. -/
+OP_RESERVED, the one byte of `badOpcode` at or below OP_16. Every
+`illegalOpcode` byte is above OP_16 and counts. -/
 def chargeOperations (element : ScriptElement) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) : Except ScriptError RuntimeState :=
   match element with
@@ -123,6 +127,10 @@ def chargeOperations (element : ScriptElement) (state : RuntimeState)
         fun count => { state with operationCount := count }
   | .badOpcode opcode =>
       if ctx.sigVersion = .tapscript ∨ opcode.byte.toNat ≤ 0x60 then .ok state
+      else if state.operationCount + 1 > maxOpsPerScript then .error .opCount
+      else .ok { state with operationCount := state.operationCount + 1 }
+  | .illegalOpcode _ =>
+      if ctx.sigVersion = .tapscript then .ok state
       else if state.operationCount + 1 > maxOpsPerScript then .error .opCount
       else .ok { state with operationCount := state.operationCount + 1 }
   | _ => .ok state
