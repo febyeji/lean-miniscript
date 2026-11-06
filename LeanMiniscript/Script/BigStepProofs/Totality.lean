@@ -185,6 +185,8 @@ theorem Eval.exists_result
                   .nonminimalPush push rest stack altStack flags ctx result minimal evaluated
               · exact ⟨.failure .minimalData,
                   .nonminimalPush_minimalData push rest stack altStack flags ctx minimal⟩
+          | truncatedPush push =>
+              exact ⟨.failure .badOpcode, .truncatedPush push rest stack altStack flags ctx⟩
           | op opcode =>
               cases opcode with
               | OP_NOP =>

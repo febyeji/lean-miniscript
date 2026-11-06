@@ -24,8 +24,8 @@ theorem scriptAllowed_append {ctx : ScriptContext} {left right : Script} :
   | nil => simp [ScriptAllowed]
   | cons element left ih => simp [ScriptAllowed, ih, and_assoc]
 
-/-- A script allowed in a context has no `illegalOpcode`, so a skipped branch
-passes over each of its elements. -/
+/-- A script allowed in a context has no `illegalOpcode` or `truncatedPush`, so
+a skipped branch passes over each of its elements. -/
 theorem ScriptAllowed.legal {ctx : ScriptContext} :
     ∀ {script : Script}, ScriptAllowed ctx script →
       ∀ element ∈ script, element.isIllegalOpcode = false
@@ -35,7 +35,7 @@ theorem ScriptAllowed.legal {ctx : ScriptContext} :
       rcases List.mem_cons.mp member with same | inRest
       · subst same
         cases element with
-        | illegalOpcode => exact allowed.1.elim
+        | illegalOpcode | truncatedPush => exact allowed.1.elim
         | _ => rfl
       · exact ScriptAllowed.legal allowed.2 element inRest
 
@@ -342,6 +342,11 @@ theorem compileVerify_balancedControlFlow {script : Script}
             (BalancedControlFlow.atom (by trivial))
             (BalancedControlFlow.atom (by trivial))
       | nonminimalPush push =>
+          simp [compileVerify, verifyReplacement?]
+          exact BalancedControlFlow.append
+            (BalancedControlFlow.atom (by trivial))
+            (BalancedControlFlow.atom (by trivial))
+      | truncatedPush push =>
           simp [compileVerify, verifyReplacement?]
           exact BalancedControlFlow.append
             (BalancedControlFlow.atom (by trivial))

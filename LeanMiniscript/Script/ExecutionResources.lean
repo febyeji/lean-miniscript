@@ -192,19 +192,20 @@ theorem Eval.singleton_nonConditional
   | badOpcode => trivial
   | illegalOpcode => trivial
   | nonminimalPush => trivial
+  | truncatedPush => trivial
   | op opcode =>
       cases opcode <;> try trivial
       all_goals cases evaluated <;> simp_all [Opcode.isUpgradeableNop]
       all_goals exact False.elim (noUnclosed _ rfl)
 
-/-- A successful singleton execution is no `illegalOpcode`. -/
+/-- A successful singleton execution is no `illegalOpcode` or `truncatedPush`. -/
 theorem Eval.singleton_legal
     {element : ScriptElement} {stack alt nextStack nextAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext}
     (evaluated : Eval [element] stack alt flags ctx (.success nextStack nextAlt)) :
     element.isIllegalOpcode = false := by
   cases element with
-  | illegalOpcode => cases evaluated
+  | illegalOpcode | truncatedPush => cases evaluated
   | _ => rfl
 
 namespace EvalResources

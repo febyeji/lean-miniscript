@@ -51,6 +51,38 @@ example : typedRun "0x01 0x05" false = .ok [⟨#[0x05]⟩] ∧
     typedRun "0 IF 0x01 0x05 ENDIF 1" true = .ok [⟨#[0x01]⟩] := by
   native_decide
 
+-- The typed reader reads a push GetOp cannot read as a `truncatedPush` of the
+-- bytes from it to the end.
+example : (match decodeTypedScript? ⟨#[0x01]⟩, decodeTypedScript? (raw "1 0x4d 0x0200 0x00") with
+    | some [.truncatedPush push], some [.pushNum 1, .truncatedPush rest] =>
+        push.bytes == ⟨#[0x01]⟩ && rest.bytes == ⟨#[0x4d, 0x02, 0x00, 0x00]⟩
+    | _, _ => false) = true := by
+  native_decide
+
+-- Every script of one or two bytes that GetOp cannot read from its start, and
+-- OP_PUSHDATA1, 2, or 4 followed by one to four 0xff bytes, has a typed reading.
+example : ((List.range 256).flatMap (fun first =>
+      ByteArray.mk #[first.toUInt8] :: (List.range 256).map fun second =>
+        ByteArray.mk #[first.toUInt8, second.toUInt8]) ++
+      [0x4c, 0x4d, 0x4e].flatMap (fun opcode => (List.range 4).map fun count =>
+        ByteArray.mk (#[opcode] ++ Array.replicate (count + 1) 0xff))).all
+    (fun bytes => match readCoreRawInstruction bytes 0 with
+      | .ok _ => true
+      | .error _ => (decodeTypedScript? bytes).isSome) = true := by
+  native_decide
+
+private def typedRunBytes (bytes : ByteArray) : Except CoreVerificationError Stack :=
+  executeTypedScript plainFlags coreFixtureTxContext
+    (fun _ _ => CryptoOracle.pureLeanHashes (fun _ _ _ => false))
+    { scriptBytes := bytes, sigVersion := .base }
+
+-- A truncated push fails with BAD_OPCODE in an unexecuted branch, and after 201
+-- operations, which it does not add to.
+example : typedRun "0 IF 0x4c" false = .error (.script .badOpcode) ∧
+    typedRunBytes ⟨Array.replicate 201 0x61 ++ #[0x4c]⟩ = .error (.script .badOpcode) ∧
+    typedRunBytes ⟨Array.replicate 202 0x61⟩ = .error (.script .opCount) := by
+  native_decide
+
 -- Raw execution supports SHA1 in BASE, witness-v0 and Tapscript.
 example : ([SignatureVersion.base, .witnessV0, .tapscript]).all (fun version =>
     (executeCoreFixtureScript (coreFixtureTransaction ByteArray.empty ByteArray.empty 0)

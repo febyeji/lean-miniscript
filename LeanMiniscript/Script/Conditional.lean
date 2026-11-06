@@ -102,6 +102,7 @@ private theorem splitConditionalAux_balanced_prefix
       | badOpcode value => simp [splitConditionalAux]
       | illegalOpcode value => simp [splitConditionalAux]
       | nonminimalPush push => simp [splitConditionalAux]
+      | truncatedPush push => simp [splitConditionalAux]
       | op opcode =>
           cases opcode <;> simp_all [NonConditional, splitConditionalAux]
   | @append left right _ _ leftIH rightIH =>
@@ -223,7 +224,8 @@ private theorem splitConditionalAux_select
   | nil => simp [splitConditionalAux, selectConditionalTail]
   | cons element rest ih =>
       cases element with
-      | pushData data | pushNum data | badOpcode data | illegalOpcode data | nonminimalPush data =>
+      | pushData data | pushNum data | badOpcode data | illegalOpcode data | nonminimalPush data
+        | truncatedPush data =>
           simp only [splitConditionalAux, selectConditionalTail, ih, Option.map_map,
             List.reverse_cons]
           congr 1
@@ -320,6 +322,10 @@ private theorem splitUnclosedConditionalAux_length_le
           have bound := ih depth (.nonminimalPush push :: currentRev) completedRev
           simpa [splitUnclosedConditionalAux, conditionalScanSize,
             Nat.add_assoc, Nat.add_left_comm, Nat.add_comm] using bound
+      | truncatedPush push =>
+          have bound := ih depth (.truncatedPush push :: currentRev) completedRev
+          simpa [splitUnclosedConditionalAux, conditionalScanSize,
+            Nat.add_assoc, Nat.add_left_comm, Nat.add_comm] using bound
       | op opcode =>
           cases depth <;> cases opcode <;>
             simp only [splitUnclosedConditionalAux]
@@ -383,6 +389,12 @@ private theorem splitConditionalAux_select_length_lt
       | nonminimalPush push =>
           simp only [splitConditionalAux] at hSplit
           have smaller := ih depth (.nonminimalPush push :: currentRev) completedRev
+            frame executeFirst hSplit
+          simpa [conditionalScanSize, Nat.add_assoc, Nat.add_left_comm,
+            Nat.add_comm] using smaller
+      | truncatedPush push =>
+          simp only [splitConditionalAux] at hSplit
+          have smaller := ih depth (.truncatedPush push :: currentRev) completedRev
             frame executeFirst hSplit
           simpa [conditionalScanSize, Nat.add_assoc, Nat.add_left_comm,
             Nat.add_comm] using smaller
@@ -452,7 +464,7 @@ private theorem splitConditionalAux_cons_nonConditional
     splitConditionalAux depth current completed (element :: rest) =
       splitConditionalAux depth (element :: current) completed rest := by
   cases element with
-  | pushData | pushNum | badOpcode | illegalOpcode | nonminimalPush => rfl
+  | pushData | pushNum | badOpcode | illegalOpcode | nonminimalPush | truncatedPush => rfl
   | op opcode => cases opcode <;> simp_all [NonConditional, splitConditionalAux]
 
 private theorem splitConditionalAux_map (f : ScriptElement → ScriptElement)
@@ -467,7 +479,7 @@ private theorem splitConditionalAux_map (f : ScriptElement → ScriptElement)
   | cons element rest ih =>
       rcases preserves element with unchanged | ⟨ordinary, mappedOrdinary⟩
       · cases element with
-        | pushData | pushNum | badOpcode | illegalOpcode | nonminimalPush =>
+        | pushData | pushNum | badOpcode | illegalOpcode | nonminimalPush | truncatedPush =>
             simp [List.map_cons, unchanged, splitConditionalAux, ← ih]
         | op opcode =>
             cases opcode <;> cases depth <;>
@@ -492,7 +504,7 @@ private theorem splitUnclosedConditionalAux_cons_nonConditional
     splitUnclosedConditionalAux depth current completed (element :: rest) =
       splitUnclosedConditionalAux depth (element :: current) completed rest := by
   cases element with
-  | pushData | pushNum | badOpcode | illegalOpcode | nonminimalPush => rfl
+  | pushData | pushNum | badOpcode | illegalOpcode | nonminimalPush | truncatedPush => rfl
   | op opcode => cases opcode <;> simp_all [NonConditional, splitUnclosedConditionalAux]
 
 private theorem splitUnclosedConditionalAux_map (f : ScriptElement → ScriptElement)
@@ -507,7 +519,7 @@ private theorem splitUnclosedConditionalAux_map (f : ScriptElement → ScriptEle
   | cons element rest ih =>
       rcases preserves element with unchanged | ⟨ordinary, mappedOrdinary⟩
       · cases element with
-        | pushData | pushNum | badOpcode | illegalOpcode | nonminimalPush =>
+        | pushData | pushNum | badOpcode | illegalOpcode | nonminimalPush | truncatedPush =>
             simp [List.map_cons, unchanged, splitUnclosedConditionalAux, ← ih]
         | op opcode =>
             cases opcode <;> cases depth <;>
@@ -554,6 +566,9 @@ private theorem splitConditionalAux_append_of_some
           simp only [splitConditionalAux] at hSplit ⊢
           exact ih _ _ _ _ hSplit
       | nonminimalPush push =>
+          simp only [splitConditionalAux] at hSplit ⊢
+          exact ih _ _ _ _ hSplit
+      | truncatedPush push =>
           simp only [splitConditionalAux] at hSplit ⊢
           exact ih _ _ _ _ hSplit
       | op opcode =>

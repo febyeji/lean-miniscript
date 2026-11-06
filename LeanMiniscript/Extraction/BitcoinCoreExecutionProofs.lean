@@ -27,9 +27,9 @@ private def encodesPush (instruction : CoreRawInstruction) (data : ByteArray) : 
 
 /-- A raw instruction has the typed instruction's opcode or pushed bytes.
 Length-prefixed pushes must be minimal so MINIMALDATA is preserved as well,
-and no instruction encodes a `nonminimalPush`. No instruction encodes a
-`badOpcode` or an `illegalOpcode`: Tapscript reads most of their bytes as
-OP_SUCCESSx, which these encodings exclude. -/
+and no instruction encodes a `nonminimalPush` or a `truncatedPush`. No
+instruction encodes a `badOpcode` or an `illegalOpcode`: Tapscript reads most
+of their bytes as OP_SUCCESSx, which these encodings exclude. -/
 def _root_.LeanMiniscript.Script.CoreRawInstruction.Encodes (instruction : CoreRawInstruction) :
     ScriptElement → Prop
   | .pushData data => encodesPush instruction data
@@ -39,6 +39,7 @@ def _root_.LeanMiniscript.Script.CoreRawInstruction.Encodes (instruction : CoreR
   | .badOpcode _ => False
   | .illegalOpcode _ => False
   | .nonminimalPush _ => False
+  | .truncatedPush _ => False
 
 instance (instruction : CoreRawInstruction) (element : ScriptElement) :
     Decidable (instruction.Encodes element) := by
@@ -56,6 +57,7 @@ theorem _root_.LeanMiniscript.Script.CoreRawInstruction.Encodes.opcodeCases
   | badOpcode => exact encoded.elim
   | illegalOpcode => exact encoded.elim
   | nonminimalPush => exact encoded.elim
+  | truncatedPush => exact encoded.elim
   | pushData | pushNum =>
       simp only [CoreRawInstruction.Encodes, encodesPush] at encoded
       split at encoded
@@ -272,6 +274,7 @@ theorem coreRawStep_encoded (flags : CoreVerificationFlags) (ctx : TxContext)
   | badOpcode => exact encoded.elim
   | illegalOpcode => exact encoded.elim
   | nonminimalPush => exact encoded.elim
+  | truncatedPush => exact encoded.elim
   | pushData data =>
       rw [runtimeStep_of_signatures _ _ _ _ _ (fun _ element => by cases element)]
       simp only [CoreRawInstruction.Encodes, encodesPush] at encoded
@@ -540,6 +543,24 @@ theorem coreRawStep_nonminimalPush (flags : CoreVerificationFlags) (ctx : TxCont
         Except.bind, Except.mapError, Except.map, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw]
 
+/-- GetOp fails only with BAD_OPCODE. -/
+theorem readCoreRawInstruction_error {bytes : ByteArray} {offset : Nat} {error : ScriptError}
+    (failed : readCoreRawInstruction bytes offset = .error error) : error = .badOpcode := by
+  unfold readCoreRawInstruction at failed
+  simp only [bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw] at failed
+  repeat' (split at failed)
+  all_goals first | (cases failed; rfl) | cases failed
+
+/-- The typed step of a `truncatedPush` fails with BAD_OPCODE in an executed or
+skipped branch and charges no operation, as Core's raw loop fails when GetOp
+cannot read the push. -/
+theorem runtimeStep_truncatedPush (oracles : ScriptCodeOracles) (push : TruncatedPush)
+    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
+    runtimeStep oracles (.truncatedPush push) state flags ctx = .error .badOpcode := by
+  simp [runtimeStep, chargeOperations, ScriptCodeOracles.forStep, removeSignatures,
+    runtimeInstruction, executeRuntimeElement, ScriptElement.pushSize, bind, Except.bind,
+    pure, Except.pure, throw, throwThe, MonadExceptOf.throw]
+
 private theorem coreRawStep_tapscript (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (state : CoreRawState)
@@ -564,6 +585,7 @@ private theorem coreRawStep_tapscript (flags : CoreVerificationFlags) (ctx : TxC
   | badOpcode => exact encoded.elim
   | illegalOpcode => exact encoded.elim
   | nonminimalPush => exact encoded.elim
+  | truncatedPush => exact encoded.elim
   | op opcode =>
       have notBase : (instructionContext ctx request state).sigVersion ≠ .base := by
         show request.sigVersion ≠ .base
@@ -860,6 +882,7 @@ private theorem read_serializeElement (element : ScriptElement) (encoded : ByteA
   | badOpcode opcode => simp [serializeElement] at serialized
   | illegalOpcode opcode => simp [serializeElement] at serialized
   | nonminimalPush push => simp [serializeElement] at serialized
+  | truncatedPush push => simp [serializeElement] at serialized
 
 /-- Canonical serialization supplies the byte-decoding certificate whenever
 each pushed value fits in a direct push (at most 75 bytes). This covers the

@@ -50,13 +50,13 @@ theorem runtime_cons_success
   simpa [evaluateRuntime, runtimeStep, runtimeInstruction, charging, executed, checkRuntimeStack,
     Nat.not_lt_of_le bounded, bind, Except.bind] using tail
 
-/-- An element that succeeds is no `illegalOpcode`. -/
+/-- An element that succeeds is no `illegalOpcode` or `truncatedPush`. -/
 theorem execute_legal {oracle : CryptoOracle} {element : ScriptElement}
     {state next : RuntimeState} {flags : ScriptFlags} {ctx : TxContext}
     (executed : executeRuntimeElement oracle element state flags ctx = .ok next) :
     element.isIllegalOpcode = false := by
   cases element with
-  | illegalOpcode =>
+  | illegalOpcode | truncatedPush =>
       simp [executeRuntimeElement, ScriptElement.pushSize, throw, throwThe,
         MonadExceptOf.throw] at executed
   | _ => rfl
@@ -77,7 +77,7 @@ theorem execute_ordinary (element : ScriptElement) (ordinary : NonConditional el
   | pushData => rfl
   | pushNum => rfl
   | badOpcode | nonminimalPush => rfl
-  | illegalOpcode => simp [ScriptElement.isIllegalOpcode] at legal
+  | illegalOpcode | truncatedPush => simp [ScriptElement.isIllegalOpcode] at legal
   | op opcode => cases opcode <;> first | contradiction | rfl
 
 theorem select_ordinary (element : ScriptElement) (ordinary : NonConditional element)
@@ -91,6 +91,7 @@ theorem select_ordinary (element : ScriptElement) (ordinary : NonConditional ele
   | badOpcode => rfl
   | illegalOpcode => rfl
   | nonminimalPush => rfl
+  | truncatedPush => rfl
   | op opcode => cases opcode <;> first | contradiction | rfl
 
 private theorem execute_push_bound
@@ -151,6 +152,7 @@ theorem execute_branch (element : ScriptElement) (branch : element.isBranch = tr
   | badOpcode => contradiction
   | illegalOpcode => contradiction
   | nonminimalPush => contradiction
+  | truncatedPush => contradiction
   | op opcode => cases opcode <;>
       simp_all [ScriptElement.isBranch, executeRuntimeElement, ScriptElement.pushSize,
         maxScriptElementSize, pure, Except.pure] <;> rfl
@@ -166,6 +168,7 @@ theorem select_branch (element : ScriptElement) (branch : element.isBranch = tru
   | badOpcode => contradiction
   | illegalOpcode => contradiction
   | nonminimalPush => contradiction
+  | truncatedPush => contradiction
   | op opcode => cases opcode <;> first | contradiction | rfl
 
 theorem branch_conditions
@@ -274,6 +277,7 @@ private theorem runtime_select_success
           | badOpcode => exact False.elim (ordinary trivial)
           | illegalOpcode => exact False.elim (ordinary trivial)
           | nonminimalPush => exact False.elim (ordinary trivial)
+          | truncatedPush => exact False.elim (ordinary trivial)
           | op opcode =>
               cases opcode <;> simp only [NonConditional, ScriptElement.isBranch] at ordinary branch
               case OP_ELSE =>
@@ -426,6 +430,7 @@ theorem evaluateWithRuntimeLimits_erase_success
           | badOpcode => exact False.elim (ordinary trivial)
           | illegalOpcode => exact False.elim (ordinary trivial)
           | nonminimalPush => exact False.elim (ordinary trivial)
+          | truncatedPush => exact False.elim (ordinary trivial)
           | op opcode =>
               cases opcode <;>
                 simp_all [NonConditional, ScriptElement.isBranch, executeRuntimeElement,

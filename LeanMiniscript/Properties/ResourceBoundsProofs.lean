@@ -32,6 +32,7 @@ private inductive ElementSerializationShape where
   | badOpcode (byte : UInt8)
   | illegalOpcode (byte : UInt8)
   | nonminimalPush (opcode : UInt8)
+  | truncatedPush (opcode : UInt8)
 
 private def elementSerializationShape : ScriptElement → ElementSerializationShape
   | .op opcode => .op opcode
@@ -40,6 +41,7 @@ private def elementSerializationShape : ScriptElement → ElementSerializationSh
   | .badOpcode opcode => .badOpcode opcode.byte
   | .illegalOpcode opcode => .illegalOpcode opcode.byte
   | .nonminimalPush push => .nonminimalPush push.opcode
+  | .truncatedPush push => .truncatedPush push.bytes[0]!
 
 private def elementShapeSize : ElementSerializationShape → Except SerializationError Nat
   | .op _ => .ok 1
@@ -48,6 +50,7 @@ private def elementShapeSize : ElementSerializationShape → Except Serializatio
   | .badOpcode byte => .error (.badOpcode byte)
   | .illegalOpcode byte => .error (.illegalOpcode byte)
   | .nonminimalPush opcode => .error (.nonminimalPush opcode)
+  | .truncatedPush opcode => .error (.truncatedPush opcode)
 
 private def scriptSerializationShape (script : Script) : List ElementSerializationShape :=
   script.map elementSerializationShape
@@ -166,6 +169,9 @@ private theorem compileVerify_shape (script : Script) :
           simp [elementSerializationShape, verifyReplacement?,
             verifyShapeReplacement?, List.map_reverse]
       | nonminimalPush push =>
+          simp [elementSerializationShape, verifyReplacement?,
+            verifyShapeReplacement?, List.map_reverse]
+      | truncatedPush push =>
           simp [elementSerializationShape, verifyReplacement?,
             verifyShapeReplacement?, List.map_reverse]
 

@@ -538,6 +538,7 @@ theorem deserializeScriptList_serializeElement
   | badOpcode opcode => simp [serializeElement] at serialized
   | illegalOpcode opcode => simp [serializeElement] at serialized
   | nonminimalPush push => simp [serializeElement] at serialized
+  | truncatedPush push => simp [serializeElement] at serialized
 
 private theorem except_map_map {α β γ ε : Type}
     (first : β → γ) (second : α → β)

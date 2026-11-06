@@ -32,7 +32,8 @@ def MAX_SANE_TAPSCRIPT_SCRIPT_SIZE : Nat := 329482
 
 /-- Whether a script element is a non-push opcode for the BIP 379 opcode-count
     accounting layer of compiled Miniscript. The compiler emits no
-    `badOpcode` or `illegalOpcode`, which this count leaves out. -/
+    `badOpcode`, `illegalOpcode`, or `truncatedPush`, which this count leaves
+    out. -/
 def isNonPushElement : ScriptElement → Bool
   | .op _ => true
   | .pushData _ => false
@@ -40,6 +41,7 @@ def isNonPushElement : ScriptElement → Bool
   | .badOpcode _ => false
   | .illegalOpcode _ => false
   | .nonminimalPush _ => false
+  | .truncatedPush _ => false
 
 /-- Number of Script AST elements produced by compilation. -/
 def scriptElementCount (fragment : CoreFragment) : Nat :=

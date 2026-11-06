@@ -76,6 +76,11 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       flags.minimalData = true →
       Eval (.nonminimalPush push :: rest) stack altStack flags ctx (.failure .minimalData)
 
+  -- A push cut off by the end of the script fails when reached.
+  | truncatedPush : (push : TruncatedPush) → (rest : Script) → (stack altStack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) →
+      Eval (.truncatedPush push :: rest) stack altStack flags ctx (.failure .badOpcode)
+
   -- Fixed-arity opcode failure. Variable-arity CHECKMULTISIG and malformed
   -- operand encodings have their own semantic boundaries.
   | stack_underflow : (opcode : Opcode) → (required : Nat) →
