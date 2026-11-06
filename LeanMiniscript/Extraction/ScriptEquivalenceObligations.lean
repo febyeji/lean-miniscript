@@ -18,11 +18,10 @@ structure ScriptEquivalenceObligation where
   proposition : Lean.Name
   theoremName : Lean.Name
 
--- TODO(script-equivalence): prove the obligations below other than
--- `tapscriptExecutionAgreement`.
+-- TODO(script-equivalence): prove the six VerifyScript obligations below.
 def scriptEquivalenceObligations : List ScriptEquivalenceObligation := [
-  ⟨``BaseExecutionAgreement, `LeanMiniscript.Extraction.baseExecutionAgreement⟩,
-  ⟨``WitnessV0ExecutionAgreement, `LeanMiniscript.Extraction.witnessV0ExecutionAgreement⟩,
+  ⟨``BaseExecutionAgreement, ``baseExecutionAgreement⟩,
+  ⟨``WitnessV0ExecutionAgreement, ``witnessV0ExecutionAgreement⟩,
   ⟨``TapscriptExecutionAgreement, ``tapscriptExecutionAgreement⟩,
   ⟨``LegacyVerificationAgreement, `LeanMiniscript.Extraction.legacyVerificationAgreement⟩,
   ⟨``P2SHVerificationAgreement, `LeanMiniscript.Extraction.p2shVerificationAgreement⟩,
