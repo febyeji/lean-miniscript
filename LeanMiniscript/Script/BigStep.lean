@@ -64,6 +64,18 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       (flags : ScriptFlags) → (ctx : TxContext) →
       Eval (.illegalOpcode opcode :: rest) stack altStack flags ctx (.failure opcode.error)
 
+  -- A push that is not minimal fails under MINIMALDATA and otherwise pushes.
+  | nonminimalPush : (push : NonminimalPush) → (rest : Script) →
+      (stack altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) → flags.minimalData = false →
+      Eval rest (push.data :: stack) altStack flags ctx result →
+      Eval (.nonminimalPush push :: rest) stack altStack flags ctx result
+
+  | nonminimalPush_minimalData : (push : NonminimalPush) → (rest : Script) →
+      (stack altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      flags.minimalData = true →
+      Eval (.nonminimalPush push :: rest) stack altStack flags ctx (.failure .minimalData)
+
   -- Fixed-arity opcode failure. Variable-arity CHECKMULTISIG and malformed
   -- operand encodings have their own semantic boundaries.
   | stack_underflow : (opcode : Opcode) → (required : Nat) →

@@ -26,9 +26,10 @@ private def encodesPush (instruction : CoreRawInstruction) (data : ByteArray) : 
   else False
 
 /-- A raw instruction has the typed instruction's opcode or pushed bytes.
-Length-prefixed pushes must be minimal so MINIMALDATA is preserved as well.
-No instruction encodes a `badOpcode` or an `illegalOpcode`: Tapscript reads
-most of their bytes as OP_SUCCESSx, which these encodings exclude. -/
+Length-prefixed pushes must be minimal so MINIMALDATA is preserved as well,
+and no instruction encodes a `nonminimalPush`. No instruction encodes a
+`badOpcode` or an `illegalOpcode`: Tapscript reads most of their bytes as
+OP_SUCCESSx, which these encodings exclude. -/
 def _root_.LeanMiniscript.Script.CoreRawInstruction.Encodes (instruction : CoreRawInstruction) :
     ScriptElement → Prop
   | .pushData data => encodesPush instruction data
@@ -37,6 +38,7 @@ def _root_.LeanMiniscript.Script.CoreRawInstruction.Encodes (instruction : CoreR
       instruction.payload = ByteArray.empty
   | .badOpcode _ => False
   | .illegalOpcode _ => False
+  | .nonminimalPush _ => False
 
 instance (instruction : CoreRawInstruction) (element : ScriptElement) :
     Decidable (instruction.Encodes element) := by
@@ -53,6 +55,7 @@ theorem _root_.LeanMiniscript.Script.CoreRawInstruction.Encodes.opcodeCases
   | op opcode => exact Or.inr (Or.inr (Or.inr ⟨opcode, encoded.1⟩))
   | badOpcode => exact encoded.elim
   | illegalOpcode => exact encoded.elim
+  | nonminimalPush => exact encoded.elim
   | pushData | pushNum =>
       simp only [CoreRawInstruction.Encodes, encodesPush] at encoded
       split at encoded
@@ -268,6 +271,7 @@ theorem coreRawStep_encoded (flags : CoreVerificationFlags) (ctx : TxContext)
   | op opcode => exact coreRawStep_op flags ctx oracles request state instruction opcode encoded
   | badOpcode => exact encoded.elim
   | illegalOpcode => exact encoded.elim
+  | nonminimalPush => exact encoded.elim
   | pushData data =>
       rw [runtimeStep_of_signatures _ _ _ _ _ (fun _ element => by cases element)]
       simp only [CoreRawInstruction.Encodes, encodesPush] at encoded
@@ -454,6 +458,88 @@ theorem coreRawStep_illegalOpcode (flags : CoreVerificationFlags) (ctx : TxConte
       simp [*, bind, Except.bind, Except.mapError, Except.map, throw, throwThe,
         MonadExceptOf.throw]
 
+/-- A `nonminimalPush` opcode is a push opcode that Core's raw step does not
+take as minimal. -/
+theorem _root_.LeanMiniscript.Script.NonminimalPush.byte_facts (push : NonminimalPush) :
+    push.opcode.toNat ≤ 0x4e ∧ coreLegacyMinimalPush push.opcode.toNat push.data = false := by
+  have nonminimal := push.isNonminimal
+  simp only [isNonminimalPush, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at nonminimal
+  refine ⟨?_, nonminimal.2⟩
+  have fits := nonminimal.1
+  split at fits
+  · omega
+  · split at fits
+    · rename_i pushData1
+      simp only [beq_iff_eq] at pushData1
+      omega
+    · split at fits
+      · rename_i pushData2
+        simp only [beq_iff_eq] at pushData2
+        omega
+      · simp only [Bool.and_eq_true, beq_iff_eq] at fits
+        omega
+
+/-- The typed step of a `nonminimalPush` is the step of a push of its data,
+except that an executed push fails with MINIMALDATA when the flag is on. -/
+theorem runtimeStep_nonminimalPush (oracles : ScriptCodeOracles) (push : NonminimalPush)
+    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
+    runtimeStep oracles (.nonminimalPush push) state flags ctx =
+      if push.data.size > maxScriptElementSize then .error .pushSize
+      else if (state.conditions.all id && flags.minimalData) = true then .error .minimalData
+      else runtimeStep (oracles.oracleFor oracles.scriptCode) (.pushData push.data)
+        state flags ctx := by
+  rw [runtimeStep_of_signatures _ _ _ _ _ (fun _ element => by cases element),
+    runtimeStep_pushData]
+  by_cases large : push.data.size > maxScriptElementSize
+  · simp [large, runtimeStep, chargeOperations, runtimeInstruction, executeRuntimeElement,
+      ScriptElement.pushSize, bind, Except.bind, throw, throwThe, MonadExceptOf.throw]
+  · by_cases inactive : false ∈ state.conditions <;>
+      cases minimal : flags.minimalData <;>
+      simp [large, inactive, minimal, runtimeStep, chargeOperations, runtimeInstruction,
+        executeRuntimeElement, ScriptElement.pushSize, prepareValidationWeight, evaluate,
+        ScriptElement.underTimelockFlags, bind, Except.bind, pure, Except.pure, throw,
+        throwThe, MonadExceptOf.throw]
+
+/-- The raw step of a push that is not minimal is the typed step: an oversized
+push fails with PUSH_SIZE, an executed push fails with MINIMALDATA when the
+flag is on and otherwise pushes its data, and a skipped push only checks the
+stack size. -/
+theorem coreRawStep_nonminimalPush (flags : CoreVerificationFlags) (ctx : TxContext)
+    (oracles : SignatureVersion → ByteArray → CryptoOracle)
+    (request : CoreScriptExecutionRequest) (state : CoreRawState)
+    (instruction : CoreRawInstruction) (push : NonminimalPush)
+    (byte : instruction.opcode = push.opcode)
+    (payload : instruction.payload = push.data) :
+    coreRawStep flags ctx oracles request state instruction =
+      ((runtimeStep
+        ⟨oracles request.sigVersion,
+          request.scriptBytes.extract state.codeSeparatorOffset request.scriptBytes.size⟩
+        (.nonminimalPush push) state.runtime flags.script
+        (instructionContext ctx request state)).mapError CoreVerificationError.script).map
+          fun runtime =>
+            { state with
+              runtime := runtime
+              offset := instruction.nextOffset
+              opcodePosition := state.opcodePosition + 1 } := by
+  obtain ⟨low, notMinimal⟩ := push.byte_facts
+  have notDisabled : coreLegacyDisabledOpcode push.opcode.toNat = false := by
+    simp [coreLegacyDisabledOpcode]
+    omega
+  have notSpecial : push.opcode.toNat ≠ 0x65 ∧ push.opcode.toNat ≠ 0x66 ∧
+      push.opcode.toNat ≠ 0xab := by omega
+  have uncounted : ¬ 0x60 < push.opcode.toNat := by omega
+  rw [runtimeStep_nonminimalPush]
+  by_cases large : push.data.size > maxScriptElementSize
+  · simp [coreRawStep, payload, large, bind, Except.bind, Except.mapError, Except.map,
+      throw, throwThe, MonadExceptOf.throw]
+  · simp only [if_neg large]
+    cases active : state.runtime.conditions.all id <;>
+      cases minimal : flags.script.minimalData <;>
+      simp +decide [coreRawStep, byte, payload, large, notDisabled, notSpecial.1,
+        notSpecial.2.1, notSpecial.2.2, uncounted, low, notMinimal, active, minimal, bind,
+        Except.bind, Except.mapError, Except.map, pure, Except.pure, throw, throwThe,
+        MonadExceptOf.throw]
+
 private theorem coreRawStep_tapscript (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (state : CoreRawState)
@@ -477,6 +563,7 @@ private theorem coreRawStep_tapscript (flags : CoreVerificationFlags) (ctx : TxC
   cases element with
   | badOpcode => exact encoded.elim
   | illegalOpcode => exact encoded.elim
+  | nonminimalPush => exact encoded.elim
   | op opcode =>
       have notBase : (instructionContext ctx request state).sigVersion ≠ .base := by
         show request.sigVersion ≠ .base
@@ -772,6 +859,7 @@ private theorem read_serializeElement (element : ScriptElement) (encoded : ByteA
       exact ⟨rfl, rfl⟩
   | badOpcode opcode => simp [serializeElement] at serialized
   | illegalOpcode opcode => simp [serializeElement] at serialized
+  | nonminimalPush push => simp [serializeElement] at serialized
 
 /-- Canonical serialization supplies the byte-decoding certificate whenever
 each pushed value fits in a direct push (at most 75 bytes). This covers the

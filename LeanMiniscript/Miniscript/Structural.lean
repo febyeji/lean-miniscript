@@ -341,6 +341,11 @@ theorem compileVerify_balancedControlFlow {script : Script}
           exact BalancedControlFlow.append
             (BalancedControlFlow.atom (by trivial))
             (BalancedControlFlow.atom (by trivial))
+      | nonminimalPush push =>
+          simp [compileVerify, verifyReplacement?]
+          exact BalancedControlFlow.append
+            (BalancedControlFlow.atom (by trivial))
+            (BalancedControlFlow.atom (by trivial))
   | @append left right leftBalanced rightBalanced leftVerified rightVerified =>
       rcases List.eq_nil_or_concat right with rfl | ⟨initScript, last, rfl⟩
       · simpa using leftVerified

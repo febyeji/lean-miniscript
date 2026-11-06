@@ -118,8 +118,39 @@ structure IllegalOpcode where
   isIllegal : isIllegalOpcodeByte byte = true
   deriving Repr, DecidableEq
 
+/-- Core's CheckMinimalPush: push opcode `opcode` is the shortest encoding of
+`data`. -/
+def isMinimalPush (opcode : Nat) (data : ByteArray) : Bool :=
+  if data.size = 0 then opcode == 0
+  else if data.size = 1 && 1 ≤ (data.get! 0).toNat && (data.get! 0).toNat ≤ 16 then
+    opcode == (data.get! 0).toNat + 0x50
+  else if data.size = 1 && data.get! 0 == 0x81 then opcode == 0x4f
+  else if data.size ≤ 75 then opcode == data.size
+  else if data.size ≤ 255 then opcode == 0x4c
+  else if data.size ≤ 65535 then opcode == 0x4d
+  else true
+
+/-- A push opcode with data its length field holds (0x01–0x4b that many bytes,
+OP_PUSHDATA1, 2, and 4 a one-, two-, or four-byte length) that is not the
+shortest encoding of the data. -/
+def isNonminimalPush (opcode : UInt8) (data : ByteArray) : Bool :=
+  let value := opcode.toNat
+  let fits := if value ≤ 0x4b then data.size == value
+    else if value == 0x4c then data.size < 0x100
+    else if value == 0x4d then data.size < 0x10000
+    else value == 0x4e && data.size < 0x100000000
+  fits && !isMinimalPush value data
+
+/-- A push of `isNonminimalPush`, with its original opcode. -/
+structure NonminimalPush where
+  opcode : UInt8
+  data : ByteArray
+  isNonminimal : isNonminimalPush opcode data = true
+  deriving Repr
+
 /-- A script element is an opcode, a data push, a byte that fails when
-executed, or a byte that fails wherever it appears. -/
+executed, a byte that fails wherever it appears, or a push that is not
+minimal. -/
 inductive ScriptElement where
   | op : Opcode → ScriptElement
   | pushData : ByteArray → ScriptElement
@@ -128,6 +159,9 @@ inductive ScriptElement where
   | badOpcode : BadOpcode → ScriptElement
   /-- Fails with DISABLED_OPCODE or BAD_OPCODE in any branch. -/
   | illegalOpcode : IllegalOpcode → ScriptElement
+  /-- Fails with MINIMALDATA in an executed branch when the flag is on, and
+  otherwise pushes its data there. -/
+  | nonminimalPush : NonminimalPush → ScriptElement
   deriving Repr
 
 /-- A Bitcoin Script is a list of script elements. -/

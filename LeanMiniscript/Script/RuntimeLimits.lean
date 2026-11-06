@@ -33,6 +33,7 @@ def maxOpsPerScript : Nat := 201
 def ScriptElement.pushSize : ScriptElement → Nat
   | .pushData bytes => bytes.size
   | .pushNum number => (scriptNum number).size
+  | .nonminimalPush push => push.data.size
   | .op _ | .badOpcode _ | .illegalOpcode _ => 0
 
 /-- Core checks combined main/alt-stack depth after each visited instruction. -/
