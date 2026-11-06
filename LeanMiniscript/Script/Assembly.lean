@@ -167,6 +167,15 @@ def illegalOpcodeAssembly (opcode : IllegalOpcode) : String :=
   | 0x99 => "RSHIFT"
   | _ => "UNKNOWN_0x" ++ byteHex opcode.byte
 
+/-- The bytes of a push that is not minimal, in hex after `0x` as Core's test
+scripts write raw bytes: opcode, little-endian length, data. -/
+def nonminimalPushAssembly (push : NonminimalPush) : String :=
+  let value := push.opcode.toNat
+  let width := if value ≤ 0x4b then 0 else if value == 0x4c then 1
+    else if value == 0x4d then 2 else 4
+  let length := (List.range width).map fun i => UInt8.ofNat (push.data.size / 256 ^ i)
+  "0x" ++ byteHex push.opcode ++ String.join (length.map byteHex) ++ byteArrayHex push.data
+
 /-- Render one Script element in BIP-style assembly notation. -/
 def elementAssembly : ScriptElement → String
   | .op opcode => opcodeAssembly opcode
@@ -174,6 +183,7 @@ def elementAssembly : ScriptElement → String
   | .pushNum number => toString number
   | .badOpcode opcode => badOpcodeAssembly opcode
   | .illegalOpcode opcode => illegalOpcodeAssembly opcode
+  | .nonminimalPush push => nonminimalPushAssembly push
 
 /-- Render a Script as a space-separated BIP-style assembly string. -/
 def toAssembly (script : Script) : String :=

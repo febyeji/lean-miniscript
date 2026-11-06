@@ -10,7 +10,7 @@ namespace LeanMiniscript.Script
 def ScriptElement.stackGrowthAllowance : ScriptElement → Nat
   | .op .OP_2DUP | .op .OP_2OVER => 2
   | .op .OP_3DUP => 3
-  | .pushData _ | .pushNum _ => 1
+  | .pushData _ | .pushNum _ | .nonminimalPush _ => 1
   | .op .OP_IFDUP | .op .OP_DEPTH | .op .OP_DUP | .op .OP_OVER | .op .OP_TUCK | .op .OP_SIZE |
       .op .OP_CHECKMULTISIG | .op .OP_CHECKMULTISIGVERIFY => 1
   | .op _ | .badOpcode _ | .illegalOpcode _ => 0
@@ -60,6 +60,7 @@ theorem ScriptElement.stackGrowthAllowance_le_one (element : ScriptElement)
   | pushNum value => simp [ScriptElement.stackGrowthAllowance]
   | badOpcode opcode => simp [ScriptElement.stackGrowthAllowance]
   | illegalOpcode opcode => simp [ScriptElement.stackGrowthAllowance]
+  | nonminimalPush push => simp [ScriptElement.stackGrowthAllowance]
   | op opcode => cases opcode <;> simp_all [ScriptElement.stackGrowthAllowance]
 
 theorem stackGrowthAllowance_le_length (script : Script) (oneItem : OneItemGrowth script) :

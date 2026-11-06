@@ -33,6 +33,24 @@ example : (match decodeTypedScript? ⟨#[0xa7]⟩ with
     | _ => false) = true := by
   native_decide
 
+-- The typed reader keeps the opcode of a push that is not minimal.
+example : (match decodeTypedScript? (raw "0x01 0x05") with
+    | some [.nonminimalPush push] => push.opcode == 0x01 && push.data == ⟨#[0x05]⟩
+    | _ => false) = true := by
+  native_decide
+
+private def typedRun (source : String) (minimalData : Bool) :
+    Except CoreVerificationError Stack :=
+  executeTypedScript { plainFlags with script := { plainFlags.script with minimalData } }
+    coreFixtureTxContext (fun _ _ => CryptoOracle.pureLeanHashes (fun _ _ _ => false))
+    { scriptBytes := raw source, sigVersion := .base }
+
+-- MINIMALDATA rejects it only in an executed branch.
+example : typedRun "0x01 0x05" false = .ok [⟨#[0x05]⟩] ∧
+    typedRun "0x01 0x05" true = .error (.script .minimalData) ∧
+    typedRun "0 IF 0x01 0x05 ENDIF 1" true = .ok [⟨#[0x01]⟩] := by
+  native_decide
+
 -- Raw execution supports SHA1 in BASE, witness-v0 and Tapscript.
 example : ([SignatureVersion.base, .witnessV0, .tapscript]).all (fun version =>
     (executeCoreFixtureScript (coreFixtureTransaction ByteArray.empty ByteArray.empty 0)

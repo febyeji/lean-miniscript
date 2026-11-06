@@ -24,7 +24,7 @@ theorem typedElement?_readsAs {instruction : CoreRawInstruction} {element : Scri
 
 /-- Complete source-order reading with Core's GetOp boundaries, every
 instruction reading as its typed element: `CoreTapscriptEncoding` with
-`badOpcode` and `illegalOpcode` elements as well. -/
+`badOpcode`, `illegalOpcode`, and `nonminimalPush` elements as well. -/
 def CoreTypedReading (bytes : ByteArray) : Nat → Script → Prop
   | offset, [] => offset = bytes.size
   | offset, element :: rest =>
@@ -124,8 +124,8 @@ theorem instructionContext_typedScriptContext (ctx : TxContext)
   simp [instructionContext, typedScriptContext, separatorPosition]
 
 /-- The raw step of an instruction that reads as a typed element is the typed
-step, as `coreRawStep_encoded`, `coreRawStep_badOpcode`, and
-`coreRawStep_illegalOpcode` give it. -/
+step, as `coreRawStep_encoded`, `coreRawStep_badOpcode`,
+`coreRawStep_illegalOpcode`, and `coreRawStep_nonminimalPush` give it. -/
 theorem coreRawStep_readsAs (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (state : CoreRawState)
@@ -146,6 +146,9 @@ theorem coreRawStep_readsAs (flags : CoreVerificationFlags) (ctx : TxContext)
       exact coreRawStep_badOpcode flags ctx oracles request state instruction opcode read.1 read.2
   | illegalOpcode opcode =>
       exact coreRawStep_illegalOpcode flags ctx oracles request state instruction opcode
+        read.1 read.2
+  | nonminimalPush push =>
+      exact coreRawStep_nonminimalPush flags ctx oracles request state instruction push
         read.1 read.2
   | op | pushData | pushNum =>
       exact coreRawStep_encoded flags ctx oracles request state instruction _ read

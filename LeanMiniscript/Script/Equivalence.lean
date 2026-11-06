@@ -58,6 +58,7 @@ theorem evaluate_cons_of_not_branch
   | pushNum value => simp only [evaluate.eq_1]
   | badOpcode opcode => rfl
   | illegalOpcode opcode => rfl
+  | nonminimalPush push => cases flags.minimalData <;> simp [evaluate.eq_1]
   | op opcode =>
       cases opcode <;>
         simp_all [ScriptElement.isBranch, evaluate.eq_1]
@@ -97,6 +98,7 @@ theorem evaluate_cons_of_branch
   | pushNum => simp [ScriptElement.isBranch] at branch
   | badOpcode => simp [ScriptElement.isBranch] at branch
   | illegalOpcode => simp [ScriptElement.isBranch] at branch
+  | nonminimalPush => simp [ScriptElement.isBranch] at branch
   | op opcode =>
       cases opcode <;>
         simp_all [ScriptElement.isBranch, ScriptElement.branchChoice]

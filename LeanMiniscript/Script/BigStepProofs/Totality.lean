@@ -179,6 +179,12 @@ theorem Eval.exists_result
               exact ⟨.failure .badOpcode, .badOpcode opcode rest stack altStack flags ctx⟩
           | illegalOpcode opcode =>
               exact ⟨.failure opcode.error, .illegalOpcode opcode rest stack altStack flags ctx⟩
+          | nonminimalPush push =>
+              cases minimal : flags.minimalData
+              · exact (next (push.data :: stack) altStack).imp fun result evaluated =>
+                  .nonminimalPush push rest stack altStack flags ctx result minimal evaluated
+              · exact ⟨.failure .minimalData,
+                  .nonminimalPush_minimalData push rest stack altStack flags ctx minimal⟩
           | op opcode =>
               cases opcode with
               | OP_NOP =>

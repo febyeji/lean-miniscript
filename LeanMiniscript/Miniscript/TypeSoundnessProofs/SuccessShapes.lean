@@ -311,6 +311,8 @@ theorem Eval.compileVerify_success_inverse
           simpa [compileVerify, verifyReplacement?] using run
       | illegalOpcode number =>
           simpa [compileVerify, verifyReplacement?] using run
+      | nonminimalPush push =>
+          simpa [compileVerify, verifyReplacement?] using run
       | op opcode =>
           cases opcode <;>
             simp [compileVerify, verifyReplacement?] at run ⊢

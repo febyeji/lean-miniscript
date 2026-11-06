@@ -39,6 +39,7 @@ def isNonPushElement : ScriptElement → Bool
   | .pushNum _ => false
   | .badOpcode _ => false
   | .illegalOpcode _ => false
+  | .nonminimalPush _ => false
 
 /-- Number of Script AST elements produced by compilation. -/
 def scriptElementCount (fragment : CoreFragment) : Nat :=
