@@ -2,7 +2,8 @@ import LeanMiniscript.Extraction.ScriptEquivalence
 
 /-!
 Facts about the typed reader and executor of `ScriptEquivalence`, the three
-execution obligations, and the coverage of the six VerifyScript boundaries.
+execution obligations, the six VerifyScript obligations, and the coverage of
+the six VerifyScript boundaries.
 -/
 
 namespace LeanMiniscript.Extraction
@@ -193,6 +194,61 @@ theorem baseExecutionAgreement : BaseExecutionAgreement :=
 /-- Witness-v0 whole-script execution. Both sides count operations up to 201. -/
 theorem witnessV0ExecutionAgreement : WitnessV0ExecutionAgreement :=
   scriptExecutionAgreement .witnessV0
+
+/-- Core's raw loop and the typed executor are the same executor: each request
+runs under its own signature version, where `scriptExecutionAgreement` holds. -/
+theorem executeCoreScript_eq_executeTypedScript (flags : CoreVerificationFlags)
+    (ctx : TxContext) (oracles : SignatureVersion → ByteArray → CryptoOracle) :
+    executeCoreScript flags ctx oracles = executeTypedScript flags ctx oracles :=
+  funext fun request =>
+    scriptExecutionAgreement request.sigVersion flags ctx oracles request rfl
+
+/-- `coreVerifyScript` and `typedVerifyScript` pass `verifyScriptWith` the
+same executor, so they give the same verdict on every input. -/
+theorem coreVerifyScript_eq_typedVerifyScript (flags : CoreVerificationFlags)
+    (ctx : TxContext) (oracles : SignatureVersion → ByteArray → CryptoOracle)
+    (keyPath : CoreKeyPathChecker) (scriptSig scriptPubKey : ByteArray)
+    (witness : List ByteArray) :
+    coreVerifyScript flags ctx oracles keyPath scriptSig scriptPubKey witness =
+      typedVerifyScript flags ctx oracles keyPath scriptSig scriptPubKey witness := by
+  rw [coreVerifyScript, typedVerifyScript, executeCoreScript_eq_executeTypedScript]
+
+/-- Every VerifyScript boundary: the verdicts agree on every input, so they
+agree on the inputs of one boundary. -/
+theorem verifyScriptAgreement (boundary : VerifyScriptBoundary) :
+    VerifyScriptAgreement boundary :=
+  fun flags ctx oracles keyPath scriptSig scriptPubKey witness _ =>
+    coreVerifyScript_eq_typedVerifyScript flags ctx oracles keyPath scriptSig scriptPubKey
+      witness
+
+/-- The legacy boundary: scriptSig and scriptPubKey run as BASE scripts. -/
+theorem legacyVerificationAgreement : LegacyVerificationAgreement :=
+  verifyScriptAgreement .legacy
+
+/-- The P2SH boundary: scriptSig, scriptPubKey, and the redeem script run as
+BASE scripts. -/
+theorem p2shVerificationAgreement : P2SHVerificationAgreement :=
+  verifyScriptAgreement .p2sh
+
+/-- The native witness-v0 boundary: the witness script or P2WPKH template
+runs as a witness-v0 script. -/
+theorem witnessV0VerificationAgreement : WitnessV0VerificationAgreement :=
+  verifyScriptAgreement .witnessV0
+
+/-- The P2SH-wrapped witness-v0 boundary: the redeem script runs as a BASE
+script and the witness script or P2WPKH template as a witness-v0 script. -/
+theorem p2shWitnessV0VerificationAgreement : P2SHWitnessV0VerificationAgreement :=
+  verifyScriptAgreement .p2shWitnessV0
+
+/-- The Taproot key-path boundary: both sides check the signature with the
+same key-path checker. -/
+theorem taprootKeyPathVerificationAgreement : TaprootKeyPathVerificationAgreement :=
+  verifyScriptAgreement .taprootKeyPath
+
+/-- The Taproot script-path boundary: a version-0xc0 leaf runs as a Tapscript
+script. -/
+theorem taprootScriptPathVerificationAgreement : TaprootScriptPathVerificationAgreement :=
+  verifyScriptAgreement .taprootScriptPath
 
 /-- `verifyScriptBoundary` covers every input, so the six boundary
 obligations together give the agreement for every input. -/
