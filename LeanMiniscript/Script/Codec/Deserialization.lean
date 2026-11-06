@@ -190,6 +190,7 @@ def normalizeSerializedElement : ScriptElement → ScriptElement
   | .badOpcode opcode => .badOpcode opcode
   | .illegalOpcode opcode => .illegalOpcode opcode
   | .nonminimalPush push => .nonminimalPush push
+  | .truncatedPush push => .truncatedPush push
   | .pushData data => normalizeSerializedData data
   | .pushNum value =>
       if value = 0 ∨ value = -1 ∨ (1 ≤ value ∧ value ≤ 16) then

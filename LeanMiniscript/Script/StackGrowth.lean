@@ -50,6 +50,7 @@ private theorem selectConditionalTail_stackGrowthAllowance
       | badOpcode number => exact kept depth projected
       | illegalOpcode number => exact kept depth projected
       | nonminimalPush push => exact kept depth projected
+      | truncatedPush push => exact kept depth projected
       | op opcode =>
           cases opcode <;> cases depth <;> simp only [selectConditionalTail] at projected
           all_goals first

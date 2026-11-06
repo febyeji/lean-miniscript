@@ -47,10 +47,10 @@ def NonConditional : ScriptElement → Prop
   | .op .OP_ENDIF => False
   | _ => True
 
-/-- An `illegalOpcode`, which fails in a skipped branch as well. Every other
-element only runs its checks in a skipped branch. -/
+/-- An `illegalOpcode` or a `truncatedPush`, which fail in a skipped branch as
+well. Every other element only runs its checks in a skipped branch. -/
 def ScriptElement.isIllegalOpcode : ScriptElement → Bool
-  | .illegalOpcode _ => true
+  | .illegalOpcode _ | .truncatedPush _ => true
   | _ => false
 
 /-- Every element in a script is non-conditional. This recursive form keeps

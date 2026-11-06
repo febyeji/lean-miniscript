@@ -148,9 +148,30 @@ structure NonminimalPush where
   isNonminimal : isNonminimalPush opcode data = true
   deriving Repr
 
+/-- A push opcode followed by fewer bytes than its length field and the data
+length it holds: 0x01–0x4b are the length, and OP_PUSHDATA1, 2, and 4 have a
+one-, two-, or four-byte little-endian field. Core's GetOp fails on these
+bytes. -/
+def isTruncatedPush (bytes : ByteArray) : Bool :=
+  match bytes.toList with
+  | [] => false
+  | opcode :: rest =>
+      let value := opcode.toNat
+      let width := if value ≤ 0x4b then 0 else if value == 0x4c then 1
+        else if value == 0x4d then 2 else 4
+      let size := if width == 0 then value
+        else (rest.take width).foldr (fun byte size => byte.toNat + 256 * size) 0
+      value ≤ 0x4e && rest.length < width + size
+
+/-- The bytes of `isTruncatedPush` from its opcode to the end of the script. -/
+structure TruncatedPush where
+  bytes : ByteArray
+  isTruncated : isTruncatedPush bytes = true
+  deriving Repr
+
 /-- A script element is an opcode, a data push, a byte that fails when
-executed, a byte that fails wherever it appears, or a push that is not
-minimal. -/
+executed, a byte that fails wherever it appears, a push that is not minimal,
+or a push cut off by the end of the script. -/
 inductive ScriptElement where
   | op : Opcode → ScriptElement
   | pushData : ByteArray → ScriptElement
@@ -162,6 +183,8 @@ inductive ScriptElement where
   /-- Fails with MINIMALDATA in an executed branch when the flag is on, and
   otherwise pushes its data there. -/
   | nonminimalPush : NonminimalPush → ScriptElement
+  /-- Fails with BAD_OPCODE in any branch without counting as an operation. -/
+  | truncatedPush : TruncatedPush → ScriptElement
   deriving Repr
 
 /-- A Bitcoin Script is a list of script elements. -/

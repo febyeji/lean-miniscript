@@ -176,6 +176,11 @@ def nonminimalPushAssembly (push : NonminimalPush) : String :=
   let length := (List.range width).map fun i => UInt8.ofNat (push.data.size / 256 ^ i)
   "0x" ++ byteHex push.opcode ++ String.join (length.map byteHex) ++ byteArrayHex push.data
 
+/-- The bytes of a truncated push, in hex after `0x` as Core's test scripts
+write raw bytes. -/
+def truncatedPushAssembly (push : TruncatedPush) : String :=
+  "0x" ++ byteArrayHex push.bytes
+
 /-- Render one Script element in BIP-style assembly notation. -/
 def elementAssembly : ScriptElement → String
   | .op opcode => opcodeAssembly opcode
@@ -184,6 +189,7 @@ def elementAssembly : ScriptElement → String
   | .badOpcode opcode => badOpcodeAssembly opcode
   | .illegalOpcode opcode => illegalOpcodeAssembly opcode
   | .nonminimalPush push => nonminimalPushAssembly push
+  | .truncatedPush push => truncatedPushAssembly push
 
 /-- Render a Script as a space-separated BIP-style assembly string. -/
 def toAssembly (script : Script) : String :=

@@ -70,6 +70,8 @@ def CoreScriptSourceError.detailCategory : CoreScriptSourceError → String
       "serialization.illegal-opcode-byte.0x" ++ byteHex byte
   | .serialization (.nonminimalPush opcode) =>
       "serialization.non-minimal-push.0x" ++ byteHex opcode
+  | .serialization (.truncatedPush opcode) =>
+      "serialization.truncated-push.0x" ++ byteHex opcode
   | .truncatedPushLength _ _ _ => "truncated-push-length"
   | .truncatedPushData _ _ _ => "truncated-push-data"
   | .unsupportedOpcode _ byte =>

@@ -10,9 +10,9 @@ namespace LeanMiniscript.Script
 /-!
 Runtime limits for the modeled opcode subset. Instructions are visited in source
 order, including inactive branches: oversized pushes fail, BASE or witness-v0
-opcodes count, and disabled opcodes, OP_VERIF, and OP_VERNOTIF fail when
-encountered, while signature debits, multisig key counts and ordinary opcode
-execution only occur in active code.
+opcodes count, and disabled opcodes, OP_VERIF, OP_VERNOTIF, and truncated
+pushes fail when encountered, while signature debits, multisig key counts and
+ordinary opcode execution only occur in active code.
 The branch-projection evaluator remains available for budget-only reasoning.
 -/
 
@@ -34,7 +34,7 @@ def ScriptElement.pushSize : ScriptElement → Nat
   | .pushData bytes => bytes.size
   | .pushNum number => (scriptNum number).size
   | .nonminimalPush push => push.data.size
-  | .op _ | .badOpcode _ | .illegalOpcode _ => 0
+  | .op _ | .badOpcode _ | .illegalOpcode _ | .truncatedPush _ => 0
 
 /-- Core checks combined main/alt-stack depth after each visited instruction. -/
 def checkRuntimeStack (state : RuntimeState) : Except ScriptError RuntimeState :=
@@ -52,7 +52,7 @@ def ScriptElement.underTimelockFlags (flags : ScriptFlags) : ScriptElement → S
 
 /-- One source instruction, before the combined stack check. Push size precedes
     control handling and execution, including in an inactive branch. An
-    `illegalOpcode` fails in an inactive branch as well. -/
+    `illegalOpcode` or a `truncatedPush` fails in an inactive branch as well. -/
 def executeRuntimeElement (oracle : CryptoOracle) (element : ScriptElement)
     (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
     Except ScriptError RuntimeState := do
@@ -79,6 +79,7 @@ def executeRuntimeElement (oracle : CryptoOracle) (element : ScriptElement)
       | [] => throw .unbalancedConditional
       | _ :: rest => return { state with conditions := rest }
   | .illegalOpcode opcode => throw opcode.error
+  | .truncatedPush _ => throw .badOpcode
   | _ =>
       if active then
         let weight ← prepareValidationWeight element state.stack flags ctx state.weight

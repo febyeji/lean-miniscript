@@ -69,7 +69,7 @@ theorem ScriptCodeOracles.forStep_of_signatures (oracles : ScriptCodeOracles)
         rfl
       · simp only [base, Bool.false_eq_true, ↓reduceIte]
         rfl
-  | pushData | pushNum | badOpcode | illegalOpcode | nonminimalPush => rfl
+  | pushData | pushNum | badOpcode | illegalOpcode | nonminimalPush | truncatedPush => rfl
 
 /-- A step charges the operation count and picks its oracle, then runs as the
 step with that one oracle. -/
@@ -1390,7 +1390,8 @@ theorem chargeOperations_of_keys {element : ScriptElement} {state : RuntimeState
       count ≤ state.operationCount + element.operationBound ∧
       chargeOperations element state flags ctx = .ok { state with operationCount := count } := by
   cases element with
-  | pushData | pushNum | nonminimalPush => exact ⟨state.operationCount, by omega, by omega, rfl⟩
+  | pushData | pushNum | nonminimalPush | truncatedPush =>
+      exact ⟨state.operationCount, by omega, by omega, rfl⟩
   | badOpcode opcode =>
       by_cases skip : ctx.sigVersion = .tapscript ∨ opcode.byte.toNat ≤ 0x60
       · refine ⟨state.operationCount, by omega, by omega, ?_⟩

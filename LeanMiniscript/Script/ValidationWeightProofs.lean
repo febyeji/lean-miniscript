@@ -158,6 +158,7 @@ theorem WeightedEval.erase_success
       | badOpcode => contradiction
       | illegalOpcode => contradiction
       | nonminimalPush => contradiction
+      | truncatedPush => contradiction
       | op opcode =>
           cases opcode <;> simp only [ScriptElement.isBranch, Bool.false_eq_true] at branch
           · exact .if_execute top stack alt rest frame flags ctx _ split minimal erased

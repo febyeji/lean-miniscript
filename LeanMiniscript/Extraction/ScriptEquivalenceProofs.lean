@@ -24,12 +24,17 @@ theorem typedElement?_readsAs {instruction : CoreRawInstruction} {element : Scri
 
 /-- Complete source-order reading with Core's GetOp boundaries, every
 instruction reading as its typed element: `CoreTapscriptEncoding` with
-`badOpcode`, `illegalOpcode`, and `nonminimalPush` elements as well. -/
+`badOpcode`, `illegalOpcode`, and `nonminimalPush` elements as well. Where
+GetOp fails inside the bytes, the last element is a `truncatedPush` of the
+bytes from there to the end. -/
 def CoreTypedReading (bytes : ByteArray) : Nat → Script → Prop
   | offset, [] => offset = bytes.size
   | offset, element :: rest =>
       match readCoreRawInstruction bytes offset with
-      | .error _ => False
+      | .error _ =>
+          offset < bytes.size ∧ rest = [] ∧
+            ∃ push, element = .truncatedPush push ∧
+              push.bytes = bytes.extract offset bytes.size
       | .ok instruction =>
           offset < bytes.size ∧ offset < instruction.nextOffset ∧
           instruction.ReadsAs element ∧
@@ -42,7 +47,12 @@ theorem CoreTypedReading.length_bound {bytes : ByteArray} {offset : Nat} {script
   | cons element rest ih =>
       simp only [CoreTypedReading] at read
       cases decoded : readCoreRawInstruction bytes offset with
-      | error error => simp [decoded] at read
+      | error error =>
+          simp only [decoded] at read
+          obtain ⟨inside, empty, _⟩ := read
+          subst empty
+          simp only [List.length_cons, List.length_nil]
+          omega
       | ok instruction =>
           simp only [decoded] at read
           have tail := ih read.2.2.2
@@ -60,7 +70,14 @@ theorem decodeTypedScriptFrom_reading {bytes : ByteArray} {fuel offset : Nat}
       · cases decoded
         assumption
       · cases read : readCoreRawInstruction bytes offset with
-        | error error => simp [read] at decoded
+        | error error =>
+            simp only [read] at decoded
+            split at decoded
+            · rename_i truncated
+              cases decoded
+              simp only [CoreTypedReading, read]
+              exact ⟨truncated.1, by simp, _, rfl, rfl⟩
+            · cases decoded
         | ok instruction =>
             simp only [read] at decoded
             split at decoded
@@ -150,7 +167,7 @@ theorem coreRawStep_readsAs (flags : CoreVerificationFlags) (ctx : TxContext)
   | nonminimalPush push =>
       exact coreRawStep_nonminimalPush flags ctx oracles request state instruction push
         read.1 read.2
-  | op | pushData | pushNum =>
+  | op | pushData | pushNum | truncatedPush =>
       exact coreRawStep_encoded flags ctx oracles request state instruction _ read
 
 /-- Core's raw loop over bytes with a typed reading is typed whole-script
@@ -181,7 +198,14 @@ theorem executeCoreRawLoop_typed (flags : CoreVerificationFlags) (ctx : TxContex
       | succ fuel =>
           simp only [CoreTypedReading] at encoded
           cases decoded : readCoreRawInstruction request.scriptBytes state.offset with
-          | error error => simp [decoded] at encoded
+          | error error =>
+              simp only [decoded] at encoded
+              obtain ⟨inside, empty, push, truncated, _⟩ := encoded
+              subst empty truncated
+              rw [readCoreRawInstruction_error decoded] at decoded
+              rw [executeCoreRawLoop, if_neg (Nat.not_le_of_lt inside)]
+              simp [decoded, evaluateScriptCodeRuntime, runtimeStep_truncatedPush,
+                coreRuntimeResult, bind, Except.bind, Except.mapError]
           | ok instruction =>
               simp only [decoded] at encoded
               have code : request.scriptBytes.extract state.codeSeparatorOffset

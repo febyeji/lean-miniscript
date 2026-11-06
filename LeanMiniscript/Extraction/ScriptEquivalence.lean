@@ -18,10 +18,10 @@ OP_VER, OP_RESERVED1, OP_RESERVED2, and the undefined bytes 0xbb-0xff as
 (OP_CAT and the other 14), OP_VERIF, and OP_VERNOTIF as `illegalOpcode`, which
 fails even in an unexecuted branch. It reads a complete push that is not
 minimal as `nonminimalPush`, which keeps the original opcode and fails under
-MINIMALDATA only when executed. It rejects:
-
-* a truncated push;
-* OP_CODESEPARATOR.
+MINIMALDATA only when executed, and a push that GetOp cannot read as
+`truncatedPush`, which holds the bytes from it to the end of the script and
+fails with BAD_OPCODE even in an unexecuted branch. It rejects
+OP_CODESEPARATOR.
 
 Tapscript reads the disabled opcodes and the `badOpcode` bytes other than
 0xff as OP_SUCCESSx.
@@ -78,13 +78,19 @@ def typedElement? (instruction : CoreRawInstruction) : Option ScriptElement :=
   | none => none
 
 /-- Read `bytes` from `offset` to the end as typed elements, with Core's GetOp
-boundaries. `none` when an instruction is malformed or has no typed reading. -/
+boundaries. A push GetOp cannot read ends the reading as a `truncatedPush` of
+the bytes from it to the end. `none` when an instruction has no typed
+reading. -/
 def decodeTypedScriptFrom (bytes : ByteArray) : Nat → Nat → Option Script
   | 0, _ => none
   | fuel + 1, offset =>
       if offset = bytes.size then some []
       else match readCoreRawInstruction bytes offset with
-        | .error _ => none
+        | .error _ =>
+            if truncated : offset < bytes.size ∧
+                isTruncatedPush (bytes.extract offset bytes.size) then
+              some [.truncatedPush ⟨bytes.extract offset bytes.size, truncated.2⟩]
+            else none
         | .ok instruction =>
             if offset < bytes.size ∧ offset < instruction.nextOffset then
               match typedElement? instruction,
