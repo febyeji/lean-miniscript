@@ -31,6 +31,7 @@ theorem executedSignatureWeight_le (element : ScriptElement) (stack : Stack)
   · cases element with
     | pushData => simp [ScriptElement.signatureWeightBound]
     | pushNum => simp [ScriptElement.signatureWeightBound]
+    | badOpcode => simp [ScriptElement.signatureWeightBound]
     | op opcode =>
         cases opcode <;> try { simp [ScriptElement.signatureWeightBound]; done }
         all_goals
@@ -93,6 +94,7 @@ private theorem prepareValidationWeight_exact
   · cases element with
     | pushData => exact ⟨weight, by simp [prepareValidationWeight, version], by simp [executedSignatureWeight]⟩
     | pushNum => exact ⟨weight, by simp [prepareValidationWeight, version], by simp [executedSignatureWeight]⟩
+    | badOpcode => exact ⟨weight, by simp [prepareValidationWeight, version], by simp [executedSignatureWeight]⟩
     | op opcode =>
         cases opcode
         case OP_CHECKSIG | OP_CHECKSIGVERIFY =>

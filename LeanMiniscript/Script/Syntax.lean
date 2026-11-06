@@ -86,11 +86,28 @@ inductive Opcode where
   | OP_SIZE
   deriving Repr, DecidableEq, BEq
 
-/-- A script element is either an opcode or a data push. -/
+/-- The bytes Core rejects with BAD_OPCODE only in an executed branch:
+OP_RESERVED (0x50), OP_VER (0x62), OP_RESERVED1 (0x89), OP_RESERVED2 (0x8a),
+the undefined bytes 0xbb–0xfe, and OP_INVALIDOPCODE (0xff). In an unexecuted
+branch Core passes over them. -/
+def isBadOpcodeByte (byte : UInt8) : Bool :=
+  let value := byte.toNat
+  value == 0x50 || value == 0x62 || value == 0x89 || value == 0x8a || 0xbb ≤ value
+
+/-- A byte of `isBadOpcodeByte`. -/
+structure BadOpcode where
+  byte : UInt8
+  isBad : isBadOpcodeByte byte = true
+  deriving Repr, DecidableEq
+
+/-- A script element is an opcode, a data push, or a byte that fails when
+executed. -/
 inductive ScriptElement where
   | op : Opcode → ScriptElement
   | pushData : ByteArray → ScriptElement
   | pushNum : Int → ScriptElement
+  /-- Fails with BAD_OPCODE in an executed branch. -/
+  | badOpcode : BadOpcode → ScriptElement
   deriving Repr
 
 /-- A Bitcoin Script is a list of script elements. -/

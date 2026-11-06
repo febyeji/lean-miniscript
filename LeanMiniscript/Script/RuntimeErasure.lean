@@ -64,6 +64,7 @@ theorem execute_ordinary (element : ScriptElement) (ordinary : NonConditional el
   cases element with
   | pushData => rfl
   | pushNum => rfl
+  | badOpcode => rfl
   | op opcode => cases opcode <;> first | contradiction | rfl
 
 theorem select_ordinary (element : ScriptElement) (ordinary : NonConditional element)
@@ -74,6 +75,7 @@ theorem select_ordinary (element : ScriptElement) (ordinary : NonConditional ele
   cases element with
   | pushData => rfl
   | pushNum => rfl
+  | badOpcode => rfl
   | op opcode => cases opcode <;> first | contradiction | rfl
 
 private theorem execute_push_bound
@@ -130,6 +132,7 @@ theorem execute_branch (element : ScriptElement) (branch : element.isBranch = tr
   cases element with
   | pushData => contradiction
   | pushNum => contradiction
+  | badOpcode => contradiction
   | op opcode => cases opcode <;>
       simp_all [ScriptElement.isBranch, executeRuntimeElement, ScriptElement.pushSize,
         maxScriptElementSize, pure, Except.pure] <;> rfl
@@ -142,6 +145,7 @@ theorem select_branch (element : ScriptElement) (branch : element.isBranch = tru
   cases element with
   | pushData => contradiction
   | pushNum => contradiction
+  | badOpcode => contradiction
   | op opcode => cases opcode <;> first | contradiction | rfl
 
 theorem branch_conditions
@@ -247,6 +251,7 @@ private theorem runtime_select_success
         · cases element with
           | pushData => exact False.elim (ordinary trivial)
           | pushNum => exact False.elim (ordinary trivial)
+          | badOpcode => exact False.elim (ordinary trivial)
           | op opcode =>
               cases opcode <;> simp only [NonConditional, ScriptElement.isBranch] at ordinary branch
               case OP_ELSE =>
@@ -396,6 +401,7 @@ theorem evaluateWithRuntimeLimits_erase_success
         · cases element with
           | pushData => exact False.elim (ordinary trivial)
           | pushNum => exact False.elim (ordinary trivial)
+          | badOpcode => exact False.elim (ordinary trivial)
           | op opcode =>
               cases opcode <;>
                 simp_all [NonConditional, ScriptElement.isBranch, executeRuntimeElement,

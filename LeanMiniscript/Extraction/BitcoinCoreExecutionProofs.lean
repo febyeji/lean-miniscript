@@ -26,13 +26,16 @@ private def encodesPush (instruction : CoreRawInstruction) (data : ByteArray) : 
   else False
 
 /-- A raw instruction has the typed instruction's opcode or pushed bytes.
-Length-prefixed pushes must be minimal so MINIMALDATA is preserved as well. -/
+Length-prefixed pushes must be minimal so MINIMALDATA is preserved as well.
+No instruction encodes a `badOpcode`: Tapscript reads most of its bytes as
+OP_SUCCESSx, which these encodings exclude. -/
 def _root_.LeanMiniscript.Script.CoreRawInstruction.Encodes (instruction : CoreRawInstruction) :
     ScriptElement → Prop
   | .pushData data => encodesPush instruction data
   | .pushNum number => encodesPush instruction (scriptNum number)
   | .op opcode => instruction.opcode = opcodeByte opcode ∧
       instruction.payload = ByteArray.empty
+  | .badOpcode _ => False
 
 instance (instruction : CoreRawInstruction) (element : ScriptElement) :
     Decidable (instruction.Encodes element) := by
@@ -47,6 +50,7 @@ theorem _root_.LeanMiniscript.Script.CoreRawInstruction.Encodes.opcodeCases
       ∃ opcode, instruction.opcode = opcodeByte opcode := by
   cases element with
   | op opcode => exact Or.inr (Or.inr (Or.inr ⟨opcode, encoded.1⟩))
+  | badOpcode => exact encoded.elim
   | pushData | pushNum =>
       simp only [CoreRawInstruction.Encodes, encodesPush] at encoded
       split at encoded
@@ -219,6 +223,7 @@ theorem coreRawStep_encoded (flags : CoreVerificationFlags) (ctx : TxContext)
               opcodePosition := state.opcodePosition + 1 } := by
   cases element with
   | op opcode => exact coreRawStep_op flags ctx oracles request state instruction opcode encoded
+  | badOpcode => exact encoded.elim
   | pushData data =>
       rw [runtimeStep_of_signatures _ _ _ _ _ (fun _ element => by cases element)]
       simp only [CoreRawInstruction.Encodes, encodesPush] at encoded
@@ -265,6 +270,75 @@ theorem coreRawStep_encoded (flags : CoreVerificationFlags) (ctx : TxContext)
         (.pushData (scriptNum number)) encoded
 termination_by match element with | .pushNum _ => 1 | _ => 0
 
+/-- A `badOpcode` byte is no push or numeric constant, and Core's raw step
+reaches its unmodeled-opcode branch: the byte is not disabled, OP_VERIF,
+OP_VERNOTIF, OP_SHA1, OP_CODESEPARATOR, or a modeled opcode. -/
+theorem _root_.LeanMiniscript.Script.BadOpcode.byte_facts (opcode : BadOpcode) :
+    0x4f < opcode.byte.toNat ∧ ¬ (0x51 ≤ opcode.byte.toNat ∧ opcode.byte.toNat ≤ 0x60) ∧
+      coreLegacyDisabledOpcode opcode.byte.toNat = false ∧
+      opcode.byte.toNat ≠ 0x65 ∧ opcode.byte.toNat ≠ 0x66 ∧ opcode.byte.toNat ≠ 0xa7 ∧
+      opcode.byte.toNat ≠ 0xab ∧ opcodeFromByte? opcode.byte.toNat = none := by
+  obtain ⟨byte, bad⟩ := opcode
+  simp only [isBadOpcodeByte] at bad
+  dsimp only
+  have bound := byte.toNat_lt
+  generalize byte.toNat = value at bad bound ⊢
+  revert bad
+  revert bound
+  revert value
+  decide +kernel
+
+/-- The raw step of a `badOpcode` byte is the typed step: outside Tapscript a
+byte above OP_16 counts one operation, an executed byte fails with BAD_OPCODE,
+and a skipped byte only checks the stack size. -/
+theorem coreRawStep_badOpcode (flags : CoreVerificationFlags) (ctx : TxContext)
+    (oracles : SignatureVersion → ByteArray → CryptoOracle)
+    (request : CoreScriptExecutionRequest) (state : CoreRawState)
+    (instruction : CoreRawInstruction) (opcode : BadOpcode)
+    (byte : instruction.opcode = opcode.byte)
+    (payload : instruction.payload = ByteArray.empty) :
+    coreRawStep flags ctx oracles request state instruction =
+      ((runtimeStep
+        ⟨oracles request.sigVersion,
+          request.scriptBytes.extract state.codeSeparatorOffset request.scriptBytes.size⟩
+        (.badOpcode opcode) state.runtime flags.script (instructionContext ctx request state)).mapError
+          CoreVerificationError.script).map fun runtime =>
+            { state with
+              runtime := runtime
+              offset := instruction.nextOffset
+              opcodePosition := state.opcodePosition + 1 } := by
+  obtain ⟨high, notNumber, enabled, not65, not66, notSha1, notSeparator, unmodeled⟩ :=
+    opcode.byte_facts
+  have version : (instructionContext ctx request state).sigVersion = request.sigVersion := rfl
+  have notPush : ¬ opcode.byte.toNat ≤ 78 := by omega
+  have not79 : opcode.byte.toNat ≠ 79 := by omega
+  unfold coreRawStep
+  simp only [payload, byte, ByteArray.size_empty, maxScriptElementSize, enabled]
+  simp [notPush, not79, notNumber, not65, not66, notSha1, notSeparator, unmodeled,
+    runtimeStep, chargeOperations, ScriptCodeOracles.forStep, removeSignatures,
+    runtimeInstruction, executeRuntimeElement, prepareValidationWeight, evaluate,
+    ScriptElement.pushSize, ScriptElement.underTimelockFlags, version,
+    bind, Except.bind, Except.mapError, Except.map, pure, Except.pure, throw, throwThe,
+    MonadExceptOf.throw]
+  have whole : { state.runtime with operationCount := state.runtime.operationCount } =
+      state.runtime := rfl
+  by_cases skip : request.sigVersion = .tapscript ∨ opcode.byte.toNat ≤ 96
+  · have notCounted : ¬ ((request.sigVersion != .tapscript) = true ∧ 96 < opcode.byte.toNat) := by
+      rcases skip with tap | low
+      · rw [tap]
+        exact fun counted => absurd counted.1 (by decide)
+      · omega
+    rw [if_neg notCounted, if_pos skip, whole]
+    by_cases inactive : false ∈ state.runtime.conditions <;> simp only [inactive, ↓reduceIte]
+  · simp only [not_or] at skip
+    have counted : (request.sigVersion != .tapscript) = true ∧ 96 < opcode.byte.toNat := by
+      refine ⟨?_, by omega⟩
+      cases versionEq : request.sigVersion <;> first | rfl | exact absurd versionEq skip.1
+    rw [if_pos counted, if_neg (not_or.mpr skip)]
+    by_cases over : maxOpsPerScript < state.runtime.operationCount + 1 <;>
+      simp only [over, ↓reduceIte]
+    by_cases inactive : false ∈ state.runtime.conditions <;> simp only [inactive, ↓reduceIte]
+
 private theorem coreRawStep_tapscript (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (state : CoreRawState)
@@ -286,6 +360,7 @@ private theorem coreRawStep_tapscript (flags : CoreVerificationFlags) (ctx : TxC
   have code : request.scriptBytes.extract state.codeSeparatorOffset request.scriptBytes.size =
       request.scriptBytes := by simp [separatorOffset]
   cases element with
+  | badOpcode => exact encoded.elim
   | op opcode =>
       have notBase : (instructionContext ctx request state).sigVersion ≠ .base := by
         show request.sigVersion ≠ .base
@@ -579,6 +654,7 @@ private theorem read_serializeElement (element : ScriptElement) (encoded : ByteA
       subst encoded
       refine ⟨_, read_opcode before after _ (by cases opcode <;> decide), by simp, by simp, ?_⟩
       exact ⟨rfl, rfl⟩
+  | badOpcode opcode => simp [serializeElement] at serialized
 
 /-- Canonical serialization supplies the byte-decoding certificate whenever
 each pushed value fits in a direct push (at most 75 bytes). This covers the

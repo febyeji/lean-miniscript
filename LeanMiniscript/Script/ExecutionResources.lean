@@ -189,6 +189,7 @@ theorem Eval.singleton_nonConditional
   cases element with
   | pushData => trivial
   | pushNum => trivial
+  | badOpcode => trivial
   | op opcode =>
       cases opcode <;> try trivial
       all_goals cases evaluated <;> simp_all [Opcode.isUpgradeableNop]

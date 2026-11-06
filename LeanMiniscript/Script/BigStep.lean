@@ -53,6 +53,11 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       (flags : ScriptFlags) → (ctx : TxContext) →
       Eval (.op .OP_RETURN :: rest) stack altStack flags ctx (.failure .opReturn)
 
+  -- A byte outside the opcode set fails as soon as it is executed.
+  | badOpcode : (opcode : BadOpcode) → (rest : Script) → (stack altStack : Stack) →
+      (flags : ScriptFlags) → (ctx : TxContext) →
+      Eval (.badOpcode opcode :: rest) stack altStack flags ctx (.failure .badOpcode)
+
   -- Fixed-arity opcode failure. Variable-arity CHECKMULTISIG and malformed
   -- operand encodings have their own semantic boundaries.
   | stack_underflow : (opcode : Opcode) → (required : Nat) →

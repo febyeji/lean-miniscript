@@ -25,6 +25,7 @@ theorem selectConditionalTail_sublist {script selected : Script} {depth : Nat} {
       cases element with
       | pushData => exact recur depth choice choice projected
       | pushNum => exact recur depth choice choice projected
+      | badOpcode => exact recur depth choice choice projected
       | op opcode =>
           cases opcode
           case OP_IF => exact recur (depth + 1) choice choice projected
@@ -196,6 +197,7 @@ theorem runtime_restore_conditional
         · cases element with
           | pushData => exact False.elim (ordinary trivial)
           | pushNum => exact False.elim (ordinary trivial)
+          | badOpcode => exact False.elim (ordinary trivial)
           | op opcode =>
               cases opcode <;> simp only [NonConditional, ScriptElement.isBranch] at ordinary branch
               case OP_ELSE =>

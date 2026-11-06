@@ -19,6 +19,7 @@ def evaluate (oracle : CryptoOracle) (script : Script)
       evaluate oracle rest (data :: stack) altStack flags ctx
   | .pushNum value :: rest =>
       evaluate oracle rest (scriptNum value :: stack) altStack flags ctx
+  | .badOpcode _ :: _ => .failure .badOpcode
   | .op .OP_NOP :: rest =>
       evaluate oracle rest stack altStack flags ctx
   | .op .OP_NOP1 :: rest | .op .OP_NOP4 :: rest | .op .OP_NOP5 :: rest |

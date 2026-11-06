@@ -132,11 +132,23 @@ def opcodeAssembly : Opcode → String
 def opcodeFromAssembly? (name : String) : Option Opcode :=
   modeledOpcodes.find? (fun opcode => opcodeAssembly opcode == name)
 
+/-- Core's name of a byte that fails when executed, without the `OP_`
+prefix; Core names each undefined byte `OP_UNKNOWN`, and this adds the byte. -/
+def badOpcodeAssembly (opcode : BadOpcode) : String :=
+  match opcode.byte.toNat with
+  | 0x50 => "RESERVED"
+  | 0x62 => "VER"
+  | 0x89 => "RESERVED1"
+  | 0x8a => "RESERVED2"
+  | 0xff => "INVALIDOPCODE"
+  | _ => "UNKNOWN_0x" ++ byteHex opcode.byte
+
 /-- Render one Script element in BIP-style assembly notation. -/
 def elementAssembly : ScriptElement → String
   | .op opcode => opcodeAssembly opcode
   | .pushData data => "<" ++ byteArrayHex data ++ ">"
   | .pushNum number => toString number
+  | .badOpcode opcode => badOpcodeAssembly opcode
 
 /-- Render a Script as a space-separated BIP-style assembly string. -/
 def toAssembly (script : Script) : String :=

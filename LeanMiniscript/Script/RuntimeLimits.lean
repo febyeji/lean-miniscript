@@ -32,7 +32,7 @@ def maxOpsPerScript : Nat := 201
 def ScriptElement.pushSize : ScriptElement → Nat
   | .pushData bytes => bytes.size
   | .pushNum number => (scriptNum number).size
-  | .op _ => 0
+  | .op _ | .badOpcode _ => 0
 
 /-- Core checks combined main/alt-stack depth after each visited instruction. -/
 def checkRuntimeStack (state : RuntimeState) : Except ScriptError RuntimeState :=
@@ -112,7 +112,8 @@ def chargedOperationCount (opcode : Opcode) (state : RuntimeState)
   if count + keys > maxOpsPerScript then throw .opCount
   return count + keys
 
-/-- Core's operation count outside Tapscript. Pushes do not count. -/
+/-- Core's operation count outside Tapscript. Pushes do not count, nor does
+OP_RESERVED, the one byte of `badOpcode` at or below OP_16. -/
 def chargeOperations (element : ScriptElement) (state : RuntimeState)
     (flags : ScriptFlags) (ctx : TxContext) : Except ScriptError RuntimeState :=
   match element with
@@ -120,6 +121,10 @@ def chargeOperations (element : ScriptElement) (state : RuntimeState)
       if ctx.sigVersion = .tapscript then .ok state
       else (chargedOperationCount opcode state flags).map
         fun count => { state with operationCount := count }
+  | .badOpcode opcode =>
+      if ctx.sigVersion = .tapscript ∨ opcode.byte.toNat ≤ 0x60 then .ok state
+      else if state.operationCount + 1 > maxOpsPerScript then .error .opCount
+      else .ok { state with operationCount := state.operationCount + 1 }
   | _ => .ok state
 
 /-- One instruction after its operation charge: opcode errors precede the

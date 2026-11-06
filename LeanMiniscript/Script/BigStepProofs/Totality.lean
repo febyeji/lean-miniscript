@@ -175,6 +175,8 @@ theorem Eval.exists_result
           | pushNum value =>
               exact (next (scriptNum value :: stack) altStack).imp fun result evaluated =>
                 .pushNum value rest stack altStack flags ctx result evaluated
+          | badOpcode opcode =>
+              exact ⟨.failure .badOpcode, .badOpcode opcode rest stack altStack flags ctx⟩
           | op opcode =>
               cases opcode with
               | OP_NOP =>

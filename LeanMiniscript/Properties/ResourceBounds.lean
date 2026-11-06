@@ -31,11 +31,13 @@ def MAX_STANDARD_P2WSH_STACK_ITEMS : Nat := 100
 def MAX_SANE_TAPSCRIPT_SCRIPT_SIZE : Nat := 329482
 
 /-- Whether a script element is a non-push opcode for the BIP 379 opcode-count
-    accounting layer. -/
+    accounting layer of compiled Miniscript. The compiler emits no
+    `badOpcode`, which this count leaves out. -/
 def isNonPushElement : ScriptElement → Bool
   | .op _ => true
   | .pushData _ => false
   | .pushNum _ => false
+  | .badOpcode _ => false
 
 /-- Number of Script AST elements produced by compilation. -/
 def scriptElementCount (fragment : CoreFragment) : Nat :=

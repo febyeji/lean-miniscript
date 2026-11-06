@@ -12,17 +12,19 @@ typed executor give the same verdict on one VerifyScript boundary.
 
 The typed executor reads script bytes with `decodeTypedScript?`. Bytes that
 have no typed reading run on Core's raw loop on both sides, so every
-obligation is a claim about the bytes that do. The reader rejects:
+obligation is a claim about the bytes that do. The reader reads OP_RESERVED,
+OP_VER, OP_RESERVED1, OP_RESERVED2, and the undefined bytes 0xbb-0xff as
+`badOpcode`, which fails only when executed. It rejects:
 
 * a truncated push;
 * a push that is not minimal (Core checks MINIMALDATA against the original
   encoding, which a typed push does not keep);
-* OP_RESERVED, OP_VER, OP_VERIF, OP_VERNOTIF, OP_RESERVED1, OP_RESERVED2;
+* OP_VERIF and OP_VERNOTIF, which fail even in an unexecuted branch;
 * the disabled opcodes (OP_CAT and the other 14);
-* OP_SHA1 and OP_CODESEPARATOR;
-* the undefined bytes 0xbb-0xff.
+* OP_SHA1 and OP_CODESEPARATOR.
 
-Tapscript reads most of these opcodes as OP_SUCCESSx.
+Tapscript reads the disabled opcodes and the `badOpcode` bytes other than
+0xff as OP_SUCCESSx.
 
 `scripts/script_equivalence_obligations.lean` counts the obligations without
 a proof.
@@ -33,18 +35,33 @@ namespace LeanMiniscript.Extraction
 open LeanMiniscript.Script
 open CoreScriptExecution
 
+/-- A raw instruction reads as a typed element when it encodes it or is the
+byte of a `badOpcode`. -/
+def _root_.LeanMiniscript.Script.CoreRawInstruction.ReadsAs (instruction : CoreRawInstruction) :
+    ScriptElement → Prop
+  | .badOpcode opcode => instruction.opcode = opcode.byte ∧
+      instruction.payload = ByteArray.empty
+  | element => instruction.Encodes element
+
+instance (instruction : CoreRawInstruction) (element : ScriptElement) :
+    Decidable (instruction.ReadsAs element) := by
+  cases element <;> unfold CoreRawInstruction.ReadsAs <;> infer_instance
+
 /-- The typed element a raw instruction reads as: a minimal push, a numeric
-constant, or a modeled opcode with the same byte. `none` when the instruction
-encodes no typed element. -/
+constant, a modeled opcode, or a `badOpcode` with the same byte. `none` when
+the instruction reads as no typed element. -/
 def typedElement? (instruction : CoreRawInstruction) : Option ScriptElement :=
   let value := instruction.opcode.toNat
   let candidate : Option ScriptElement :=
     if value ≤ 0x4e then some (.pushData instruction.payload)
     else if value == 0x4f then some (.pushNum (-1))
     else if 0x51 ≤ value && value ≤ 0x60 then some (.pushNum ((value : Int) - 0x50))
-    else (opcodeFromByte? value).map .op
+    else match opcodeFromByte? value with
+      | some opcode => some (.op opcode)
+      | none => if bad : isBadOpcodeByte instruction.opcode then
+          some (.badOpcode ⟨instruction.opcode, bad⟩) else none
   match candidate with
-  | some element => if instruction.Encodes element then some element else none
+  | some element => if instruction.ReadsAs element then some element else none
   | none => none
 
 /-- Read `bytes` from `offset` to the end as typed elements, with Core's GetOp
