@@ -198,6 +198,73 @@ theorem coreRawStep_op (flags : CoreVerificationFlags) (ctx : TxContext)
           simp only [notTap, over, ↓reduceIte]
           split <;> split <;> rfl
 
+/-- The raw step of an instruction that encodes a typed element is the typed
+step on the same runtime state, under every signature version, given the
+script code after the last OP_CODESEPARATOR and the oracle for each script
+code of the request's signature version. -/
+theorem coreRawStep_encoded (flags : CoreVerificationFlags) (ctx : TxContext)
+    (oracles : SignatureVersion → ByteArray → CryptoOracle)
+    (request : CoreScriptExecutionRequest) (state : CoreRawState)
+    (instruction : CoreRawInstruction) (element : ScriptElement)
+    (encoded : instruction.Encodes element) :
+    coreRawStep flags ctx oracles request state instruction =
+      ((runtimeStep
+        ⟨oracles request.sigVersion,
+          request.scriptBytes.extract state.codeSeparatorOffset request.scriptBytes.size⟩
+        element state.runtime flags.script (instructionContext ctx request state)).mapError
+          CoreVerificationError.script).map fun runtime =>
+            { state with
+              runtime := runtime
+              offset := instruction.nextOffset
+              opcodePosition := state.opcodePosition + 1 } := by
+  cases element with
+  | op opcode => exact coreRawStep_op flags ctx oracles request state instruction opcode encoded
+  | pushData data =>
+      rw [runtimeStep_of_signatures _ _ _ _ _ (fun _ element => by cases element)]
+      simp only [CoreRawInstruction.Encodes, encodesPush] at encoded
+      split at encoded
+      next push =>
+        obtain ⟨payload, minimal⟩ := encoded
+        have notDisabled : coreLegacyDisabledOpcode instruction.opcode.toNat = false := by
+          simp [coreLegacyDisabledOpcode]
+          omega
+        have low : instruction.opcode.toNat ≠ 0x65 ∧ instruction.opcode.toNat ≠ 0x66 ∧
+            instruction.opcode.toNat ≠ 0xab := by omega
+        have uncounted : ¬ 0x60 < instruction.opcode.toNat := by omega
+        by_cases large : data.size > maxScriptElementSize
+        · simp +decide [coreRawStep, payload, large, runtimeStep_pushData, runtimeInstruction,
+            executeRuntimeElement, ScriptElement.pushSize, bind, Except.bind,
+            Except.mapError, Except.map, pure, Except.pure, throw]
+          rfl
+        · simp +decide [coreRawStep, payload, notDisabled, low.1, low.2.1, low.2.2,
+            uncounted, push, minimal, large,
+            bind, Except.bind, Except.mapError, Except.map, pure, Except.pure]
+      next notPush =>
+        split at encoded
+        next numeric =>
+          obtain ⟨payload, dataEq⟩ := encoded
+          have numberBounds : instruction.opcode.toNat = 0x4f ∨
+              (0x51 ≤ instruction.opcode.toNat ∧ instruction.opcode.toNat ≤ 0x60) := by
+            simpa using numeric
+          have notDisabled : coreLegacyDisabledOpcode instruction.opcode.toNat = false := by
+            simp [coreLegacyDisabledOpcode]
+            omega
+          have low : instruction.opcode.toNat ≠ 0x65 ∧ instruction.opcode.toNat ≠ 0x66 ∧
+              instruction.opcode.toNat ≠ 0xab := by omega
+          have uncounted : ¬ 0x60 < instruction.opcode.toNat := by omega
+          simp +decide [coreRawStep, payload, notDisabled, low.1, low.2.1, low.2.2,
+            uncounted, notPush, numeric, maxScriptElementSize,
+            runtimeStep_pushNum, ← dataEq, rawNumber, bind, Except.bind,
+            Except.mapError, Except.map, pure, Except.pure]
+        next => contradiction
+  | pushNum number =>
+      rw [runtimeStep_of_signatures _ _ _ _ _ (fun _ element => by cases element),
+        runtimeStep_pushNum, ← runtimeStep_of_signatures _ _ _ _ _
+          (fun _ element => by cases element)]
+      exact coreRawStep_encoded flags ctx oracles request state instruction
+        (.pushData (scriptNum number)) encoded
+termination_by match element with | .pushNum _ => 1 | _ => 0
+
 private theorem coreRawStep_tapscript (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (state : CoreRawState)
