@@ -441,6 +441,8 @@ theorem EvalResources.compileVerify_success
           simpa [compileVerify, verifyReplacement?] using run
       | pushNum number =>
           simpa [compileVerify, verifyReplacement?] using run
+      | badOpcode number =>
+          simpa [compileVerify, verifyReplacement?] using run
       | op opcode =>
           cases opcode <;>
             simp [compileVerify, verifyReplacement?] at run ⊢

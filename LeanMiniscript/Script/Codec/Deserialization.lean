@@ -186,6 +186,7 @@ def normalizeSerializedData (data : ByteArray) : ScriptElement :=
     their wire encoding does not retain the source-level numeric annotation. -/
 def normalizeSerializedElement : ScriptElement → ScriptElement
   | .op opcode => .op opcode
+  | .badOpcode opcode => .badOpcode opcode
   | .pushData data => normalizeSerializedData data
   | .pushNum value =>
       if value = 0 ∨ value = -1 ∨ (1 ≤ value ∧ value ≤ 16) then

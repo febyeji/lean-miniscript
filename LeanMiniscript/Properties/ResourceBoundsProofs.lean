@@ -29,16 +29,19 @@ private inductive ElementSerializationShape where
   | op (opcode : Opcode)
   | pushData (size : Except SerializationError Nat)
   | pushNum (value : Int)
+  | badOpcode (byte : UInt8)
 
 private def elementSerializationShape : ScriptElement → ElementSerializationShape
   | .op opcode => .op opcode
   | .pushData data => .pushData ((serializePushData data).map ByteArray.size)
   | .pushNum value => .pushNum value
+  | .badOpcode opcode => .badOpcode opcode.byte
 
 private def elementShapeSize : ElementSerializationShape → Except SerializationError Nat
   | .op _ => .ok 1
   | .pushData size => size
   | .pushNum value => (serializePushNum value).map ByteArray.size
+  | .badOpcode byte => .error (.badOpcode byte)
 
 private def scriptSerializationShape (script : Script) : List ElementSerializationShape :=
   script.map elementSerializationShape
@@ -148,6 +151,9 @@ private theorem compileVerify_shape (script : Script) :
           simp [elementSerializationShape, verifyReplacement?,
             verifyShapeReplacement?, List.map_reverse]
       | pushNum value =>
+          simp [elementSerializationShape, verifyReplacement?,
+            verifyShapeReplacement?, List.map_reverse]
+      | badOpcode value =>
           simp [elementSerializationShape, verifyReplacement?,
             verifyShapeReplacement?, List.map_reverse]
 

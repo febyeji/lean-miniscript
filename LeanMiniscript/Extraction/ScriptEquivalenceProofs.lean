@@ -11,9 +11,9 @@ namespace LeanMiniscript.Extraction
 open LeanMiniscript.Script
 open CoreScriptExecution
 
-/-- The reader returns only elements the instruction encodes. -/
-theorem typedElement?_encodes {instruction : CoreRawInstruction} {element : ScriptElement}
-    (read : typedElement? instruction = some element) : instruction.Encodes element := by
+/-- The reader returns only elements the instruction reads as. -/
+theorem typedElement?_readsAs {instruction : CoreRawInstruction} {element : ScriptElement}
+    (read : typedElement? instruction = some element) : instruction.ReadsAs element := by
   simp only [typedElement?] at read
   split at read
   · split at read
@@ -22,9 +22,36 @@ theorem typedElement?_encodes {instruction : CoreRawInstruction} {element : Scri
     · cases read
   · cases read
 
-theorem decodeTypedScriptFrom_encoding {bytes : ByteArray} {fuel offset : Nat}
+/-- Complete source-order reading with Core's GetOp boundaries, every
+instruction reading as its typed element: `CoreTapscriptEncoding` with
+`badOpcode` elements as well. -/
+def CoreTypedReading (bytes : ByteArray) : Nat → Script → Prop
+  | offset, [] => offset = bytes.size
+  | offset, element :: rest =>
+      match readCoreRawInstruction bytes offset with
+      | .error _ => False
+      | .ok instruction =>
+          offset < bytes.size ∧ offset < instruction.nextOffset ∧
+          instruction.ReadsAs element ∧
+          CoreTypedReading bytes instruction.nextOffset rest
+
+theorem CoreTypedReading.length_bound {bytes : ByteArray} {offset : Nat} {script : Script}
+    (read : CoreTypedReading bytes offset script) : offset + script.length ≤ bytes.size := by
+  induction script generalizing offset with
+  | nil => simpa [CoreTypedReading] using Nat.le_of_eq read
+  | cons element rest ih =>
+      simp only [CoreTypedReading] at read
+      cases decoded : readCoreRawInstruction bytes offset with
+      | error error => simp [decoded] at read
+      | ok instruction =>
+          simp only [decoded] at read
+          have tail := ih read.2.2.2
+          simp only [List.length_cons]
+          omega
+
+theorem decodeTypedScriptFrom_reading {bytes : ByteArray} {fuel offset : Nat}
     {script : Script} (decoded : decodeTypedScriptFrom bytes fuel offset = some script) :
-    CoreTapscriptEncoding bytes offset script := by
+    CoreTypedReading bytes offset script := by
   induction fuel generalizing offset script with
   | zero => simp [decodeTypedScriptFrom] at decoded
   | succ fuel ih =>
@@ -41,17 +68,17 @@ theorem decodeTypedScriptFrom_encoding {bytes : ByteArray} {fuel offset : Nat}
               split at decoded
               · rename_i element rest typed decodedRest
                 cases decoded
-                simp only [CoreTapscriptEncoding, read]
-                exact ⟨bounds.1, bounds.2, typedElement?_encodes typed, ih decodedRest⟩
+                simp only [CoreTypedReading, read]
+                exact ⟨bounds.1, bounds.2, typedElement?_readsAs typed, ih decodedRest⟩
               · cases decoded
             · cases decoded
 
 /-- A typed reading is a complete GetOp decoding with a typed element for
 every instruction. -/
-theorem decodeTypedScript?_encoding {bytes : ByteArray} {script : Script}
+theorem decodeTypedScript?_reading {bytes : ByteArray} {script : Script}
     (decoded : decodeTypedScript? bytes = some script) :
-    CoreTapscriptEncoding bytes 0 script :=
-  decodeTypedScriptFrom_encoding decoded
+    CoreTypedReading bytes 0 script :=
+  decodeTypedScriptFrom_reading decoded
 
 /-- With one oracle and an empty script code, typed whole-script execution is
 `evaluateRuntime`. -/
@@ -88,27 +115,6 @@ theorem typedScriptContext_tapscript (ctx : TxContext) (request : CoreScriptExec
     typedScriptContext ctx request = coreTapscriptContext ctx request := by
   simp +decide [typedScriptContext, coreTapscriptContext, version]
 
-/-- Tapscript whole-script execution: the typed reading supplies the byte
-certificate of `executeCoreScript_eq_runtime`. -/
-theorem tapscriptExecutionAgreement : TapscriptExecutionAgreement := by
-  intro flags ctx oracles request version
-  have notLegacy :
-      (request.sigVersion != .tapscript && decide (request.scriptBytes.size > 10000)) = false := by
-    simp +decide [version]
-  unfold executeTypedScript
-  simp only [notLegacy, Bool.false_eq_true, ↓reduceIte]
-  cases decoded : decodeTypedScript? request.scriptBytes with
-  | none => rfl
-  | some script =>
-      have notBase : (coreTapscriptContext ctx request).sigVersion ≠ .base := by
-        simp [coreTapscriptContext]
-      dsimp only
-      rw [executeCoreScript_eq_runtime flags ctx oracles request script version
-          (decodeTypedScript?_encoding decoded),
-        typedScriptContext_tapscript ctx request version, version,
-        evaluateScriptCodeRuntime_of_ne_base _ _ _ _ notBase]
-      rfl
-
 /-- Before the first OP_CODESEPARATOR, Core's instruction context is the typed
 script's context. -/
 theorem instructionContext_typedScriptContext (ctx : TxContext)
@@ -116,6 +122,29 @@ theorem instructionContext_typedScriptContext (ctx : TxContext)
     (separatorPosition : state.codeSeparatorPosition = 0xffffffff) :
     instructionContext ctx request state = typedScriptContext ctx request := by
   simp [instructionContext, typedScriptContext, separatorPosition]
+
+/-- The raw step of an instruction that reads as a typed element is the typed
+step, as `coreRawStep_encoded` and `coreRawStep_badOpcode` give it. -/
+theorem coreRawStep_readsAs (flags : CoreVerificationFlags) (ctx : TxContext)
+    (oracles : SignatureVersion → ByteArray → CryptoOracle)
+    (request : CoreScriptExecutionRequest) (state : CoreRawState)
+    (instruction : CoreRawInstruction) (element : ScriptElement)
+    (read : instruction.ReadsAs element) :
+    coreRawStep flags ctx oracles request state instruction =
+      ((runtimeStep
+        ⟨oracles request.sigVersion,
+          request.scriptBytes.extract state.codeSeparatorOffset request.scriptBytes.size⟩
+        element state.runtime flags.script (instructionContext ctx request state)).mapError
+          CoreVerificationError.script).map fun runtime =>
+            { state with
+              runtime := runtime
+              offset := instruction.nextOffset
+              opcodePosition := state.opcodePosition + 1 } := by
+  cases element with
+  | badOpcode opcode =>
+      exact coreRawStep_badOpcode flags ctx oracles request state instruction opcode read.1 read.2
+  | op | pushData | pushNum =>
+      exact coreRawStep_encoded flags ctx oracles request state instruction _ read
 
 /-- Core's raw loop over bytes with a typed reading is typed whole-script
 execution with the whole script as script code, under every signature version.
@@ -126,7 +155,7 @@ theorem executeCoreRawLoop_typed (flags : CoreVerificationFlags) (ctx : TxContex
     (fuel : Nat) (enough : script.length < fuel)
     (separatorOffset : state.codeSeparatorOffset = 0)
     (separatorPosition : state.codeSeparatorPosition = 0xffffffff)
-    (encoded : CoreTapscriptEncoding request.scriptBytes state.offset script) :
+    (encoded : CoreTypedReading request.scriptBytes state.offset script) :
     executeCoreRawLoop flags ctx oracles request fuel state =
       coreRuntimeResult (evaluateScriptCodeRuntime
         ⟨oracles request.sigVersion, request.scriptBytes⟩ script state.runtime flags.script
@@ -143,7 +172,7 @@ theorem executeCoreRawLoop_typed (flags : CoreVerificationFlags) (ctx : TxContex
       cases fuel with
       | zero => simp at enough
       | succ fuel =>
-          simp only [CoreTapscriptEncoding] at encoded
+          simp only [CoreTypedReading] at encoded
           cases decoded : readCoreRawInstruction request.scriptBytes state.offset with
           | error error => simp [decoded] at encoded
           | ok instruction =>
@@ -152,7 +181,7 @@ theorem executeCoreRawLoop_typed (flags : CoreVerificationFlags) (ctx : TxContex
                   request.scriptBytes.size = request.scriptBytes := by simp [separatorOffset]
               rw [executeCoreRawLoop, if_neg (Nat.not_le_of_lt encoded.1)]
               simp only [decoded, bind, Except.bind, Except.mapError]
-              rw [coreRawStep_encoded flags ctx oracles request state instruction element
+              rw [coreRawStep_readsAs flags ctx oracles request state instruction element
                   encoded.2.2.1, code,
                 instructionContext_typedScriptContext ctx request state separatorPosition]
               cases stepped : runtimeStep ⟨oracles request.sigVersion, request.scriptBytes⟩
@@ -178,7 +207,7 @@ theorem scriptExecutionAgreement (version : SignatureVersion) :
       cases decoded : decodeTypedScript? request.scriptBytes with
       | none => rfl
       | some script =>
-          have encoded := decodeTypedScript?_encoding decoded
+          have encoded := decodeTypedScript?_reading decoded
           have bound := encoded.length_bound
           dsimp only
           rw [executeCoreScript, if_neg small]
@@ -194,6 +223,12 @@ theorem baseExecutionAgreement : BaseExecutionAgreement :=
 /-- Witness-v0 whole-script execution. Both sides count operations up to 201. -/
 theorem witnessV0ExecutionAgreement : WitnessV0ExecutionAgreement :=
   scriptExecutionAgreement .witnessV0
+
+/-- Tapscript whole-script execution. The witness boundary scans for
+OP_SUCCESSx before either executor runs; a `badOpcode` byte that reaches them
+fails on both sides only when executed. -/
+theorem tapscriptExecutionAgreement : TapscriptExecutionAgreement :=
+  scriptExecutionAgreement .tapscript
 
 /-- Core's raw loop and the typed executor are the same executor: each request
 runs under its own signature version, where `scriptExecutionAgreement` holds. -/

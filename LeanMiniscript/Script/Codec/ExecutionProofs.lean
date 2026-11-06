@@ -45,6 +45,7 @@ theorem evaluate_normalizeSerializedScript
         evaluate.eq_def oracle (element :: rest)]
       cases element with
       | pushData | pushNum => exact tail _ _
+      | badOpcode => rfl
       | op opcode =>
           cases opcode <;> simp only [tail]
           all_goals

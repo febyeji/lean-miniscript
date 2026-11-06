@@ -64,6 +64,8 @@ def CoreScriptSourceError.detailCategory : CoreScriptSourceError → String
   | .unsupportedToken token => "unsupported-token." ++ token
   | .serialization (.pushDataTooLarge _) =>
       "serialization.push-data-too-large"
+  | .serialization (.badOpcode byte) =>
+      "serialization.bad-opcode-byte.0x" ++ byteHex byte
   | .truncatedPushLength _ _ _ => "truncated-push-length"
   | .truncatedPushData _ _ _ => "truncated-push-data"
   | .unsupportedOpcode _ byte =>

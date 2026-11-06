@@ -47,6 +47,7 @@ private theorem selectConditionalTail_stackGrowthAllowance
       cases element with
       | pushData data => exact kept depth projected
       | pushNum number => exact kept depth projected
+      | badOpcode number => exact kept depth projected
       | op opcode =>
           cases opcode <;> cases depth <;> simp only [selectConditionalTail] at projected
           all_goals first
