@@ -108,12 +108,14 @@ private theorem runtimeStep_pushNum (oracle : CryptoOracle) (number : Int)
     ScriptElement.pushSize, prepareValidationWeight, evaluate.eq_1, evaluate.eq_2, evaluate.eq_3]
 
 /-- Byte facts shared by every modeled opcode: it lies above OP_16 and is
-neither disabled, reserved, SHA1 nor CODESEPARATOR. -/
+neither disabled, reserved, nor CODESEPARATOR, and only OP_SHA1 has Core's
+own branch for 0xa7. -/
 theorem opcodeByte_modeled (opcode : Opcode) :
     0x60 < (opcodeByte opcode).toNat ∧
       coreLegacyDisabledOpcode (opcodeByte opcode).toNat = false ∧
       (opcodeByte opcode).toNat ≠ 0x65 ∧ (opcodeByte opcode).toNat ≠ 0x66 ∧
-      (opcodeByte opcode).toNat ≠ 0xa7 ∧ (opcodeByte opcode).toNat ≠ 0xab := by
+      ((opcodeByte opcode).toNat = 0xa7 ↔ opcode = .OP_SHA1) ∧
+      (opcodeByte opcode).toNat ≠ 0xab := by
   cases opcode <;> decide
 
 /-- Core's fallback of a disabled timelock to OP_NOP is the typed step's own. -/
@@ -143,6 +145,41 @@ theorem instructionSignatures_coreTimelockFallback (opcode : Opcode) (state : Ru
       else opcode) state flags = instructionSignatures opcode state flags := by
   cases opcode <;> simp +decide <;> split <;> rfl
 
+/-- The raw step of OP_SHA1 is the typed step. Core runs 0xa7 on a branch of
+its own: outside Tapscript it counts one operation, an executed step replaces
+the top item with its SHA-1 hash or fails on an empty stack, and a skipped
+step only checks the stack size. -/
+private theorem coreRawStep_sha1 (flags : CoreVerificationFlags) (ctx : TxContext)
+    (oracles : SignatureVersion → ByteArray → CryptoOracle)
+    (request : CoreScriptExecutionRequest) (state : CoreRawState)
+    (instruction : CoreRawInstruction)
+    (byte : instruction.opcode = opcodeByte .OP_SHA1)
+    (payload : instruction.payload = ByteArray.empty) :
+    coreRawStep flags ctx oracles request state instruction =
+      ((runtimeStep
+        ⟨oracles request.sigVersion,
+          request.scriptBytes.extract state.codeSeparatorOffset request.scriptBytes.size⟩
+        (.op .OP_SHA1) state.runtime flags.script (instructionContext ctx request state)).mapError
+          CoreVerificationError.script).map fun runtime =>
+            { state with
+              runtime := runtime
+              offset := instruction.nextOffset
+              opcodePosition := state.opcodePosition + 1 } := by
+  have version : (instructionContext ctx request state).sigVersion = request.sigVersion := rfl
+  unfold coreRawStep
+  simp only [payload, byte, ByteArray.size_empty, maxScriptElementSize]
+  obtain ⟨⟨stack, altStack, conditions, weight, count⟩, offset, position, separatorOffset,
+    separatorPosition⟩ := state
+  rcases versionEq : request.sigVersion <;>
+    by_cases over : maxOpsPerScript < count + 1 <;>
+    by_cases inactive : false ∈ conditions <;>
+    rcases stack with _ | ⟨top, rest⟩ <;>
+    simp +decide [versionEq, over, inactive, opcodeByte, runtimeStep, chargeOperations,
+      chargedOperationCount, opcodeKeyCount, ScriptCodeOracles.forStep, instructionSignatures,
+      removeSignatures, runtimeInstruction, executeRuntimeElement, prepareValidationWeight,
+      evaluate, ScriptElement.underTimelockFlags, version, bind, Except.bind, Except.mapError,
+      Except.map, pure, Except.pure, throw, throwThe, MonadExceptOf.throw]
+
 /-- The raw step of a modeled opcode is the typed step on the same runtime
 state, given the script code after the last OP_CODESEPARATOR and the oracle
 for each script code of the request's signature version. -/
@@ -162,7 +199,11 @@ theorem coreRawStep_op (flags : CoreVerificationFlags) (ctx : TxContext)
               offset := instruction.nextOffset
               opcodePosition := state.opcodePosition + 1 } := by
   obtain ⟨byte, payload⟩ := encoded
-  obtain ⟨high, enabled, not65, not66, notSha1, notSeparator⟩ := opcodeByte_modeled opcode
+  by_cases sha1 : opcode = .OP_SHA1
+  · subst sha1
+    exact coreRawStep_sha1 flags ctx oracles request state instruction byte payload
+  obtain ⟨high, enabled, not65, not66, sha1Byte, notSeparator⟩ := opcodeByte_modeled opcode
+  have notSha1 : (opcodeByte opcode).toNat ≠ 0xa7 := fun same => sha1 (sha1Byte.mp same)
   have mapped := runtimeStep_coreTimelockFallback
     (state := state.runtime) (flags := flags.script) (ctx := instructionContext ctx request state)
     (opcode := opcode)

@@ -69,6 +69,7 @@ def opcodeByte : Opcode → UInt8
   | .OP_HASH256 => 0xaa
   | .OP_RIPEMD160 => 0xa6
   | .OP_HASH160 => 0xa9
+  | .OP_SHA1 => 0xa7
   | .OP_CHECKSIG => 0xac
   | .OP_CHECKSIGVERIFY => 0xad
   | .OP_CHECKSIGADD => 0xba

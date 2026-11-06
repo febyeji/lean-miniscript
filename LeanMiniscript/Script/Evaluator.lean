@@ -1,5 +1,6 @@
 import LeanMiniscript.Script.CryptoOracle
 import LeanMiniscript.Script.Conditional
+import LeanMiniscript.Bitcoin.SHA1
 
 /-! Executable branch-projection Script evaluator. Refinement and opcode lemmas are in EvaluatorProofs. -/
 
@@ -381,6 +382,12 @@ def evaluate (oracle : CryptoOracle) (script : Script)
       | [] => .failure .stackUnderflow
       | top :: stackRest =>
           evaluate oracle rest (oracle.hash160 top :: stackRest) altStack flags ctx
+  -- Core computes SHA-1 itself, without the oracle.
+  | .op .OP_SHA1 :: rest =>
+      match stack with
+      | [] => .failure .stackUnderflow
+      | top :: stackRest =>
+          evaluate oracle rest (Bitcoin.SHA1.hash top :: stackRest) altStack flags ctx
   | .op .OP_CHECKSIG :: rest =>
       match stack with
       | pubkey :: sig :: stackRest =>

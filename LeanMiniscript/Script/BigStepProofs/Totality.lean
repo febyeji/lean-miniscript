@@ -568,6 +568,11 @@ theorem Eval.exists_result
                   refine exists_of_arity1 rfl fun top stackRest => ?_
                   exact (next (hash160 top :: stackRest) altStack).imp fun result evaluated =>
                     .op_hash160 top stackRest rest altStack flags ctx result evaluated
+              | OP_SHA1 =>
+                  refine exists_of_arity1 rfl fun top stackRest => ?_
+                  exact (next (Bitcoin.SHA1.hash top :: stackRest) altStack).imp
+                    fun result evaluated =>
+                      .op_sha1 top stackRest rest altStack flags ctx result evaluated
               | OP_CHECKSIG =>
                   refine exists_of_arity2 rfl fun pubkey sig stackRest => ?_
                   cases hChecked : checkSigWithEncoding checkSig checkSchnorrSig

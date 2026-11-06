@@ -40,7 +40,7 @@ private def malformedLegacyPush : List CoreLegacyInstruction :=
   [.failure .badOpcode false false]
 
 /-- Decode source instructions without promoting legacy-only bytes into Script.
-Unmodeled valid operations such as SHA1 and CODESEPARATOR are unsupported. -/
+Unmodeled valid operations such as CODESEPARATOR are unsupported. -/
 def decodeCoreLegacyList (bytes : List UInt8) (offset : Nat) :
     Except CoreLegacyUnsupported (List CoreLegacyInstruction) :=
   match bytes with
