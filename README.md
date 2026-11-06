@@ -82,6 +82,14 @@ lake env lean --run scripts/equivalence_obligations.lean
 
 After `lake build`, prints how many (opcode, signature version) pairs lack a proof without `sorry` or added axioms that Core's `coreRawStep` and the typed `runtimeStep` agree on that opcode for every flag set, oracle, and state. `--list` prints each pair. Every pair is proved. `runtimeStep` takes the script code after the last `OP_CODESEPARATOR` and an oracle for each script code. Like Core, an active BASE `OP_CHECKSIG`, `OP_CHECKSIGVERIFY`, `OP_CHECKMULTISIG`, or `OP_CHECKMULTISIGVERIFY` removes its signatures from that script code with FindAndDelete, fails when `ScriptFlags.constScriptCode` is on and a signature was removed, and otherwise checks signatures with the oracle for the remaining script code. `evaluateRuntime` takes one oracle and passes an empty script code, so it removes no signatures. Like Core, `runtimeStep` runs `OP_CHECKLOCKTIMEVERIFY` and `OP_CHECKSEQUENCEVERIFY` as `OP_NOP` when `ScriptFlags.checkLockTimeVerify` or `checkSequenceVerify` is off; the evaluator and `Eval` always check them, so theorems that erase runtime success to `Eval` require both flags on.
 
+### Script and VerifyScript equivalence obligations
+
+```sh
+lake env lean --run scripts/script_equivalence_obligations.lean
+```
+
+After `lake build`, prints how many of the nine obligations in [`ScriptEquivalence`](LeanMiniscript/Extraction/ScriptEquivalence.lean) lack a proof without `sorry` or added axioms. `--list` prints each obligation as proved, missing, or sorry. Three obligations say that Core's raw loop `executeCoreScript` and the typed executor `executeTypedScript` give the same main stack or error for every flag set, transaction context, oracle, script, and start stack of BASE, witness v0, or Tapscript. Six say that Core's VerifyScript and the same boundary with the typed executor give the same verdict on the legacy, P2SH, native witness-v0, P2SH-wrapped witness-v0, Taproot key-path, and Taproot script-path inputs, as `verifyScriptBoundary` classifies every input. The typed executor reads script bytes with `decodeTypedScript?` and runs the typed reading on the typed runtime, with the whole script as script code. Bytes without a typed reading run on Core's raw loop on both sides: truncated or nonminimal pushes, OP_SHA1, OP_CODESEPARATOR, and the disabled, reserved, and undefined opcodes. The Tapscript execution obligation is proved; the other eight are missing.
+
 ## Scope and layers
 
 These sections describe different abstractions. Miniscript describes spending policies, Bitcoin Script executes bytecode, Taproot defines a spending protocol around a P2TR output and Tapscript, and descriptors, transactions, and PSBT connect these pieces to wallet data.
