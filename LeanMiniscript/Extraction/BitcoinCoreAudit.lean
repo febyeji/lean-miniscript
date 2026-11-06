@@ -66,6 +66,8 @@ def CoreScriptSourceError.detailCategory : CoreScriptSourceError → String
       "serialization.push-data-too-large"
   | .serialization (.badOpcode byte) =>
       "serialization.bad-opcode-byte.0x" ++ byteHex byte
+  | .serialization (.illegalOpcode byte) =>
+      "serialization.illegal-opcode-byte.0x" ++ byteHex byte
   | .truncatedPushLength _ _ _ => "truncated-push-length"
   | .truncatedPushData _ _ _ => "truncated-push-data"
   | .unsupportedOpcode _ byte =>

@@ -143,12 +143,36 @@ def badOpcodeAssembly (opcode : BadOpcode) : String :=
   | 0xff => "INVALIDOPCODE"
   | _ => "UNKNOWN_0x" ++ byteHex opcode.byte
 
+/-- Core's name of a byte that fails wherever it appears, without the `OP_`
+prefix. -/
+def illegalOpcodeAssembly (opcode : IllegalOpcode) : String :=
+  match opcode.byte.toNat with
+  | 0x65 => "VERIF"
+  | 0x66 => "VERNOTIF"
+  | 0x7e => "CAT"
+  | 0x7f => "SUBSTR"
+  | 0x80 => "LEFT"
+  | 0x81 => "RIGHT"
+  | 0x83 => "INVERT"
+  | 0x84 => "AND"
+  | 0x85 => "OR"
+  | 0x86 => "XOR"
+  | 0x8d => "2MUL"
+  | 0x8e => "2DIV"
+  | 0x95 => "MUL"
+  | 0x96 => "DIV"
+  | 0x97 => "MOD"
+  | 0x98 => "LSHIFT"
+  | 0x99 => "RSHIFT"
+  | _ => "UNKNOWN_0x" ++ byteHex opcode.byte
+
 /-- Render one Script element in BIP-style assembly notation. -/
 def elementAssembly : ScriptElement → String
   | .op opcode => opcodeAssembly opcode
   | .pushData data => "<" ++ byteArrayHex data ++ ">"
   | .pushNum number => toString number
   | .badOpcode opcode => badOpcodeAssembly opcode
+  | .illegalOpcode opcode => illegalOpcodeAssembly opcode
 
 /-- Render a Script as a space-separated BIP-style assembly string. -/
 def toAssembly (script : Script) : String :=

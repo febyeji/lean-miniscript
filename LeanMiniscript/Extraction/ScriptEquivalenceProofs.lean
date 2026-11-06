@@ -24,7 +24,7 @@ theorem typedElement?_readsAs {instruction : CoreRawInstruction} {element : Scri
 
 /-- Complete source-order reading with Core's GetOp boundaries, every
 instruction reading as its typed element: `CoreTapscriptEncoding` with
-`badOpcode` elements as well. -/
+`badOpcode` and `illegalOpcode` elements as well. -/
 def CoreTypedReading (bytes : ByteArray) : Nat → Script → Prop
   | offset, [] => offset = bytes.size
   | offset, element :: rest =>
@@ -124,7 +124,8 @@ theorem instructionContext_typedScriptContext (ctx : TxContext)
   simp [instructionContext, typedScriptContext, separatorPosition]
 
 /-- The raw step of an instruction that reads as a typed element is the typed
-step, as `coreRawStep_encoded` and `coreRawStep_badOpcode` give it. -/
+step, as `coreRawStep_encoded`, `coreRawStep_badOpcode`, and
+`coreRawStep_illegalOpcode` give it. -/
 theorem coreRawStep_readsAs (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (state : CoreRawState)
@@ -143,6 +144,9 @@ theorem coreRawStep_readsAs (flags : CoreVerificationFlags) (ctx : TxContext)
   cases element with
   | badOpcode opcode =>
       exact coreRawStep_badOpcode flags ctx oracles request state instruction opcode read.1 read.2
+  | illegalOpcode opcode =>
+      exact coreRawStep_illegalOpcode flags ctx oracles request state instruction opcode
+        read.1 read.2
   | op | pushData | pushNum =>
       exact coreRawStep_encoded flags ctx oracles request state instruction _ read
 
@@ -226,7 +230,9 @@ theorem witnessV0ExecutionAgreement : WitnessV0ExecutionAgreement :=
 
 /-- Tapscript whole-script execution. The witness boundary scans for
 OP_SUCCESSx before either executor runs; a `badOpcode` byte that reaches them
-fails on both sides only when executed. -/
+fails on both sides only when executed, and an `illegalOpcode` byte (OP_VERIF
+or OP_VERNOTIF, the ones that are not OP_SUCCESSx) fails on both sides
+wherever it appears. -/
 theorem tapscriptExecutionAgreement : TapscriptExecutionAgreement :=
   scriptExecutionAgreement .tapscript
 

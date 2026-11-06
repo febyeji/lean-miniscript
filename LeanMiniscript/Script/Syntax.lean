@@ -100,14 +100,33 @@ structure BadOpcode where
   isBad : isBadOpcodeByte byte = true
   deriving Repr, DecidableEq
 
-/-- A script element is an opcode, a data push, or a byte that fails when
-executed. -/
+/-- The bytes Core rejects wherever they appear, in an unexecuted branch as
+well: OP_VERIF (0x65), OP_VERNOTIF (0x66), and the 15 disabled opcodes OP_CAT
+(0x7e), OP_SUBSTR, OP_LEFT, OP_RIGHT, OP_INVERT (0x83), OP_AND, OP_OR, OP_XOR,
+OP_2MUL (0x8d), OP_2DIV, OP_MUL (0x95), OP_DIV, OP_MOD, OP_LSHIFT, and
+OP_RSHIFT. -/
+def isIllegalOpcodeByte (byte : UInt8) : Bool :=
+  let value := byte.toNat
+  value == 0x65 || value == 0x66 || (0x7e ≤ value && value ≤ 0x81) ||
+    (0x83 ≤ value && value ≤ 0x86) || value == 0x8d || value == 0x8e ||
+    (0x95 ≤ value && value ≤ 0x99)
+
+/-- A byte of `isIllegalOpcodeByte`. -/
+structure IllegalOpcode where
+  byte : UInt8
+  isIllegal : isIllegalOpcodeByte byte = true
+  deriving Repr, DecidableEq
+
+/-- A script element is an opcode, a data push, a byte that fails when
+executed, or a byte that fails wherever it appears. -/
 inductive ScriptElement where
   | op : Opcode → ScriptElement
   | pushData : ByteArray → ScriptElement
   | pushNum : Int → ScriptElement
   /-- Fails with BAD_OPCODE in an executed branch. -/
   | badOpcode : BadOpcode → ScriptElement
+  /-- Fails with DISABLED_OPCODE or BAD_OPCODE in any branch. -/
+  | illegalOpcode : IllegalOpcode → ScriptElement
   deriving Repr
 
 /-- A Bitcoin Script is a list of script elements. -/

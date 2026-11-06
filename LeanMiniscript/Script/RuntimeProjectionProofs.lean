@@ -26,6 +26,7 @@ theorem selectConditionalTail_sublist {script selected : Script} {depth : Nat} {
       | pushData => exact recur depth choice choice projected
       | pushNum => exact recur depth choice choice projected
       | badOpcode => exact recur depth choice choice projected
+      | illegalOpcode => exact recur depth choice choice projected
       | op opcode =>
           cases opcode
           case OP_IF => exact recur (depth + 1) choice choice projected
@@ -48,7 +49,8 @@ private theorem map_cons_eq_some {source : Option Script} {element : ScriptEleme
   | some tail => exact ⟨tail, rfl, (Option.some.inj mapped).symm⟩
 
 /-- Restore one removed conditional to a successful projected execution.
-Every source push must fit, including pushes in inactive segments. The initial
+Every source push must fit, including pushes in inactive segments, and no
+source element may be an `illegalOpcode`, which fails there too. The initial
 stack bound covers skipped instructions and same-depth delimiters that are
 absent from the projection. Outside Tapscript the source operation bound must
 fit, since skipped opcodes still count. Nested and repeated ELSE delimiters are
@@ -60,6 +62,7 @@ theorem runtime_restore_conditional
     (nested outer : List Bool) (choice : Bool)
     (projected : selectConditionalTail nested.length choice script = some selected)
     (pushes : ∀ element ∈ script, element.pushSize ≤ maxScriptElementSize)
+    (legal : ∀ element ∈ script, element.isIllegalOpcode = false)
     (bounded : state.stack.length + state.altStack.length ≤ maxStackSize)
     (fits : ctx.sigVersion = .tapscript ∨
       state.operationCount + staticOperationCount script ≤ maxOpsPerScript)
@@ -76,6 +79,8 @@ theorem runtime_restore_conditional
         Nat.not_lt.mpr (pushes element (by simp))
       have tailPushes : ∀ element ∈ rest, element.pushSize ≤ maxScriptElementSize :=
         fun element member => pushes element (by simp [member])
+      have tailLegal : ∀ element ∈ rest, element.isIllegalOpcode = false :=
+        fun element member => legal element (by simp [member])
       rw [staticOperationCount_cons] at fits
       have headFits : ∀ conditions : List Bool, ctx.sigVersion = .tapscript ∨
           ({ state with conditions := conditions } : RuntimeState).operationCount +
@@ -126,10 +131,11 @@ theorem runtime_restore_conditional
               (next := { state with
                 operationCount := count
                 conditions := nested ++ false :: outer })
-            · simp [execute_ordinary element ordinary, pushBound, List.all_append, pure, Except.pure]
+            · simp [execute_ordinary element ordinary (legal element (by simp)), pushBound,
+                List.all_append, pure, Except.pure]
             · exact bounded
             · exact ih selected { state with operationCount := count } nested outer false
-                tailProjected tailPushes bounded (restFits below)
+                tailProjected tailPushes tailLegal bounded (restFits below)
                 (raise (selectConditionalTail_sublist tailProjected) above below success)
         | true =>
             obtain ⟨selectedTail, tailProjected, rfl⟩ := map_cons_eq_some
@@ -148,7 +154,8 @@ theorem runtime_restore_conditional
               (chargeOperations_conditions (state := { state with conditions := nested ++ outer })
                 (nested ++ true :: outer) (by simp [List.all_append]) charging)
               moved nextBound
-            apply ih selectedTail next nested outer true tailProjected tailPushes nextBound
+            apply ih selectedTail next nested outer true tailProjected tailPushes tailLegal
+              nextBound
             · rcases restFits (keepFits charging) with version | fits
               · exact .inl version
               · exact .inr (by simp only at counted fits; omega)
@@ -169,7 +176,7 @@ theorem runtime_restore_conditional
               · simp [execute_branch element branch, List.all_append, pure, Except.pure]
               · exact bounded
               · exact ih selected { state with operationCount := count } (false :: nested) outer false
-                  tailProjected tailPushes bounded (restFits below)
+                  tailProjected tailPushes tailLegal bounded (restFits below)
                   (raise (selectConditionalTail_sublist tailProjected) above below success)
           | true =>
               obtain ⟨selectedTail, tailProjected, rfl⟩ := map_cons_eq_some
@@ -189,7 +196,7 @@ theorem runtime_restore_conditional
                   (nested ++ true :: outer) (by simp [List.all_append]) charging)
                 moved nextBound
               apply ih selectedTail next (inner :: nested) outer true
-                (by simpa using tailProjected) tailPushes nextBound
+                (by simpa using tailProjected) tailPushes tailLegal nextBound
               · rcases restFits (keepFits charging) with version | fits
                 · exact .inl version
                 · exact .inr (by simp only at counted fits; omega)
@@ -198,6 +205,7 @@ theorem runtime_restore_conditional
           | pushData => exact False.elim (ordinary trivial)
           | pushNum => exact False.elim (ordinary trivial)
           | badOpcode => exact False.elim (ordinary trivial)
+          | illegalOpcode => exact False.elim (ordinary trivial)
           | op opcode =>
               cases opcode <;> simp only [NonConditional, ScriptElement.isBranch] at ordinary branch
               case OP_ELSE =>
@@ -217,7 +225,7 @@ theorem runtime_restore_conditional
                         pure, Except.pure]
                     · exact bounded
                     · apply ih selected { state with operationCount := count } [] outer (!choice)
-                        projected tailPushes bounded (restFits below)
+                        projected tailPushes tailLegal bounded (restFits below)
                       apply raise tailSub above below
                       simpa using success
                 | cons inner nested =>
@@ -237,7 +245,8 @@ theorem runtime_restore_conditional
                             pure, Except.pure]
                         · exact bounded
                         · exact ih selected { state with operationCount := count }
-                            ((!inner) :: nested) outer false tailProjected tailPushes bounded
+                            ((!inner) :: nested) outer false tailProjected tailPushes tailLegal
+                            bounded
                             (restFits below)
                             (raise (selectConditionalTail_sublist tailProjected) above below success)
                     | true =>
@@ -260,7 +269,8 @@ theorem runtime_restore_conditional
                         · exact bounded
                         · apply ih selectedTail { state with operationCount := count }
                             ((!inner) :: nested) outer true
-                            (by simpa using tailProjected) tailPushes bounded (restFits (keepFits charging))
+                            (by simpa using tailProjected) tailPushes tailLegal bounded
+                            (restFits (keepFits charging))
                           exact tail
               case OP_ENDIF =>
                 cases nested with
@@ -295,7 +305,7 @@ theorem runtime_restore_conditional
                             pure, Except.pure]
                         · exact bounded
                         · exact ih selected { state with operationCount := count } nested outer false
-                            tailProjected tailPushes bounded (restFits below)
+                            tailProjected tailPushes tailLegal bounded (restFits below)
                             (raise (selectConditionalTail_sublist tailProjected) above below success)
                     | true =>
                         obtain ⟨selectedTail, tailProjected, rfl⟩ := map_cons_eq_some
@@ -316,7 +326,8 @@ theorem runtime_restore_conditional
                             pure, Except.pure]
                         · exact bounded
                         · exact ih selectedTail { state with operationCount := count } nested outer true
-                            tailProjected tailPushes bounded (restFits (keepFits charging)) tail
+                            tailProjected tailPushes tailLegal bounded
+                            (restFits (keepFits charging)) tail
               all_goals contradiction
 
 end LeanMiniscript.Script

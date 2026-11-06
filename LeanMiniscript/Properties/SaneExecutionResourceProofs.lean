@@ -27,6 +27,11 @@ namespace LeanMiniscript.Miniscript.SaneFragment
 open LeanMiniscript.Properties
 open LeanMiniscript.Script
 
+/-- A sane fragment compiles to no `illegalOpcode`. -/
+theorem legal {ctx : ScriptContext} (sane : SaneFragment ctx) :
+    ∀ element ∈ sane.compile, element.isIllegalOpcode = false :=
+  ScriptAllowed.legal (compileChecked_scriptAllowed sane.checked)
+
 /-- A generated witness for a sane P2WSH fragment has at most the standard
     number of initial witness items. -/
 theorem p2wsh_satisfyFinal_witness_length_le
@@ -146,7 +151,7 @@ theorem tapscript_satisfyFinal_runtime_complete_exact
   have topEq : top = generatedTop := by simpa using (ExecResult.success.inj sameResult).1
   rw [← sameResources] at peak
   obtain ⟨remaining, completed, spent⟩ :=
-    observed.runtime_complete_exact agreement pushes peak (.inl version) weight budget
+    observed.runtime_complete_exact agreement pushes sane.legal peak (.inl version) weight budget
   refine ⟨remaining, completed, topEq ▸ truth, ?_, spent⟩
   simpa [Witness.toInitialStack, MAX_STACK_SIZE] using Nat.le_trans observed.initial_le_peak peak
 
@@ -172,7 +177,7 @@ theorem tapscript_satisfyFinal_runtime_complete_witness
   have funded := satisfyFinal_signatureWeight_le_payload sane.validMiniscript sound encodings
     version modeled generated observed
   obtain ⟨remaining, completed, _⟩ := runtime_complete_of_witness_funding agreement
-    observed pushes peak (.inl version) included funded
+    observed pushes sane.legal peak (.inl version) included funded
   refine ⟨top, remaining, completed, truth, ?_⟩
   simpa [Witness.toInitialStack, MAX_STACK_SIZE] using Nat.le_trans observed.initial_le_peak peak
 
@@ -198,7 +203,7 @@ theorem tapscript_satisfyFinal_runtime_complete
   obtain ⟨top, resources, observed, truth, peak⟩ :=
     sane.tapscript_satisfyFinal_executionStack_le sound encodings version modeled generated
   obtain ⟨remaining, completed, spent⟩ :=
-    observed.runtime_complete agreement pushes peak (.inl version) weight budget
+    observed.runtime_complete agreement pushes sane.legal peak (.inl version) weight budget
   refine ⟨top, remaining, completed, truth, ?_, spent⟩
   simpa [Witness.toInitialStack, MAX_STACK_SIZE] using Nat.le_trans observed.initial_le_peak peak
 

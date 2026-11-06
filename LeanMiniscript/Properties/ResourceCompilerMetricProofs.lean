@@ -11,7 +11,7 @@ open LeanMiniscript.Script
 /-- Projection that retains exact opcodes and erases every pushed value. -/
 private def opcodeProjection : ScriptElement → Option Opcode
   | .op opcode => some opcode
-  | .pushData _ | .pushNum _ | .badOpcode _ => none
+  | .pushData _ | .pushNum _ | .badOpcode _ | .illegalOpcode _ => none
 
 private def scriptOpcodeProjection (script : Script) : List (Option Opcode) :=
   script.map opcodeProjection
@@ -57,6 +57,9 @@ private theorem compileVerify_opcodeProjection (script : Script) :
           simp [opcodeProjection, verifyReplacement?,
             verifyProjectionReplacement?, List.map_reverse]
       | badOpcode value =>
+          simp [opcodeProjection, verifyReplacement?,
+            verifyProjectionReplacement?, List.map_reverse]
+      | illegalOpcode value =>
           simp [opcodeProjection, verifyReplacement?,
             verifyProjectionReplacement?, List.map_reverse]
 

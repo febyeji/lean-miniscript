@@ -50,7 +50,19 @@ theorem runtime_cons_success
   simpa [evaluateRuntime, runtimeStep, runtimeInstruction, charging, executed, checkRuntimeStack,
     Nat.not_lt_of_le bounded, bind, Except.bind] using tail
 
+/-- An element that succeeds is no `illegalOpcode`. -/
+theorem execute_legal {oracle : CryptoOracle} {element : ScriptElement}
+    {state next : RuntimeState} {flags : ScriptFlags} {ctx : TxContext}
+    (executed : executeRuntimeElement oracle element state flags ctx = .ok next) :
+    element.isIllegalOpcode = false := by
+  cases element with
+  | illegalOpcode =>
+      simp [executeRuntimeElement, ScriptElement.pushSize, throw, throwThe,
+        MonadExceptOf.throw] at executed
+  | _ => rfl
+
 theorem execute_ordinary (element : ScriptElement) (ordinary : NonConditional element)
+    (legal : element.isIllegalOpcode = false)
     (oracle : CryptoOracle) (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
     executeRuntimeElement oracle element state flags ctx = (do
       if element.pushSize > maxScriptElementSize then throw .pushSize
@@ -65,6 +77,7 @@ theorem execute_ordinary (element : ScriptElement) (ordinary : NonConditional el
   | pushData => rfl
   | pushNum => rfl
   | badOpcode => rfl
+  | illegalOpcode => simp [ScriptElement.isIllegalOpcode] at legal
   | op opcode => cases opcode <;> first | contradiction | rfl
 
 theorem select_ordinary (element : ScriptElement) (ordinary : NonConditional element)
@@ -76,6 +89,7 @@ theorem select_ordinary (element : ScriptElement) (ordinary : NonConditional ele
   | pushData => rfl
   | pushNum => rfl
   | badOpcode => rfl
+  | illegalOpcode => rfl
   | op opcode => cases opcode <;> first | contradiction | rfl
 
 private theorem execute_push_bound
@@ -95,7 +109,8 @@ theorem ordinary_conditions
     executeRuntimeElement oracle element { state with conditions := conditions } flags ctx =
       .ok { next with conditions := conditions } ∧ next.conditions = state.conditions := by
   have bounded := execute_push_bound executed
-  rw [execute_ordinary element ordinary] at executed ⊢
+  have legal := execute_legal executed
+  rw [execute_ordinary element ordinary legal] at executed ⊢
   simp only [bounded, ↓reduceIte, bind, Except.bind, pure, Except.pure] at executed ⊢
   simp only [active]
   split at executed
@@ -133,6 +148,7 @@ theorem execute_branch (element : ScriptElement) (branch : element.isBranch = tr
   | pushData => contradiction
   | pushNum => contradiction
   | badOpcode => contradiction
+  | illegalOpcode => contradiction
   | op opcode => cases opcode <;>
       simp_all [ScriptElement.isBranch, executeRuntimeElement, ScriptElement.pushSize,
         maxScriptElementSize, pure, Except.pure] <;> rfl
@@ -146,6 +162,7 @@ theorem select_branch (element : ScriptElement) (branch : element.isBranch = tru
   | pushData => contradiction
   | pushNum => contradiction
   | badOpcode => contradiction
+  | illegalOpcode => contradiction
   | op opcode => cases opcode <;> first | contradiction | rfl
 
 theorem branch_conditions
@@ -205,7 +222,7 @@ private theorem runtime_select_success
       · cases choice with
         | false =>
             have pushBound := execute_push_bound executed
-            rw [execute_ordinary element ordinary] at executed
+            rw [execute_ordinary element ordinary (execute_legal executed)] at executed
             simp [pushBound, List.all_append, pure, Except.pure] at executed
             subst next
             obtain ⟨selected, projected, result⟩ :=
@@ -252,6 +269,7 @@ private theorem runtime_select_success
           | pushData => exact False.elim (ordinary trivial)
           | pushNum => exact False.elim (ordinary trivial)
           | badOpcode => exact False.elim (ordinary trivial)
+          | illegalOpcode => exact False.elim (ordinary trivial)
           | op opcode =>
               cases opcode <;> simp only [NonConditional, ScriptElement.isBranch] at ordinary branch
               case OP_ELSE =>
@@ -382,7 +400,7 @@ theorem evaluateWithRuntimeLimits_erase_success
             · contradiction
       · by_cases ordinary : NonConditional element
         · have pushBound := execute_push_bound executed
-          rw [execute_ordinary element ordinary,
+          rw [execute_ordinary element ordinary (execute_legal executed),
             ScriptElement.underTimelockFlags_eq element locktime sequence] at executed
           simp only [pushBound, ↓reduceIte, List.all_nil, bind, Except.bind,
             pure, Except.pure] at executed
@@ -402,6 +420,7 @@ theorem evaluateWithRuntimeLimits_erase_success
           | pushData => exact False.elim (ordinary trivial)
           | pushNum => exact False.elim (ordinary trivial)
           | badOpcode => exact False.elim (ordinary trivial)
+          | illegalOpcode => exact False.elim (ordinary trivial)
           | op opcode =>
               cases opcode <;>
                 simp_all [NonConditional, ScriptElement.isBranch, executeRuntimeElement,

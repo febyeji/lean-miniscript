@@ -536,6 +536,7 @@ theorem deserializeScriptList_serializeElement
       exact deserializeScriptList_serializePushNum
         value encoded serialized suffix offset
   | badOpcode opcode => simp [serializeElement] at serialized
+  | illegalOpcode opcode => simp [serializeElement] at serialized
 
 private theorem except_map_map {α β γ ε : Type}
     (first : β → γ) (second : α → β)
