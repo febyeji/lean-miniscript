@@ -23,6 +23,8 @@ def evaluate (oracle : CryptoOracle) (script : Script)
   | .badOpcode _ :: _ => .failure .badOpcode
   | .illegalOpcode opcode :: _ => .failure opcode.error
   | .truncatedPush _ :: _ => .failure .badOpcode
+  | .codeSeparator _ :: rest =>
+      evaluate oracle rest stack altStack flags ctx
   | .nonminimalPush push :: rest =>
       if flags.minimalData then .failure .minimalData
       else evaluate oracle rest (push.data :: stack) altStack flags ctx

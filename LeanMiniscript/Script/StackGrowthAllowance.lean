@@ -13,7 +13,7 @@ def ScriptElement.stackGrowthAllowance : ScriptElement → Nat
   | .pushData _ | .pushNum _ | .nonminimalPush _ => 1
   | .op .OP_IFDUP | .op .OP_DEPTH | .op .OP_DUP | .op .OP_OVER | .op .OP_TUCK | .op .OP_SIZE |
       .op .OP_CHECKMULTISIG | .op .OP_CHECKMULTISIGVERIFY => 1
-  | .op _ | .badOpcode _ | .illegalOpcode _ | .truncatedPush _ => 0
+  | .op _ | .badOpcode _ | .illegalOpcode _ | .truncatedPush _ | .codeSeparator _ => 0
 
 /-- Sum of per-element combined-stack growth allowances. This is a static
     source bound: inactive conditional branches are still charged. -/
@@ -62,6 +62,7 @@ theorem ScriptElement.stackGrowthAllowance_le_one (element : ScriptElement)
   | illegalOpcode opcode => simp [ScriptElement.stackGrowthAllowance]
   | nonminimalPush push => simp [ScriptElement.stackGrowthAllowance]
   | truncatedPush push => simp [ScriptElement.stackGrowthAllowance]
+  | codeSeparator nextOffset => simp [ScriptElement.stackGrowthAllowance]
   | op opcode => cases opcode <;> simp_all [ScriptElement.stackGrowthAllowance]
 
 theorem stackGrowthAllowance_le_length (script : Script) (oneItem : OneItemGrowth script) :

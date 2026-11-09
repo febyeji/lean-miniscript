@@ -374,6 +374,8 @@ theorem Eval.compileVerify_success
           simpa [compileVerify, verifyReplacement?] using run
       | truncatedPush push =>
           simpa [compileVerify, verifyReplacement?] using run
+      | codeSeparator nextOffset =>
+          simpa [compileVerify, verifyReplacement?] using run
       | op opcode =>
           cases opcode <;>
             simp [compileVerify, verifyReplacement?] at run ⊢

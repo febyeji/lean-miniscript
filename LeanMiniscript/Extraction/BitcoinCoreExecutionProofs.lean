@@ -29,7 +29,9 @@ private def encodesPush (instruction : CoreRawInstruction) (data : ByteArray) : 
 Length-prefixed pushes must be minimal so MINIMALDATA is preserved as well,
 and no instruction encodes a `nonminimalPush` or a `truncatedPush`. No
 instruction encodes a `badOpcode` or an `illegalOpcode`: Tapscript reads most
-of their bytes as OP_SUCCESSx, which these encodings exclude. -/
+of their bytes as OP_SUCCESSx, which these encodings exclude. No instruction
+encodes a `codeSeparator` either: `CoreTapscriptEncoding` certificates cover
+only scripts without one, whose script code and codesep position stay fixed. -/
 def _root_.LeanMiniscript.Script.CoreRawInstruction.Encodes (instruction : CoreRawInstruction) :
     ScriptElement → Prop
   | .pushData data => encodesPush instruction data
@@ -40,6 +42,7 @@ def _root_.LeanMiniscript.Script.CoreRawInstruction.Encodes (instruction : CoreR
   | .illegalOpcode _ => False
   | .nonminimalPush _ => False
   | .truncatedPush _ => False
+  | .codeSeparator _ => False
 
 instance (instruction : CoreRawInstruction) (element : ScriptElement) :
     Decidable (instruction.Encodes element) := by
@@ -58,6 +61,7 @@ theorem _root_.LeanMiniscript.Script.CoreRawInstruction.Encodes.opcodeCases
   | illegalOpcode => exact encoded.elim
   | nonminimalPush => exact encoded.elim
   | truncatedPush => exact encoded.elim
+  | codeSeparator => exact encoded.elim
   | pushData | pushNum =>
       simp only [CoreRawInstruction.Encodes, encodesPush] at encoded
       split at encoded
@@ -275,6 +279,7 @@ theorem coreRawStep_encoded (flags : CoreVerificationFlags) (ctx : TxContext)
   | illegalOpcode => exact encoded.elim
   | nonminimalPush => exact encoded.elim
   | truncatedPush => exact encoded.elim
+  | codeSeparator => exact encoded.elim
   | pushData data =>
       rw [runtimeStep_of_signatures _ _ _ _ _ (fun _ element => by cases element)]
       simp only [CoreRawInstruction.Encodes, encodesPush] at encoded
@@ -586,6 +591,7 @@ private theorem coreRawStep_tapscript (flags : CoreVerificationFlags) (ctx : TxC
   | illegalOpcode => exact encoded.elim
   | nonminimalPush => exact encoded.elim
   | truncatedPush => exact encoded.elim
+  | codeSeparator => exact encoded.elim
   | op opcode =>
       have notBase : (instructionContext ctx request state).sigVersion ≠ .base := by
         show request.sigVersion ≠ .base
@@ -641,6 +647,52 @@ also retains the alternate stack and remaining signature budget. -/
 def coreRuntimeResult : WeightedResult → Except CoreVerificationError Stack
   | .success stack _ _ => .ok stack
   | .failure error => .error (.script error)
+
+/-- The raw step of OP_CODESEPARATOR: the operation count and the BASE
+CONST_SCRIPTCODE rejection precede the typed step, which leaves the runtime
+unchanged; an executed step then starts the script code at the next offset
+and sets the codesep position to its opcode position. -/
+theorem coreRawStep_codeSeparator (flags : CoreVerificationFlags) (ctx : TxContext)
+    (oracles : SignatureVersion → ByteArray → CryptoOracle)
+    (request : CoreScriptExecutionRequest) (state : CoreRawState)
+    (instruction : CoreRawInstruction)
+    (byte : instruction.opcode = 0xab)
+    (payload : instruction.payload = ByteArray.empty) :
+    coreRawStep flags ctx oracles request state instruction =
+      if request.sigVersion != .tapscript &&
+          maxOpsPerScript < state.runtime.operationCount + 1 then
+        .error (.script .opCount)
+      else if request.sigVersion == .base && flags.script.constScriptCode then
+        .error .opCodeSeparator
+      else ((runtimeStep
+          ⟨oracles request.sigVersion,
+            request.scriptBytes.extract state.codeSeparatorOffset request.scriptBytes.size⟩
+          (.codeSeparator instruction.nextOffset) state.runtime flags.script
+          (instructionContext ctx request state)).mapError CoreVerificationError.script).map
+        fun runtime =>
+          { state with
+            runtime := runtime
+            offset := instruction.nextOffset
+            opcodePosition := state.opcodePosition + 1
+            codeSeparatorOffset := if state.runtime.conditions.all id then
+                instruction.nextOffset else state.codeSeparatorOffset
+            codeSeparatorPosition := if state.runtime.conditions.all id then
+                UInt32.ofNat state.opcodePosition else state.codeSeparatorPosition } := by
+  have version : (instructionContext ctx request state).sigVersion = request.sigVersion := rfl
+  unfold coreRawStep
+  simp only [payload, byte, ByteArray.size_empty, maxScriptElementSize]
+  obtain ⟨⟨stack, altStack, conditions, weight, count⟩, offset, position, separatorOffset,
+    separatorPosition⟩ := state
+  rcases versionEq : request.sigVersion <;>
+    by_cases over : maxOpsPerScript < count + 1 <;>
+    by_cases const : flags.script.constScriptCode = true <;>
+    by_cases inactive : false ∈ conditions <;>
+    simp +decide [versionEq, over, const, inactive, runtimeStep, chargeOperations,
+      ScriptCodeOracles.forStep, removeSignatures, runtimeInstruction, executeRuntimeElement, prepareValidationWeight,
+      evaluate, ScriptElement.underTimelockFlags, ScriptElement.pushSize, maxScriptElementSize,
+      version, bind, Except.bind, Except.mapError,
+      Except.map, pure, Except.pure, throw, throwThe, MonadExceptOf.throw]
+
 
 theorem CoreTapscriptEncoding.length_bound {bytes : ByteArray}
     {offset : Nat} {script : Script} (encoded : CoreTapscriptEncoding bytes offset script) :
@@ -883,6 +935,7 @@ private theorem read_serializeElement (element : ScriptElement) (encoded : ByteA
   | illegalOpcode opcode => simp [serializeElement] at serialized
   | nonminimalPush push => simp [serializeElement] at serialized
   | truncatedPush push => simp [serializeElement] at serialized
+  | codeSeparator nextOffset => simp [serializeElement] at serialized
 
 /-- Canonical serialization supplies the byte-decoding certificate whenever
 each pushed value fits in a direct push (at most 75 bytes). This covers the

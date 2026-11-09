@@ -20,8 +20,11 @@ fails even in an unexecuted branch. It reads a complete push that is not
 minimal as `nonminimalPush`, which keeps the original opcode and fails under
 MINIMALDATA only when executed, and a push that GetOp cannot read as
 `truncatedPush`, which holds the bytes from it to the end of the script and
-fails with BAD_OPCODE even in an unexecuted branch. It rejects
-OP_CODESEPARATOR.
+fails with BAD_OPCODE even in an unexecuted branch, and OP_CODESEPARATOR as
+`codeSeparator`, which fails under BASE CONST_SCRIPTCODE in an executed or
+unexecuted branch and otherwise starts the script code of the following
+signature checks at the byte after it and sets the Tapscript codesep position
+to its opcode position, as `coreRawStep` does.
 
 Tapscript reads the disabled opcodes and the `badOpcode` bytes other than
 0xff as OP_SUCCESSx.
@@ -36,8 +39,8 @@ open LeanMiniscript.Script
 open CoreScriptExecution
 
 /-- A raw instruction reads as a typed element when it encodes it, is the
-byte of a `badOpcode` or an `illegalOpcode`, or is the opcode and data of a
-`nonminimalPush`. -/
+byte of a `badOpcode` or an `illegalOpcode`, is the opcode and data of a
+`nonminimalPush`, or is OP_CODESEPARATOR with its end offset. -/
 def _root_.LeanMiniscript.Script.CoreRawInstruction.ReadsAs (instruction : CoreRawInstruction) :
     ScriptElement → Prop
   | .badOpcode opcode => instruction.opcode = opcode.byte ∧
@@ -46,6 +49,8 @@ def _root_.LeanMiniscript.Script.CoreRawInstruction.ReadsAs (instruction : CoreR
       instruction.payload = ByteArray.empty
   | .nonminimalPush push => instruction.opcode = push.opcode ∧
       instruction.payload = push.data
+  | .codeSeparator nextOffset => instruction.opcode = 0xab ∧
+      instruction.payload = ByteArray.empty ∧ nextOffset = instruction.nextOffset
   | element => instruction.Encodes element
 
 instance (instruction : CoreRawInstruction) (element : ScriptElement) :
@@ -53,9 +58,9 @@ instance (instruction : CoreRawInstruction) (element : ScriptElement) :
   cases element <;> unfold CoreRawInstruction.ReadsAs <;> infer_instance
 
 /-- The typed element a raw instruction reads as: a minimal push, a
-`nonminimalPush`, a numeric constant, a modeled opcode, or a `badOpcode` or
-`illegalOpcode` with the same byte. `none` when the instruction reads as no
-typed element. -/
+`nonminimalPush`, a numeric constant, a modeled opcode, OP_CODESEPARATOR with
+its end offset, or a `badOpcode` or `illegalOpcode` with the same byte.
+`none` when the instruction reads as no typed element. -/
 def typedElement? (instruction : CoreRawInstruction) : Option ScriptElement :=
   let value := instruction.opcode.toNat
   let candidate : Option ScriptElement :=
@@ -65,6 +70,7 @@ def typedElement? (instruction : CoreRawInstruction) : Option ScriptElement :=
       else some (.pushData instruction.payload)
     else if value == 0x4f then some (.pushNum (-1))
     else if 0x51 ≤ value && value ≤ 0x60 then some (.pushNum ((value : Int) - 0x50))
+    else if value == 0xab then some (.codeSeparator instruction.nextOffset)
     else match opcodeFromByte? value with
       | some opcode => some (.op opcode)
       | none =>
@@ -104,9 +110,9 @@ def decodeTypedScriptFrom (bytes : ByteArray) : Nat → Nat → Option Script
 def decodeTypedScript? (bytes : ByteArray) : Option Script :=
   decodeTypedScriptFrom bytes (bytes.size + 1) 0
 
-/-- The transaction context of every step of a typed script: Core's
-`instructionContext` before any OP_CODESEPARATOR, which a typed script does
-not contain. -/
+/-- The transaction context of a typed script's first step: Core's
+`instructionContext` before any OP_CODESEPARATOR. Later steps carry the
+position of the last executed one, updated by `evaluateScriptCodeRuntime`. -/
 def typedScriptContext (ctx : TxContext) (request : CoreScriptExecutionRequest) : TxContext :=
   { ctx with
     sigVersion := request.sigVersion
@@ -116,23 +122,60 @@ def typedScriptContext (ctx : TxContext) (request : CoreScriptExecutionRequest) 
         spendPath := .scriptPath request.scriptBytes request.leafVersion 0xffffffff }
       else none }
 
-/-- Typed whole-script execution in source order. Every step gets the same
-oracles and script code, so an active BASE signature opcode removes its
-signatures from that script code as Core does. `evaluateRuntime` is this
-function with one oracle and an empty script code. -/
-def evaluateScriptCodeRuntime (oracles : ScriptCodeOracles) : Script → RuntimeState →
-    ScriptFlags → TxContext → WeightedResult
-  | [], state, _, _ => finishRuntime state
-  | element :: rest, state, flags, ctx =>
-      match runtimeStep oracles element state flags ctx with
-      | .error error => .failure error
-      | .ok next => evaluateScriptCodeRuntime oracles rest next flags ctx
+/-- The typed context with the Tapscript codesep position of the last executed
+OP_CODESEPARATOR; key-path and non-Tapscript contexts are unchanged. -/
+def withCodeSeparatorPosition (ctx : TxContext) (position : UInt32) : TxContext :=
+  { ctx with taproot := ctx.taproot.map fun taproot =>
+      { taproot with spendPath := match taproot.spendPath with
+        | .scriptPath scriptBytes leafVersion _ => .scriptPath scriptBytes leafVersion position
+        | .keyPath => .keyPath } }
+
+/-- Typed whole-script execution in source order, as Core's raw loop: the
+main stack or a Core verification error. Each step runs with the oracle and
+script code after the last executed OP_CODESEPARATOR: `codeSeparatorOffset`
+is that offset into `scriptBytes`, `opcodePosition` is the head element's
+instruction position, and `ctx` carries the codesep position. An
+OP_CODESEPARATOR step counts as an operation outside Tapscript, fails with
+Core's own OP_CODESEPARATOR error under BASE CONST_SCRIPTCODE in an executed
+or unexecuted branch, and otherwise starts the script code at its end offset
+and sets the codesep position when executed. -/
+def evaluateScriptCodeRuntime (oracleFor : ByteArray → CryptoOracle) (scriptBytes : ByteArray) :
+    Nat → Nat → Script → RuntimeState → ScriptFlags → TxContext →
+    Except CoreVerificationError Stack
+  | _, _, [], state, _, _ =>
+      if state.conditions.isEmpty then .ok state.stack
+      else .error (.script .unbalancedConditional)
+  | opcodePosition, codeSeparatorOffset, element :: rest, state, flags, ctx =>
+      match element with
+      | .codeSeparator nextOffset =>
+          if ctx.sigVersion != .tapscript && maxOpsPerScript < state.operationCount + 1 then
+            .error (.script .opCount)
+          else if ctx.sigVersion == .base && flags.constScriptCode then
+            .error .opCodeSeparator
+          else match runtimeStep
+              ⟨oracleFor, scriptBytes.extract codeSeparatorOffset scriptBytes.size⟩
+              element state flags ctx with
+            | .error error => .error (.script error)
+            | .ok next =>
+                if state.conditions.all id then
+                  evaluateScriptCodeRuntime oracleFor scriptBytes (opcodePosition + 1) nextOffset
+                    rest next flags (withCodeSeparatorPosition ctx (UInt32.ofNat opcodePosition))
+                else
+                  evaluateScriptCodeRuntime oracleFor scriptBytes (opcodePosition + 1)
+                    codeSeparatorOffset rest next flags ctx
+      | _ =>
+          match runtimeStep ⟨oracleFor, scriptBytes.extract codeSeparatorOffset scriptBytes.size⟩
+              element state flags ctx with
+          | .error error => .error (.script error)
+          | .ok next =>
+              evaluateScriptCodeRuntime oracleFor scriptBytes (opcodePosition + 1)
+                codeSeparatorOffset rest next flags ctx
 
 /-- Lean's whole-script executor. BASE and witness-v0 reject a script over
 10,000 bytes as Core does. A script with a typed reading runs on the typed
 runtime from the request's stack and validation weight, with the oracle for
-the request's signature version and the whole script as script code. A script
-without one runs on Core's raw loop. -/
+the request's signature version and the script code after the last executed
+OP_CODESEPARATOR. A script without one runs on Core's raw loop. -/
 def executeTypedScript (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle) : CoreScriptExecutor :=
   fun request =>
@@ -140,10 +183,10 @@ def executeTypedScript (flags : CoreVerificationFlags) (ctx : TxContext)
       .error (.script .scriptSize)
     else match decodeTypedScript? request.scriptBytes with
       | none => executeCoreScript flags ctx oracles request
-      | some script => coreRuntimeResult (evaluateScriptCodeRuntime
-          ⟨oracles request.sigVersion, request.scriptBytes⟩ script
+      | some script => evaluateScriptCodeRuntime
+          (oracles request.sigVersion) request.scriptBytes 0 0 script
           { stack := request.stack, altStack := [], weight := request.validationWeight }
-          flags.script (typedScriptContext ctx request))
+          flags.script (typedScriptContext ctx request)
 
 /-- VerifyScript with a given executor for every script it runs: scriptSig,
 scriptPubKey, the P2SH redeem script, and the witness script. Key-path

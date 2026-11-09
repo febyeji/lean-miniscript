@@ -193,6 +193,7 @@ theorem Eval.singleton_nonConditional
   | illegalOpcode => trivial
   | nonminimalPush => trivial
   | truncatedPush => trivial
+  | codeSeparator => trivial
   | op opcode =>
       cases opcode <;> try trivial
       all_goals cases evaluated <;> simp_all [Opcode.isUpgradeableNop]

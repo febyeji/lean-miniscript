@@ -60,6 +60,8 @@ theorem evaluate_cons_of_not_branch
   | illegalOpcode opcode => rfl
   | nonminimalPush push => cases flags.minimalData <;> simp [evaluate.eq_1]
   | truncatedPush push => rfl
+  | codeSeparator nextOffset =>
+      cases (ctx.sigVersion == .base && flags.constScriptCode) <;> simp [evaluate.eq_1]
   | op opcode =>
       cases opcode <;>
         simp_all [ScriptElement.isBranch, evaluate.eq_1]
@@ -101,6 +103,7 @@ theorem evaluate_cons_of_branch
   | illegalOpcode => simp [ScriptElement.isBranch] at branch
   | nonminimalPush => simp [ScriptElement.isBranch] at branch
   | truncatedPush => simp [ScriptElement.isBranch] at branch
+  | codeSeparator => simp [ScriptElement.isBranch] at branch
   | op opcode =>
       cases opcode <;>
         simp_all [ScriptElement.isBranch, ScriptElement.branchChoice]

@@ -11,13 +11,15 @@ Canonical byte serialization for the modeled Script subset.
 /-- Serialization can only encode data-push lengths representable by Bitcoin
     Script's four-byte `OP_PUSHDATA4` prefix, and does not encode a byte that
     fails when executed or wherever it appears, a push that is not minimal,
-    or a truncated push, which the deserializer does not decode either. -/
+    a truncated push, or a codeseparator, which the deserializer does not
+    decode either. -/
 inductive SerializationError where
   | pushDataTooLarge (size : Nat)
   | badOpcode (byte : UInt8)
   | illegalOpcode (byte : UInt8)
   | nonminimalPush (opcode : UInt8)
   | truncatedPush (opcode : UInt8)
+  | codeSeparator
   deriving Repr, DecidableEq
 
 /-- Largest byte-vector length representable by an `OP_PUSHDATA4` prefix. -/
@@ -161,6 +163,7 @@ def serializeElement : ScriptElement → Except SerializationError ByteArray
   | .illegalOpcode opcode => .error (.illegalOpcode opcode.byte)
   | .nonminimalPush push => .error (.nonminimalPush push.opcode)
   | .truncatedPush push => .error (.truncatedPush push.bytes[0]!)
+  | .codeSeparator _ => .error .codeSeparator
 
 /-- Serialize a modeled Script to canonical Bitcoin Script bytes. -/
 def serializeScript : Script → Except SerializationError ByteArray

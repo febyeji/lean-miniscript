@@ -185,6 +185,12 @@ inductive ScriptElement where
   | nonminimalPush : NonminimalPush → ScriptElement
   /-- Fails with BAD_OPCODE in any branch without counting as an operation. -/
   | truncatedPush : TruncatedPush → ScriptElement
+  /-- Core's OP_CODESEPARATOR (0xab), with the offset just past it in the
+  script bytes. In BASE under CONST_SCRIPTCODE it fails with OP_CODESEPARATOR
+  in any branch. Executed, it starts the script code of the following
+  signature checks at `nextOffset` and sets the Tapscript codesep position to
+  its opcode position. -/
+  | codeSeparator : (nextOffset : Nat) → ScriptElement
   deriving Repr
 
 /-- A Bitcoin Script is a list of script elements. -/

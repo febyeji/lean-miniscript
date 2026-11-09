@@ -15,12 +15,10 @@ open CoreScriptExecution
 theorem typedElement?_readsAs {instruction : CoreRawInstruction} {element : ScriptElement}
     (read : typedElement? instruction = some element) : instruction.ReadsAs element := by
   simp only [typedElement?] at read
-  split at read
-  · split at read
-    · cases read
-      assumption
-    · cases read
-  · cases read
+  repeat' split at read
+  all_goals first
+    | (cases read; assumption)
+    | (cases read)
 
 /-- Complete source-order reading with Core's GetOp boundaries, every
 instruction reading as its typed element: `CoreTapscriptEncoding` with
@@ -97,36 +95,6 @@ theorem decodeTypedScript?_reading {bytes : ByteArray} {script : Script}
     CoreTypedReading bytes 0 script :=
   decodeTypedScriptFrom_reading decoded
 
-/-- With one oracle and an empty script code, typed whole-script execution is
-`evaluateRuntime`. -/
-theorem evaluateScriptCodeRuntime_withoutScriptCode (oracle : CryptoOracle) (script : Script)
-    (state : RuntimeState) (flags : ScriptFlags) (ctx : TxContext) :
-    evaluateScriptCodeRuntime oracle script state flags ctx =
-      evaluateRuntime oracle script state flags ctx := by
-  induction script generalizing state with
-  | nil => rfl
-  | cons element rest ih =>
-      simp only [evaluateScriptCodeRuntime, evaluateRuntime]
-      cases runtimeStep oracle element state flags ctx with
-      | error => rfl
-      | ok next => exact ih next
-
-/-- Outside BASE no step removes signatures, so typed whole-script execution
-is `evaluateRuntime` with the oracle for the script code. -/
-theorem evaluateScriptCodeRuntime_of_ne_base (oracles : ScriptCodeOracles) (script : Script)
-    (state : RuntimeState) (flags : ScriptFlags) {ctx : TxContext}
-    (version : ctx.sigVersion ≠ .base) :
-    evaluateScriptCodeRuntime oracles script state flags ctx =
-      evaluateRuntime (oracles.oracleFor oracles.scriptCode) script state flags ctx := by
-  induction script generalizing state with
-  | nil => rfl
-  | cons element rest ih =>
-      simp only [evaluateScriptCodeRuntime, evaluateRuntime,
-        runtimeStep_of_ne_base oracles element state flags version]
-      cases runtimeStep (oracles.oracleFor oracles.scriptCode) element state flags ctx with
-      | error => rfl
-      | ok next => exact ih next
-
 theorem typedScriptContext_tapscript (ctx : TxContext) (request : CoreScriptExecutionRequest)
     (version : request.sigVersion = .tapscript) :
     typedScriptContext ctx request = coreTapscriptContext ctx request := by
@@ -140,13 +108,24 @@ theorem instructionContext_typedScriptContext (ctx : TxContext)
     instructionContext ctx request state = typedScriptContext ctx request := by
   simp [instructionContext, typedScriptContext, separatorPosition]
 
-/-- The raw step of an instruction that reads as a typed element is the typed
-step, as `coreRawStep_encoded`, `coreRawStep_badOpcode`,
-`coreRawStep_illegalOpcode`, and `coreRawStep_nonminimalPush` give it. -/
+/-- The typed context after an executed OP_CODESEPARATOR is Core's
+instruction context with its codesep position. -/
+theorem withCodeSeparatorPosition_instructionContext (ctx : TxContext)
+    (request : CoreScriptExecutionRequest) (state : CoreRawState) (position : UInt32) :
+    withCodeSeparatorPosition (instructionContext ctx request state) position =
+      instructionContext ctx request { state with codeSeparatorPosition := position } := by
+  cases version : request.sigVersion <;> cases taproot : ctx.taproot <;>
+    simp [instructionContext, withCodeSeparatorPosition, version, taproot]
+
+/-- The raw step of an instruction that reads as a typed element other than
+OP_CODESEPARATOR is the typed step, as `coreRawStep_encoded`,
+`coreRawStep_badOpcode`, `coreRawStep_illegalOpcode`, and
+`coreRawStep_nonminimalPush` give it. -/
 theorem coreRawStep_readsAs (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (state : CoreRawState)
     (instruction : CoreRawInstruction) (element : ScriptElement)
+    (notCodeSeparator : ∀ n, element ≠ .codeSeparator n)
     (read : instruction.ReadsAs element) :
     coreRawStep flags ctx oracles request state instruction =
       ((runtimeStep
@@ -167,31 +146,29 @@ theorem coreRawStep_readsAs (flags : CoreVerificationFlags) (ctx : TxContext)
   | nonminimalPush push =>
       exact coreRawStep_nonminimalPush flags ctx oracles request state instruction push
         read.1 read.2
+  | codeSeparator => exact absurd rfl (notCodeSeparator _)
   | op | pushData | pushNum | truncatedPush =>
       exact coreRawStep_encoded flags ctx oracles request state instruction _ read
 
 /-- Core's raw loop over bytes with a typed reading is typed whole-script
-execution with the whole script as script code, under every signature version.
-A typed reading has no OP_CODESEPARATOR, so the script code stays whole. -/
+execution, under every signature version: the script code and the Tapscript
+codesep position follow the last executed OP_CODESEPARATOR on both sides. -/
 theorem executeCoreRawLoop_typed (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (request : CoreScriptExecutionRequest) (script : Script) (state : CoreRawState)
     (fuel : Nat) (enough : script.length < fuel)
-    (separatorOffset : state.codeSeparatorOffset = 0)
-    (separatorPosition : state.codeSeparatorPosition = 0xffffffff)
     (encoded : CoreTypedReading request.scriptBytes state.offset script) :
     executeCoreRawLoop flags ctx oracles request fuel state =
-      coreRuntimeResult (evaluateScriptCodeRuntime
-        ⟨oracles request.sigVersion, request.scriptBytes⟩ script state.runtime flags.script
-        (typedScriptContext ctx request)) := by
+      evaluateScriptCodeRuntime (oracles request.sigVersion) request.scriptBytes
+        state.opcodePosition state.codeSeparatorOffset script state.runtime flags.script
+        (instructionContext ctx request state) := by
   induction script generalizing state fuel with
   | nil =>
       cases fuel with
       | zero => simp at enough
       | succ fuel =>
           change state.offset = request.scriptBytes.size at encoded
-          simp [executeCoreRawLoop, encoded, evaluateScriptCodeRuntime, finishRuntime]
-          split <;> rfl
+          simp [executeCoreRawLoop, encoded, evaluateScriptCodeRuntime]
   | cons element rest ih =>
       cases fuel with
       | zero => simp at enough
@@ -205,25 +182,135 @@ theorem executeCoreRawLoop_typed (flags : CoreVerificationFlags) (ctx : TxContex
               rw [readCoreRawInstruction_error decoded] at decoded
               rw [executeCoreRawLoop, if_neg (Nat.not_le_of_lt inside)]
               simp [decoded, evaluateScriptCodeRuntime, runtimeStep_truncatedPush,
-                coreRuntimeResult, bind, Except.bind, Except.mapError]
+                bind, Except.bind, Except.mapError]
           | ok instruction =>
               simp only [decoded] at encoded
-              have code : request.scriptBytes.extract state.codeSeparatorOffset
-                  request.scriptBytes.size = request.scriptBytes := by simp [separatorOffset]
-              rw [executeCoreRawLoop, if_neg (Nat.not_le_of_lt encoded.1)]
+              obtain ⟨inside, advancing, readsAs, restReading⟩ := encoded
+              rw [executeCoreRawLoop, if_neg (Nat.not_le_of_lt inside)]
               simp only [decoded, bind, Except.bind, Except.mapError]
-              rw [coreRawStep_readsAs flags ctx oracles request state instruction element
-                  encoded.2.2.1, code,
-                instructionContext_typedScriptContext ctx request state separatorPosition]
-              cases stepped : runtimeStep ⟨oracles request.sigVersion, request.scriptBytes⟩
-                  element state.runtime flags.script (typedScriptContext ctx request) with
-              | error error =>
-                  simp [Except.mapError, Except.map, evaluateScriptCodeRuntime, stepped,
-                    coreRuntimeResult]
-              | ok next =>
-                  simp only [Except.mapError, Except.map, evaluateScriptCodeRuntime, stepped]
-                  exact ih _ fuel (by simpa using enough) separatorOffset separatorPosition
-                    encoded.2.2.2
+              cases element with
+              | codeSeparator nextOffset =>
+                  simp only [CoreRawInstruction.ReadsAs] at readsAs
+                  obtain ⟨byte, payload, nextEq⟩ := readsAs
+                  rw [coreRawStep_codeSeparator flags ctx oracles request state instruction byte
+                    payload, nextEq]
+                  have sv : (instructionContext ctx request state).sigVersion =
+                      request.sigVersion := rfl
+                  simp only [evaluateScriptCodeRuntime, sv]
+                  by_cases over : request.sigVersion != .tapscript &&
+                      maxOpsPerScript < state.runtime.operationCount + 1
+                  · simp [over]
+                  · by_cases const : request.sigVersion == .base && flags.script.constScriptCode
+                    · simp [over, const]
+                    · simp only [over, const]
+                      cases stepped : runtimeStep
+                          ⟨oracles request.sigVersion, request.scriptBytes.extract
+                            state.codeSeparatorOffset request.scriptBytes.size⟩
+                          (.codeSeparator instruction.nextOffset) state.runtime flags.script
+                          (instructionContext ctx request state) with
+                      | error error =>
+                          simp [Except.mapError, Except.map]
+                      | ok next =>
+                          simp only [Except.mapError, Except.map]
+                          by_cases active : state.runtime.conditions.all id = true
+                          · simp only [active, ↓reduceIte]
+                            rw [withCodeSeparatorPosition_instructionContext]
+                            exact ih _ fuel (by simpa using enough) restReading
+                          · have inactive : state.runtime.conditions.all id = false :=
+                              Bool.eq_false_iff.mpr active
+                            simp only [inactive]
+                            exact ih _ fuel (by simpa using enough) restReading
+              | badOpcode opcode =>
+                  rw [coreRawStep_readsAs flags ctx oracles request state instruction _
+                    (fun _ same => by cases same) readsAs]
+                  cases stepped : runtimeStep
+                      ⟨oracles request.sigVersion, request.scriptBytes.extract
+                        state.codeSeparatorOffset request.scriptBytes.size⟩
+                      (.badOpcode opcode) state.runtime flags.script
+                      (instructionContext ctx request state) with
+                  | error error =>
+                      simp [stepped, evaluateScriptCodeRuntime, Except.mapError, Except.map]
+                  | ok next =>
+                      simp only [stepped, evaluateScriptCodeRuntime, Except.mapError, Except.map]
+                      exact ih _ fuel (by simpa using enough) restReading
+              | illegalOpcode opcode =>
+                  rw [coreRawStep_readsAs flags ctx oracles request state instruction _
+                    (fun _ same => by cases same) readsAs]
+                  cases stepped : runtimeStep
+                      ⟨oracles request.sigVersion, request.scriptBytes.extract
+                        state.codeSeparatorOffset request.scriptBytes.size⟩
+                      (.illegalOpcode opcode) state.runtime flags.script
+                      (instructionContext ctx request state) with
+                  | error error =>
+                      simp [stepped, evaluateScriptCodeRuntime, Except.mapError, Except.map]
+                  | ok next =>
+                      simp only [stepped, evaluateScriptCodeRuntime, Except.mapError, Except.map]
+                      exact ih _ fuel (by simpa using enough) restReading
+              | nonminimalPush push =>
+                  rw [coreRawStep_readsAs flags ctx oracles request state instruction _
+                    (fun _ same => by cases same) readsAs]
+                  cases stepped : runtimeStep
+                      ⟨oracles request.sigVersion, request.scriptBytes.extract
+                        state.codeSeparatorOffset request.scriptBytes.size⟩
+                      (.nonminimalPush push) state.runtime flags.script
+                      (instructionContext ctx request state) with
+                  | error error =>
+                      simp [stepped, evaluateScriptCodeRuntime, Except.mapError, Except.map]
+                  | ok next =>
+                      simp only [stepped, evaluateScriptCodeRuntime, Except.mapError, Except.map]
+                      exact ih _ fuel (by simpa using enough) restReading
+              | op opcode =>
+                  rw [coreRawStep_readsAs flags ctx oracles request state instruction _
+                    (fun _ same => by cases same) readsAs]
+                  cases stepped : runtimeStep
+                      ⟨oracles request.sigVersion, request.scriptBytes.extract
+                        state.codeSeparatorOffset request.scriptBytes.size⟩
+                      (.op opcode) state.runtime flags.script
+                      (instructionContext ctx request state) with
+                  | error error =>
+                      simp [stepped, evaluateScriptCodeRuntime, Except.mapError, Except.map]
+                  | ok next =>
+                      simp only [stepped, evaluateScriptCodeRuntime, Except.mapError, Except.map]
+                      exact ih _ fuel (by simpa using enough) restReading
+              | pushData data =>
+                  rw [coreRawStep_readsAs flags ctx oracles request state instruction _
+                    (fun _ same => by cases same) readsAs]
+                  cases stepped : runtimeStep
+                      ⟨oracles request.sigVersion, request.scriptBytes.extract
+                        state.codeSeparatorOffset request.scriptBytes.size⟩
+                      (.pushData data) state.runtime flags.script
+                      (instructionContext ctx request state) with
+                  | error error =>
+                      simp [stepped, evaluateScriptCodeRuntime, Except.mapError, Except.map]
+                  | ok next =>
+                      simp only [stepped, evaluateScriptCodeRuntime, Except.mapError, Except.map]
+                      exact ih _ fuel (by simpa using enough) restReading
+              | pushNum number =>
+                  rw [coreRawStep_readsAs flags ctx oracles request state instruction _
+                    (fun _ same => by cases same) readsAs]
+                  cases stepped : runtimeStep
+                      ⟨oracles request.sigVersion, request.scriptBytes.extract
+                        state.codeSeparatorOffset request.scriptBytes.size⟩
+                      (.pushNum number) state.runtime flags.script
+                      (instructionContext ctx request state) with
+                  | error error =>
+                      simp [stepped, evaluateScriptCodeRuntime, Except.mapError, Except.map]
+                  | ok next =>
+                      simp only [stepped, evaluateScriptCodeRuntime, Except.mapError, Except.map]
+                      exact ih _ fuel (by simpa using enough) restReading
+              | truncatedPush push =>
+                  rw [coreRawStep_readsAs flags ctx oracles request state instruction _
+                    (fun _ same => by cases same) readsAs]
+                  cases stepped : runtimeStep
+                      ⟨oracles request.sigVersion, request.scriptBytes.extract
+                        state.codeSeparatorOffset request.scriptBytes.size⟩
+                      (.truncatedPush push) state.runtime flags.script
+                      (instructionContext ctx request state) with
+                  | error error =>
+                      simp [stepped, evaluateScriptCodeRuntime, Except.mapError, Except.map]
+                  | ok next =>
+                      simp only [stepped, evaluateScriptCodeRuntime, Except.mapError, Except.map]
+                      exact ih _ fuel (by simpa using enough) restReading
 
 /-- Whole-script execution under every signature version: both executors
 reject a BASE or witness-v0 script over 10,000 bytes, and the typed reading
@@ -241,9 +328,10 @@ theorem scriptExecutionAgreement (version : SignatureVersion) :
           have encoded := decodeTypedScript?_reading decoded
           have bound := encoded.length_bound
           dsimp only
-          rw [executeCoreScript, if_neg small]
-          exact executeCoreRawLoop_typed flags ctx oracles request script _ _ (by omega)
-            rfl rfl encoded
+          rw [executeCoreScript, if_neg small,
+            ← instructionContext_typedScriptContext ctx request
+              ({ runtime := { stack := request.stack, altStack := [], weight := request.validationWeight } } : CoreRawState) rfl]
+          exact executeCoreRawLoop_typed flags ctx oracles request script _ _ (by omega) encoded
 
 /-- BASE whole-script execution. Active signature opcodes remove their
 signatures from the whole script on both sides, and both count operations up
