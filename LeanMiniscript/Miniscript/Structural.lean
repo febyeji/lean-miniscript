@@ -35,7 +35,7 @@ theorem ScriptAllowed.legal {ctx : ScriptContext} :
       rcases List.mem_cons.mp member with same | inRest
       · subst same
         cases element with
-        | illegalOpcode | truncatedPush => exact allowed.1.elim
+        | illegalOpcode | truncatedPush | codeSeparator => exact allowed.1.elim
         | _ => rfl
       · exact ScriptAllowed.legal allowed.2 element inRest
 
@@ -347,6 +347,11 @@ theorem compileVerify_balancedControlFlow {script : Script}
             (BalancedControlFlow.atom (by trivial))
             (BalancedControlFlow.atom (by trivial))
       | truncatedPush push =>
+          simp [compileVerify, verifyReplacement?]
+          exact BalancedControlFlow.append
+            (BalancedControlFlow.atom (by trivial))
+            (BalancedControlFlow.atom (by trivial))
+      | codeSeparator nextOffset =>
           simp [compileVerify, verifyReplacement?]
           exact BalancedControlFlow.append
             (BalancedControlFlow.atom (by trivial))

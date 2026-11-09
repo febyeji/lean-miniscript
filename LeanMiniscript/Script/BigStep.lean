@@ -81,6 +81,13 @@ inductive Eval : Script → Stack → Stack → ScriptFlags → TxContext → Ex
       (flags : ScriptFlags) → (ctx : TxContext) →
       Eval (.truncatedPush push :: rest) stack altStack flags ctx (.failure .badOpcode)
 
+  -- OP_CODESEPARATOR leaves the stack alone.
+  | codeSeparator : (nextOffset : Nat) → (rest : Script) →
+      (stack altStack : Stack) → (flags : ScriptFlags) → (ctx : TxContext) →
+      (result : ExecResult) →
+      Eval rest stack altStack flags ctx result →
+      Eval (.codeSeparator nextOffset :: rest) stack altStack flags ctx result
+
   -- Fixed-arity opcode failure. Variable-arity CHECKMULTISIG and malformed
   -- operand encodings have their own semantic boundaries.
   | stack_underflow : (opcode : Opcode) → (required : Nat) →

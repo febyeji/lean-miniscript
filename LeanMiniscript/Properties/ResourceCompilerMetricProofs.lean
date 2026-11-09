@@ -12,7 +12,7 @@ open LeanMiniscript.Script
 private def opcodeProjection : ScriptElement → Option Opcode
   | .op opcode => some opcode
   | .pushData _ | .pushNum _ | .badOpcode _ | .illegalOpcode _ | .nonminimalPush _
-    | .truncatedPush _ => none
+    | .truncatedPush _ | .codeSeparator _ => none
 
 private def scriptOpcodeProjection (script : Script) : List (Option Opcode) :=
   script.map opcodeProjection
@@ -67,6 +67,9 @@ private theorem compileVerify_opcodeProjection (script : Script) :
           simp [opcodeProjection, verifyReplacement?,
             verifyProjectionReplacement?, List.map_reverse]
       | truncatedPush push =>
+          simp [opcodeProjection, verifyReplacement?,
+            verifyProjectionReplacement?, List.map_reverse]
+      | codeSeparator nextOffset =>
           simp [opcodeProjection, verifyReplacement?,
             verifyProjectionReplacement?, List.map_reverse]
 

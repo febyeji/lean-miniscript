@@ -50,6 +50,11 @@ theorem chargeOperations_ok {element : ScriptElement} {state charged : RuntimeSt
     · split at charging
       · cases charging
       · cases charging; rfl
+  · split at charging
+    · cases charging; rfl
+    · split at charging
+      · cases charging
+      · cases charging; rfl
   · cases charging; rfl
 
 /-- When the step hands FindAndDelete no signature, it checks signatures with
@@ -69,7 +74,8 @@ theorem ScriptCodeOracles.forStep_of_signatures (oracles : ScriptCodeOracles)
         rfl
       · simp only [base, Bool.false_eq_true, ↓reduceIte]
         rfl
-  | pushData | pushNum | badOpcode | illegalOpcode | nonminimalPush | truncatedPush => rfl
+  | pushData | pushNum | badOpcode | illegalOpcode | nonminimalPush | truncatedPush
+  | codeSeparator => rfl
 
 /-- A step charges the operation count and picks its oracle, then runs as the
 step with that one oracle. -/
@@ -237,6 +243,7 @@ theorem executeRuntimeElement_operationCount (oracle : CryptoOracle) (element : 
         (try simp only [active, ↓reduceIte, Bool.false_eq_true])
     all_goals first
       | rfl
+      | (split <;> rfl)
       | (cases stack with
           | nil => rfl
           | cons top rest => simp only; split <;> rfl)
@@ -312,6 +319,11 @@ theorem chargeOperations_le {element : ScriptElement} {state charged : RuntimeSt
     · split at charging
       · cases charging
       · cases charging; exact Nat.le_succ _
+  · split at charging
+    · cases charging; exact Nat.le_refl _
+    · split at charging
+      · cases charging
+      · cases charging; exact Nat.le_succ _
   · cases charging; exact Nat.le_refl _
 
 /-- A lower starting count charges the same keys and stays within the limit. -/
@@ -340,6 +352,17 @@ theorem chargeOperations_lower {element : ScriptElement} {state charged : Runtim
           rw [if_neg version, chargedOperationCount_of_keys (state := { state with operationCount := count })
             decoded (by simp only; omega)]
           rfl
+  · split at charging
+    · rename_i version
+      cases charging
+      exact ⟨count, lower, by simp [version]⟩
+    · rename_i version
+      split at charging
+      · cases charging
+      · rename_i within
+        cases charging
+        refine ⟨count + 1, by simp only; omega, ?_⟩
+        simp [version, show ¬ count + 1 > maxOpsPerScript by omega]
   · split at charging
     · rename_i version
       cases charging
@@ -401,6 +424,16 @@ theorem chargeOperations_conditions {element : ScriptElement} {state charged : R
           rw [if_neg version, chargedOperationCount_of_keys (state := { state with conditions := conditions })
             (by simpa only [active] using decoded) bounded]
           rfl
+  · split at charging
+    · rename_i version
+      cases charging
+      simp [version]
+    · rename_i version
+      split at charging
+      · cases charging
+      · rename_i within
+        cases charging
+        simp [version, within]
   · split at charging
     · rename_i version
       cases charging
@@ -1237,11 +1270,11 @@ theorem evaluateRuntime_lower {oracle : CryptoOracle} {script : Script}
 
 
 /-- The most one source element adds to the BASE or witness-v0 operation
-count: one per opcode, `badOpcode`, or `illegalOpcode`, plus at most
-`maxPubKeysPerMultiSig` multisig keys. -/
+count: one per opcode, `badOpcode`, `illegalOpcode`, or codeseparator, plus
+at most `maxPubKeysPerMultiSig` multisig keys. -/
 def ScriptElement.operationBound : ScriptElement → Nat
   | .op .OP_CHECKMULTISIG | .op .OP_CHECKMULTISIGVERIFY => 1 + maxPubKeysPerMultiSig
-  | .op _ | .badOpcode _ | .illegalOpcode _ => 1
+  | .op _ | .badOpcode _ | .illegalOpcode _ | .codeSeparator _ => 1
   | _ => 0
 
 /-- A source-only bound on the operations any run charges, skipped branches
@@ -1318,6 +1351,11 @@ theorem chargeOperations_bound {element : ScriptElement} {state charged : Runtim
     · split at charging
       · cases charging
       · cases charging; simp [ScriptElement.operationBound]
+  · split at charging
+    · cases charging; omega
+    · split at charging
+      · cases charging
+      · cases charging; simp [ScriptElement.operationBound]
   · cases charging; omega
 
 /-- A higher starting count charges the same keys when the element's source
@@ -1376,6 +1414,18 @@ theorem chargeOperations_raise {element : ScriptElement} {state charged : Runtim
       · cases charging
         refine ⟨count + 1, by simp only; omega, by simp [ScriptElement.operationBound], ?_⟩
         simp [tap, show ¬ count + 1 > maxOpsPerScript by omega]
+  · split at charging
+    · rename_i tap
+      cases charging
+      exact ⟨count, higher, by omega, by simp [tap]⟩
+    · rename_i tap
+      have fits : count + 1 ≤ maxOpsPerScript := by
+        simpa [tap, ScriptElement.operationBound] using fits
+      split at charging
+      · cases charging
+      · cases charging
+        refine ⟨count + 1, by simp only; omega, by simp [ScriptElement.operationBound], ?_⟩
+        simp [tap, show ¬ count + 1 > maxOpsPerScript by omega]
   · cases charging
     exact ⟨count, higher, by omega, rfl⟩
 
@@ -1392,6 +1442,16 @@ theorem chargeOperations_of_keys {element : ScriptElement} {state : RuntimeState
   cases element with
   | pushData | pushNum | nonminimalPush | truncatedPush =>
       exact ⟨state.operationCount, by omega, by omega, rfl⟩
+  | codeSeparator _ =>
+      by_cases tap : ctx.sigVersion = .tapscript
+      · refine ⟨state.operationCount, by omega, by omega, ?_⟩
+        simp only [chargeOperations]
+        rw [if_pos tap]
+      · have fits : state.operationCount + 1 ≤ maxOpsPerScript := by
+          simpa [tap, ScriptElement.operationBound] using fits
+        refine ⟨state.operationCount + 1, by omega, by simp [ScriptElement.operationBound], ?_⟩
+        simp only [chargeOperations]
+        rw [if_neg tap, if_neg (by omega)]
   | badOpcode opcode =>
       by_cases skip : ctx.sigVersion = .tapscript ∨ opcode.byte.toNat ≤ 0x60
       · refine ⟨state.operationCount, by omega, by omega, ?_⟩

@@ -78,6 +78,7 @@ theorem execute_ordinary (element : ScriptElement) (ordinary : NonConditional el
   | pushNum => rfl
   | badOpcode | nonminimalPush => rfl
   | illegalOpcode | truncatedPush => simp [ScriptElement.isIllegalOpcode] at legal
+  | codeSeparator => rfl
   | op opcode => cases opcode <;> first | contradiction | rfl
 
 theorem select_ordinary (element : ScriptElement) (ordinary : NonConditional element)
@@ -92,6 +93,7 @@ theorem select_ordinary (element : ScriptElement) (ordinary : NonConditional ele
   | illegalOpcode => rfl
   | nonminimalPush => rfl
   | truncatedPush => rfl
+  | codeSeparator => rfl
   | op opcode => cases opcode <;> first | contradiction | rfl
 
 private theorem execute_push_bound
@@ -153,6 +155,7 @@ theorem execute_branch (element : ScriptElement) (branch : element.isBranch = tr
   | illegalOpcode => contradiction
   | nonminimalPush => contradiction
   | truncatedPush => contradiction
+  | codeSeparator => contradiction
   | op opcode => cases opcode <;>
       simp_all [ScriptElement.isBranch, executeRuntimeElement, ScriptElement.pushSize,
         maxScriptElementSize, pure, Except.pure] <;> rfl
@@ -169,6 +172,7 @@ theorem select_branch (element : ScriptElement) (branch : element.isBranch = tru
   | illegalOpcode => contradiction
   | nonminimalPush => contradiction
   | truncatedPush => contradiction
+  | codeSeparator => contradiction
   | op opcode => cases opcode <;> first | contradiction | rfl
 
 theorem branch_conditions
@@ -278,6 +282,7 @@ private theorem runtime_select_success
           | illegalOpcode => exact False.elim (ordinary trivial)
           | nonminimalPush => exact False.elim (ordinary trivial)
           | truncatedPush => exact False.elim (ordinary trivial)
+          | codeSeparator => exact False.elim (ordinary trivial)
           | op opcode =>
               cases opcode <;> simp only [NonConditional, ScriptElement.isBranch] at ordinary branch
               case OP_ELSE =>
@@ -431,6 +436,7 @@ theorem evaluateWithRuntimeLimits_erase_success
           | illegalOpcode => exact False.elim (ordinary trivial)
           | nonminimalPush => exact False.elim (ordinary trivial)
           | truncatedPush => exact False.elim (ordinary trivial)
+          | codeSeparator => exact False.elim (ordinary trivial)
           | op opcode =>
               cases opcode <;>
                 simp_all [NonConditional, ScriptElement.isBranch, executeRuntimeElement,

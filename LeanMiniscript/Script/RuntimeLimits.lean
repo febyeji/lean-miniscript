@@ -34,7 +34,7 @@ def ScriptElement.pushSize : ScriptElement → Nat
   | .pushData bytes => bytes.size
   | .pushNum number => (scriptNum number).size
   | .nonminimalPush push => push.data.size
-  | .op _ | .badOpcode _ | .illegalOpcode _ | .truncatedPush _ => 0
+  | .op _ | .badOpcode _ | .illegalOpcode _ | .truncatedPush _ | .codeSeparator _ => 0
 
 /-- Core checks combined main/alt-stack depth after each visited instruction. -/
 def checkRuntimeStack (state : RuntimeState) : Except ScriptError RuntimeState :=
@@ -132,6 +132,10 @@ def chargeOperations (element : ScriptElement) (state : RuntimeState)
       else if state.operationCount + 1 > maxOpsPerScript then .error .opCount
       else .ok { state with operationCount := state.operationCount + 1 }
   | .illegalOpcode _ =>
+      if ctx.sigVersion = .tapscript then .ok state
+      else if state.operationCount + 1 > maxOpsPerScript then .error .opCount
+      else .ok { state with operationCount := state.operationCount + 1 }
+  | .codeSeparator _ =>
       if ctx.sigVersion = .tapscript then .ok state
       else if state.operationCount + 1 > maxOpsPerScript then .error .opCount
       else .ok { state with operationCount := state.operationCount + 1 }

@@ -48,6 +48,7 @@ theorem evaluate_normalizeSerializedScript
       | badOpcode => rfl
       | illegalOpcode => rfl
       | nonminimalPush => simp only [tail]
+      | codeSeparator => exact tail _ _
       | truncatedPush => rfl
       | op opcode =>
           cases opcode <;> simp only [tail]

@@ -92,6 +92,7 @@ def ScriptElementAllowed (ctx : ScriptContext) : ScriptElement → Prop
   | .illegalOpcode _ => False
   | .nonminimalPush _ => False
   | .truncatedPush _ => False
+  | .codeSeparator _ => False
 
 instance instDecidableScriptElementAllowed
     (ctx : ScriptContext) (element : ScriptElement) :

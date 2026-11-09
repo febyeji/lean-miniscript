@@ -187,6 +187,9 @@ theorem Eval.exists_result
                   .nonminimalPush_minimalData push rest stack altStack flags ctx minimal⟩
           | truncatedPush push =>
               exact ⟨.failure .badOpcode, .truncatedPush push rest stack altStack flags ctx⟩
+          | codeSeparator nextOffset =>
+              exact (next stack altStack).imp fun result evaluated =>
+                .codeSeparator nextOffset rest stack altStack flags ctx result evaluated
           | op opcode =>
               cases opcode with
               | OP_NOP =>

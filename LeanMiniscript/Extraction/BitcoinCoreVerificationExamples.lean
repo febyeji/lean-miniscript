@@ -141,6 +141,48 @@ example : traceCode "0 IF CODESEPARATOR ENDIF 0x01aa 0x01bb CHECKSIG"
 example : traceCode "CODESEPARATOR 0x01aa DROP CODESEPARATOR 0x01aa 0x01bb CHECKSIG"
     "0x01bb CHECKSIG" .base = true := by native_decide
 
+-- The typed reader reads OP_CODESEPARATOR with the offset just past it.
+example : (match decodeTypedScript? (raw "1 CODESEPARATOR 2") with
+    | some [.pushNum 1, .codeSeparator nextOffset, .pushNum 2] => nextOffset == 2
+    | _ => false) = true := by
+  native_decide
+
+private def typedTraceCode (source expected : String) (version : SignatureVersion) : Bool :=
+  match executeTypedScript plainFlags coreFixtureTxContext
+      (fun _ scriptCode => CryptoOracle.pureLeanHashes (fun _ _ _ => scriptCode == raw expected))
+      { scriptBytes := raw source, sigVersion := version } with
+  | .ok [top] => castToBool top
+  | _ => false
+
+-- The typed executor cuts the script code at an executed OP_CODESEPARATOR,
+-- in witness v0 without FindAndDelete, and a skipped one cuts nothing.
+example : typedTraceCode "CODESEPARATOR 0x01aa 0x01bb CHECKSIG"
+    "0x01bb CHECKSIG" .base = true ∧
+    typedTraceCode "CODESEPARATOR 0x01aa 0x01bb CHECKSIG"
+      "0x01aa 0x01bb CHECKSIG" .witnessV0 = true ∧
+    typedTraceCode "0 IF CODESEPARATOR ENDIF 0x01aa 0x01bb CHECKSIG"
+      "0 IF CODESEPARATOR ENDIF 0x01bb CHECKSIG" .base = true ∧
+    typedTraceCode "CODESEPARATOR 0x01aa DROP CODESEPARATOR 0x01aa 0x01bb CHECKSIG"
+      "0x01bb CHECKSIG" .base = true := by
+  native_decide
+
+private def typedRunConst (source : String) : Except CoreVerificationError Stack :=
+  executeTypedScript { plainFlags with script := { plainFlags.script with
+      constScriptCode := true } }
+    coreFixtureTxContext (fun _ _ => CryptoOracle.pureLeanHashes (fun _ _ _ => false))
+    { scriptBytes := raw source, sigVersion := .base }
+
+-- Under BASE CONST_SCRIPTCODE the typed executor fails with
+-- OP_CODESEPARATOR, in an unexecuted branch as well.
+example : typedRunConst "CODESEPARATOR 1" = .error .opCodeSeparator ∧
+    typedRunConst "0 IF CODESEPARATOR ENDIF 1" = .error .opCodeSeparator := by
+  native_decide
+
+-- OP_CODESEPARATOR counts as an operation outside Tapscript.
+example : typedRunBytes ⟨Array.replicate 201 0x61 ++ #[0xab]⟩ = .error (.script .opCount) ∧
+    typedRunBytes ⟨Array.replicate 200 0x61 ++ #[0xab]⟩ = .ok [] := by
+  native_decide
+
 -- Multisig deletes all original signatures before any key matching callback.
 example : traceCode "0 0x01aa 0x01cc 2 0x01dd 0x01ee 2 CHECKMULTISIG"
     "0 2 0x01dd 0x01ee 2 CHECKMULTISIG" .base = true := by native_decide

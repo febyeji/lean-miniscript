@@ -72,6 +72,7 @@ def CoreScriptSourceError.detailCategory : CoreScriptSourceError → String
       "serialization.non-minimal-push.0x" ++ byteHex opcode
   | .serialization (.truncatedPush opcode) =>
       "serialization.truncated-push.0x" ++ byteHex opcode
+  | .serialization .codeSeparator => "serialization.code-separator"
   | .truncatedPushLength _ _ _ => "truncated-push-length"
   | .truncatedPushData _ _ _ => "truncated-push-data"
   | .unsupportedOpcode _ byte =>

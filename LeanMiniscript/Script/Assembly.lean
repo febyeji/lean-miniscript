@@ -190,6 +190,7 @@ def elementAssembly : ScriptElement → String
   | .illegalOpcode opcode => illegalOpcodeAssembly opcode
   | .nonminimalPush push => nonminimalPushAssembly push
   | .truncatedPush push => truncatedPushAssembly push
+  | .codeSeparator _ => "CODESEPARATOR"
 
 /-- Render a Script as a space-separated BIP-style assembly string. -/
 def toAssembly (script : Script) : String :=
