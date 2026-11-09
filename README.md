@@ -4,19 +4,19 @@
 
 # lean-miniscript
 
-`lean-miniscript` models Bitcoin Miniscript and the surrounding Bitcoin execution and data boundaries in Lean 4. The repository combines executable models, proofs, and conformance checks against pinned external fixtures.
+Lean models of Bitcoin Miniscript, Script, Taproot, descriptors, transactions, and PSBT, with proofs and checks against pinned fixtures.
 
-## Quick start
+## Build
 
-Install the Lean version selected by `lean-toolchain`, then run:
+Install the Lean version in [lean-toolchain](lean-toolchain), then run from the repository root:
 
 ```sh
 lake build
 ```
 
-The build checks the library, proofs, executable examples, and tests.
+This checks the library, proofs, and tests, and builds the CLIs below.
 
-### Policy CLI
+## Policy CLI
 
 Parse a policy and print its canonical form:
 
@@ -25,27 +25,26 @@ lake exe policy_cli -- \
   'and(pk(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798),older(100))'
 ```
 
-Compile a Miniscript policy for P2WSH or Tapscript:
+Compile it for Tapscript, or use `--context p2wsh` for P2WSH:
 
 ```sh
 lake exe policy_cli -- compile --context tapscript \
   'and(pk(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798),older(100))'
 ```
 
-The `compile` output includes canonical Miniscript, Script hex, script size, static opcode count, and the maximum satisfaction-stack bound.
+Output includes Miniscript, Script hex, script size, static opcode count, and stack bounds.
 
-Print the scriptPubKey of each output a descriptor describes. `combo()` prints one line per output, and `--index` resolves `*` wildcards:
+Print a descriptor's scriptPubKeys. `combo()` prints each output; `--index N` resolves `*` wildcards:
 
 ```sh
 lake exe policy_cli -- descriptor \
   'combo(0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798)'
+lake exe policy_cli -- --help
 ```
 
-Run `lake exe policy_cli -- --help` for all commands.
+## PSBT CLI
 
-### PSBT CLI
-
-Inspect a PSBT, finalize an input from a descriptor, and extract the final transaction:
+Set the variables to your PSBT text and a descriptor with resolved keys. Bindings use zero-based `INDEX=DESCRIPTOR`; include each input that needs finalization before extraction:
 
 ```sh
 lake exe psbt_cli -- inspect --encoding hex "$PSBT_HEX"
@@ -53,17 +52,17 @@ lake exe psbt_cli -- finalize "$SIGNED_PSBT_BASE64" "0=$DESCRIPTOR" \
   | lake exe psbt_cli -- extract -
 ```
 
-Input descriptors use the zero-based `INDEX=DESCRIPTOR` form. A `combo()` descriptor finalizes with the output whose script matches the input's UTXO. Use `--encoding hex` for hex input and `-` for standard input.
+`inspect` reports input finalization status. Input defaults to Base64; `--encoding hex` selects hex and `-` reads stdin. `finalize` prints a Base64 PSBT; `extract` requires all inputs finalized and prints transaction hex.
+
+After the build, run the CLI checks with Python 3:
 
 ```sh
 python3 scripts/test_psbt_cli.py
 ```
 
-This check uses pinned BIP174 and BIP370 fixtures.
+## Bitcoin Core fixture audit
 
-### Bitcoin Core fixture audit
-
-Download and run the Script fixture from a pinned Bitcoin Core revision:
+Download the fixture pinned in [CI](.github/workflows/ci.yml), then compare its expected results with the model:
 
 ```sh
 curl --fail --location \
@@ -72,120 +71,32 @@ curl --fail --location \
 lake exe core_fixture_audit -- --show-details /tmp/script_tests.json
 ```
 
-The pinned fixture contains 1,258 executable rows and 60 documentation rows. The audit reports matching rows and rows outside the model scope separately. The fixture source is pinned to [Bitcoin Core commit `f13ae519de94394314cd63a27924b0998ac65d45`](https://github.com/bitcoin/bitcoin/commit/f13ae519de94394314cd63a27924b0998ac65d45). Regenerate the PSBT fixtures from the pinned BIP174, BIP370, and BIP371 sources with `scripts/generate_psbt_fixtures.py`.
+Check `mismatched` and `unsupported` in the summary. Unsupported rows are excluded from comparison; the command succeeds when all compared rows match. Add `--show-unsupported` to inspect excluded rows.
 
-### Equivalence obligations
+## Equivalence checks
+
+After `lake build`, run:
 
 ```sh
 lake env lean --run scripts/equivalence_obligations.lean
-```
-
-After `lake build`, prints how many (opcode, signature version) pairs lack a proof without `sorry` or added axioms that Core's `coreRawStep` and the typed `runtimeStep` agree on that opcode for every flag set, oracle, and state. `--list` prints each pair. Every pair is proved. `runtimeStep` takes the script code after the last `OP_CODESEPARATOR` and an oracle for each script code. Like Core, an active BASE `OP_CHECKSIG`, `OP_CHECKSIGVERIFY`, `OP_CHECKMULTISIG`, or `OP_CHECKMULTISIGVERIFY` removes its signatures from that script code with FindAndDelete, fails when `ScriptFlags.constScriptCode` is on and a signature was removed, and otherwise checks signatures with the oracle for the remaining script code. `evaluateRuntime` takes one oracle and passes an empty script code, so it removes no signatures. Like Core, `runtimeStep` runs `OP_CHECKLOCKTIMEVERIFY` and `OP_CHECKSEQUENCEVERIFY` as `OP_NOP` when `ScriptFlags.checkLockTimeVerify` or `checkSequenceVerify` is off; the evaluator and `Eval` always check them, so theorems that erase runtime success to `Eval` require both flags on.
-
-### Script and VerifyScript equivalence obligations
-
-```sh
 lake env lean --run scripts/script_equivalence_obligations.lean
-```
-
-After `lake build`, prints how many of the nine obligations in [`ScriptEquivalence`](LeanMiniscript/Extraction/ScriptEquivalence.lean) lack a proof without `sorry` or added axioms. `--list` prints each obligation as proved, missing, or sorry. Three obligations say that Core's raw loop `executeCoreScript` and the typed executor `executeTypedScript` give the same main stack or error for every flag set, transaction context, oracle, script, and start stack of BASE, witness v0, or Tapscript. Six say that Core's VerifyScript and the same boundary with the typed executor give the same verdict on the legacy, P2SH, native witness-v0, P2SH-wrapped witness-v0, Taproot key-path, and Taproot script-path inputs, as `verifyScriptBoundary` classifies every input. The typed executor reads script bytes with `decodeTypedScript?` and runs the typed reading on the typed runtime, with the whole script as script code. It reads OP_RESERVED, OP_VER, OP_RESERVED1, OP_RESERVED2, and 0xbb–0xff as `badOpcode`, which fails with BAD_OPCODE only in an executed branch and counts as an operation above OP_16 outside Tapscript, as on Core's raw loop. It reads the 15 disabled opcodes, OP_VERIF, and OP_VERNOTIF as `illegalOpcode`, which counts as an operation outside Tapscript and then fails in an executed or unexecuted branch, a disabled opcode with DISABLED_OPCODE and OP_VERIF or OP_VERNOTIF with BAD_OPCODE, as on Core's raw loop. It reads OP_SHA1 as the modeled opcode `OP_SHA1`, which replaces the top item with its SHA-1 hash in an executed branch, as on Core's raw loop. It reads a complete push that is not minimal as `nonminimalPush`, which keeps the original opcode and in an executed branch fails with MINIMALDATA when the flag is on and otherwise pushes its data, as on Core's raw loop. It reads a push that GetOp cannot read as `truncatedPush`, which holds the bytes from the push to the end of the script and fails with BAD_OPCODE in an executed or unexecuted branch without counting as an operation, as on Core's raw loop. Bytes without a typed reading run on Core's raw loop on both sides: OP_CODESEPARATOR. All nine obligations are proved. The three execution obligations make the two executors equal for every request, and `coreVerifyScript` and `typedVerifyScript` pass `verifyScriptWith` those executors, so the six VerifyScript obligations follow on every boundary.
-
-### Core loop fallbacks
-
-```sh
 lake env lean --run scripts/core_loop_fallbacks.lean
 ```
 
-After `lake build`, prints how many kinds of instruction in [`CoreLoopFallbacks`](LeanMiniscript/Extraction/CoreLoopFallbacks.lean) have a representative script that `executeTypedScript` runs on Core's raw loop, which it does when `decodeTypedScript?` gives the script no typed reading. The list names 94 kinds, each with a representative script: the 92 opcode bytes whose one-instruction script had no typed reading when the list was made (OP_RESERVED, OP_VER, OP_VERIF, OP_VERNOTIF, OP_RESERVED1, OP_RESERVED2, the 15 disabled opcodes, OP_SHA1, OP_CODESEPARATOR, and 0xbb–0xff), the truncated push `01`, and the nonminimal push `01 05`. A push opcode's one-instruction script pushes zero bytes of the shortest size it encodes minimally. `--list` prints each kind as `typed` or `fallback`, with its representative in hex and its name. The command fails when the list misses an opcode byte whose one-instruction script runs on Core's raw loop or one of the two push kinds, lists a kind twice, or has a representative of another kind, and when one of the nine script equivalence obligations lacks a proof. 1 kind runs on Core's raw loop: OP_CODESEPARATOR. Of the other 93, the truncated push has the typed reading `truncatedPush`, the nonminimal push has the typed reading `nonminimalPush`, OP_SHA1 reads as the modeled opcode `OP_SHA1`, OP_RESERVED, OP_VER, OP_RESERVED1, OP_RESERVED2, and 0xbb–0xff have the typed reading `badOpcode`, and OP_VERIF, OP_VERNOTIF, and the 15 disabled opcodes have the typed reading `illegalOpcode`.
+- `equivalence_obligations.lean` counts unproved opcode/version obligations.
+- `script_equivalence_obligations.lean` counts unproved Script and VerifyScript obligations.
+- `core_loop_fallbacks.lean` counts instruction kinds whose representative scripts use the modeled Core raw loop.
 
-## Scope and layers
+A zero obligation count means every listed theorem has the expected type and uses only standard Lean axioms. Read the count even when the command succeeds. Add `--list` for `proved`/`missing`/`sorry` or `typed`/`fallback` entries. The fallback check fails if a Script or VerifyScript obligation is unproved.
 
-These sections describe different abstractions. Miniscript describes spending policies, Bitcoin Script executes bytecode, Taproot defines a spending protocol around a P2TR output and Tapscript, and descriptors, transactions, and PSBT connect these pieces to wallet data.
+Proofs concern the Lean models and their stated assumptions. Fixture matches and obligation counts do not establish general Bitcoin consensus equivalence or cryptographic correctness. Transaction-backed APIs assume valid transactions and correct prevout data; private-key derivation uses variable-time arithmetic. See [AI_USAGE.md](AI_USAGE.md) for proof verification rules.
 
-### Miniscript and policy
+## Source
 
-- Miniscript syntax, surface parsing, pretty-printing, and normalization
-- Type inference, validation, and context checks
-- Concrete compilation and compilation-agreement proofs
-- Satisfaction and dissatisfaction candidates, availability, and resource bounds
-- Malleability analysis and BIP379-related properties
-- Policy parsing, denotational semantics, and cost-based policy compilation
-
-Miniscript is the policy language layer. It can compile a policy into Bitcoin Script or Tapscript, but it does not define Taproot's output commitment or transaction rules.
-
-### Bitcoin Script and Tapscript execution
-
-- Legacy Script and witness-v0 execution
-- Conditional flow, numeric and indexed stack operations, timelocks, and signature encoding
-- Script serialization and deserialization
-- Tapscript initial and runtime resource limits and validation weight
-- The legacy and witness-v0 limit of 201 operations, including multisig public-key counts
-
-This layer defines how script bytes execute once a spending path has selected a script and witness.
-
-### Taproot protocol
-
-- Native P2TR output keys and key-path/script-path spending
-- BIP341 signature hashing
-- Annex handling, control-block commitments, Merkle paths, and leaf versions
-- `OP_SUCCESSx` and future-leaf semantics at the modeled Bitcoin Core witness boundary
-
-Transaction-backed native Taproot verification uses [`verifyNativeTaprootTransaction`](LeanMiniscript/Extraction/TaprootTransaction.lean). This entry point handles key-path and script-path witnesses at the same Core witness boundary.
-
-For canonical byte-to-AST checking, use [`verifyCanonicalTapscriptTransaction`](LeanMiniscript/Extraction/TaprootBytes.lean). This API checks canonical encoding together with the current model's `0xc0` Tapscript AST.
-
-Taproot is a Bitcoin spending protocol, not a Miniscript language. Miniscript can provide a policy for a Taproot script path, while Taproot also supports key-path spending and defines the output, commitment, witness, and signature-hash rules around both paths.
-
-### Descriptors and transaction data
-
-- `raw`, `addr`, `pk`, `pkh`, `wpkh`, `multi`, and `sortedmulti`
-- `combo`, expanded to P2PK, P2PKH, and, for compressed keys, P2WPKH and P2SH-P2WPKH outputs
-- Base58Check, Bech32, and Bech32m address decoding for mainnet, testnet, signet, and regtest
-- `sh`, `wsh`, `sh(wpkh)`, `sh(wsh)`, and `tr`
-- Taproot tree compilation, Merkle paths, control blocks, and descriptor satisfactions
-- Transaction, sighash, ECDSA, Schnorr, and Taproot serialization utilities
-- PSBT BIP174, BIP370, and BIP371 codecs and role transitions
-- Descriptor-based PSBT finalization and transaction extraction
-
-This layer carries the serialized keys, scripts, transactions, and PSBT state used by the policy, Script, and Taproot layers.
-
-### Executables and conformance
-
-- `core_fixture_audit` — Bitcoin Core Script fixture audit
-- `script_cli` — Script parsing and execution-boundary checks
-- `policy_cli` — policy parsing and compilation
-- `psbt_cli` — PSBT inspection, finalization, and extraction
-- `LeanMiniscript/Conformance/` — cross-module policy, descriptor, and PSBT checks
-
-## How to read the verification results
-
-Lean theorems prove the contracts stated by their declarations. A theorem implementation is considered complete when `lake build` succeeds and the declaration contains no `sorry`, `admit`, placeholder axiom, or hidden assumption.
-
-The current verification results include:
-
-- Matching results for the executable rows in the pinned Bitcoin Core Script fixture
-- Theorems that PSBT finalization preserves the unsigned transaction, UTXO data, v2 transaction fields, and locktime
-- CompactSize witness-length checks for generated final inputs
-- Commitment and execution checks for Taproot script-path witnesses generated by descriptor satisfaction
-- Transaction-backed Core witness verification for native Taproot key-path and script-path spending
-
-These results do not establish general Bitcoin consensus equivalence or cryptographic correctness. Transaction validity and prevout provenance are caller-provided premises of the transaction-backed API. Private-key derivation uses variable-time arithmetic.
-
-## Current roadmap
-
-The repository has no separate roadmap file or open issues. Based on the current code, the next items are:
-
-1. Expand raw fixture and BIP341/BIP342 vector coverage for the native Taproot verifier.
-2. Move the partial semantics and theorem targets under `Experimental.lean` into stable APIs where appropriate.
-
-## Repository structure
-
-- `LeanMiniscript/` — Lean library, executable models, examples, and proofs
-- `LeanMiniscript/Conformance/` — cross-module conformance checks
-- `LeanMiniscript.lean` — stable library surface
-- `LeanMiniscript/Experimental.lean` — extraction and proof-oriented modules under active change
-- `scripts/` — pinned-source fixture generators and CLI checks
-- `assets/` — repository artwork
+- [LeanMiniscript.lean](LeanMiniscript.lean) — stable library exports
+- [LeanMiniscript/Experimental.lean](LeanMiniscript/Experimental.lean) — extraction and proof modules under active development
+- [LeanMiniscript/Conformance/](LeanMiniscript/Conformance/) — cross-module checks
+- [scripts/](scripts/) — fixture generators and CLI checks
 
 ## License
 
