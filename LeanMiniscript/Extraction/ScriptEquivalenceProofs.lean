@@ -322,16 +322,12 @@ theorem scriptExecutionAgreement (version : SignatureVersion) :
   split
   · next large => simp only [executeCoreScript, large, ↓reduceIte]
   · next small =>
-      cases decoded : decodeTypedScript? request.scriptBytes with
-      | none => rfl
-      | some script =>
-          have encoded := decodeTypedScript?_reading decoded
-          have bound := encoded.length_bound
-          dsimp only
-          rw [executeCoreScript, if_neg small,
-            ← instructionContext_typedScriptContext ctx request
-              ({ runtime := { stack := request.stack, altStack := [], weight := request.validationWeight } } : CoreRawState) rfl]
-          exact executeCoreRawLoop_typed flags ctx oracles request script _ _ (by omega) encoded
+      have encoded := decodeTypedScript?_reading (decodeTypedScript?_eq request.scriptBytes)
+      have bound := encoded.length_bound
+      rw [executeCoreScript, if_neg small,
+        ← instructionContext_typedScriptContext ctx request
+          ({ runtime := { stack := request.stack, altStack := [], weight := request.validationWeight } } : CoreRawState) rfl]
+      exact executeCoreRawLoop_typed flags ctx oracles request _ _ _ (by omega) encoded
 
 /-- BASE whole-script execution. Active signature opcodes remove their
 signatures from the whole script on both sides, and both count operations up
