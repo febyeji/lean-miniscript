@@ -85,7 +85,7 @@ lake env lean --run scripts/core_loop_fallbacks.lean
 
 - `equivalence_obligations.lean` counts unproved opcode/version obligations.
 - `script_equivalence_obligations.lean` counts unproved Script and VerifyScript obligations.
-- `core_loop_fallbacks.lean` counts instruction kinds whose representative scripts use the modeled Core raw loop.
+- `core_loop_fallbacks.lean` counts instruction kinds whose representative scripts have no typed reading. `decodeTypedScript?_isSome` proves that every script has one, so the typed executor never runs the modeled Core raw loop.
 
 A zero obligation count means every listed theorem has the expected type and uses only standard Lean axioms. Read the count even when the command succeeds. Add `--list` for `proved`/`missing`/`sorry` or `typed`/`fallback` entries. The fallback check fails if a Script or VerifyScript obligation is unproved.
 
