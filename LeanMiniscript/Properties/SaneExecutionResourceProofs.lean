@@ -4,6 +4,7 @@ import LeanMiniscript.Properties.ResourcePathProofs
 import LeanMiniscript.Properties.SatisfactionExecutionResourceProofs
 import LeanMiniscript.Properties.SatisfactionSignatureBudgetProofs
 import LeanMiniscript.Script.RuntimeCompletenessProofs
+import LeanMiniscript.Script.RuntimeExecutedOpsProofs
 
 namespace LeanMiniscript.Properties
 
@@ -19,6 +20,43 @@ private theorem resourceLimitComponents
   have outer := Bool.and_eq_true_iff.mp limits
   have inner := Bool.and_eq_true_iff.mp outer.1
   exact ⟨inner.2, outer.2⟩
+
+/-- The fold-based non-push opcode count as a per-element sum. -/
+theorem nonPushOpCount_eq_map_sum (script : Script) :
+    nonPushOpCount script = (script.map fun element =>
+      if isNonPushElement element then 1 else 0).sum := by
+  suffices ∀ acc, script.foldl (fun count element =>
+      if isNonPushElement element then count + 1 else count) acc =
+      acc + (script.map fun element =>
+        if isNonPushElement element then 1 else 0).sum by
+    simpa [nonPushOpCount] using this 0
+  induction script with
+  | nil => simp
+  | cons head tail inner =>
+      intro acc
+      simp only [List.foldl_cons, List.map_cons, List.sum_cons]
+      rw [inner (if isNonPushElement head then acc + 1 else acc)]
+      cases isNonPushElement head <;> simp <;> omega
+
+/-- One element contributes its non-push indicator to the count. -/
+theorem nonPushOpCount_cons (element : ScriptElement) (rest : Script) :
+    nonPushOpCount (element :: rest) =
+      (if isNonPushElement element then 1 else 0) + nonPushOpCount rest := by
+  simp [nonPushOpCount_eq_map_sum]
+
+/-- Context-allowed scripts contain only opcodes and pushes, so the static
+    non-push opcode count equals the runtime's executed operation charge. -/
+theorem nonPushOpCount_eq_executedOpCount_of_allowed {ctx : ScriptContext} :
+    ∀ {script : Script}, ScriptAllowed ctx script →
+      nonPushOpCount script = executedOpCount script := by
+  intro script allowed
+  induction script with
+  | nil => rfl
+  | cons element rest ih =>
+      simp only [ScriptAllowed] at allowed
+      rw [nonPushOpCount_cons, executedOpCount_cons, ih allowed.2]
+      cases element <;> simp_all [ScriptElementAllowed, isNonPushElement,
+        ScriptElement.executedOpCharge]
 
 end LeanMiniscript.Properties
 
@@ -90,6 +128,75 @@ theorem p2wsh_satisfyFinal_executionLimits
     simpa [SaneFragment.compile, compileChecked] using evaluated
   exact ⟨result, resources, evaluatedSane, truth,
     sane.p2wsh_satisfyFinal_witness_length_le generated, actualCharge⟩
+
+/-- A generated execution for a sane P2WSH fragment never exceeds the
+    consensus combined main/alternate-stack limit. -/
+theorem p2wsh_satisfyFinal_executionStack_le
+    (sane : SaneFragment .p2wsh) {env : SatEnv} {witness : Witness}
+    {flags : ScriptFlags}
+    (sound : env.Sound)
+    (encodings : env.EncodingSound flags)
+    (version : ModeledContextVersion .p2wsh env.txCtx)
+    (modeled : ModeledContextFlags .p2wsh flags)
+    (generated : satisfyFinal sane.checked.fragment env = some witness) :
+    ∃ result resources,
+      EvalResources sane.compile witness.toInitialStack [] flags env.txCtx
+        [result] [] resources ∧
+      castToBool result = true ∧
+      resources.peakStackItems ≤ MAX_STACK_SIZE := by
+  obtain ⟨result, resources, observed, truth, _, operations⟩ :=
+    sane.p2wsh_satisfyFinal_executionLimits sound encodings version modeled generated
+  have peak := observed.peakStackItems_le_final_add_operations
+  have opsEq := LeanMiniscript.Properties.nonPushOpCount_eq_executedOpCount_of_allowed
+    (compileChecked_scriptAllowed sane.checked)
+  change nonPushOpCount sane.compile = executedOpCount sane.compile at opsEq
+  rw [← opsEq] at peak
+  simp only [List.length_cons, List.length_nil] at peak
+  exact ⟨result, resources, observed, truth, by
+    unfold MAX_OPS_PER_SCRIPT at operations
+    unfold MAX_STACK_SIZE maxStackSize
+    omega⟩
+
+/-- A generated sane P2WSH satisfaction completes under the witness-v0 runtime
+    limits with an empty validation-weight budget, leaving one truthy element.
+    Witness v0 debits no signature weight, and the sane-fragment operation
+    bound covers the executed path: static non-push opcodes plus the executed
+    multisignature keys, which is how both Core and the runtime count. -/
+theorem p2wsh_satisfyFinal_runtime_complete_witness
+    (sane : SaneFragment .p2wsh) {env : SatEnv} {witness : Witness}
+    {flags : ScriptFlags} {oracle : CryptoOracle}
+    (sound : env.Sound) (encodings : env.EncodingSound flags)
+    (version : ModeledContextVersion .p2wsh env.txCtx)
+    (modeled : ModeledContextFlags .p2wsh flags)
+    (generated : satisfyFinal sane.checked.fragment env = some witness)
+    (agreement : oracle.RefinesModel)
+    (pushes : ∀ element ∈ sane.compile, element.pushSize ≤ maxScriptElementSize) :
+    ∃ top remaining,
+      evaluateWithRuntimeLimits oracle sane.compile witness.toInitialStack [] flags env.txCtx 0 =
+        .success [top] [] remaining ∧
+      castToBool top = true := by
+  obtain ⟨top, resources, observed, truth, _, opsLe⟩ :=
+    sane.p2wsh_satisfyFinal_executionLimits sound encodings version modeled generated
+  obtain ⟨peakTop, peakResources, peakRun, _, peak⟩ :=
+    sane.p2wsh_satisfyFinal_executionStack_le sound encodings version modeled generated
+  have sameResources := peakRun.resources_unique observed
+  rw [sameResources] at peak
+  have nontap : env.txCtx.sigVersion ≠ .tapscript := by
+    have sigVersionEq : env.txCtx.sigVersion = .witnessV0 := version
+    rw [sigVersionEq]
+    decide
+  have opsEq : nonPushOpCount sane.compile = executedOpCount sane.compile :=
+    LeanMiniscript.Properties.nonPushOpCount_eq_executedOpCount_of_allowed
+      (compileChecked_scriptAllowed sane.checked)
+  have weightZero : resources.signatureWeight = 0 :=
+    observed.signatureWeight_eq_zero_of_nontap nontap
+  obtain ⟨remaining, completed, _⟩ := observed.runtime_complete_executed agreement nontap
+    pushes sane.legal peak
+    (by rw [← opsEq]
+        have maxOpsEq : MAX_OPS_PER_SCRIPT = maxOpsPerScript := rfl
+        omega)
+    0 (by simp [weightZero])
+  exact ⟨top, remaining, completed, truth⟩
 
 /-- A generated execution for a sane Tapscript fragment never exceeds the
     consensus combined main/alternate-stack limit. -/
