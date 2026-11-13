@@ -75,6 +75,26 @@ theorem _root_.LeanMiniscript.Script.CoreRawInstruction.Encodes.opcodeCases
           · exact Or.inr (Or.inr (Or.inl range))
         · contradiction
 
+/-- A push opcode with data it pushes minimally encodes a push of that data. -/
+theorem _root_.LeanMiniscript.Script.CoreRawInstruction.encodes_pushData
+    {instruction : CoreRawInstruction} (push : instruction.opcode.toNat ≤ 0x4e)
+    (minimal : coreLegacyMinimalPush instruction.opcode.toNat instruction.payload = true) :
+    instruction.Encodes (.pushData instruction.payload) := by
+  simp [CoreRawInstruction.Encodes, encodesPush, push, minimal]
+
+/-- OP_1NEGATE and OP_1 to OP_16 without data encode their numbers. -/
+theorem _root_.LeanMiniscript.Script.CoreRawInstruction.encodes_pushNum
+    {instruction : CoreRawInstruction} (empty : instruction.payload = ByteArray.empty)
+    (number : instruction.opcode.toNat = 0x4f ∨
+      (0x51 ≤ instruction.opcode.toNat ∧ instruction.opcode.toNat ≤ 0x60)) :
+    instruction.Encodes (.pushNum
+      (if instruction.opcode.toNat = 0x4f then -1 else (instruction.opcode.toNat : Int) - 0x50)) := by
+  rcases number with negative | small
+  · simp [CoreRawInstruction.Encodes, encodesPush, rawNumber, negative, empty]
+  · simp [CoreRawInstruction.Encodes, encodesPush, rawNumber, empty,
+      show ¬ instruction.opcode.toNat ≤ 0x4e by omega,
+      show instruction.opcode.toNat ≠ 0x4f by omega, small]
+
 /-- Complete source-order decoding, with strictly advancing offsets and no
 trailing bytes. This is a decidable, input-only certificate. -/
 def CoreTapscriptEncoding (bytes : ByteArray) : Nat → Script → Prop

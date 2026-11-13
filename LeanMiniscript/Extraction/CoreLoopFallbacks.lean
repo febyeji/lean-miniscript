@@ -1,13 +1,14 @@
 import LeanMiniscript.Extraction.ScriptEquivalence
 
 /-!
-# Instructions that send a script to Core's raw loop
+# Instructions that sent a script to Core's raw loop
 
-`executeTypedScript` runs a script on Core's raw loop `executeCoreScript` when
-`decodeTypedScript?` gives it no typed reading. `coreLoopFallbacks` lists the
-kinds of instruction that leave a script without one, each with a name and a
-representative script: every opcode byte whose one-instruction script has no
-typed reading, a truncated push, and a nonminimal push.
+`coreLoopFallbacks` lists the kinds of instruction that once left a script
+without a typed reading, so that `executeTypedScript` ran it on Core's raw
+loop: each opcode byte whose one-instruction script had none, a truncated push,
+and a nonminimal push, each with a name and a representative script. Every
+byte string now has a typed reading (`runsOnCoreLoop_eq_false`), and
+`executeTypedScript` no longer runs Core's raw loop.
 
 `scripts/core_loop_fallbacks.lean` prints how many representatives still run
 on Core's raw loop. It fails when the list misses a push kind or an opcode
@@ -34,11 +35,12 @@ def oneInstructionScript (byte : UInt8) : ByteArray :=
   else if value == 0x4d then push #[0x00, 0x01] 256
   else push #[0x00, 0x00, 0x01, 0x00] 65536
 
-/-- The bytes have no typed reading, so `executeTypedScript` runs them on
-Core's raw loop unless it rejects a BASE or witness-v0 script over 10,000
-bytes. -/
+/-- The bytes have no typed reading. -/
 def runsOnCoreLoop (bytes : ByteArray) : Bool :=
   (decodeTypedScript? bytes).isNone
+
+theorem runsOnCoreLoop_eq_false (bytes : ByteArray) : runsOnCoreLoop bytes = false := by
+  simp [runsOnCoreLoop, decodeTypedScript?_eq]
 
 /-- A kind of instruction that can leave a script without a typed reading. -/
 inductive CoreLoopFallbackKind where

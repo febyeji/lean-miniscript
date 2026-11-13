@@ -1,5 +1,5 @@
-import LeanMiniscript.Extraction.BitcoinCoreExecutionProofs
 import LeanMiniscript.Extraction.BitcoinCoreVerification
+import LeanMiniscript.Extraction.TypedScriptReader
 
 /-!
 # Script and VerifyScript equivalence obligations
@@ -10,10 +10,10 @@ Three say that Core's raw byte loop `executeCoreScript` and the typed executor
 version. Six say that Core's VerifyScript and the same boundary run with the
 typed executor give the same verdict on one VerifyScript boundary.
 
-The typed executor reads script bytes with `decodeTypedScript?`. Bytes that
-have no typed reading run on Core's raw loop on both sides, so every
-obligation is a claim about the bytes that do. The reader reads OP_RESERVED,
-OP_VER, OP_RESERVED1, OP_RESERVED2, and the undefined bytes 0xbb-0xff as
+The typed executor reads script bytes with `decodeTypedScript`, which gives
+every byte string a typed reading (`decodeTypedScript?_isSome`), so it never
+runs Core's raw loop. The reader reads OP_RESERVED, OP_VER, OP_RESERVED1,
+OP_RESERVED2, and the undefined bytes 0xbb-0xff as
 `badOpcode`, which fails only when executed, and the 15 disabled opcodes
 (OP_CAT and the other 14), OP_VERIF, and OP_VERNOTIF as `illegalOpcode`, which
 fails even in an unexecuted branch. It reads a complete push that is not
@@ -37,78 +37,6 @@ namespace LeanMiniscript.Extraction
 
 open LeanMiniscript.Script
 open CoreScriptExecution
-
-/-- A raw instruction reads as a typed element when it encodes it, is the
-byte of a `badOpcode` or an `illegalOpcode`, is the opcode and data of a
-`nonminimalPush`, or is OP_CODESEPARATOR with its end offset. -/
-def _root_.LeanMiniscript.Script.CoreRawInstruction.ReadsAs (instruction : CoreRawInstruction) :
-    ScriptElement → Prop
-  | .badOpcode opcode => instruction.opcode = opcode.byte ∧
-      instruction.payload = ByteArray.empty
-  | .illegalOpcode opcode => instruction.opcode = opcode.byte ∧
-      instruction.payload = ByteArray.empty
-  | .nonminimalPush push => instruction.opcode = push.opcode ∧
-      instruction.payload = push.data
-  | .codeSeparator nextOffset => instruction.opcode = 0xab ∧
-      instruction.payload = ByteArray.empty ∧ nextOffset = instruction.nextOffset
-  | element => instruction.Encodes element
-
-instance (instruction : CoreRawInstruction) (element : ScriptElement) :
-    Decidable (instruction.ReadsAs element) := by
-  cases element <;> unfold CoreRawInstruction.ReadsAs <;> infer_instance
-
-/-- The typed element a raw instruction reads as: a minimal push, a
-`nonminimalPush`, a numeric constant, a modeled opcode, OP_CODESEPARATOR with
-its end offset, or a `badOpcode` or `illegalOpcode` with the same byte.
-`none` when the instruction reads as no typed element. -/
-def typedElement? (instruction : CoreRawInstruction) : Option ScriptElement :=
-  let value := instruction.opcode.toNat
-  let candidate : Option ScriptElement :=
-    if value ≤ 0x4e then
-      if nonminimal : isNonminimalPush instruction.opcode instruction.payload then
-        some (.nonminimalPush ⟨instruction.opcode, instruction.payload, nonminimal⟩)
-      else some (.pushData instruction.payload)
-    else if value == 0x4f then some (.pushNum (-1))
-    else if 0x51 ≤ value && value ≤ 0x60 then some (.pushNum ((value : Int) - 0x50))
-    else if value == 0xab then some (.codeSeparator instruction.nextOffset)
-    else match opcodeFromByte? value with
-      | some opcode => some (.op opcode)
-      | none =>
-          if bad : isBadOpcodeByte instruction.opcode then
-            some (.badOpcode ⟨instruction.opcode, bad⟩)
-          else if illegal : isIllegalOpcodeByte instruction.opcode then
-            some (.illegalOpcode ⟨instruction.opcode, illegal⟩)
-          else none
-  match candidate with
-  | some element => if instruction.ReadsAs element then some element else none
-  | none => none
-
-/-- Read `bytes` from `offset` to the end as typed elements, with Core's GetOp
-boundaries. A push GetOp cannot read ends the reading as a `truncatedPush` of
-the bytes from it to the end. `none` when an instruction has no typed
-reading. -/
-def decodeTypedScriptFrom (bytes : ByteArray) : Nat → Nat → Option Script
-  | 0, _ => none
-  | fuel + 1, offset =>
-      if offset = bytes.size then some []
-      else match readCoreRawInstruction bytes offset with
-        | .error _ =>
-            if truncated : offset < bytes.size ∧
-                isTruncatedPush (bytes.extract offset bytes.size) then
-              some [.truncatedPush ⟨bytes.extract offset bytes.size, truncated.2⟩]
-            else none
-        | .ok instruction =>
-            if offset < bytes.size ∧ offset < instruction.nextOffset then
-              match typedElement? instruction,
-                  decodeTypedScriptFrom bytes fuel instruction.nextOffset with
-              | some element, some rest => some (element :: rest)
-              | _, _ => none
-            else none
-
-/-- The typed reading of a whole script. Every instruction advances, so
-`bytes.size + 1` steps reach the end. -/
-def decodeTypedScript? (bytes : ByteArray) : Option Script :=
-  decodeTypedScriptFrom bytes (bytes.size + 1) 0
 
 /-- The transaction context of a typed script's first step: Core's
 `instructionContext` before any OP_CODESEPARATOR. Later steps carry the
@@ -172,21 +100,19 @@ def evaluateScriptCodeRuntime (oracleFor : ByteArray → CryptoOracle) (scriptBy
                 codeSeparatorOffset rest next flags ctx
 
 /-- Lean's whole-script executor. BASE and witness-v0 reject a script over
-10,000 bytes as Core does. A script with a typed reading runs on the typed
-runtime from the request's stack and validation weight, with the oracle for
-the request's signature version and the script code after the last executed
-OP_CODESEPARATOR. A script without one runs on Core's raw loop. -/
+10,000 bytes as Core does. Otherwise the typed reading of the script runs on
+the typed runtime from the request's stack and validation weight, with the
+oracle for the request's signature version and the script code after the last
+executed OP_CODESEPARATOR. -/
 def executeTypedScript (flags : CoreVerificationFlags) (ctx : TxContext)
     (oracles : SignatureVersion → ByteArray → CryptoOracle) : CoreScriptExecutor :=
   fun request =>
     if request.sigVersion != .tapscript && request.scriptBytes.size > 10000 then
       .error (.script .scriptSize)
-    else match decodeTypedScript? request.scriptBytes with
-      | none => executeCoreScript flags ctx oracles request
-      | some script => evaluateScriptCodeRuntime
-          (oracles request.sigVersion) request.scriptBytes 0 0 script
-          { stack := request.stack, altStack := [], weight := request.validationWeight }
-          flags.script (typedScriptContext ctx request)
+    else evaluateScriptCodeRuntime
+      (oracles request.sigVersion) request.scriptBytes 0 0 (decodeTypedScript request.scriptBytes)
+      { stack := request.stack, altStack := [], weight := request.validationWeight }
+      flags.script (typedScriptContext ctx request)
 
 /-- VerifyScript with a given executor for every script it runs: scriptSig,
 scriptPubKey, the P2SH redeem script, and the witness script. Key-path
@@ -306,55 +232,47 @@ def VerifyScriptAgreement (boundary : VerifyScriptBoundary) : Prop :=
       typedVerifyScript flags ctx oracles keyPath scriptSig scriptPubKey witness
 
 /-- BASE whole-script execution. Premise: the request's signature version is
-BASE. Bytes with a typed reading run on the typed runtime, whose BASE
-signature opcodes remove their signatures from the whole script as script
-code; other bytes run on Core's raw loop on both sides. -/
+BASE. The typed runtime runs the script's typed reading, and its BASE
+signature opcodes remove their signatures from the script code as Core's do. -/
 def BaseExecutionAgreement : Prop := ScriptExecutionAgreement .base
 
 /-- Witness-v0 whole-script execution. Premise: the request's signature
-version is witness v0. Bytes with a typed reading run on the typed runtime
-with the whole script as script code; other bytes run on Core's raw loop on
-both sides. -/
+version is witness v0. The typed runtime runs the script's typed reading. -/
 def WitnessV0ExecutionAgreement : Prop := ScriptExecutionAgreement .witnessV0
 
 /-- Tapscript whole-script execution. Premise: the request's signature
-version is Tapscript. Bytes with a typed reading run on the typed runtime;
-other bytes, including OP_SUCCESSx, run on Core's raw loop on both sides. The
+version is Tapscript. The typed runtime runs the script's typed reading. The
 witness boundary scans for OP_SUCCESSx before either executor runs. -/
 def TapscriptExecutionAgreement : Prop := ScriptExecutionAgreement .tapscript
 
 /-- The legacy boundary. Premise: `verifyScriptBoundary` selects `legacy`.
-scriptSig and scriptPubKey run as BASE scripts; bytes without a typed reading
-run on Core's raw loop on both sides. -/
+scriptSig and scriptPubKey run as BASE scripts. -/
 def LegacyVerificationAgreement : Prop := VerifyScriptAgreement .legacy
 
 /-- The P2SH boundary. Premise: `verifyScriptBoundary` selects `p2sh`.
-scriptSig, scriptPubKey, and the redeem script run as BASE scripts; bytes
-without a typed reading run on Core's raw loop on both sides. -/
+scriptSig, scriptPubKey, and the redeem script run as BASE scripts. -/
 def P2SHVerificationAgreement : Prop := VerifyScriptAgreement .p2sh
 
 /-- The native witness-v0 boundary. Premise: `verifyScriptBoundary` selects
 `witnessV0`. scriptSig and scriptPubKey run as BASE scripts and the witness
-script or P2WPKH template as a witness-v0 script; bytes without a typed
-reading run on Core's raw loop on both sides. -/
+script or P2WPKH template as a witness-v0 script. -/
 def WitnessV0VerificationAgreement : Prop := VerifyScriptAgreement .witnessV0
 
 /-- The P2SH-wrapped witness-v0 boundary. Premise: `verifyScriptBoundary`
 selects `p2shWitnessV0`. scriptSig, scriptPubKey, and the redeem script run
 as BASE scripts and the witness script or P2WPKH template as a witness-v0
-script; bytes without a typed reading run on Core's raw loop on both sides. -/
+script. -/
 def P2SHWitnessV0VerificationAgreement : Prop := VerifyScriptAgreement .p2shWitnessV0
 
 /-- The Taproot key-path boundary. Premise: `verifyScriptBoundary` selects
-`taprootKeyPath`. scriptSig and scriptPubKey run as BASE scripts; bytes
-without a typed reading run on Core's raw loop on both sides. Both sides check
-the signature with the same `keyPath`. -/
+`taprootKeyPath`. scriptSig and scriptPubKey run as BASE scripts. Both sides
+check the signature with the same `keyPath`. -/
 def TaprootKeyPathVerificationAgreement : Prop := VerifyScriptAgreement .taprootKeyPath
 
 /-- The Taproot script-path boundary. Premise: `verifyScriptBoundary` selects
 `taprootScriptPath`. scriptSig and scriptPubKey run as BASE scripts and a
-version-0xc0 leaf as a Tapscript script; bytes without a typed reading,
-including OP_SUCCESSx, run on Core's raw loop on both sides. -/
+version-0xc0 leaf as a Tapscript script. The witness boundary scans the leaf
+for OP_SUCCESSx before either executor runs. -/
 def TaprootScriptPathVerificationAgreement : Prop :=
   VerifyScriptAgreement .taprootScriptPath
 
