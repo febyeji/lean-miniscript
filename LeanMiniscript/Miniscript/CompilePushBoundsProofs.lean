@@ -133,4 +133,13 @@ theorem compileConcrete_pushSize_le {ctx : ScriptContext} {fragment : CoreFragme
     ∀ element ∈ compileConcrete fragment, element.pushSize ≤ 33 :=
   (compileConcrete_conforms fragment).smallPushes (by intro key; simp) valid
 
+/-- Formal compilation of a well-formed Miniscript pushes at most 33 bytes per
+element when the model's HASH160 returns at most 33 bytes. -/
+theorem compile_pushSize_le {ctx : ScriptContext} {fragment : CoreFragment}
+    (hashes : ∀ data, (hash160 data).size ≤ 33) (valid : fragment.WellFormed ctx) :
+    ∀ element ∈ compile fragment, element.pushSize ≤ 33 :=
+  (compile_conforms fragment).smallPushes
+    (by intro key; simpa [modelKeyHash, Hash160.size, Hash160.ofBytes] using hashes key.bytes)
+    valid
+
 end LeanMiniscript.Miniscript

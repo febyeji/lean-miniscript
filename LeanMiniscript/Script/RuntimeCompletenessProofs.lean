@@ -87,7 +87,7 @@ private theorem debitValidationWeight_exact (signature : StackElement) (weight :
     simp only [nonempty, ↓reduceIte] at enough ⊢
     exact ⟨weight - validationWeightPerSigop, by simp [Nat.not_lt.mpr enough], by omega⟩
 
-private theorem prepareValidationWeight_exact
+theorem prepareValidationWeight_exact
     {element : ScriptElement} {stack alt nextStack nextAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext} {weight : Nat}
     (evaluated : Eval [element] stack alt flags ctx (.success nextStack nextAlt))
@@ -147,7 +147,7 @@ private theorem multisigKeyCount_of_decode {flags : ScriptFlags} {stack : Stack}
                   Except.pure]⟩
 
 /-- A successful executed opcode has a decodable key count outside Tapscript. -/
-private theorem opcodeKeyCount_of_eval
+theorem opcodeKeyCount_of_eval
     {element : ScriptElement} {stack alt nextStack nextAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext}
     (evaluated : Eval [element] stack alt flags ctx (.success nextStack nextAlt))

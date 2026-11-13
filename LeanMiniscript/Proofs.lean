@@ -50,6 +50,7 @@ import LeanMiniscript.Extraction.BitcoinCoreLegacyLimitsProofs
 import LeanMiniscript.Extraction.BitcoinCoreExecutionProofs
 import LeanMiniscript.Extraction.CoreLoopFallbacks
 import LeanMiniscript.Extraction.EquivalenceObligations
+import LeanMiniscript.Extraction.MiniscriptObligations
 import LeanMiniscript.Extraction.ScriptEquivalenceObligations
 import LeanMiniscript.Extraction.BitcoinCoreSatisfactionProofs
 import LeanMiniscript.Extraction.BitcoinCoreVerificationProofs
