@@ -129,6 +129,35 @@ theorem executeCoreWitnessScript_of_witnessV0_runtime
   change (if castToBool top then Except.ok () else .error (CoreVerificationError.script .evalFalse)) = .ok ()
   simp [truth]
 
+/-- Argument sizes, typed execution, and a false singleton give the exact
+EVAL_FALSE error at the Core witness-script boundary. -/
+theorem executeCoreWitnessScript_of_witnessV0_dissatisfaction
+    (flags : CoreVerificationFlags) (ctx : TxContext)
+    (oracles : SignatureVersion → ByteArray → CryptoOracle)
+    (request : CoreScriptExecutionRequest) (script : Script)
+    (version : request.sigVersion = .witnessV0)
+    (small : request.scriptBytes.size ≤ 10000)
+    (encoded : CoreTapscriptEncoding request.scriptBytes 0 script)
+    (sizes : ∀ item ∈ request.stack, item.size ≤ maxScriptElementSize)
+    {top : StackElement} {alt : Stack} {weight : Nat}
+    (executed : evaluateWithRuntimeLimits (oracles .witnessV0 request.scriptBytes)
+      script request.stack [] flags.script (coreWitnessV0Context ctx)
+      request.validationWeight = .success [top] alt weight)
+    (truth : castToBool top = false) :
+    executeCoreWitnessScript (executeCoreScript flags ctx oracles) flags request =
+      .error (.script .evalFalse) := by
+  have elements : request.stack.any (fun item => item.size > maxScriptElementSize) = false := by
+    simp only [List.any_eq_false]; intro item member
+    simpa using Nat.not_lt.mpr (sizes item member)
+  have raw := executeCoreScript_eq_runtime_witnessV0 flags ctx oracles request script
+    version small encoded
+  rw [executed] at raw
+  simp only [coreRuntimeResult] at raw
+  simp [executeCoreWitnessScript, version, elements, raw, bind, Except.bind]
+  change (if castToBool top then Except.ok ()
+    else .error (CoreVerificationError.script .evalFalse)) = .error (.script .evalFalse)
+  simp [truth]
+
 /-- The witness script of a P2WSH spend: the last witness item, run with the
 other items reversed onto the stack. -/
 def coreP2WSHRequest (arguments : List ByteArray) (script : ByteArray) :
@@ -254,5 +283,48 @@ theorem verifyCoreScripts_of_witnessV0_runtime
   exact executeCoreWitnessScript_of_witnessV0_runtime flags ctx oracles
     (coreP2WSHRequest arguments bytes) script rfl small encoded
     (by simpa [coreP2WSHRequest] using sizes) executed truth
+
+/-- A typed witness-v0 run ending in a false singleton fails native P2WSH
+VerifyScript with exactly EVAL_FALSE after witness dispatch. -/
+theorem verifyCoreScripts_of_witnessV0_dissatisfaction
+    (flags : CoreVerificationFlags) (ctx : TxContext)
+    (oracles : SignatureVersion → ByteArray → CryptoOracle)
+    (keyPath : CoreKeyPathChecker) (arguments : List ByteArray)
+    (bytes : ByteArray) (script : Script)
+    (enabled : flags.witness = true)
+    (encoded : CoreTapscriptEncoding bytes 0 script)
+    (small : bytes.size ≤ 10000)
+    (sizes : ∀ item ∈ arguments, item.size ≤ maxScriptElementSize)
+    (programTruth : castToBool (LeanHash160.SHA256.hash bytes) = true)
+    {top : StackElement} {alt : Stack} {weight : Nat}
+    (executed : evaluateWithRuntimeLimits (oracles .witnessV0 bytes)
+      script arguments.reverse [] flags.script (coreWitnessV0Context ctx) 0 =
+        .success [top] alt weight)
+    (truth : castToBool top = false) :
+    verifyCoreScripts (executeCoreScript flags ctx oracles)
+      (fun witness version program isP2SH => verifyCoreWitnessProgram
+        (executeCoreScript flags ctx oracles) flags witness version program isP2SH keyPath)
+      flags ByteArray.empty (ScriptBytes.p2wsh bytes) (arguments ++ [bytes]) =
+        .error (.script .evalFalse) := by
+  have failed := executeCoreWitnessScript_of_witnessV0_dissatisfaction flags ctx oracles
+    (coreP2WSHRequest arguments bytes) script rfl small encoded
+    (by simpa [coreP2WSHRequest] using sizes) executed truth
+  have witnessFailure : verifyCoreWitnessProgram (executeCoreScript flags ctx oracles)
+      flags (arguments ++ [bytes]) 0 (LeanHash160.SHA256.hash bytes) false keyPath =
+      .error (.script .evalFalse) := by
+    simpa [verifyCoreWitnessProgram, sha256_size, List.reverse_append, coreP2WSHRequest,
+      bind, Except.bind, pure, Except.pure] using failed
+  have empty : executeCoreScript flags ctx oracles { scriptBytes := ByteArray.empty } =
+      .ok [] := by
+    simp [executeCoreScript, executeCoreRawLoop]
+  have pushOnly : coreScriptIsPushOnly ByteArray.empty = true := rfl
+  have pub := executeCoreScript_p2wshOutput flags ctx oracles bytes
+  simp only [verifyCoreScripts, pushOnly, Bool.not_true, Bool.and_false,
+    Bool.false_eq_true, ↓reduceIte, empty, bind, Except.bind, pub]
+  change (Except.bind
+    (if castToBool (LeanHash160.SHA256.hash bytes) then .ok ()
+      else .error (CoreVerificationError.script .evalFalse)) _) = _
+  simp [programTruth, enabled, decodeCoreWitnessProgram_p2wsh, witnessFailure,
+    ByteArray.size_empty, Except.bind]
 
 end LeanMiniscript.Extraction

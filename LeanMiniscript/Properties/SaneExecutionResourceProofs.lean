@@ -19,7 +19,7 @@ private theorem resourceLimitComponents
   unfold WithinResourceLimits resourceLimitsSatisfied at limits
   have outer := Bool.and_eq_true_iff.mp limits
   have inner := Bool.and_eq_true_iff.mp outer.1
-  exact ⟨inner.2, outer.2⟩
+  exact ⟨inner.2, (Bool.and_eq_true_iff.mp outer.2).1⟩
 
 /-- The fold-based non-push opcode count as a per-element sum. -/
 theorem nonPushOpCount_eq_map_sum (script : Script) :
@@ -197,6 +197,60 @@ theorem p2wsh_satisfyFinal_runtime_complete_witness
         omega)
     0 (by simp [weightZero])
   exact ⟨top, remaining, completed, truth⟩
+
+/-- Generated P2WSH dissatisfaction completes with a false singleton. The
+    checked dissatisfaction path bounds the static plus dynamic opcode charge;
+    the same observation then bounds both the initial and peak stack sizes. -/
+theorem p2wsh_dissatisfy_runtime_complete_witness
+    (sane : SaneFragment .p2wsh) {env : SatEnv} {witness : Witness}
+    {flags : ScriptFlags} {oracle : CryptoOracle}
+    (sound : env.Sound) (encodings : env.EncodingSound flags)
+    (version : ModeledContextVersion .p2wsh env.txCtx)
+    (modeled : ModeledContextFlags .p2wsh flags)
+    (generated : dissatisfy sane.checked.fragment env = some witness)
+    (agreement : oracle.RefinesModel)
+    (pushes : ∀ element ∈ sane.compile, element.pushSize ≤ maxScriptElementSize) :
+    ∃ top remaining,
+      evaluateWithRuntimeLimits oracle sane.compile witness.toInitialStack [] flags env.txCtx 0 =
+        .success [top] [] remaining ∧
+      castToBool top = false ∧ witness.length ≤ maxStackSize := by
+  obtain ⟨top, resources, stackLimit, dynamicLimit, observed, truth,
+      _, dynamicEq, _, dynamicLe⟩ :=
+    dissatisfy_evalResources_le sane.validMiniscript sound encodings version modeled generated
+  have limits := sane.withinResourceLimits
+  simp only [WithinResourceLimits, resourceLimitsSatisfied, Bool.and_eq_true] at limits
+  have opsWithin := limits.2.2
+  simp only [dissatisfactionOpsWithinLimit, dynamicEq] at opsWithin
+  have opsLe : nonPushOpCount sane.compile + resources.executedMultiSigKeys ≤
+      MAX_OPS_PER_SCRIPT := by
+    have summary := of_decide_eq_true opsWithin
+    rw [← nonPushOpCount_compileForResourceAnalysis] at summary
+    change nonPushOpCount (LeanMiniscript.Miniscript.compile sane.checked.fragment) +
+      resources.executedMultiSigKeys ≤ MAX_OPS_PER_SCRIPT
+    omega
+  have observedSane : EvalResources sane.compile witness.toInitialStack [] flags env.txCtx
+      [top] [] resources := observed
+  have opsEq : nonPushOpCount sane.compile = executedOpCount sane.compile :=
+    nonPushOpCount_eq_executedOpCount_of_allowed
+      (compileChecked_scriptAllowed sane.checked)
+  have peak : resources.peakStackItems ≤ maxStackSize := by
+    have bound := observedSane.peakStackItems_le_final_add_operations
+    rw [← opsEq] at bound
+    simp only [List.length_cons, List.length_nil] at bound
+    unfold MAX_OPS_PER_SCRIPT at opsLe
+    unfold maxStackSize
+    omega
+  have nontap : env.txCtx.sigVersion ≠ .tapscript := by
+    have sigVersionEq : env.txCtx.sigVersion = .witnessV0 := version
+    rw [sigVersionEq]
+    decide
+  have weightZero := observedSane.signatureWeight_eq_zero_of_nontap nontap
+  obtain ⟨remaining, completed, _⟩ := observedSane.runtime_complete_executed agreement nontap
+    pushes sane.legal peak
+    (by rw [← opsEq]; exact opsLe)
+    0 (by simp [weightZero])
+  refine ⟨top, remaining, completed, truth, ?_⟩
+  simpa [Witness.toInitialStack] using Nat.le_trans observedSane.initial_le_peak peak
 
 /-- A generated execution for a sane Tapscript fragment never exceeds the
     consensus combined main/alternate-stack limit. -/
