@@ -91,6 +91,78 @@ theorem p2wshDissatisfaction : P2WSHDissatisfaction := by
     (by simpa [SaneFragment.compile, compileChecked, context, compiledScriptContext,
       coreWitnessV0Context, Witness.toInitialStack] using completed) truth
 
+/-- Ordinary satisfaction and dissatisfaction of a sane P2WSH fragment finish
+within the witness-v0 runtime limits. Core returns success or EVAL_FALSE, so
+neither generated path can produce a resource-limit error. -/
+theorem p2wshResourceLimits : P2WSHResourceLimits := by
+  intro sane bytes scriptPubKey suffix env flags ctx oracles keyPath arguments
+    ⟨serialized, hashes⟩ ⟨spend, rest, programTruth⟩
+    ⟨enabled, _, _, _, modeled, sound, encodings, context, agreement⟩ generated
+  subst spend rest
+  change (oracles .witnessV0 bytes).RefinesModel at agreement
+  have small := compile_pushSize_le (fun data => by rw [hashes data]; decide)
+    sane.checked.wellFormed
+  have encoded : CoreTapscriptEncoding bytes 0 (compile sane.checked.fragment) :=
+    CoreTapscriptEncoding.of_serializeScript _ bytes
+      (fun element member => by have := small element member; omega) serialized
+  have pushes : ∀ element ∈ sane.compile, element.pushSize ≤ maxScriptElementSize :=
+    fun element member => Nat.le_trans (small element member) (by decide)
+  have version : ModeledContextVersion .p2wsh env.txCtx := by
+    simp [ModeledContextVersion, context, compiledScriptContext]
+  have sizes : arguments.ItemsBounded := by
+    rcases generated with satisfied | dissatisfied
+    · exact satisfy_itemsBounded sane.validMiniscript sound encodings version modeled satisfied
+    · exact dissatisfy_itemsBounded sane.validMiniscript sound encodings version modeled dissatisfied
+  have scriptSize : bytes.size ≤ 10000 := by
+    have limits := sane.withinResourceLimits
+    simp only [WithinResourceLimits, resourceLimitsSatisfied, Bool.and_eq_true] at limits
+    have compiledLimit := limits.1.1
+    change serializeScript (compileWithKeyHash modelKeyHash sane.checked.fragment) =
+      .ok bytes at serialized
+    rw [compiledScriptSizeWithinLimit,
+      resourceSerializedScriptSize_eq_compileWithKeyHash modelKeyHash
+        (fun key => hashes key.bytes), Script.serializedScriptSize, serialized] at compiledLimit
+    simp only [Except.map, scriptSizeWithinContextLimit, saneScriptSizeLimit,
+      MAX_STANDARD_P2WSH_SCRIPT_SIZE, decide_eq_true_eq] at compiledLimit
+    omega
+  have completed : ∃ top remaining,
+      evaluateWithRuntimeLimits (oracles .witnessV0 bytes)
+        (compile sane.checked.fragment) arguments.reverse [] flags.script
+        (coreWitnessV0Context ctx) 0 = .success [top] [] remaining := by
+    rcases generated with satisfied | dissatisfied
+    · obtain ⟨top, remaining, run, _, _⟩ :=
+        sane.p2wsh_satisfy_runtime_complete_witness sound encodings version modeled
+          satisfied agreement pushes
+      exact ⟨top, remaining, by
+        simpa [SaneFragment.compile, compileChecked, context, compiledScriptContext,
+          coreWitnessV0Context, Witness.toInitialStack] using run⟩
+    · obtain ⟨top, remaining, run, _, _⟩ :=
+        sane.p2wsh_dissatisfy_runtime_complete_witness sound encodings version modeled
+          dissatisfied agreement pushes
+      exact ⟨top, remaining, by
+        simpa [SaneFragment.compile, compileChecked, context, compiledScriptContext,
+          coreWitnessV0Context, Witness.toInitialStack] using run⟩
+  obtain ⟨top, remaining, completed⟩ := completed
+  intro error failed
+  cases truth : castToBool top with
+  | true =>
+      have accepted := verifyCoreScripts_of_witnessV0_runtime flags ctx oracles keyPath
+        arguments bytes (compile sane.checked.fragment) enabled encoded scriptSize sizes
+        programTruth completed truth
+      change coreVerifyScript flags ctx oracles keyPath ByteArray.empty
+        (ScriptBytes.p2wsh bytes) (arguments ++ [bytes]) = .ok () at accepted
+      rw [accepted] at failed
+      cases failed
+  | false =>
+      have rejected := verifyCoreScripts_of_witnessV0_dissatisfaction flags ctx oracles keyPath
+        arguments bytes (compile sane.checked.fragment) enabled encoded scriptSize sizes
+        programTruth completed truth
+      change coreVerifyScript flags ctx oracles keyPath ByteArray.empty
+        (ScriptBytes.p2wsh bytes) (arguments ++ [bytes]) = .error (.script .evalFalse) at rejected
+      rw [rejected] at failed
+      cases failed
+      rfl
+
 /-- A generated final satisfaction of a sane Tapscript fragment passes Core's
 VerifyScript from an output that commits to the compiled bytes. The compiled
 pushes are at most 33 bytes, so the serialized bytes decode to the compiled
