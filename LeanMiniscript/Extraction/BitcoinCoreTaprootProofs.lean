@@ -128,4 +128,53 @@ theorem verifyCoreScripts_of_taproot_runtime
     (by simpa [coreTaprootRequest] using count)
     (by simpa [coreTaprootRequest] using sizes) executed truth
 
+/-- A no-annex script-path execution ending in a false singleton reaches
+    exactly EVAL_FALSE through the complete Core VerifyScript entry point. -/
+theorem verifyCoreScripts_of_taproot_dissatisfaction
+    (flags : CoreVerificationFlags) (ctx : TxContext)
+    (oracles : SignatureVersion → ByteArray → CryptoOracle)
+    (keyPath : CoreKeyPathChecker) (arguments : List ByteArray)
+    (bytes control output root : ByteArray) (script : Script)
+    (enabled : flags.witness = true) (taproot : flags.taproot = true)
+    (committed : verifyTaprootControlBlock output bytes control =
+      .ok { leafVersion := 0xc0, leafHash := tapleafHash bytes 0xc0, merkleRoot := root })
+    (outputTruth : castToBool output = true)
+    (encoded : CoreTapscriptEncoding bytes 0 script)
+    (count : arguments.length ≤ maxStackSize)
+    (sizes : ∀ item ∈ arguments, item.size ≤ maxScriptElementSize)
+    {top : StackElement} {alt : Stack} {weight : Nat}
+    (executed : evaluateWithRuntimeLimits (oracles .tapscript bytes)
+      script arguments.reverse [] flags.script
+      (coreTapscriptContext ctx (coreTaprootRequest arguments bytes control))
+      (coreTaprootRequest arguments bytes control).validationWeight =
+        .success [top] alt weight)
+    (truth : castToBool top = false) :
+    verifyCoreScripts (executeCoreScript flags ctx oracles)
+      (fun witness version program isP2SH => verifyCoreWitnessProgram
+        (executeCoreScript flags ctx oracles) flags witness version program isP2SH keyPath)
+      flags ByteArray.empty (⟨#[0x51, 0x20]⟩ ++ output)
+      (arguments ++ [bytes, control]) = .error (.script .evalFalse) := by
+  have failed := executeCoreWitnessScript_of_dissatisfaction flags ctx oracles
+    (coreTaprootRequest arguments bytes control) script rfl encoded
+    (by simpa [coreTaprootRequest] using count)
+    (by simpa [coreTaprootRequest] using sizes) executed truth
+  obtain ⟨size, noAnnex⟩ := taprootCommitment_not_annex committed
+  have witnessFailure : verifyCoreWitnessProgram (executeCoreScript flags ctx oracles)
+      flags (arguments ++ [bytes, control]) 1 output false keyPath =
+      .error (.script .evalFalse) := by
+    simpa [verifyCoreWitnessProgram, size, taproot, List.reverse_append, noAnnex,
+      committed, coreTaprootRequest, bind, Except.bind, Except.mapError,
+      pure, Except.pure] using failed
+  have empty : executeCoreScript flags ctx oracles { scriptBytes := ByteArray.empty } =
+      .ok [] := by simp [executeCoreScript, executeCoreRawLoop]
+  have pushOnly : coreScriptIsPushOnly ByteArray.empty = true := rfl
+  have pub := executeCoreScript_taprootOutput flags ctx oracles output size
+  simp only [verifyCoreScripts, pushOnly, Bool.not_true, Bool.and_false,
+    Bool.false_eq_true, ↓reduceIte, empty, bind, Except.bind, pub]
+  change (Except.bind
+    (if castToBool output then .ok () else .error (CoreVerificationError.script .evalFalse))
+    _) = .error (.script .evalFalse)
+  simp [outputTruth, enabled, decodeCoreWitnessProgram_taproot output size,
+    witnessFailure, ByteArray.size_empty, Except.bind]
+
 end LeanMiniscript.Extraction

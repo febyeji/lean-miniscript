@@ -144,6 +144,11 @@ def maxSatisfactionInitialStack (fragment : CoreFragment) : Option Int :=
 def maxSatisfactionExecutionStack (fragment : CoreFragment) : Option Int :=
   (stackPathBounds fragment).sat.map fun trace => trace.exec + 1
 
+/-- Maximum combined main/alt-stack size reached by a top-level B
+    dissatisfaction, including fragments without a satisfaction path. -/
+def maxDissatisfactionExecutionStack (fragment : CoreFragment) : Option Int :=
+  (stackPathBounds fragment).dsat.map fun trace => trace.exec + 1
+
 /-- Computed resource summary used by sane-fragment validation and diagnostics. -/
 structure ResourceUsage where
   /-- Serialized compiled size, or `none` if a push cannot be serialized. -/
@@ -225,7 +230,7 @@ def satisfactionStackWithinLimit
     no execution bound. The 201-op bound also bounds a clean singleton run's
     combined stack peak by 1 + 3 * 201 = 604, below the consensus 1000 limit
     (see `p2wsh_dissatisfy_runtime_complete_witness`).
-    Tapscript's checked domain is unchanged. -/
+    Tapscript uses a separate dissatisfaction-stack check. -/
 def dissatisfactionOpsWithinLimit
     (ctx : ScriptContext) (fragment : CoreFragment) : Bool :=
   match ctx with
@@ -237,18 +242,34 @@ def dissatisfactionOpsWithinLimit
           (nonPushOpCount (compileForResourceAnalysis fragment) + dynamic ≤
             MAX_OPS_PER_SCRIPT)
 
+/-- Check every generated Tapscript dissatisfaction path against the combined
+    main/alternate-stack limit. An absent satisfaction does not waive this
+    check. P2WSH already derives this bound from its dissatisfaction opcode
+    limit. A missing dissatisfaction path requires no execution bound. -/
+def dissatisfactionStackWithinLimit
+    (ctx : ScriptContext) (fragment : CoreFragment) : Bool :=
+  match ctx with
+  | .p2wsh => true
+  | .tapscript =>
+      match maxDissatisfactionExecutionStack fragment with
+      | none => true
+      | some count => decide (count ≤ Int.ofNat MAX_STACK_SIZE)
+
 /-- Executable resource component for an integrated sane-fragment check.
     Structural validation, top-level B typing, non-malleability, unique keys,
     and HASSIG remain separate conjuncts at that boundary. P2WSH fragments
     previously accepted solely because their satisfaction paths were absent
     are now rejected when a dissatisfaction path exceeds 201 operations.
+    Tapscript also rejects fragments whose generated dissatisfaction exceeds
+    1000 combined main/alternate-stack items, even without a satisfaction.
     Both nonempty path sets are checked independently. -/
 def resourceLimitsSatisfied
     (ctx : ScriptContext) (fragment : CoreFragment) : Bool :=
   compiledScriptSizeWithinLimit ctx fragment &&
     satisfactionOpsWithinLimit ctx fragment &&
     (satisfactionStackWithinLimit ctx fragment &&
-      dissatisfactionOpsWithinLimit ctx fragment)
+      (dissatisfactionOpsWithinLimit ctx fragment &&
+        dissatisfactionStackWithinLimit ctx fragment))
 
 /-- Declarative wrapper used by the integrated sane-fragment boundary. -/
 def WithinResourceLimits
