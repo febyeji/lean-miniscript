@@ -2,14 +2,15 @@ import LeanMiniscript.Extraction.MiniscriptCompilation
 import LeanMiniscript.Extraction.BitcoinCoreTaprootProofs
 
 /-!
-MF-756: `F₀ = 0`, `Fₙ₊₁ = and_b(0, a:Fₙ)` has no satisfaction path, so the
-Tapscript sanity check omits its execution-stack bound. Every environment
+Diagnostic commit `e325da2923c9c055391058913e2d20f35c87e6a1` (MF-756):
+`F₀ = 0`, `Fₙ₊₁ = and_b(0, a:Fₙ)` has no satisfaction path, so the
+historical Tapscript sanity check omitted its execution-stack bound. Every environment
 generates an empty dissatisfaction. At depth 1000 the 4001-byte compiled script
 pushes onto 1000 saved alt-stack items and fails with STACK_SIZE.
 
 `incompatible` retains the obligation's cryptographic, commitment and run
 premises. It does not construct an environment or a Taproot commitment.
-The sanity certificate and runtime failure are unconditional; the full Core
+The historical sanity certificate and runtime failure are unconditional; the full Core
 VerifyScript failure assumes only the commitment, truthy output and flags.
 -/
 
@@ -111,9 +112,52 @@ theorem byteSize (n : Nat) : (bytes n).size = 4 * n + 1 := by
 theorem noSatisfactionPath (n : Nat) : (stackPathBounds (nested n)).sat = none := by
   cases n <;> simp [nested, stackPathBounds, StackTraceSet.sequential]
 
+/-- The dissatisfaction summary counts saved alternate-stack items too. -/
+theorem dissatisfactionPath (n : Nat) :
+    (stackPathBounds (nested n)).dsat = some ⟨-1, Int.ofNat n⟩ := by
+  induction n with
+  | zero => rfl
+  | succ n ih =>
+      simp only [nested, stackPathBounds, ih, StackTraceSet.sequential,
+        StackTraceBound.sequential, StackTraceBound.push, StackTraceBound.binary]
+      congr 2
+      simp only [Int.ofNat_eq_natCast, Int.natCast_add, Int.natCast_one]
+      omega
+
+/-- The corrected executable domain rejects the diagnostic F1000. -/
+theorem correctedRejects : resourceLimitsSatisfied .tapscript (nested 1000) = false := by
+  simp [resourceLimitsSatisfied, dissatisfactionStackWithinLimit,
+    maxDissatisfactionExecutionStack, dissatisfactionPath, MAX_STACK_SIZE, maxStackSize]
+
+/-- No current sanity certificate can accept F1000. -/
+theorem noCurrentSane (current : SaneFragment .tapscript) :
+    current.checked.fragment ≠ nested 1000 := by
+  intro eq
+  have accepted := current.withinResourceLimits
+  rw [WithinResourceLimits, eq, correctedRejects] at accepted
+  cases accepted
+
+/-- Resource predicate frozen at the diagnostic HEAD, before the Tapscript
+    dissatisfaction-stack correction. -/
+def historicalResourceLimitsSatisfied (ctx : ScriptContext) (f : CoreFragment) : Bool :=
+  compiledScriptSizeWithinLimit ctx f && satisfactionOpsWithinLimit ctx f &&
+    (satisfactionStackWithinLimit ctx f && dissatisfactionOpsWithinLimit ctx f)
+
+/-- All conjuncts of the original sanity certificate, with its resource
+    predicate frozen to the diagnostic version. -/
+structure HistoricalSaneFragment (ctx : ScriptContext) where
+  checked : CheckedFragment ctx
+  malleability : MalleabilityModifiers
+  topLevel : checked.ty.base = .B
+  hasMalleability : HasMalleability ctx checked.fragment malleability
+  noDuplicateKeys : checked.fragment.NoDuplicateKeys
+  nonMalleable : malleability.nonMalleable = true
+  needsSignature : malleability.s = true
+  withinResourceLimits : historicalResourceLimitsSatisfied ctx checked.fragment = true
+
 theorem resourceAccepted (n : Nat) (size : 4 * n + 1 ≤ 329482) :
-    WithinResourceLimits .tapscript (nested n) := by
-  simp only [WithinResourceLimits, resourceLimitsSatisfied, satisfactionOpsWithinLimit,
+    historicalResourceLimitsSatisfied .tapscript (nested n) = true := by
+  simp only [historicalResourceLimitsSatisfied, satisfactionOpsWithinLimit,
     dissatisfactionOpsWithinLimit, satisfactionStackWithinLimit,
     maxSatisfactionExecutionStack, noSatisfactionPath, Option.map_none, Bool.and_true]
   change compiledScriptSizeWithinLimit .tapscript (nested n) = true
@@ -122,8 +166,19 @@ theorem resourceAccepted (n : Nat) (size : 4 * n + 1 ≤ 329482) :
   simp only [serialized, Except.map, byteSize]
   exact decide_eq_true size
 
-/-- The current, unchanged sanity boundary accepts depth 1000. -/
-def sane : SaneFragment .tapscript where
+/-- The adjacent no-satisfaction fragment still passes the corrected resource
+    check at its exact 1000-item combined stack peak. -/
+theorem resourceEdge : WithinResourceLimits .tapscript (nested 999) := by
+  have old := resourceAccepted 999 (by decide)
+  have stack : dissatisfactionStackWithinLimit .tapscript (nested 999) = true := by
+    simp [dissatisfactionStackWithinLimit, maxDissatisfactionExecutionStack,
+      dissatisfactionPath, MAX_STACK_SIZE, maxStackSize]
+  simpa only [WithinResourceLimits, resourceLimitsSatisfied, historicalResourceLimitsSatisfied,
+    stack, Bool.and_true]
+    using old
+
+/-- The historical sanity boundary accepted depth 1000. -/
+def sane : HistoricalSaneFragment .tapscript where
   checked := {
     fragment := nested 1000
     ty := ⟨.B, mods 1000⟩
@@ -137,6 +192,22 @@ def sane : SaneFragment .tapscript where
   nonMalleable := rfl
   needsSignature := rfl
   withinResourceLimits := resourceAccepted 1000 (by decide)
+
+/-- The corrected full sanity certificate at the accepted edge. -/
+def edgeSane : SaneFragment .tapscript where
+  checked := {
+    fragment := nested 999
+    ty := ⟨.B, mods 999⟩
+    wellFormed := wf 999
+    hasType := typed 999
+  }
+  malleability := { s := true, e := true, nonMalleable := true }
+  topLevel := rfl
+  hasMalleability := malleability 999
+  noDuplicateKeys := by simp [CoreFragment.NoDuplicateKeys, keys]
+  nonMalleable := rfl
+  needsSignature := rfl
+  withinResourceLimits := resourceEdge
 
 theorem validDissatisfiable : ValidDissatisfiableMiniscript .tapscript (nested 1000) :=
   ⟨mods 1000, ⟨wf 1000, typed 1000⟩, rfl⟩
@@ -300,15 +371,30 @@ theorem coreStackSize (n : Nat) (full : n = 1000) (flags : CoreVerificationFlags
   simp [truth, enabled, decodeCoreWitnessProgram_taproot output size,
     programFailure, ByteArray.size_empty, Except.bind]
 
+/-- The original obligation with only its sanity certificate frozen to the
+    diagnostic version. This is not the current `TapscriptDissatisfaction`. -/
+def HistoricalTapscriptDissatisfaction : Prop :=
+  ∀ (sane : HistoricalSaneFragment .tapscript) (bytes scriptPubKey : ByteArray)
+    (suffix : List ByteArray) (env : SatEnv) (flags : CoreVerificationFlags)
+    (ctx : TxContext) (oracles : SignatureVersion → ByteArray → CryptoOracle)
+    (keyPath : CoreKeyPathChecker) (arguments : Witness),
+    CompiledScriptBytes sane.checked.fragment bytes →
+    CompiledScriptSpend .tapscript bytes scriptPubKey suffix →
+    CompiledScriptRun .tapscript env flags ctx oracles bytes →
+    ValidDissatisfiableMiniscript .tapscript sane.checked.fragment →
+    dissatisfy sane.checked.fragment env = some arguments →
+    coreVerifyScript flags ctx oracles keyPath ByteArray.empty scriptPubKey
+      (arguments ++ suffix) = .error (.script .evalFalse)
+
 /-- Under the original byte/spend/run premises, the claimed EVAL_FALSE result
-    contradicts Core's STACK_SIZE result for this sane fragment. -/
+    contradicts Core's STACK_SIZE result for this historically sane fragment. -/
 theorem incompatible (environment : SatEnv) (flags : CoreVerificationFlags)
     (ctx : TxContext) (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (keyPath : CoreKeyPathChecker) (scriptPubKey : ByteArray) (suffix : List ByteArray)
     (hashes : ∀ data, (LeanMiniscript.Script.hash160 data).size = 20)
     (spend : CompiledScriptSpend .tapscript (bytes 1000) scriptPubKey suffix)
     (run : CompiledScriptRun .tapscript environment flags ctx oracles (bytes 1000)) :
-    ¬ TapscriptDissatisfaction := by
+    ¬ HistoricalTapscriptDissatisfaction := by
   intro claimed
   have predicted := claimed sane (bytes 1000) scriptPubKey suffix environment flags ctx
     oracles keyPath [] ⟨serialized 1000 modelKeyHash, hashes⟩ spend run

@@ -85,6 +85,35 @@ theorem executeCoreWitnessScript_of_runtime
   change (if castToBool top then Except.ok () else .error (CoreVerificationError.script .evalFalse)) = .ok ()
   simp [truth]
 
+/-- Initial argument bounds, typed execution, and a false singleton suffice
+for the Core witness-script boundary. Commitment is checked by its caller. -/
+theorem executeCoreWitnessScript_of_dissatisfaction
+    (flags : CoreVerificationFlags) (ctx : TxContext)
+    (oracles : SignatureVersion → ByteArray → CryptoOracle)
+    (request : CoreScriptExecutionRequest) (script : Script)
+    (version : request.sigVersion = .tapscript)
+    (encoded : CoreTapscriptEncoding request.scriptBytes 0 script)
+    (count : request.stack.length ≤ maxStackSize)
+    (sizes : ∀ item ∈ request.stack, item.size ≤ maxScriptElementSize)
+    {top : StackElement} {alt : Stack} {weight : Nat}
+    (executed : evaluateWithRuntimeLimits (oracles .tapscript request.scriptBytes)
+      script request.stack [] flags.script (coreTapscriptContext ctx request)
+      request.validationWeight = .success [top] alt weight)
+    (truth : castToBool top = false) :
+    executeCoreWitnessScript (executeCoreScript flags ctx oracles) flags request =
+      .error (.script .evalFalse) := by
+  have elements : request.stack.any (fun item => item.size > maxScriptElementSize) = false := by
+    simp only [List.any_eq_false]; intro item member
+    simpa using Nat.not_lt.mpr (sizes item member)
+  have raw := executeCoreScript_eq_runtime flags ctx oracles request script version encoded
+  rw [executed] at raw
+  simp only [coreRuntimeResult] at raw
+  simp [executeCoreWitnessScript, version, encoded.no_opSuccess,
+    Nat.not_lt.mpr count, elements, raw, bind, Except.bind]
+  change (if castToBool top then Except.ok ()
+    else .error (CoreVerificationError.script .evalFalse)) = .error (.script .evalFalse)
+  simp [truth]
+
 private theorem commitment_shape {output script control : ByteArray}
     {commitment : TaprootCommitment}
     (verified : verifyTaprootControlBlock output script control = .ok commitment) :

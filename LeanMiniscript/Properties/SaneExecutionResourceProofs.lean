@@ -271,7 +271,7 @@ theorem p2wsh_dissatisfy_runtime_complete_witness
     dissatisfy_evalResources_le sane.validMiniscript sound encodings version modeled generated
   have limits := sane.withinResourceLimits
   simp only [WithinResourceLimits, resourceLimitsSatisfied, Bool.and_eq_true] at limits
-  have opsWithin := limits.2.2
+  have opsWithin := limits.2.2.1
   simp only [dissatisfactionOpsWithinLimit, dynamicEq] at opsWithin
   have opsLe : nonPushOpCount sane.compile + resources.executedMultiSigKeys ≤
       MAX_OPS_PER_SCRIPT := by
@@ -418,6 +418,66 @@ theorem tapscript_satisfyFinal_runtime_complete
   obtain ⟨remaining, completed, spent⟩ :=
     observed.runtime_complete agreement pushes sane.legal peak (.inl version) weight budget
   refine ⟨top, remaining, completed, truth, ?_, spent⟩
+  simpa [Witness.toInitialStack, MAX_STACK_SIZE] using Nat.le_trans observed.initial_le_peak peak
+
+/-- A generated execution for a sane Tapscript fragment never exceeds the
+    consensus combined main/alternate-stack limit. -/
+theorem tapscript_dissatisfy_executionStack_le
+    (sane : SaneFragment .tapscript) {env : SatEnv} {witness : Witness}
+    {flags : ScriptFlags}
+    (sound : env.Sound)
+    (encodings : env.EncodingSound flags)
+    (version : ModeledContextVersion .tapscript env.txCtx)
+    (modeled : ModeledContextFlags .tapscript flags)
+    (generated : dissatisfy sane.checked.fragment env = some witness) :
+    ∃ result resources,
+      EvalResources sane.compile witness.toInitialStack [] flags env.txCtx
+        [result] [] resources ∧
+      castToBool result = false ∧
+      resources.peakStackItems ≤ MAX_STACK_SIZE := by
+  obtain ⟨result, resources, stackLimit, dynamicLimit, evaluated, truth,
+      stackEq, dynamicEq, peakLe, dynamicLe⟩ :=
+    dissatisfy_evalResources_le sane.validMiniscript sound encodings version
+      modeled generated
+  have limits := sane.withinResourceLimits
+  simp only [WithinResourceLimits, resourceLimitsSatisfied, Bool.and_eq_true] at limits
+  have stackWithin := limits.2.2.2
+  simp only [dissatisfactionStackWithinLimit, maxDissatisfactionExecutionStack,
+    stackEq, Option.map_some] at stackWithin
+  have summaryPeak :
+      stackLimit.exec + 1 ≤ Int.ofNat MAX_STACK_SIZE :=
+    of_decide_eq_true stackWithin
+  have evaluatedSane :
+      EvalResources sane.compile witness.toInitialStack [] flags env.txCtx
+        [result] [] resources := by
+    simpa [SaneFragment.compile, compileChecked] using evaluated
+  exact ⟨result, resources, evaluatedSane, truth,
+    Int.ofNat_le.mp (Int.le_trans peakLe summaryPeak)⟩
+
+/-- A generated sane Tapscript dissatisfaction completes with a false singleton.
+    The checked path bounds both stacks, and its witness payload funds every
+    active signature debit, including satisfied children on this path. -/
+theorem tapscript_dissatisfy_runtime_complete_witness
+    (sane : SaneFragment .tapscript) {env : SatEnv} {witness fullWitness : Witness}
+    {flags : ScriptFlags} {oracle : CryptoOracle}
+    (sound : env.Sound) (encodings : env.EncodingSound flags)
+    (version : ModeledContextVersion .tapscript env.txCtx)
+    (modeled : ModeledContextFlags .tapscript flags)
+    (generated : dissatisfy sane.checked.fragment env = some witness)
+    (agreement : oracle.RefinesModel)
+    (pushes : ∀ element ∈ sane.compile, element.pushSize ≤ maxScriptElementSize)
+    (included : witness.Sublist fullWitness) :
+    ∃ top remaining,
+      evaluateWithRuntimeLimits oracle sane.compile witness.toInitialStack [] flags env.txCtx
+        (initialValidationWeight fullWitness) = .success [top] [] remaining ∧
+      castToBool top = false ∧ witness.length ≤ maxStackSize := by
+  obtain ⟨top, resources, observed, truth, peak⟩ :=
+    sane.tapscript_dissatisfy_executionStack_le sound encodings version modeled generated
+  have funded := dissatisfy_signatureWeight_le_payload sane.validMiniscript sound encodings
+    version modeled generated observed
+  obtain ⟨remaining, completed, _⟩ := runtime_complete_of_witness_funding agreement
+    observed pushes sane.legal peak (.inl version) included funded
+  refine ⟨top, remaining, completed, truth, ?_⟩
   simpa [Witness.toInitialStack, MAX_STACK_SIZE] using Nat.le_trans observed.initial_le_peak peak
 
 end LeanMiniscript.Miniscript.SaneFragment
