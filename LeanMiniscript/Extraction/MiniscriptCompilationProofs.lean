@@ -239,4 +239,75 @@ theorem tapscriptDissatisfaction : TapscriptDissatisfaction := by
       validationWeightOffset, Nat.add_comm, Witness.toInitialStack] using completed)
     truth
 
+/-- Ordinary satisfaction and dissatisfaction of a sane Tapscript fragment
+finish within the combined stack and witness-funded validation-weight limits.
+Core returns success or EVAL_FALSE, so neither generated path can produce a
+resource-limit error. -/
+theorem tapscriptResourceLimits : TapscriptResourceLimits := by
+  intro sane bytes scriptPubKey suffix env flags ctx oracles keyPath arguments
+    ⟨serialized, hashes⟩ ⟨output, control, root, spend, rest, committed, outputTruth⟩
+    ⟨enabled, taproot, _, _, modeled, sound, encodings, context, agreement⟩ generated
+  subst spend rest
+  change (oracles .tapscript bytes).RefinesModel at agreement
+  have small := compile_pushSize_le (fun data => by rw [hashes data]; decide)
+    sane.checked.wellFormed
+  have encoded : CoreTapscriptEncoding bytes 0 (compile sane.checked.fragment) :=
+    CoreTapscriptEncoding.of_serializeScript _ bytes
+      (fun element member => by have := small element member; omega) serialized
+  have pushes : ∀ element ∈ sane.compile, element.pushSize ≤ maxScriptElementSize :=
+    fun element member => Nat.le_trans (small element member) (by decide)
+  have version : ModeledContextVersion .tapscript env.txCtx := by
+    simp [ModeledContextVersion, context, compiledScriptContext]
+  have sizes : arguments.ItemsBounded := by
+    rcases generated with satisfied | dissatisfied
+    · exact satisfy_itemsBounded sane.validMiniscript sound encodings version modeled satisfied
+    · exact dissatisfy_itemsBounded sane.validMiniscript sound encodings version modeled dissatisfied
+  have leafContext : env.txCtx =
+      coreTapscriptContext ctx (coreTaprootRequest arguments bytes control) := by
+    rw [context]
+    rfl
+  have completed : ∃ top remaining,
+      evaluateWithRuntimeLimits (oracles .tapscript bytes) sane.compile
+        arguments.toInitialStack [] flags.script env.txCtx
+        (initialValidationWeight (arguments ++ [bytes, control])) =
+          .success [top] [] remaining ∧ arguments.length ≤ maxStackSize := by
+    rcases generated with satisfied | dissatisfied
+    · obtain ⟨top, remaining, run, _, count⟩ :=
+        sane.tapscript_satisfy_runtime_complete_witness sound encodings version modeled
+          satisfied agreement pushes (List.sublist_append_left arguments [bytes, control])
+      exact ⟨top, remaining, run, count⟩
+    · obtain ⟨top, remaining, run, _, count⟩ :=
+        sane.tapscript_dissatisfy_runtime_complete_witness sound encodings version modeled
+          dissatisfied agreement pushes (List.sublist_append_left arguments [bytes, control])
+      exact ⟨top, remaining, run, count⟩
+  obtain ⟨top, remaining, completed, count⟩ := completed
+  rw [leafContext] at completed
+  have runtime : evaluateWithRuntimeLimits (oracles .tapscript bytes)
+      (compile sane.checked.fragment) arguments.reverse [] flags.script
+      (coreTapscriptContext ctx (coreTaprootRequest arguments bytes control))
+      (coreTaprootRequest arguments bytes control).validationWeight =
+        .success [top] [] remaining := by
+    simpa [SaneFragment.compile, compileChecked, coreTaprootRequest, initialValidationWeight,
+      validationWeightOffset, Nat.add_comm, Witness.toInitialStack] using completed
+  intro error failed
+  cases truth : castToBool top with
+  | true =>
+      have accepted := verifyCoreScripts_of_taproot_runtime flags ctx oracles keyPath
+        arguments bytes control output root (compile sane.checked.fragment)
+        enabled (taproot rfl) committed outputTruth encoded count sizes runtime truth
+      change coreVerifyScript flags ctx oracles keyPath ByteArray.empty
+        (ByteArray.mk #[0x51, 0x20] ++ output) (arguments ++ [bytes, control]) = .ok () at accepted
+      rw [accepted] at failed
+      cases failed
+  | false =>
+      have rejected := verifyCoreScripts_of_taproot_dissatisfaction flags ctx oracles keyPath
+        arguments bytes control output root (compile sane.checked.fragment)
+        enabled (taproot rfl) committed outputTruth encoded count sizes runtime truth
+      change coreVerifyScript flags ctx oracles keyPath ByteArray.empty
+        (ByteArray.mk #[0x51, 0x20] ++ output) (arguments ++ [bytes, control]) =
+          .error (.script .evalFalse) at rejected
+      rw [rejected] at failed
+      cases failed
+      rfl
+
 end LeanMiniscript.Extraction
