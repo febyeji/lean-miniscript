@@ -59,6 +59,7 @@ import LeanMiniscript.Extraction.DescriptorSatisfactionProofs
 import LeanMiniscript.Extraction.RefInterpProofs
 import LeanMiniscript.Extraction.TaprootBytesProofs
 import LeanMiniscript.Extraction.TaprootProofs
+import LeanMiniscript.Extraction.TapscriptMultiAWitnessProofs
 import LeanMiniscript.Psbt.CodecProofs
 import LeanMiniscript.Psbt.FieldsProofs
 import LeanMiniscript.Psbt.ParseProofs
