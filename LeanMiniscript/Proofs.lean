@@ -17,6 +17,7 @@ import LeanMiniscript.Script.ValidationWeightProofs
 import LeanMiniscript.Miniscript.AcceptanceProofs
 import LeanMiniscript.Miniscript.CompileConcreteProofs
 import LeanMiniscript.Miniscript.CompileAgreementProofs
+import LeanMiniscript.Miniscript.CompileAltStackProofs
 import LeanMiniscript.Miniscript.CompilePushBoundsProofs
 import LeanMiniscript.Miniscript.CompileVerifyResourceProofs
 import LeanMiniscript.Miniscript.Conformance
@@ -76,6 +77,7 @@ import LeanMiniscript.Psbt.FinalizeAndExtractProofs
 This umbrella exports canonical Script codec round trips and preservation of
 execution, runtime limits and modeled Tapscript verification, conformance,
 structural, inference, surface normalization, generated-satisfaction contracts,
+alternate-stack independence of successful compiled runs,
 Core/Surface satisfaction and dissatisfaction correctness, stack-growth,
 active-path Script resource observations, terminal VERIFY fusion resource
 preservation, and runtime prefix-bound guarantees without adding their proof
