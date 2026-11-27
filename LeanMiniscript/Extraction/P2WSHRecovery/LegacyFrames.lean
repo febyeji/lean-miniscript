@@ -159,7 +159,7 @@ theorem multi_agreement {root env flags args other own expected k keys rest top}
       have valid := ctx.sound.signatureValid lookup
       have inRow := signature_in_satisfaction ctx path
         projection
-        (observed sig hs) keyMem (checkSigWithEncoding_true (encoding _ _ lookup) valid)
+        (ctx.items _ (observed sig hs)) keyMem (checkSigWithEncoding_true (encoding _ _ lookup) valid)
       rw [eq] at inRow
       rcases List.mem_cons.mp inRow with empty | inInner
       · rw [empty, ctx.sound.emptySignatureInvalid] at valid

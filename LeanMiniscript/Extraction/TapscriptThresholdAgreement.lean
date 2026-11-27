@@ -6,6 +6,8 @@ namespace LeanMiniscript.Extraction.TapscriptWitness
 
 open LeanMiniscript.Script LeanMiniscript.Miniscript CandidatePair
 
+variable {sc : ScriptContext}
+
 /-- The bit at a source index says whether assembly takes that child's sat. -/
 def positionFlags (positions : List Nat) (arity : Nat) : List Bool :=
   (List.range arity).map fun i => decide (i ∈ positions)
@@ -187,7 +189,7 @@ private theorem threshold_key_position_unique {children : List CoreFragment} {i 
     canonical frame for its own key's position, including when that position
     was dissatisfied. This tracks the source through both wire-order reversals. -/
 theorem checked_threshold_source {root env flags args other consumed k children canonical positions}
-    (ctx : ExecutionContext root (.thresh k children) env flags args other consumed)
+    (ctx : ExecutionContextIn sc root (.thresh k children) env flags args other consumed)
     (nodup : (CoreFragment.keysList children).Nodup)
     (selected : (thresholdSatisfaction k (satisfactionCandidatesList children env)).usableWitness? = some canonical)
     (chosen : thresholdPositions k (satisfactionCandidatesList children env) = some positions)
@@ -217,7 +219,6 @@ theorem checked_threshold_source {root env flags args other consumed k children 
       some frame := by
     simpa [source, List.getElem?_zipWith, List.getElem?_eq_getElem childBound, List.getElem?_eq_getElem bound,
       positionFlags, List.getElem?_range childBound, frameEq] using actual
-  have keySizes := wellFormed_keySizes _ root.checked.wellFormed
   have inRoot : ∀ k ∈ source.keys, k ∈ root.checked.fragment.keys :=
     fun k h => ctx.keys k (threshold_keys_member (List.getElem_mem childBound) k h)
   have testedKey := ctx.keys key (threshold_keys_member (List.mem_of_getElem? childAt) key member)
@@ -225,14 +226,20 @@ theorem checked_threshold_source {root env flags args other consumed k children 
     split at sourceRow
     · exact (candidates_material source env).1 frame sourceRow sig sigMem
     · exact (candidates_material source env).2 frame sourceRow sig sigMem
-  obtain ⟨signer, signerKey, selectedSig⟩ := material_signature_of_size ctx.sound
-    (fun k h => keySizes k (inRoot k h)) material (successful_slot_size ctx.version (keySizes key testedKey) checked)
-  have signerEq : signer = key := by
-    by_cases eq : signer = key
-    · exact eq
-    · exact (ctx.thirdParty.1 sig eligible signer (inRoot signer signerKey) key testedKey eq
-        (ctx.sound.signatureValid selectedSig) (verifySigFor_of_checkSigWithEncoding checked)).elim
-  subst signer
+  have signerKey : key ∈ source.keys := by
+    cases sc with
+    | p2wsh =>
+      apply (P2WSHRecovery.checked_source_signature root ctx.sound ctx.version ctx.modeled ctx.thirdParty
+        ctx.recover.2 eligible testedKey inRoot (fun lock hl =>
+          ctx.locks _ (threshold_locks_member (List.getElem_mem childBound) lock hl)) material checked).1
+    | tapscript =>
+      have sizes := wellFormed_keySizes _ root.checked.wellFormed
+      obtain ⟨signer, hs, lookup⟩ := material_signature_of_size ctx.sound
+        (fun k h => sizes k (inRoot k h)) material (successful_slot_size ctx.version (sizes key testedKey) checked)
+      by_cases eq : signer = key
+      · exact eq ▸ hs
+      · exact (ctx.thirdParty.1 sig eligible signer (inRoot signer hs) key testedKey eq
+          (ctx.sound.signatureValid lookup) (verifySigFor_of_checkSigWithEncoding checked)).elim
   have ij := threshold_key_position_unique nodup childAt (List.getElem?_eq_getElem childBound) member signerKey
   subst i
   have same : child = source := by simpa [source, List.getElem?_eq_getElem childBound] using childAt.symm
@@ -242,9 +249,9 @@ theorem checked_threshold_source {root env flags args other consumed k children 
 /-- At the threshold root, the third-party rules put every checked signature
     in the published witness. A child whose usable dsat omits that signature
     must have been selected at its source position. -/
-theorem checked_threshold_position_selected {root : SaneFragment .tapscript} {env flags args other consumed k children positions}
+theorem checked_threshold_position_selected {root : SaneFragment sc} {env flags args other consumed k children positions}
     (shape : root.checked.fragment = .thresh k children)
-    (ctx : ExecutionContext root (.thresh k children) env flags args other consumed)
+    (ctx : ExecutionContextIn sc root (.thresh k children) env flags args other consumed)
     (chosen : thresholdPositions k (satisfactionCandidatesList children env) = some positions)
     {i : Nat} {child : CoreFragment} {sig : StackElement} {key : PubKey}
     (childAt : children[i]? = some child) (member : key ∈ child.keys)
@@ -270,9 +277,9 @@ theorem checked_threshold_position_selected {root : SaneFragment .tapscript} {en
     a compiled threshold, keeping the same sane root and third-party witness.
     The execution yields the observed bits, child frames, and both cardinalities. -/
 theorem threshold_type_at {k children cm first tail child base} {i : Nat}
-    (typed : HasType .tapscript (.thresh k children) ⟨.B, cm⟩) (shape : children = first :: tail)
+    (typed : HasType sc (.thresh k children) ⟨.B, cm⟩) (shape : children = first :: tail)
     (childAt : children[i]? = some child) (baseAt : (BaseType.B :: List.replicate tail.length .W)[i]? = some base) :
-    ∃ mods, HasType .tapscript child ⟨base, mods⟩ ∧ mods.d = true ∧ mods.u = true := by
+    ∃ mods, HasType sc child ⟨base, mods⟩ ∧ mods.d = true ∧ mods.u = true := by
   subst children
   cases typed with
   | thresh head hd hu rest types _ _ =>
@@ -289,9 +296,9 @@ theorem threshold_type_at {k children cm first tail child base} {i : Nat}
       exact threshold_rest_member_type rest types child (List.mem_of_getElem? childAt)
 
 theorem threshold_frame_of_rows {k children root env flags args other consumed canonical cm rest top}
-    (typed : HasType .tapscript (.thresh k children) ⟨.B, cm⟩)
-    (wf : (CoreFragment.thresh k children).WellFormed .tapscript)
-    (ctx : ExecutionContext root (.thresh k children) env flags args other consumed)
+    (typed : HasType sc (.thresh k children) ⟨.B, cm⟩)
+    (wf : (CoreFragment.thresh k children).WellFormed sc)
+    (ctx : ExecutionContextIn sc root (.thresh k children) env flags args other consumed)
     (sel : satisfy (.thresh k children) env = some canonical)
     (bounded : ∀ item ∈ consumed.toInitialStack ++ rest, item.size ≤ maxScriptElementSize)
     (run : Eval (compile (.thresh k children)) (consumed.toInitialStack ++ rest) [] flags env.txCtx
@@ -306,8 +313,8 @@ theorem threshold_frame_of_rows {k children root env flags args other consumed c
       children[i]? = some child →
       thresholdPositions k (satisfactionCandidatesList children env) = some positions →
       castToBool top = decide (i ∈ positions) →
-      (∃ mods, HasType .tapscript child ⟨base, mods⟩ ∧ mods.d = true ∧ mods.u = true) →
-      ExecutionContext root child env flags args other block →
+      (∃ mods, HasType sc child ⟨base, mods⟩ ∧ mods.d = true ∧ mods.u = true) →
+      ExecutionContextIn sc root child env flags args other block →
       ExecutedRow env flags child block rest top base →
       (∀ item ∈ Witness.toInitialStack block ++ rest, item.size ≤ maxScriptElementSize) →
       (if castToBool top then (satisfactionCandidates child env).sat else (satisfactionCandidates child env).dsat).usableWitness? =
@@ -363,7 +370,7 @@ theorem threshold_frame_of_rows {k children root env flags args other consumed c
 /-- A uniform recovery rule for all root contexts containing this threshold. -/
 theorem frameUnique_thresh_of_rows {k : Nat} {children : List CoreFragment}
     (signed : ∀ {root env flags args other consumed canonical first tail bits blocks positions},
-      ExecutionContext root (.thresh k children) env flags args other consumed →
+      ExecutionContextIn sc root (.thresh k children) env flags args other consumed →
       satisfy (.thresh k children) env = some canonical →
       children = first :: tail →
       ExecutedRows env flags (.B :: List.replicate tail.length .W) children bits blocks →
@@ -372,11 +379,11 @@ theorem frameUnique_thresh_of_rows {k : Nat} {children : List CoreFragment}
       ∀ (i : Nat) child, children[i]? = some child → bits[i]? = some true →
         (satisfactionCandidates child env).unsignedSat = false → i ∈ positions)
     (recover : ∀ {root env flags args other} {child : CoreFragment}, child ∈ children →
-      ∀ {block rest top base canonical}, ExecutionContext root child env flags args other block →
+      ∀ {block rest top base canonical}, ExecutionContextIn sc root child env flags args other block →
       ExecutedRow env flags child block rest top base →
       (∀ item ∈ Witness.toInitialStack block ++ rest, item.size ≤ maxScriptElementSize) →
       (if castToBool top then (satisfactionCandidates child env).sat else (satisfactionCandidates child env).dsat).usableWitness? =
-        some canonical → block = canonical) : FrameUnique .B (.thresh k children) := by
+        some canonical → block = canonical) : FrameUniqueIn sc .B (.thresh k children) := by
   intro root env flags args other consumed canonical cm typed wf ctx sel rest bounded top run truth
   exact threshold_frame_of_rows typed wf ctx sel bounded run truth
     (fun shape rows wire chosen => signed ctx sel shape rows wire chosen)

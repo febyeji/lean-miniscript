@@ -14,10 +14,9 @@ abbrev ExecutionContext := ExecutionContextIn .p2wsh
 theorem signature_in_satisfaction {root child env flags args other consumed expected}
     (ctx : ExecutionContext root child env flags args other consumed)
     (path : FragmentPath child root.checked.fragment) (selected : satisfy child env = some expected)
-    {sig : StackElement} {key : PubKey} (member : sig ∈ consumed) (hk : key ∈ child.keys)
+    {sig : StackElement} {key : PubKey} (observed : sig ∈ other) (hk : key ∈ child.keys)
     (checked : checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx sig key.bytes = .ok true) :
     sig ∈ expected := by
-  have observed := ctx.items _ member
   have keyMem := ctx.keys _ hk
   have valid := verifySigFor_of_checkSigWithEncoding checked
   have published := ctx.thirdParty.2.1 sig observed key keyMem valid
@@ -62,6 +61,34 @@ theorem signature_in_satisfaction {root child env flags args other consumed expe
     | usable =>
       have same : c.witness = args := by simpa [eq, CandidateResult.usableWitness?, status] using projection
       exact atRoot.1 c eq status (origin c eq status) sig (same.symm ▸ published) rfl
+
+/-- Every usable expressive dissatisfaction is canonical. Its selectors and
+    compressed keys cannot supply the signature of an executed row. -/
+theorem expressive_dsat_excludes_checked {root child env flags args other consumed}
+    (ctx : ExecutionContext root child env flags args other consumed)
+    {source : CoreFragment} {ty : MiniType} {mm : MalleabilityModifiers}
+    (typed : HasType .p2wsh source ty) (wf : source.WellFormed .p2wsh)
+    (mal : HasMalleability .p2wsh source mm) (nm : mm.nonMalleable = true) (e : mm.e = true)
+    (keys : ∀ k ∈ source.keys, k ∈ root.checked.fragment.keys)
+    {frame : Witness} (projection : dissatisfy source env = some frame)
+    {sig : StackElement} {key : PubKey}
+    (checked : checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx sig key.bytes = .ok true) :
+    sig ∉ frame := by
+  let P := fun item : StackElement => sig ≠ item
+  have valid := verifySigFor_of_checkSigWithEncoding checked
+  have strict := ctx.modeled.2.2.2.2
+  have empty : P falseElement := by
+    rintro rfl
+    rw [ctx.sound.emptySignatureInvalid] at valid
+    contradiction
+  have items := canonical_dsat_items source env empty
+    (P2WSHNonMalleabilityKeyChoice.checked_signature_ne_true strict ctx.version checked)
+    (fun k hk => checked_ne_key root ctx.version strict (keys _ hk) checked)
+  obtain ⟨c, eq, _, canonical⟩ := (malleabilityCandidateSound env wf typed mal).expressiveDsat nm e
+  change (satisfactionCandidates source env).dsat.usableWitness? = some frame at projection
+  cases status : c.status <;> simp [eq, CandidateResult.usableWitness?, status] at projection
+  subst frame
+  exact fun mem => items c eq status (canonical c eq status) sig mem rfl
 
 /-- An accepted native P2WSH spend supplies a bounded, typed B execution and
     the local material facts used by frame recovery. -/
