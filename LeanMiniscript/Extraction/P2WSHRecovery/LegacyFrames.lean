@@ -126,6 +126,54 @@ theorem multi_frame {k : Nat} {keys : List PubKey} {own : Witness} {rest : Stack
     have nullFail := allowed.resolve_left (by simp [neg])
     exact eq_falseElement_of_size_zero (nullFail.resolve_left (by simp [modeled.2.2.2.1]) sig mem)
 
+theorem multi_false {env : SatEnv} {flags k keys own rest top}
+    (wf : (CoreFragment.multi k keys).WellFormed .p2wsh) (modeled : ModeledContextFlags .p2wsh flags)
+    (run : Eval (compile (.multi k keys)) (own.toInitialStack ++ rest) [] flags env.txCtx
+      (.success (top :: rest) [])) (neg : castToBool top = false) :
+    dissatisfy (.multi k keys) env = some own := by
+  obtain ⟨sigs, wire, count, _, empty⟩ := multi_frame wf modeled run
+  have allEmpty : sigs = List.replicate k falseElement :=
+    List.eq_replicate_iff.mpr ⟨count, empty neg⟩
+  have positive := wf.2.1.1
+  have upper := wf.2.1.2
+  have limit : keys.length ≤ maxPubKeysPerMultiSig := wf.2.2.1
+  simp [dissatisfy, satisfactionCandidates, legacyMultiCandidates, Nat.ne_of_gt positive,
+    Nat.not_lt_of_ge upper, Nat.not_lt_of_ge limit, wire, allEmpty, List.replicate_succ,
+    CandidateResult.usable, CandidateResult.usableWitness?]
+
+theorem multi_matched_frame {root env flags args other own k keys rest top}
+    (ctx : ExecutionContext root (.multi k keys) env flags args other own)
+    (wf : (CoreFragment.multi k keys).WellFormed .p2wsh)
+    (run : Eval (compile (.multi k keys)) (own.toInitialStack ++ rest) [] flags env.txCtx
+      (.success (top :: rest) [])) (truth : castToBool top = true) :
+    ∃ sigs used, own = falseElement :: sigs.reverse ∧ sigs.length = k ∧ used.Sublist keys.reverse ∧
+      SignatureFrame (fun s key => env.signatureFor key = some s) sigs used := by
+  obtain ⟨sigs, wire, count, checked, _⟩ := multi_frame wf ctx.modeled run
+  rw [truth] at checked
+  have observed (s) (hs : s ∈ sigs) : s ∈ own := by simp [wire, hs]
+  have matched := encoded_match_of_versioned ctx.version _ _ checked
+  rw [← List.map_reverse] at matched
+  obtain ⟨used, usedSub, usedFrame⟩ := multisig_lookup_frame_of_satisfy root ctx.sound ctx.version
+    ctx.modeled ctx.canonical (agreement_of_disjoint ctx.recover.2) ctx.thirdParty
+    (fun s hs => ctx.items s (observed s hs)) (fun k hk => ctx.keys k (List.mem_reverse.mp hk)) matched
+  exact ⟨sigs, used, wire, count, usedSub, usedFrame⟩
+
+theorem multi_checked {root env flags args other own k keys rest top}
+    (ctx : ExecutionContext root (.multi k keys) env flags args other own)
+    (wf : (CoreFragment.multi k keys).WellFormed .p2wsh) (encoding : env.EncodingSound flags)
+    (run : Eval (compile (.multi k keys)) (own.toInitialStack ++ rest) [] flags env.txCtx
+      (.success (top :: rest) [])) (truth : castToBool top = true) :
+    ∃ sig ∈ own, ∃ key ∈ keys,
+      checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx sig key.bytes = .ok true := by
+  obtain ⟨sigs, used, wire, count, sub, frame⟩ := multi_matched_frame ctx wf run truth
+  have positive := wf.2.1.1
+  cases sigs with
+  | nil => simp at count; omega
+  | cons sig tail =>
+    obtain ⟨key, hk, lookup⟩ := frame.origin (.head _)
+    exact ⟨sig, by simp [wire], key, List.mem_reverse.mp (sub.subset hk),
+      checkSigWithEncoding_true (encoding _ _ lookup) (ctx.sound.signatureValid lookup)⟩
+
 /-- For every occurrence of a legacy multi, the matching key subsequence and
     the generator's exact-count subsequence coincide. -/
 theorem multi_agreement {root env flags args other own expected k keys rest top}
@@ -135,14 +183,8 @@ theorem multi_agreement {root env flags args other own expected k keys rest top}
     (selected : satisfy (.multi k keys) env = some expected)
     (run : Eval (compile (.multi k keys)) (own.toInitialStack ++ rest) [] flags env.txCtx
       (.success (top :: rest) [])) (truth : castToBool top = true) : own = expected := by
-  obtain ⟨sigs, wire, count, checked, _⟩ := multi_frame wf ctx.modeled run
-  rw [truth] at checked
+  obtain ⟨sigs, used, wire, count, usedSub, usedFrame⟩ := multi_matched_frame ctx wf run truth
   have observed (s) (hs : s ∈ sigs) : s ∈ own := by simp [wire, hs]
-  have matched := encoded_match_of_versioned ctx.version _ _ checked
-  rw [← List.map_reverse] at matched
-  obtain ⟨used, usedSub, usedFrame⟩ := multisig_lookup_frame_of_satisfy root ctx.sound ctx.version
-    ctx.modeled ctx.canonical (agreement_of_disjoint ctx.recover.2) ctx.thirdParty
-    (fun s hs => ctx.items s (observed s hs)) (fun k hk => ctx.keys k (List.mem_reverse.mp hk)) matched
   have projection := selected
   change (legacyMultiCandidates k keys env).sat.usableWitness? = some expected at selected
   unfold legacyMultiCandidates at selected

@@ -4,6 +4,7 @@ import LeanMiniscript.Miniscript.TypeSoundnessProofs.ExecutionDecomposition
 import LeanMiniscript.Miniscript.TypeSoundnessProofs.SuccessShapes
 import LeanMiniscript.Extraction.TapscriptThresholdRecovery
 import LeanMiniscript.Extraction.TapscriptMultiAWitnessProofs
+import LeanMiniscript.Extraction.P2WSHRecovery.LegacyFrames
 
 /-! Recover the signature slots of key checks and multi_a executions with a stack suffix. -/
 
@@ -460,19 +461,52 @@ theorem disclosed_preimage_selected {parent : CoreFragment} {env : SatEnv}
     (matched : lock.Matches item) : env.preimageFor lock = some item := by
   exact hash_slot_recovery_iff.mp recover other thirdParty item member lock lockMem matched
 
-theorem minimal_selector {flags : ScriptFlags} {ctx : TxContext} {selector : StackElement}
-    (version : ctx.sigVersion = .tapscript)
+/-- Tapscript consensus and the modeled P2WSH policy both enforce canonical
+    selectors and abort on a nonempty rejected signature. -/
+def WitnessRules (flags : ScriptFlags) (ctx : TxContext) : Prop :=
+  ctx.sigVersion = .tapscript ∨
+    ctx.sigVersion = .witnessV0 ∧ flags.minimalIf = true ∧ flags.nullFail = true
+
+theorem witnessRules_of_modeled {sc : ScriptContext} {flags : ScriptFlags} {ctx : TxContext}
+    (version : ModeledContextVersion sc ctx) (modeled : ModeledContextFlags sc flags) :
+    WitnessRules flags ctx := by
+  cases sc with
+  | tapscript => exact Or.inl version
+  | p2wsh => exact Or.inr ⟨version, modeled.1, modeled.2.2.2.1⟩
+
+theorem false_signature_empty {flags : ScriptFlags} {ctx : TxContext} {sig key : StackElement}
+    (rules : WitnessRules flags ctx)
+    (checked : checkSigWithEncoding checkSig checkSchnorrSig flags ctx sig key = .ok false) :
+    sig = falseElement := by
+  rcases rules with tap | ⟨v0, _, nullFail⟩
+  · exact TapscriptWitness.eq_falseElement_of_checkSigWithEncoding_false tap checked
+  · apply TapscriptWitness.eq_falseElement_of_size_zero
+    by_cases h : sig.size = 0
+    · exact h
+    · cases enc : checkSigEncodingFor flags ctx.sigVersion sig key <;>
+        cases valid : checkedVerifySigFor checkSig checkSchnorrSig ctx sig key <;>
+        simp_all [checkSigWithEncoding, nullFailSatisfied] <;> split at checked <;> contradiction
+
+theorem minimal_selector_of_rules {flags : ScriptFlags} {ctx : TxContext} {selector : StackElement}
+    (rules : WitnessRules flags ctx)
     (minimal : minimalIfSatisfied flags ctx.sigVersion selector) :
     selector = falseElement ∨ selector = trueElement := by
   have eqs : selector.data = falseElement.data ∨ selector.data = trueElement.data := by
-    simpa [minimalIfSatisfied, version, minimalIfArg, stackElementEq, Bool.or_eq_true] using minimal
+    rcases rules with version | ⟨version, flag, _⟩ <;>
+      simpa [minimalIfSatisfied, *, minimalIfArg, stackElementEq, Bool.or_eq_true] using minimal
   rcases eqs with h | h
   · exact Or.inl (congrArg ByteArray.mk h)
   · exact Or.inr (congrArg ByteArray.mk h)
 
+theorem minimal_selector {flags : ScriptFlags} {ctx : TxContext} {selector : StackElement}
+    (version : ctx.sigVersion = .tapscript)
+    (minimal : minimalIfSatisfied flags ctx.sigVersion selector) :
+    selector = falseElement ∨ selector = trueElement :=
+  minimal_selector_of_rules (.inl version) minimal
+
 theorem ifElse_active_cases {thenBranch elseBranch : Script} {selector : StackElement}
     {rest altStack out outAlt : Stack} {flags : ScriptFlags} {ctx : TxContext}
-    (version : ctx.sigVersion = .tapscript)
+    (rules : WitnessRules flags ctx)
     (thenBalanced : BalancedControlFlow thenBranch)
     (elseBalanced : BalancedControlFlow elseBranch)
     (run : Eval ([.op .OP_IF] ++ thenBranch ++ [.op .OP_ELSE] ++ elseBranch ++ [.op .OP_ENDIF])
@@ -492,7 +526,7 @@ theorem ifElse_active_cases {thenBranch elseBranch : Script} {selector : StackEl
         (thenBranch ++ [.op .OP_ELSE] ++ elseBranch ++ [.op .OP_ENDIF]) = some frame at split
       rw [splitEq] at split
       cases split
-      rcases minimal_selector version minimal with rfl | rfl
+      rcases minimal_selector_of_rules rules minimal with rfl | rfl
       · right
         exact ⟨rfl, by simpa [ConditionalFrame.select, selectConditionalBranches,
           castToBool, falseElement] using selected⟩
@@ -507,10 +541,12 @@ theorem ifElse_active_cases {thenBranch elseBranch : Script} {selector : StackEl
       contradiction
   all_goals cases resultEq
 
+variable {sc : ScriptContext}
+
 theorem and_v_malleability_children {X Y : CoreFragment} {mods : MalleabilityModifiers}
-    (mal : HasMalleability .tapscript (.and_v X Y) mods)
+    (mal : HasMalleability sc (.and_v X Y) mods)
     (nonMalleable : mods.nonMalleable = true) :
-    ∃ mx my, HasMalleability .tapscript X mx ∧ HasMalleability .tapscript Y my ∧
+    ∃ mx my, HasMalleability sc X mx ∧ HasMalleability sc Y my ∧
       mx.nonMalleable = true ∧ my.nonMalleable = true := by
   cases mal with
   | @and_v x y mx my hx hy =>
@@ -518,9 +554,9 @@ theorem and_v_malleability_children {X Y : CoreFragment} {mods : MalleabilityMod
         (Bool.and_eq_true_iff.mp nonMalleable).2⟩
 
 theorem or_i_malleability_children {X Y : CoreFragment} {mods : MalleabilityModifiers}
-    (mal : HasMalleability .tapscript (.or_i X Y) mods)
+    (mal : HasMalleability sc (.or_i X Y) mods)
     (nonMalleable : mods.nonMalleable = true) :
-    ∃ mx my, HasMalleability .tapscript X mx ∧ HasMalleability .tapscript Y my ∧
+    ∃ mx my, HasMalleability sc X mx ∧ HasMalleability sc Y my ∧
       mx.nonMalleable = true ∧ my.nonMalleable = true ∧ (mx.s = true ∨ my.s = true) := by
   cases mal with
   | @or_i x y mx my hx hy =>

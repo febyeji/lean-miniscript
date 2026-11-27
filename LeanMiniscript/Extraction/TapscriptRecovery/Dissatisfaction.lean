@@ -5,6 +5,8 @@ import LeanMiniscript.Extraction.TapscriptRecovery.BranchExecution
 set_option maxRecDepth 4000
 set_option maxHeartbeats 4000000
 
+variable {sc : LeanMiniscript.Miniscript.ScriptContext}
+
 namespace LeanMiniscript.Extraction.TapscriptRecovery.Dsat
 
 open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
@@ -39,9 +41,9 @@ theorem dsat_or_i_right_eq {X Y : CoreFragment} {env : SatEnv}
   signed_select_rawUnsigned_eq (forced.withSelector _) (unsigned_withSelector unsigned)
 
 theorem or_i_expressive_children {X Y : CoreFragment} {mods : MalleabilityModifiers}
-    (mal : HasMalleability .tapscript (.or_i X Y) mods)
+    (mal : HasMalleability sc (.or_i X Y) mods)
     (nm : mods.nonMalleable = true) (expressive : mods.e = true) :
-    ∃ mx my, HasMalleability .tapscript X mx ∧ HasMalleability .tapscript Y my ∧
+    ∃ mx my, HasMalleability sc X mx ∧ HasMalleability sc Y my ∧
       mx.nonMalleable = true ∧ my.nonMalleable = true ∧
       ((mx.e = true ∧ my.f = true) ∨ (my.e = true ∧ mx.f = true)) := by
   cases mal with
@@ -52,26 +54,30 @@ theorem or_i_expressive_children {X Y : CoreFragment} {mods : MalleabilityModifi
     · exact Or.inl (Bool.and_eq_true_iff.mp left)
     · exact Or.inr (Bool.and_eq_true_iff.mp right)
 
-def AmbientFalseEvidence (fragment : CoreFragment) : Prop :=
+def AmbientFalseEvidenceIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
   ∀ (parent : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
     (parentArgs parentOther consumed : Witness) (top : StackElement) (rest : Stack),
-    ExecutionContext parent fragment env flags parentArgs parentOther consumed →
+    ExecutionContextIn sc parent fragment env flags parentArgs parentOther consumed →
     (∀ item ∈ consumed.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) →
     Eval (compile fragment) (consumed.toInitialStack ++ rest) [] flags env.txCtx (.success (top :: rest) []) →
     castToBool top = false →
     RawUnsigned (satisfactionCandidates fragment env).dsat ∨ CheckedSignature fragment env flags consumed
 
-def AmbientForcedFalse (fragment : CoreFragment) : Prop :=
+abbrev AmbientFalseEvidence := AmbientFalseEvidenceIn .tapscript
+
+def AmbientForcedFalseIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
   ∀ (parent : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
     (parentArgs parentOther consumed : Witness) (top : StackElement) (rest : Stack),
-    ExecutionContext parent fragment env flags parentArgs parentOther consumed → fragment.keys.Nodup →
+    ExecutionContextIn sc parent fragment env flags parentArgs parentOther consumed → fragment.keys.Nodup →
     (∀ item ∈ consumed.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) →
     Eval (compile fragment) (consumed.toInitialStack ++ rest) [] flags env.txCtx (.success (top :: rest) []) →
     castToBool top = false → CheckedSignature fragment env flags consumed
 
+abbrev AmbientForcedFalse := AmbientForcedFalseIn .tapscript
+
 theorem forcedFalse_of_evidence {fragment : CoreFragment}
     (forced : ∀ env, (satisfactionCandidates fragment env).dsat.Signed)
-    (evidence : AmbientFalseEvidence fragment) : AmbientForcedFalse fragment := by
+    (evidence : AmbientFalseEvidenceIn sc fragment) : AmbientForcedFalseIn sc fragment := by
   intro parent env flags pa po consumed top rest context _nodup bound run falsehood
   rcases evidence parent env flags pa po consumed top rest context bound run falsehood with unsigned | checked
   · exact (signed_excludes_unsigned (forced env) unsigned).elim
@@ -85,14 +91,14 @@ theorem checkedSignature_mono {child parent : CoreFragment} {env : SatEnv} {flag
   exact ⟨sig, items sig hs, key, keys key hk, check⟩
 
 theorem ambientDsatComplete_or_i_left {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩) (typedY : HasType .tapscript Y ⟨.B, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
+    (typedX : HasType sc X ⟨.B, modsX⟩) (typedY : HasType sc Y ⟨.B, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
     (unsignedX : ∀ env, RawUnsigned (satisfactionCandidates X env).dsat)
     (forcedY : ∀ env, (satisfactionCandidates Y env).dsat.Signed)
-    (completeX : AmbientDsatComplete X) (runtimeY : AmbientForcedFalse Y) :
-    AmbientDsatComplete (.or_i X Y) := by
+    (completeX : AmbientDsatCompleteIn sc X) (runtimeY : AmbientForcedFalseIn sc Y) :
+    AmbientDsatCompleteIn sc (.or_i X Y) := by
   intro parent env flags pa po consumed top rest context nodup bounded run falsehood absent
-  rcases or_i_run_B typedX typedY wfX wfY context.version run with
+  rcases or_i_run_B typedX typedY wfX wfY context.rules run with
       ⟨active, eq, childRun⟩ | ⟨active, eq, childRun⟩
   · subst consumed
     have activeIn : ∀ item ∈ active, item ∈ active ++ [trueElement] :=
@@ -121,14 +127,14 @@ theorem ambientDsatComplete_or_i_left {X Y : CoreFragment} {modsX modsY : Correc
     exact (absent (checkedSignature_mono childKeys activeIn checked)).elim
 
 theorem ambientDsatComplete_or_i_right {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩) (typedY : HasType .tapscript Y ⟨.B, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
+    (typedX : HasType sc X ⟨.B, modsX⟩) (typedY : HasType sc Y ⟨.B, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
     (unsignedY : ∀ env, RawUnsigned (satisfactionCandidates Y env).dsat)
     (forcedX : ∀ env, (satisfactionCandidates X env).dsat.Signed)
-    (completeY : AmbientDsatComplete Y) (runtimeX : AmbientForcedFalse X) :
-    AmbientDsatComplete (.or_i X Y) := by
+    (completeY : AmbientDsatCompleteIn sc Y) (runtimeX : AmbientForcedFalseIn sc X) :
+    AmbientDsatCompleteIn sc (.or_i X Y) := by
   intro parent env flags pa po consumed top rest context nodup bounded run falsehood absent
-  rcases or_i_run_B typedX typedY wfX wfY context.version run with
+  rcases or_i_run_B typedX typedY wfX wfY context.rules run with
       ⟨active, eq, childRun⟩ | ⟨active, eq, childRun⟩
   · subst consumed
     have activeIn : ∀ item ∈ active, item ∈ active ++ [trueElement] :=
@@ -158,8 +164,8 @@ theorem ambientDsatComplete_or_i_right {X Y : CoreFragment} {modsX modsY : Corre
 
 theorem or_d_false_run_frame {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {other : Witness} {rest : Stack} {top : StackElement}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩) (typedY : HasType .tapscript Y ⟨.B, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
+    (typedX : HasType sc X ⟨.B, modsX⟩) (typedY : HasType sc Y ⟨.B, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
     (run : Eval (compile (.or_d X Y)) (other.toInitialStack ++ rest) [] flags env.txCtx (.success (top :: rest) []))
     (falsehood : castToBool top = false) :
     ∃ otherX otherY value, other = otherY ++ otherX ∧
@@ -184,10 +190,10 @@ theorem or_d_false_run_frame {X Y : CoreFragment} {modsX modsY : CorrectnessModi
     · rw [← tailEq]; exact runY
 
 theorem ambientDsatComplete_or_d {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩) (typedY : HasType .tapscript Y ⟨.B, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
-    (completeX : AmbientDsatComplete X) (completeY : AmbientDsatComplete Y) :
-    AmbientDsatComplete (.or_d X Y) := by
+    (typedX : HasType sc X ⟨.B, modsX⟩) (typedY : HasType sc Y ⟨.B, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
+    (completeX : AmbientDsatCompleteIn sc X) (completeY : AmbientDsatCompleteIn sc Y) :
+    AmbientDsatCompleteIn sc (.or_d X Y) := by
   intro parent env flags pa po consumed top rest context nodup bounded run falsehood absent
   obtain ⟨otherX, otherY, value, eq, runX, falseX, runY⟩ :=
     or_d_false_run_frame typedX typedY wfX wfY run falsehood
@@ -212,8 +218,8 @@ theorem ambientDsatComplete_or_d {X Y : CoreFragment} {modsX modsY : Correctness
 
 theorem and_v_run_B_frame {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {other : Witness} {rest : Stack} {top : StackElement}
-    (typedX : HasType .tapscript X ⟨.V, modsX⟩) (typedY : HasType .tapscript Y ⟨.B, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
+    (typedX : HasType sc X ⟨.V, modsX⟩) (typedY : HasType sc Y ⟨.B, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
     (run : Eval (compile (.and_v X Y)) (other.toInitialStack ++ rest) [] flags env.txCtx
       (.success (top :: rest) [])) :
     ∃ otherX otherY, other = otherY ++ otherX ∧
@@ -238,7 +244,7 @@ theorem and_v_run_B_frame {X Y : CoreFragment} {modsX modsY : CorrectnessModifie
     simpa only [Witness.toInitialStack, List.reverse_reverse] using runX
   · rw [← inputEqY]; exact runY
 
-theorem ambientFalseEvidence_one : AmbientFalseEvidence .one := by
+theorem ambientFalseEvidence_one : AmbientFalseEvidenceIn sc .one := by
   intro parent env flags pa po consumed top rest _context _bounded run falsehood
   have canonical : Eval (compile .one) (consumed.toInitialStack ++ rest) [] flags env.txCtx
       (.success (scriptNum 1 :: (consumed.toInitialStack ++ rest)) []) := by
@@ -250,7 +256,7 @@ theorem ambientFalseEvidence_one : AmbientFalseEvidence .one := by
   change true = false at falsehood
   cases falsehood
 
-theorem ambientForcedFalse_one : AmbientForcedFalse .one :=
+theorem ambientForcedFalse_one : AmbientForcedFalseIn sc .one :=
   forcedFalse_of_evidence (fun _ => CandidateResult.signed_impossible) ambientFalseEvidence_one
 
 end LeanMiniscript.Extraction.TapscriptRecovery.Dsat
@@ -260,31 +266,33 @@ namespace LeanMiniscript.Extraction.TapscriptRecovery.ForcedAndV
 open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
   LeanMiniscript.Extraction OrI OrDC Dsat
 
-def AmbientSignedV (fragment : CoreFragment) : Prop :=
+def AmbientSignedVIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
   ∀ (parent : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
     (parentArgs parentOther consumed : Witness) (rest : Stack),
-    ExecutionContext parent fragment env flags parentArgs parentOther consumed → fragment.keys.Nodup →
+    ExecutionContextIn sc parent fragment env flags parentArgs parentOther consumed → fragment.keys.Nodup →
     (∀ item ∈ consumed.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) →
     Eval (compile fragment) (consumed.toInitialStack ++ rest) [] flags env.txCtx (.success rest []) →
     CheckedSignature fragment env flags consumed
 
+abbrev AmbientSignedV := AmbientSignedVIn .tapscript
+
 theorem signedV_of_execution {fragment : CoreFragment}
     (signed : ∀ env, (satisfactionCandidates fragment env).sat.Signed)
-    (execute : AmbientExecutionV fragment) : AmbientSignedV fragment := by
+    (execute : AmbientExecutionVIn sc fragment) : AmbientSignedVIn sc fragment := by
   intro parent env flags pa po consumed rest context _nodup bounded run
   exact signed_execution_consumes (signed env)
     (execute parent env flags pa po consumed rest context bounded run)
 
 theorem signedV_of_malleability {fragment : CoreFragment} {mods : CorrectnessModifiers}
     {malMods : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.V, mods⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment malMods) (signed : malMods.s = true)
-    (execute : AmbientExecutionV fragment) : AmbientSignedV fragment :=
+    (typed : HasType sc fragment ⟨.V, mods⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment malMods) (signed : malMods.s = true)
+    (execute : AmbientExecutionVIn sc fragment) : AmbientSignedVIn sc fragment :=
   signedV_of_execution (fun env => (malleabilityCandidateSound env wf typed mal).signedSat signed) execute
 
 theorem and_v_B_typed_children {X Y : CoreFragment} {mods : CorrectnessModifiers}
-    (typed : HasType .tapscript (.and_v X Y) ⟨.B, mods⟩) :
-    ∃ modsX modsY, HasType .tapscript X ⟨.V, modsX⟩ ∧ HasType .tapscript Y ⟨.B, modsY⟩ := by
+    (typed : HasType sc (.and_v X Y) ⟨.B, mods⟩) :
+    ∃ modsX modsY, HasType sc X ⟨.V, modsX⟩ ∧ HasType sc Y ⟨.B, modsY⟩ := by
   generalize typeEq : (⟨.B, mods⟩ : MiniType) = parentType at typed
   cases typed with
   | @and_v first second firstMods secondType typedX typedY _branch =>
@@ -298,10 +306,10 @@ theorem and_v_B_typed_children {X Y : CoreFragment} {mods : CorrectnessModifiers
 
 theorem and_v_false_contexts {parent X Y : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
     {pa po left right : Witness} {rest : Stack}
-    (context : ExecutionContext parent (.and_v X Y) env flags pa po (right ++ left))
+    (context : ExecutionContextIn sc parent (.and_v X Y) env flags pa po (right ++ left))
     (nodup : (CoreFragment.and_v X Y).keys.Nodup)
     (bounded : ∀ item ∈ (right ++ left).toInitialStack ++ rest, item.size ≤ maxScriptElementSize) :
-    ExecutionContext parent X env flags pa po left ∧ ExecutionContext parent Y env flags pa po right ∧
+    ExecutionContextIn sc parent X env flags pa po left ∧ ExecutionContextIn sc parent Y env flags pa po right ∧
     X.keys.Nodup ∧ Y.keys.Nodup ∧
     (∀ item ∈ left.toInitialStack ++ (right.toInitialStack ++ rest), item.size ≤ maxScriptElementSize) ∧
     (∀ item ∈ right.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) := by
@@ -316,9 +324,9 @@ theorem and_v_false_contexts {parent X Y : CoreFragment} {env : SatEnv} {flags :
     boundAll, fun item hi => boundAll item (List.mem_append_right _ hi)⟩
 
 theorem forced_and_v_of_signed_prefix {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
-    (typedX : HasType .tapscript X ⟨.V, modsX⟩) (typedY : HasType .tapscript Y ⟨.B, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
-    (signedPrefix : AmbientSignedV X) : AmbientForcedFalse (.and_v X Y) := by
+    (typedX : HasType sc X ⟨.V, modsX⟩) (typedY : HasType sc Y ⟨.B, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
+    (signedPrefix : AmbientSignedVIn sc X) : AmbientForcedFalseIn sc (.and_v X Y) := by
   intro parent env flags pa po consumed top rest context nodup bounded run _falsehood
   obtain ⟨left, right, eq, runX, _runY⟩ := and_v_run_B_frame typedX typedY wfX wfY run
   subst consumed
@@ -328,9 +336,9 @@ theorem forced_and_v_of_signed_prefix {X Y : CoreFragment} {modsX modsY : Correc
     (fun _ h => List.mem_append_right _ h) checked
 
 theorem forced_and_v_of_forced_child {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
-    (typedX : HasType .tapscript X ⟨.V, modsX⟩) (typedY : HasType .tapscript Y ⟨.B, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
-    (child : AmbientForcedFalse Y) : AmbientForcedFalse (.and_v X Y) := by
+    (typedX : HasType sc X ⟨.V, modsX⟩) (typedY : HasType sc Y ⟨.B, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
+    (child : AmbientForcedFalseIn sc Y) : AmbientForcedFalseIn sc (.and_v X Y) := by
   intro parent env flags pa po consumed top rest context nodup bounded run falsehood
   obtain ⟨left, right, eq, _runX, runY⟩ := and_v_run_B_frame typedX typedY wfX wfY run
   subst consumed
@@ -341,8 +349,8 @@ theorem forced_and_v_of_forced_child {X Y : CoreFragment} {modsX modsY : Correct
 
 theorem and_v_run_V_frame {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {other : Witness} {rest : Stack}
-    (typedX : HasType .tapscript X ⟨.V, modsX⟩) (typedY : HasType .tapscript Y ⟨.V, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
+    (typedX : HasType sc X ⟨.V, modsX⟩) (typedY : HasType sc Y ⟨.V, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
     (run : Eval (compile (.and_v X Y)) (other.toInitialStack ++ rest) [] flags env.txCtx (.success rest [])) :
     ∃ left right, other = right ++ left ∧
       Eval (compile X) (left.toInitialStack ++ (right.toInitialStack ++ rest)) [] flags env.txCtx
@@ -367,10 +375,10 @@ theorem and_v_run_V_frame {X Y : CoreFragment} {modsX modsY : CorrectnessModifie
   · rw [← inputEqY]; exact runY
 
 theorem ambientExecutionV_and_v {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
-    (typedX : HasType .tapscript X ⟨.V, modsX⟩) (typedY : HasType .tapscript Y ⟨.V, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
-    (executeX : AmbientExecutionV X) (executeY : AmbientExecutionV Y) :
-    AmbientExecutionV (.and_v X Y) := by
+    (typedX : HasType sc X ⟨.V, modsX⟩) (typedY : HasType sc Y ⟨.V, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
+    (executeX : AmbientExecutionVIn sc X) (executeY : AmbientExecutionVIn sc Y) :
+    AmbientExecutionVIn sc (.and_v X Y) := by
   intro parent env flags pa po consumed rest context bounded run
   obtain ⟨left, right, eq, runX, runY⟩ := and_v_run_V_frame typedX typedY wfX wfY run
   subst consumed
@@ -394,10 +402,10 @@ theorem ambientExecutionV_and_v {X Y : CoreFragment} {modsX modsY : CorrectnessM
 
 theorem ambientExecutionV_or_c_from_children {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
     {mods : MalleabilityModifiers}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩) (typedY : HasType .tapscript Y ⟨.V, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.or_c X Y) mods) (nm : mods.nonMalleable = true)
-    (executeX : AmbientExecutionB X) (executeY : AmbientExecutionV Y) : AmbientExecutionV (.or_c X Y) := by
+    (typedX : HasType sc X ⟨.B, modsX⟩) (typedY : HasType sc Y ⟨.V, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
+    (mal : HasMalleability sc (.or_c X Y) mods) (nm : mods.nonMalleable = true)
+    (executeX : AmbientExecutionBIn sc X) (executeY : AmbientExecutionVIn sc Y) : AmbientExecutionVIn sc (.or_c X Y) := by
   obtain ⟨mx, my, hx, _hy, nx, _ny, ex, _signed⟩ := shortCircuit_malleability_children (keep := false) mal nm
   exact ambientExecution_shortCircuit (keep := false) typedX typedY wfX wfY executeX executeY
     (expressive_rawUnsigned wfX typedX hx nx ex)
@@ -409,25 +417,27 @@ namespace LeanMiniscript.Extraction.TapscriptRecovery.SignedV
 open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
   LeanMiniscript.Extraction Active OrI OrDC Dsat ForcedAndV
 
-inductive VShape : CoreFragment → Prop where
+inductive VShapeIn (sc : ScriptContext) : CoreFragment → Prop where
   | verify {X : CoreFragment} {mx : CorrectnessModifiers}
-      (typed : HasType .tapscript X ⟨.B, mx⟩) : VShape (.v X)
+      (typed : HasType sc X ⟨.B, mx⟩) : VShapeIn sc (.v X)
   | and_v {X Y : CoreFragment} {mx my : CorrectnessModifiers}
-      (typedX : HasType .tapscript X ⟨.V, mx⟩)
-      (typedY : HasType .tapscript Y ⟨.V, my⟩) : VShape (.and_v X Y)
+      (typedX : HasType sc X ⟨.V, mx⟩)
+      (typedY : HasType sc Y ⟨.V, my⟩) : VShapeIn sc (.and_v X Y)
   | or_c {X Y : CoreFragment} {mx my : CorrectnessModifiers}
-      (typedX : HasType .tapscript X ⟨.B, mx⟩) (d : mx.d = true) (u : mx.u = true)
-      (typedY : HasType .tapscript Y ⟨.V, my⟩) : VShape (.or_c X Y)
+      (typedX : HasType sc X ⟨.B, mx⟩) (d : mx.d = true) (u : mx.u = true)
+      (typedY : HasType sc Y ⟨.V, my⟩) : VShapeIn sc (.or_c X Y)
   | or_i {X Y : CoreFragment} {mx my : CorrectnessModifiers}
-      (typedX : HasType .tapscript X ⟨.V, mx⟩)
-      (typedY : HasType .tapscript Y ⟨.V, my⟩) : VShape (.or_i X Y)
+      (typedX : HasType sc X ⟨.V, mx⟩)
+      (typedY : HasType sc Y ⟨.V, my⟩) : VShapeIn sc (.or_i X Y)
   | andor {X Y Z : CoreFragment} {mx my mz : CorrectnessModifiers}
-      (typedX : HasType .tapscript X ⟨.B, mx⟩) (d : mx.d = true) (u : mx.u = true)
-      (typedY : HasType .tapscript Y ⟨.V, my⟩)
-      (typedZ : HasType .tapscript Z ⟨.V, mz⟩) : VShape (.andor X Y Z)
+      (typedX : HasType sc X ⟨.B, mx⟩) (d : mx.d = true) (u : mx.u = true)
+      (typedY : HasType sc Y ⟨.V, my⟩)
+      (typedZ : HasType sc Z ⟨.V, mz⟩) : VShapeIn sc (.andor X Y Z)
+
+abbrev VShape := VShapeIn .tapscript
 
 theorem typed_V_shape {fragment : CoreFragment} {mods : CorrectnessModifiers}
-    (typed : HasType .tapscript fragment ⟨.V, mods⟩) : VShape fragment := by
+    (typed : HasType sc fragment ⟨.V, mods⟩) : VShapeIn sc fragment := by
   generalize typeEq : (⟨.V, mods⟩ : MiniType) = ty at typed
   have baseEq := congrArg MiniType.base typeEq
   cases typed <;> try { cases baseEq }
@@ -496,7 +506,7 @@ theorem notifElse_truth_cases {thenBranch elseBranch : Script} {selector : Stack
 
 theorem branch_V_frame {X Y : CoreFragment} {modsY : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {other : Witness} {rest args tail : Stack} {top : StackElement}
-    (typedY : HasType .tapscript Y ⟨.V, modsY⟩) (wfY : Y.WellFormed .tapscript)
+    (typedY : HasType sc Y ⟨.V, modsY⟩) (wfY : Y.WellFormed sc)
     (inputEq : other.toInitialStack ++ rest = args ++ tail)
     (runX : Eval (compile X) (args ++ tail) [] flags env.txCtx (.success (top :: tail) []))
     (runY : Eval (compile Y) tail [] flags env.txCtx (.success rest [])) :
@@ -517,9 +527,9 @@ theorem branch_V_frame {X Y : CoreFragment} {modsY : CorrectnessModifiers}
 
 theorem andor_run_V_frame {X Y Z : CoreFragment} {modsX modsY modsZ : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {other : Witness} {rest : Stack}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩)
-    (typedY : HasType .tapscript Y ⟨.V, modsY⟩) (typedZ : HasType .tapscript Z ⟨.V, modsZ⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript) (wfZ : Z.WellFormed .tapscript)
+    (typedX : HasType sc X ⟨.B, modsX⟩)
+    (typedY : HasType sc Y ⟨.V, modsY⟩) (typedZ : HasType sc Z ⟨.V, modsZ⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc) (wfZ : Z.WellFormed sc)
     (run : Eval (compile (.andor X Y Z)) (other.toInitialStack ++ rest) [] flags env.txCtx (.success rest [])) :
     (∃ left right top, other = right ++ left ∧
       Eval (compile X) (left.toInitialStack ++ (right.toInitialStack ++ rest)) [] flags env.txCtx
@@ -548,9 +558,9 @@ theorem andor_run_V_frame {X Y Z : CoreFragment} {modsX modsY modsZ : Correctnes
     exact Or.inr ⟨left, right, top, eq, rx, truth, ry⟩
 
 theorem andor_malleability_children {X Y Z : CoreFragment} {mods : MalleabilityModifiers}
-    (mal : HasMalleability .tapscript (.andor X Y Z) mods) (nm : mods.nonMalleable = true) :
-    ∃ mx my mz, HasMalleability .tapscript X mx ∧ HasMalleability .tapscript Y my ∧
-      HasMalleability .tapscript Z mz ∧ mx.nonMalleable = true ∧ my.nonMalleable = true ∧
+    (mal : HasMalleability sc (.andor X Y Z) mods) (nm : mods.nonMalleable = true) :
+    ∃ mx my mz, HasMalleability sc X mx ∧ HasMalleability sc Y my ∧
+      HasMalleability sc Z mz ∧ mx.nonMalleable = true ∧ my.nonMalleable = true ∧
       mz.nonMalleable = true ∧ mx.e = true := by
   cases mal with
   | andor hx hy hz =>
@@ -558,12 +568,12 @@ theorem andor_malleability_children {X Y Z : CoreFragment} {mods : MalleabilityM
     exact ⟨_, _, _, hx, hy, hz, nx, ny, nz, ex⟩
 
 theorem ambientExecutionV_andor {X Y Z : CoreFragment} {modsX modsY modsZ : CorrectnessModifiers}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩)
-    (typedY : HasType .tapscript Y ⟨.V, modsY⟩) (typedZ : HasType .tapscript Z ⟨.V, modsZ⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript) (wfZ : Z.WellFormed .tapscript)
-    (executeX : AmbientExecutionB X) (executeY : AmbientExecutionV Y) (executeZ : AmbientExecutionV Z)
+    (typedX : HasType sc X ⟨.B, modsX⟩)
+    (typedY : HasType sc Y ⟨.V, modsY⟩) (typedZ : HasType sc Z ⟨.V, modsZ⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc) (wfZ : Z.WellFormed sc)
+    (executeX : AmbientExecutionBIn sc X) (executeY : AmbientExecutionVIn sc Y) (executeZ : AmbientExecutionVIn sc Z)
     (unsignedX : ∀ env, RawUnsigned (satisfactionCandidates X env).dsat) :
-    AmbientExecutionV (.andor X Y Z) := by
+    AmbientExecutionVIn sc (.andor X Y Z) := by
   intro parent env flags pa po consumed rest context bounded run
   have keysX : ∀ key ∈ X.keys, key ∈ (CoreFragment.andor X Y Z).keys :=
     fun _ h => List.mem_append_left _ (List.mem_append_left _ h)
@@ -601,12 +611,12 @@ theorem ambientExecutionV_andor {X Y Z : CoreFragment} {modsX modsY modsZ : Corr
 
 theorem ambientExecutionV_andor_from_children {X Y Z : CoreFragment}
     {modsX modsY modsZ : CorrectnessModifiers} {mods : MalleabilityModifiers}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩)
-    (typedY : HasType .tapscript Y ⟨.V, modsY⟩) (typedZ : HasType .tapscript Z ⟨.V, modsZ⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript) (wfZ : Z.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.andor X Y Z) mods) (nm : mods.nonMalleable = true)
-    (executeX : AmbientExecutionB X) (executeY : AmbientExecutionV Y) (executeZ : AmbientExecutionV Z) :
-    AmbientExecutionV (.andor X Y Z) := by
+    (typedX : HasType sc X ⟨.B, modsX⟩)
+    (typedY : HasType sc Y ⟨.V, modsY⟩) (typedZ : HasType sc Z ⟨.V, modsZ⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc) (wfZ : Z.WellFormed sc)
+    (mal : HasMalleability sc (.andor X Y Z) mods) (nm : mods.nonMalleable = true)
+    (executeX : AmbientExecutionBIn sc X) (executeY : AmbientExecutionVIn sc Y) (executeZ : AmbientExecutionVIn sc Z) :
+    AmbientExecutionVIn sc (.andor X Y Z) := by
   obtain ⟨mx, _my, _mz, hx, _hy, _hz, nx, _ny, _nz, ex⟩ := andor_malleability_children mal nm
   exact ambientExecutionV_andor typedX typedY typedZ wfX wfY wfZ executeX executeY executeZ
     (expressive_rawUnsigned wfX typedX hx nx ex)
@@ -619,16 +629,18 @@ def VBoundary : CoreFragment → CoreFragment → Prop
   | .andor X Y Z, child => child = X ∨ VBoundary Y child ∨ VBoundary Z child
   | _, _ => False
 
-def BExecutionPremise (fragment : CoreFragment) : Prop :=
+def BExecutionPremiseIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
   ∀ (mods : CorrectnessModifiers) (malMods : MalleabilityModifiers),
-    HasType .tapscript fragment ⟨.B, mods⟩ → fragment.WellFormed .tapscript →
-    HasMalleability .tapscript fragment malMods → malMods.nonMalleable = true → AmbientExecutionB fragment
+    HasType sc fragment ⟨.B, mods⟩ → fragment.WellFormed sc →
+    HasMalleability sc fragment malMods → malMods.nonMalleable = true → AmbientExecutionBIn sc fragment
+
+abbrev BExecutionPremise := BExecutionPremiseIn .tapscript
 
 theorem ambientExecutionV_from_boundary {fragment : CoreFragment} {mods : CorrectnessModifiers}
     {malMods : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.V, mods⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment malMods) (nm : malMods.nonMalleable = true)
-    (boundary : ∀ child, VBoundary fragment child → BExecutionPremise child) : AmbientExecutionV fragment := by
+    (typed : HasType sc fragment ⟨.V, mods⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment malMods) (nm : malMods.nonMalleable = true)
+    (boundary : ∀ child, VBoundary fragment child → BExecutionPremiseIn sc child) : AmbientExecutionVIn sc fragment := by
   cases typed_V_shape typed with
   | verify childTyped =>
     cases mal with
@@ -659,10 +671,10 @@ termination_by sizeOf fragment
 
 theorem ambientSignedV_from_boundary {fragment : CoreFragment} {mods : CorrectnessModifiers}
     {malMods : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.V, mods⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment malMods) (nm : malMods.nonMalleable = true)
+    (typed : HasType sc fragment ⟨.V, mods⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment malMods) (nm : malMods.nonMalleable = true)
     (signed : malMods.s = true)
-    (boundary : ∀ child, VBoundary fragment child → BExecutionPremise child) : AmbientSignedV fragment :=
+    (boundary : ∀ child, VBoundary fragment child → BExecutionPremiseIn sc child) : AmbientSignedVIn sc fragment :=
   signedV_of_malleability typed wf mal signed (ambientExecutionV_from_boundary typed wf mal nm boundary)
 
 theorem vBoundary_smaller {fragment child : CoreFragment} (member : VBoundary fragment child) :
@@ -691,17 +703,17 @@ termination_by sizeOf fragment
 
 theorem ambientExecutionV_from_smaller_B {fragment : CoreFragment} {mods : CorrectnessModifiers}
     {malMods : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.V, mods⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment malMods) (nm : malMods.nonMalleable = true)
-    (ihB : ∀ child, sizeOf child < sizeOf fragment → BExecutionPremise child) : AmbientExecutionV fragment :=
+    (typed : HasType sc fragment ⟨.V, mods⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment malMods) (nm : malMods.nonMalleable = true)
+    (ihB : ∀ child, sizeOf child < sizeOf fragment → BExecutionPremiseIn sc child) : AmbientExecutionVIn sc fragment :=
   ambientExecutionV_from_boundary typed wf mal nm (fun child h => ihB child (vBoundary_smaller h))
 
 theorem uniform_signedV_of_uniform_B
-    (executeB : ∀ fragment, BExecutionPremise fragment) :
+    (executeB : ∀ fragment, BExecutionPremiseIn sc fragment) :
     ∀ (fragment : CoreFragment) (mods : CorrectnessModifiers) (malMods : MalleabilityModifiers),
-      HasType .tapscript fragment ⟨.V, mods⟩ → fragment.WellFormed .tapscript →
-      HasMalleability .tapscript fragment malMods → malMods.nonMalleable = true → malMods.s = true →
-      AmbientSignedV fragment := by
+      HasType sc fragment ⟨.V, mods⟩ → fragment.WellFormed sc →
+      HasMalleability sc fragment malMods → malMods.nonMalleable = true → malMods.s = true →
+      AmbientSignedVIn sc fragment := by
   intro fragment mods malMods typed wf mal nm signed
   exact ambientSignedV_from_boundary typed wf mal nm signed (fun child _ => executeB child)
 

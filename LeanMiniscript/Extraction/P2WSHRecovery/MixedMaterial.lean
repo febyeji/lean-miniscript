@@ -1,4 +1,5 @@
 import LeanMiniscript.Extraction.P2WSHRecovery.SignatureMaterial
+import LeanMiniscript.Extraction.MiniscriptCompilationProofs
 
 /-! The two lookup directions on a generated hash-and-key satisfaction. -/
 
@@ -166,5 +167,43 @@ theorem exists_guardedKey_separated (key : PubKey) (ctx : TxContext) (flags : Sc
   have matched : lock.Matches p := ⟨rfl, rfl⟩
   exact ⟨env, lock, sig, p, rfl, matched, rfl, guardedKey_separated
     (env := env) (key := key) (sig := sig) rfl rfl (by decide) matched (by decide) version strict⟩
+
+/-- In a modeled spend of the mixed fragment, distinct HASH160 images make the
+    generated witness eligible. A non-DER opening and a signature of length
+    other than 32 then realize both local premises on the accepted witness. -/
+theorem guardedKey_accepted_separated (sane : SaneFragment .p2wsh)
+    {lock : HashLock} {key : PubKey} (shape : sane.checked.fragment = guardedKey lock key)
+    {bytes scriptPubKey : ByteArray} {suffix : Witness} {env : SatEnv} {flags : CoreVerificationFlags}
+    {ctx : TxContext} {oracles : SignatureVersion → ByteArray → CryptoOracle} (keyPath : CoreKeyPathChecker)
+    (serialized : CompiledScriptBytes sane.checked.fragment bytes)
+    (spend : CompiledScriptSpend .p2wsh bytes scriptPubKey suffix)
+    (run : CompiledScriptRun .p2wsh env flags ctx oracles bytes)
+    {sig opening : StackElement} (signed : env.signatureFor key = some sig)
+    (opened : env.preimageFor lock = some opening) (size : sig.size ≠ 32)
+    (nonDER : isValidSignatureEncoding opening = false)
+    (images : ∀ item ∈ [sig, opening], Script.hash160 item ≠ Script.hash160 key.bytes) :
+    satisfyFinal sane.checked.fragment env = some [sig, opening] ∧
+    ThirdPartyWitness sane.checked.fragment env.txCtx [sig, opening] [sig, opening] ∧
+    LocalHashSlotRecovery sane.checked.fragment env [sig, opening] ∧
+    LocalPreimageSignatureDisjoint sane.checked.fragment env flags.script [sig, opening] ∧
+    coreVerifyScript flags ctx oracles keyPath ByteArray.empty scriptPubKey
+      ([sig, opening] ++ suffix) = .ok () := by
+  have accept := p2wshSatisfaction sane bytes scriptPubKey suffix env flags ctx oracles keyPath
+    [sig, opening] serialized spend run
+  obtain ⟨_, _, _, _, modeled, sound, _, context, _⟩ := run
+  have version : env.txCtx.sigVersion = .witnessV0 := by rw [context]; rfl
+  obtain ⟨generated, recover, disjoint⟩ := guardedKey_separated signed opened size
+    (sound.preimageMatches opened) nonDER version modeled.2.2.2.2
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · simpa [shape] using generated
+  · rw [shape]
+    refine ⟨?_, fun _ h _ _ _ => h, fun _ h _ _ _ => h, ?_⟩
+    · simp [guardedKey_keys]
+    · intro item h k hk image
+      obtain rfl : k = key := by simpa [guardedKey_keys] using hk
+      exact (images _ h image).elim
+  · simpa [shape] using recover
+  · simpa [shape] using disjoint
+  · exact accept (by simpa [shape] using generated)
 
 end LeanMiniscript.Extraction.P2WSHRecovery

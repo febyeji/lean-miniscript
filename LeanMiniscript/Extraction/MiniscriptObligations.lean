@@ -1,4 +1,5 @@
 import LeanMiniscript.Extraction.MiniscriptCompilationProofs
+import LeanMiniscript.Extraction.P2WSHNonMalleability
 import LeanMiniscript.Extraction.TapscriptNonMalleability
 
 /-!
@@ -18,13 +19,12 @@ structure MiniscriptObligation where
   proposition : Lean.Name
   theoremName : Lean.Name
 
--- TODO(miniscript-compilation): prove P2WSH non-malleability.
 def miniscriptObligations : List MiniscriptObligation := [
   ⟨``P2WSHSatisfaction, `LeanMiniscript.Extraction.p2wshSatisfaction⟩,
   ⟨``TapscriptSatisfaction, ``tapscriptSatisfaction⟩,
   ⟨``P2WSHDissatisfaction, `LeanMiniscript.Extraction.p2wshDissatisfaction⟩,
   ⟨``TapscriptDissatisfaction, `LeanMiniscript.Extraction.tapscriptDissatisfaction⟩,
-  ⟨``P2WSHNonMalleability, `LeanMiniscript.Extraction.p2wshNonMalleability⟩,
+  ⟨``P2WSHNonMalleability, ``p2wshNonMalleability⟩,
   ⟨``TapscriptNonMalleability, ``tapscriptNonMalleability⟩,
   ⟨``P2WSHResourceLimits, `LeanMiniscript.Extraction.p2wshResourceLimits⟩,
   ⟨``TapscriptResourceLimits, `LeanMiniscript.Extraction.tapscriptResourceLimits⟩

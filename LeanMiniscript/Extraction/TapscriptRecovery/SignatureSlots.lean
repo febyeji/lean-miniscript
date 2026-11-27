@@ -5,6 +5,8 @@ import LeanMiniscript.Extraction.TapscriptRecovery.FalseExecution
 set_option maxRecDepth 4000
 set_option maxHeartbeats 4000000
 
+variable {sc : LeanMiniscript.Miniscript.ScriptContext}
+
 namespace LeanMiniscript.Extraction.TapscriptRecovery.CheckedRows
 
 open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
@@ -13,16 +15,22 @@ open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
 
 theorem context_signature_selected {parent child : CoreFragment} {env : SatEnv}
     {flags : ScriptFlags} {pa po own : Witness} {sig : StackElement} {key : PubKey}
-    (context : ExecutionContext parent child env flags pa po own)
+    (context : ExecutionContextIn sc parent child env flags pa po own)
     (member : sig ∈ own) (keyMem : key ∈ child.keys)
     (checked : checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx sig key.bytes = .ok true) :
     env.signatureFor key = some sig :=
-  disclosed_signature_selected context.sound context.version context.keySizes context.canonical
-    context.thirdParty (context.consumedIn sig member) (context.childKeys key keyMem) checked
+  by
+    cases sc with
+    | tapscript =>
+      exact disclosed_signature_selected context.sound context.version context.keySizes context.canonical
+        context.thirdParty (context.consumedIn sig member) (context.childKeys key keyMem) checked
+    | p2wsh =>
+      obtain ⟨_, _, frame⟩ := context.saneFrame
+      exact frame.signature keyMem member checked
 
 theorem checkedTrue_c_pk_k (key : PubKey) (parent : CoreFragment) (env : SatEnv)
     (flags : ScriptFlags) (pa po : Witness) :
-    CheckedTrueRowAgreementB (.c (.pk_k key)) parent env flags pa po := by
+    CheckedTrueRowAgreementBIn sc (.c (.pk_k key)) parent env flags pa po := by
   intro own expected top rest context _nodup canonical _bounded run truth _checked
   obtain ⟨sig, eq, checked⟩ := accepts_c_pk_k_inversion run truth
   have ownEq : own = [sig] := witness_eq_singleton_of_toInitialStack (List.append_cancel_right eq)
@@ -34,7 +42,7 @@ theorem checkedTrue_c_pk_k (key : PubKey) (parent : CoreFragment) (env : SatEnv)
 
 theorem checkedTrue_c_pk_h (key : PubKey) (parent : CoreFragment) (env : SatEnv)
     (flags : ScriptFlags) (pa po : Witness) :
-    CheckedTrueRowAgreementB (.c (.pk_h key)) parent env flags pa po := by
+    CheckedTrueRowAgreementBIn sc (.c (.pk_h key)) parent env flags pa po := by
   intro own expected top rest context _nodup canonical _bounded run truth _checked
   obtain ⟨sig, pubkey, eq, imageEq, checked⟩ := accepts_c_pk_h_inversion run truth
   have ownEq : own = [sig, pubkey] := witness_eq_pair_of_toInitialStack (List.append_cancel_right eq)
@@ -78,16 +86,16 @@ theorem agreement_multi_a_of_signature_membership {k : Nat} {keys : List PubKey}
     (thirdParty_of_local_material context signatures (by simp [CoreFragment.hashLocks]))
 
 theorem checkedTrue_j {child parent : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
-    {pa po : Witness} (smaller : CheckedTrueRowAgreementB child parent env flags pa po) :
-    CheckedTrueRowAgreementB (.j child) parent env flags pa po := by
+    {pa po : Witness} (smaller : CheckedTrueRowAgreementBIn sc child parent env flags pa po) :
+    CheckedTrueRowAgreementBIn sc (.j child) parent env flags pa po := by
   intro own expected top rest context nodup canonical bounded run truth checked
   exact smaller own expected top rest
     (executionContext_restrict context (active := child) (fun _ h => h) (fun _ h => h) (fun _ h => h))
     nodup (by simpa using canonical) bounded (j_success_child bounded run truth) truth checked
 
 theorem checkedTrue_n {child parent : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
-    {pa po : Witness} (smaller : CheckedTrueRowAgreementB child parent env flags pa po) :
-    CheckedTrueRowAgreementB (.n child) parent env flags pa po := by
+    {pa po : Witness} (smaller : CheckedTrueRowAgreementBIn sc child parent env flags pa po) :
+    CheckedTrueRowAgreementBIn sc (.n child) parent env flags pa po := by
   intro own expected top rest context nodup canonical bounded run truth checked
   obtain ⟨value, childRun, childTruth⟩ := n_success_child run truth
   exact smaller own expected value rest
@@ -214,7 +222,7 @@ theorem SlotPath.keys {target parent : CoreFragment} (path : SlotPath target par
   exact TapscriptWitness.FragmentPath.keys path
 
 theorem SlotPath.wellFormed {target parent : CoreFragment} (path : SlotPath target parent) :
-    parent.WellFormed .tapscript → target.WellFormed .tapscript := by
+    parent.WellFormed sc → target.WellFormed sc := by
   induction path with
   | here => exact id
   | wrapper op _ ih => cases op <;> exact ih
@@ -360,5 +368,70 @@ theorem SlotPath.of_threshold_member {target child : CoreFragment} {children : L
     (k : Nat) (member : child ∈ children) (path : SlotPath target child) :
     SlotPath target (.thresh k children) := by
   exact TapscriptWitness.FragmentPath.of_threshold_member k member path
+
+/-- In these rows a checked witness item belongs to the selected frame.
+    Tapscript uses the encoded size to track the same slot through candidates. -/
+def CheckedSlot (sc : ScriptContext) (target : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
+    (own expected : Witness) (item : StackElement) : Prop :=
+  item ∈ own → ∀ key ∈ target.keys,
+    checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx item key.bytes = .ok true →
+    (sc = .tapscript → item.size = 64 ∨ item.size = 65) → item ∈ expected
+
+theorem checked_slot_size {parent child env flags pa po own key sig}
+    (context : ExecutionContextIn sc parent child env flags pa po own) (hk : key ∈ child.keys)
+    (checked : checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx sig key.bytes = .ok true)
+    (tap : sc = .tapscript) : sig.size = 64 ∨ sig.size = 65 := by
+  subst sc
+  exact successful_slot_size context.version (context.keySizes key (context.childKeys key hk)) checked
+
+theorem foreign_checked_pair {root target other env flags pa po own expected}
+    (context : ExecutionContextIn sc root target env flags pa po own)
+    (keysIn : ∀ k ∈ other.keys, k ∈ root.keys)
+    (locksIn : ∀ l ∈ other.hashLocks, l ∈ root.hashLocks)
+    (distinct : ∀ key ∈ target.keys, ∀ k ∈ other.keys, key ≠ k) :
+    PairItems (CheckedSlot sc target env flags own expected) (satisfactionCandidates other env) := by
+  have mat := TapscriptWitness.candidates_material other env
+  have lift {r : CandidateResult} (items : r.Supports (Items (TapscriptWitness.Material other env))) :
+      r.Supports (Items (CheckedSlot sc target env flags own expected)) := by
+    intro wit eq sig hs observed key hk checked size
+    have origin := items wit eq sig hs
+    cases sc with
+    | p2wsh =>
+      obtain ⟨sane, rfl, frame⟩ := context.saneFrame
+      have selected := P2WSHRecovery.checked_source_signature sane frame.sound frame.version frame.modeled
+        frame.thirdParty frame.recover.2 (frame.items _ observed) (frame.keys _ hk) keysIn locksIn origin checked
+      exact (distinct key hk key selected.1 rfl).elim
+    | tapscript =>
+      obtain ⟨source, hm, lookup⟩ := TapscriptWitness.material_signature_of_size context.sound
+        (fun k mem => context.keySizes k (keysIn k mem)) origin (size rfl)
+      exact (context.thirdParty.1 sig (context.consumedIn _ observed) key (context.childKeys _ hk)
+        source (keysIn source hm) (distinct key hk source hm)
+        (MultiA.verifySigFor_of_checkSigWithEncoding checked) (context.sound.signatureValid lookup)).elim
+  exact ⟨lift mat.1, lift mat.2⟩
+
+theorem expressive_dsat_checked_slots {condition target child root : CoreFragment}
+    {env : SatEnv} {flags : ScriptFlags} {actual dsat pa po consumed : Witness}
+    {ty : MiniType} {mm : MalleabilityModifiers}
+    (typed : HasType sc condition ty) (wf : condition.WellFormed sc)
+    (mal : HasMalleability sc condition mm) (nm : mm.nonMalleable = true) (e : mm.e = true)
+    (ctx : ExecutionContextIn sc root child env flags pa po consumed)
+    (keysIn : ∀ k ∈ condition.keys, k ∈ root.keys)
+    (projection : dissatisfy condition env = some dsat) : Items (CheckedSlot sc target env flags actual []) dsat := by
+  intro sig hs _ key _ checked size
+  cases sc with
+  | p2wsh =>
+    obtain ⟨_, rfl, frame⟩ := ctx.saneFrame
+    exact (P2WSHRecovery.expressive_dsat_excludes_checked frame typed wf mal nm e keysIn projection checked hs).elim
+  | tapscript =>
+    have small := DsatMaterial.expressive_dsat_items_small typed wf mal nm e ctx.sound
+      (fun k h => ctx.keySizes k (keysIn k h)) projection sig hs
+    rcases size rfl with h | h <;> omega
+
+theorem checkedTrue_multi_from_path {root env flags pa po k keys}
+    (path : SlotPath (.multi k keys) root) (wf : root.WellFormed .p2wsh) :
+    CheckedTrueRowAgreementBIn .p2wsh (.multi k keys) root env flags pa po := by
+  intro own expected top rest ctx _ canonical _ run truth _
+  obtain ⟨_, rfl, frame⟩ := ctx.saneFrame
+  exact P2WSHRecovery.multi_agreement frame path (path.wellFormed wf) ctx.encoding canonical run truth
 
 end LeanMiniscript.Extraction.TapscriptRecovery.SlotLocal

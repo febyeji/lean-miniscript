@@ -5,6 +5,8 @@ import LeanMiniscript.Extraction.TapscriptRecovery.RowAgreement
 set_option maxRecDepth 4000
 set_option maxHeartbeats 4000000
 
+variable {sc : LeanMiniscript.Miniscript.ScriptContext}
+
 namespace LeanMiniscript.Extraction.TapscriptRecovery.BChoiceMaterial
 
 open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
@@ -13,22 +15,27 @@ open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
 theorem checkedMaterial_canonical_root {child root : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
     {pa po : Witness} (path : SlotPath child root) (nodup : root.keys.Nodup)
     (rootCanonical : (satisfactionCandidates root env).sat.CanonicalWhenUsable) :
-    CheckedMaterial child root env flags pa po := by
+    CheckedMaterialIn sc child root env flags pa po := by
   intro own expected context canonical sig member key keyMem checked
-  have scope : TapscriptWitness.SignatureScope root child env pa po :=
-    ⟨context.sound, context.keySizes, context.childKeys, context.thirdParty⟩
-  exact scope.signature_in_satisfaction context.version path nodup rootCanonical context.canonical canonical
-    (context.consumedIn sig member) keyMem checked
+  cases sc with
+  | p2wsh =>
+    obtain ⟨_, rfl, frame⟩ := context.saneFrame
+    exact P2WSHRecovery.signature_in_satisfaction frame path canonical (frame.items _ member) keyMem checked
+  | tapscript =>
+    have scope : TapscriptWitness.SignatureScope root child env pa po :=
+      ⟨context.sound, context.keySizes, context.childKeys, context.thirdParty⟩
+    exact scope.signature_in_satisfaction context.version path nodup rootCanonical context.canonical canonical
+      (context.consumedIn sig member) keyMem checked
 
 theorem checked_or_i_canonical_root {X Y root : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
     {pa po : Witness} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript (.or_i X Y) ⟨.B, cm⟩)
-    (wf : (CoreFragment.or_i X Y).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.or_i X Y) mm) (nm : mm.nonMalleable = true)
+    (typed : HasType sc (.or_i X Y) ⟨.B, cm⟩)
+    (wf : (CoreFragment.or_i X Y).WellFormed sc)
+    (mal : HasMalleability sc (.or_i X Y) mm) (nm : mm.nonMalleable = true)
     (path : SlotPath (.or_i X Y) root) (rootNodup : root.keys.Nodup)
     (rootCanonical : (satisfactionCandidates root env).sat.CanonicalWhenUsable)
-    (ih : SmallerCheckedB (.or_i X Y) root env flags pa po) :
-    CheckedTrueRowAgreementB (.or_i X Y) root env flags pa po :=
+    (ih : SmallerCheckedBIn sc (.or_i X Y) root env flags pa po) :
+    CheckedTrueRowAgreementBIn sc (.or_i X Y) root env flags pa po :=
   checked_or_i_of_material typed wf mal nm path (checkedMaterial_canonical_root path rootNodup rootCanonical) ih
 
 end LeanMiniscript.Extraction.TapscriptRecovery.BChoiceMaterial
@@ -41,22 +48,24 @@ open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
   BChoiceMaterial DsatMaterial OrBFalse OrBComplete FalseUniform
   BWrappers
 
-def TrueRowAgreementW (child root : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
+def TrueRowAgreementWIn (sc : ScriptContext) (child root : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
     (pa po : Witness) : Prop :=
   ∀ own expected saved top rest (order : BaseWOutputOrder),
-    ExecutionContext root child env flags pa po own → child.keys.Nodup →
+    ExecutionContextIn sc root child env flags pa po own → child.keys.Nodup →
     satisfy child env = some expected →
     (∀ item ∈ saved :: (own.toInitialStack ++ rest), item.size ≤ maxScriptElementSize) →
     Eval (compile child) (saved :: (own.toInitialStack ++ rest)) [] flags env.txCtx
       (.success (order.outputs saved top ++ rest) []) →
     castToBool top = true → own = expected
 
+abbrev TrueRowAgreementW := TrueRowAgreementWIn .tapscript
+
 theorem agree_W_from_smaller_B {child root : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
     {pa po : Witness} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript child ⟨.W, cm⟩) (wf : child.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript child mm) (nm : mm.nonMalleable = true)
-    (path : SlotPath child root) (ih : SmallerCheckedB child root env flags pa po) :
-    TrueRowAgreementW child root env flags pa po := by
+    (typed : HasType sc child ⟨.W, cm⟩) (wf : child.WellFormed sc)
+    (mal : HasMalleability sc child mm) (nm : mm.nonMalleable = true)
+    (path : SlotPath child root) (ih : SmallerCheckedBIn sc child root env flags pa po) :
+    TrueRowAgreementWIn sc child root env flags pa po := by
   cases typed_W_shape typed with
   | @a body cx tx =>
     cases mal with
@@ -82,12 +91,12 @@ theorem agree_W_from_smaller_B {child root : CoreFragment} {env : SatEnv} {flags
 
 theorem checked_and_b_step {X Y root : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
     {pa po : Witness} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript (.and_b X Y) ⟨.B, cm⟩)
-    (wf : (CoreFragment.and_b X Y).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.and_b X Y) mm) (nm : mm.nonMalleable = true)
+    (typed : HasType sc (.and_b X Y) ⟨.B, cm⟩)
+    (wf : (CoreFragment.and_b X Y).WellFormed sc)
+    (mal : HasMalleability sc (.and_b X Y) mm) (nm : mm.nonMalleable = true)
     (path : SlotPath (.and_b X Y) root)
-    (ih : SmallerCheckedB (.and_b X Y) root env flags pa po) :
-    CheckedTrueRowAgreementB (.and_b X Y) root env flags pa po := by
+    (ih : SmallerCheckedBIn sc (.and_b X Y) root env flags pa po) :
+    CheckedTrueRowAgreementBIn sc (.and_b X Y) root env flags pa po := by
   obtain ⟨cx, cy, mx, my, tx, ty, wx, wy, hx, hy, nx, ny⟩ := and_b_static typed wf mal nm
   have ix := ih X (by simp; omega) cx mx tx wx hx nx (path_trans (.left .and_b .here) path)
   have iy := agree_W_from_smaller_B ty wy hy ny (path_trans (.right .and_b .here) path)
@@ -144,8 +153,8 @@ theorem boolean_order_decoded {isOr : Bool} {order : BaseWOutputOrder}
 
 theorem boolean_run_frame_decoded {isOr : Bool} {X Y : CoreFragment} {mx my : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {consumed : Witness} {top : StackElement} {rest : Stack}
-    (typedX : HasType .tapscript X ⟨.B, mx⟩) (typedY : HasType .tapscript Y ⟨.W, my⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
+    (typedX : HasType sc X ⟨.B, mx⟩) (typedY : HasType sc Y ⟨.W, my⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
     (run : Eval (compile (booleanNode isOr X Y)) (consumed.toInitialStack ++ rest) [] flags env.txCtx
       (.success (top :: rest) [])) (truth : castToBool top = true) :
     ∃ (left right : Witness) (x y : StackElement) (order : BaseWOutputOrder) (nx ny : Int),
@@ -203,8 +212,8 @@ theorem or_b_candidate_rows {X Y : CoreFragment} {env : SatEnv} {expected : Witn
 
 theorem dsat_sources_any {condition target : CoreFragment} {env : SatEnv} {actual dsat : Witness}
     {ty : MiniType} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript condition ty) (wf : condition.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript condition mm) (nm : mm.nonMalleable = true) (e : mm.e = true)
+    (typed : HasType sc condition ty) (wf : condition.WellFormed sc)
+    (mal : HasMalleability sc condition mm) (nm : mm.nonMalleable = true) (e : mm.e = true)
     (sound : env.Sound) (sizes : ∀ key ∈ condition.keys, key.bytes.size = 32)
     (canonical : dissatisfy condition env = some dsat) : Items (LocalSlot target env actual []) dsat := by
   intro item member
@@ -213,16 +222,16 @@ theorem dsat_sources_any {condition target : CoreFragment} {env : SatEnv} {actua
 
 theorem checked_or_b_step {X Y root : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
     {pa po : Witness} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript (.or_b X Y) ⟨.B, cm⟩)
-    (wf : (CoreFragment.or_b X Y).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.or_b X Y) mm) (nm : mm.nonMalleable = true)
+    (typed : HasType sc (.or_b X Y) ⟨.B, cm⟩)
+    (wf : (CoreFragment.or_b X Y).WellFormed sc)
+    (mal : HasMalleability sc (.or_b X Y) mm) (nm : mm.nonMalleable = true)
     (path : SlotPath (.or_b X Y) root) (rootNodup : root.keys.Nodup)
     (rootCanonical : (satisfactionCandidates root env).sat.CanonicalWhenUsable)
-    (ih : SmallerCheckedB (.or_b X Y) root env flags pa po) :
-    CheckedTrueRowAgreementB (.or_b X Y) root env flags pa po := by
+    (ih : SmallerCheckedBIn sc (.or_b X Y) root env flags pa po) :
+    CheckedTrueRowAgreementBIn sc (.or_b X Y) root env flags pa po := by
   obtain ⟨cx, cy, mx, my, tx, dx, ty, dy, wx, wy, hx, hy, nx, ny, ex, ey, _signed⟩ :=
     or_b_static typed wf mal nm
-  have material := checkedMaterial_canonical_root path rootNodup rootCanonical
+  have material := checkedMaterial_canonical_root (sc := sc) path rootNodup rootCanonical
     (flags := flags) (pa := pa) (po := po)
   have ix := ih X (by simp; omega) cx mx tx wx hx nx (path_trans (.left .or_b .here) path)
   have iy := agree_W_from_smaller_B ty wy hy ny (path_trans (.right .or_b .here) path)
@@ -239,8 +248,9 @@ theorem checked_or_b_step {X Y root : CoreFragment} {env : SatEnv} {flags : Scri
   subst own
   have kx : ∀ key ∈ X.keys, key ∈ (CoreFragment.or_b X Y).keys := fun _ h => List.mem_append_left _ h
   have ky : ∀ key ∈ Y.keys, key ∈ (CoreFragment.or_b X Y).keys := fun _ h => List.mem_append_right _ h
-  obtain ⟨ccx, ccy, boundX, boundY⟩ := split_contexts context kx ky
-    (fun _ h => List.mem_append_left _ h) (fun _ h => List.mem_append_right _ h) bounded
+  have lx : ∀ l ∈ X.hashLocks, l ∈ (CoreFragment.or_b X Y).hashLocks := fun _ h => List.mem_append_left _ h
+  have ly : ∀ l ∈ Y.hashLocks, l ∈ (CoreFragment.or_b X Y).hashLocks := fun _ h => List.mem_append_right _ h
+  obtain ⟨ccx, ccy, boundX, boundY⟩ := split_contexts context kx ky lx ly bounded
   have boundW : ∀ item ∈ x :: (right.toInitialStack ++ rest), item.size ≤ maxScriptElementSize := by
     intro item h
     rcases List.mem_cons.mp h with rfl | h
@@ -250,13 +260,13 @@ theorem checked_or_b_step {X Y root : CoreFragment} {env : SatEnv} {flags : Scri
   have ndy := (List.pairwise_append.mp nodup).2.1
   have separate := (List.pairwise_append.mp nodup).2.2
   rcases or_b_candidate_rows canonical with ⟨sx, dy, eq, satX, dsatY, excluded⟩ | ⟨dx, sy, eq, dsatX, satY, excluded⟩
-  · have sources : Items (LocalSlot Y env right []) expected := by
+  · have sources : Items (CheckedSlot sc Y env flags right []) expected := by
       rw [eq]
       exact items_combine
-        ((foreign_pair ccy (fun key member => context.childKeys key (kx key member))
+        ((foreign_checked_pair ccy (fun key member => context.childKeys key (kx key member)) (fun l h => context.childLocks l (lx l h))
           (fun key hk other ho => Ne.symm (separate other ho key hk))).1 sx satX)
-        (dsat_sources_any ty wy hy ny ey context.sound
-          (fun key member => context.keySizes key (context.childKeys key (ky key member))) dsatY)
+        (expressive_dsat_checked_slots ty wy hy ny ey context
+          (fun key member => context.childKeys key (ky key member)) dsatY)
     have freeY := free_of_sources material context canonical ky (fun _ h => List.mem_append_left _ h) sources
     have falsehood : castToBool y = false := by
       cases h : castToBool y
@@ -271,7 +281,7 @@ theorem checked_or_b_step {X Y root : CoreFragment} {env : SatEnv} {flags : Scri
     have eqX := agree_B tx wx hx nx ix ccx ndx satX boundX runX trueX
     rw [eq, eqX, eqY]
   · have freeX := fallback_noChecked material context ccx tx wx hx nx ex canonical eq
-      dsatX satY kx ky (fun _ h => List.mem_append_right _ h) separate
+      dsatX satY kx ky ly (fun _ h => List.mem_append_right _ h) separate
     have falsehood : castToBool x = false := by
       cases h : castToBool x
       · rfl
@@ -289,19 +299,19 @@ theorem checked_or_b_step {X Y root : CoreFragment} {env : SatEnv} {flags : Scri
 
 def BPendingWithoutBoolean (fragment : CoreFragment) : Prop :=
   fragment.keys ≠ [] ∧ match fragment with
-    | .c (.pk_k _) | .c (.pk_h _) | .multi_a _ _ | .and_v _ _ | .or_i _ _ | .and_b _ _ | .or_b _ _ | .j _ | .n _ => False
+    | .c (.pk_k _) | .c (.pk_h _) | .multi _ _ | .multi_a _ _ | .and_v _ _ | .or_i _ _ | .and_b _ _ | .or_b _ _ | .j _ | .n _ => False
     | _ => True
 
 theorem checkedB_without_boolean_step {fragment root : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
     {pa po : Witness} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, cm⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment mm) (nm : mm.nonMalleable = true)
-    (path : SlotPath fragment root) (rootWF : root.WellFormed .tapscript) (rootNodup : root.keys.Nodup)
+    (typed : HasType sc fragment ⟨.B, cm⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment mm) (nm : mm.nonMalleable = true)
+    (path : SlotPath fragment root) (rootWF : root.WellFormed sc) (rootNodup : root.keys.Nodup)
     (rootCanonical : (satisfactionCandidates root env).sat.CanonicalWhenUsable)
-    (ihB : SmallerCheckedB fragment root env flags pa po)
-    (ihV : SmallerCheckedV fragment root env flags pa po)
-    (rest : BPendingWithoutBoolean fragment → CheckedTrueRowAgreementB fragment root env flags pa po) :
-    CheckedTrueRowAgreementB fragment root env flags pa po := by
+    (ihB : SmallerCheckedBIn sc fragment root env flags pa po)
+    (ihV : SmallerCheckedVIn sc fragment root env flags pa po)
+    (rest : BPendingWithoutBoolean fragment → CheckedTrueRowAgreementBIn sc fragment root env flags pa po) :
+    CheckedTrueRowAgreementBIn sc fragment root env flags pa po := by
   cases fragment with
   | or_i X Y => exact checked_or_i_canonical_root typed wf mal nm path rootNodup rootCanonical ihB
   | and_b X Y => exact checked_and_b_step typed wf mal nm path ihB
@@ -328,14 +338,14 @@ open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
 
 theorem checkedB_or_d_step {X Y root : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
     {pa po : Witness} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript (.or_d X Y) ⟨.B, cm⟩)
-    (wf : (CoreFragment.or_d X Y).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.or_d X Y) mm) (nm : mm.nonMalleable = true)
+    (typed : HasType sc (.or_d X Y) ⟨.B, cm⟩)
+    (wf : (CoreFragment.or_d X Y).WellFormed sc)
+    (mal : HasMalleability sc (.or_d X Y) mm) (nm : mm.nonMalleable = true)
     (path : SlotPath (.or_d X Y) root) (rootNodup : root.keys.Nodup)
-    (ihB : SmallerCheckedB (.or_d X Y) root env flags pa po)
+    (ihB : SmallerCheckedBIn sc (.or_d X Y) root env flags pa po)
     (rootCanonical : (satisfactionCandidates root env).sat.CanonicalWhenUsable) :
-    CheckedTrueRowAgreementB (.or_d X Y) root env flags pa po := by
-  have material := checkedMaterial_canonical_root path rootNodup rootCanonical (env := env) (flags := flags) (pa := pa) (po := po)
+    CheckedTrueRowAgreementBIn sc (.or_d X Y) root env flags pa po := by
+  have material := checkedMaterial_canonical_root (sc := sc) path rootNodup rootCanonical (env := env) (flags := flags) (pa := pa) (po := po)
   obtain ⟨mx, my, hx, hy, nx, ny, ex, _signed⟩ := shortCircuit_malleability_children (keep := true) mal nm
   cases typed_B_shape typed with
   | or_d tx d u ty =>
@@ -356,11 +366,11 @@ theorem checkedB_or_d_step {X Y root : CoreFragment} {env : SatEnv} {flags : Scr
       have evidence := uniform_B_execution X _ _ tx wf.1 hx nx root env flags pa po own value rest ccx bounded runX truth
       rcases shortCircuit_candidate_cases true canonical with ⟨satX, _⟩ | ⟨dx, sy, expectedEq, dsatX, satY, excluded⟩
       · exact agree_B tx wf.1 hx nx ix ccx ndx satX bounded runX truth
-      · have sources : Items (LocalSlot X env own []) expected := by
+      · have sources : Items (CheckedSlot sc X env flags own []) expected := by
           rw [expectedEq]
-          exact items_combine (dsat_sources tx wf.1 hx nx ex context.sound
-            (fun key member => context.keySizes key (context.childKeys key (kx key member))) dsatX)
-            ((foreign_pair ccx (fun key member => context.childKeys key (ky key member)) separate).1 sy satY)
+          exact items_combine (expressive_dsat_checked_slots tx wf.1 hx nx ex context
+            (fun key member => context.childKeys key (kx key member)) dsatX)
+            ((foreign_checked_pair ccx (fun key member => context.childKeys key (ky key member)) (fun l h => context.childLocks l (ly l h)) separate).1 sy satY)
         have free := free_of_sources material context canonical kx (fun _ h => h) sources
         exact evidence.elim (fun raw => (excluded raw).elim) (fun sig => (free sig).elim)
     · subst own
@@ -368,14 +378,14 @@ theorem checkedB_or_d_step {X Y root : CoreFragment} {env : SatEnv} {flags : Scr
       have evidenceY := uniform_B_execution Y _ _ ty wf.2 hy ny
         root env flags pa po oy resultTop rest ccy byBound runY resultTruth
       rcases shortCircuit_candidate_cases true canonical with ⟨satX, excluded⟩ | ⟨dx, sy, expectedEq, dsatX, satY, _⟩
-      · have sources : Items (LocalSlot Y env oy []) expected :=
-          (foreign_pair ccy (fun key member => context.childKeys key (kx key member))
+      · have sources : Items (CheckedSlot sc Y env flags oy []) expected :=
+          (foreign_checked_pair ccy (fun key member => context.childKeys key (kx key member)) (fun l h => context.childLocks l (lx l h))
             (fun key hk other ho => Ne.symm (separate other ho key hk))).1 expected satX
         have freeY := free_of_sources material context canonical ky (fun _ h => List.mem_append_left _ h) sources
         exact evidenceY.elim (fun raw => (excluded (unsigned_combine rawD raw)).elim)
           (fun sig => (freeY sig).elim)
       · have freeX := fallback_noChecked material context ccx tx wf.1 hx nx ex canonical expectedEq
-          dsatX satY kx ky (fun _ h => List.mem_append_right _ h) separate
+          dsatX satY kx ky ly (fun _ h => List.mem_append_right _ h) separate
         have eqX := false_agreement tx wf.1 hx nx d u ex ccx ndx dsatX bx runX falsehood freeX
         have eqY := agree_B ty wf.2 hy ny iy ccy ndy satY byBound runY resultTruth
         rw [expectedEq, eqX, eqY]
@@ -383,14 +393,14 @@ theorem checkedB_or_d_step {X Y root : CoreFragment} {env : SatEnv} {flags : Scr
 
 theorem checkedB_andor_step {X Y Z root : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
     {pa po : Witness} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript (.andor X Y Z) ⟨.B, cm⟩)
-    (wf : (CoreFragment.andor X Y Z).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.andor X Y Z) mm) (nm : mm.nonMalleable = true)
+    (typed : HasType sc (.andor X Y Z) ⟨.B, cm⟩)
+    (wf : (CoreFragment.andor X Y Z).WellFormed sc)
+    (mal : HasMalleability sc (.andor X Y Z) mm) (nm : mm.nonMalleable = true)
     (path : SlotPath (.andor X Y Z) root) (rootNodup : root.keys.Nodup)
-    (ihB : SmallerCheckedB (.andor X Y Z) root env flags pa po)
+    (ihB : SmallerCheckedBIn sc (.andor X Y Z) root env flags pa po)
     (rootCanonical : (satisfactionCandidates root env).sat.CanonicalWhenUsable) :
-    CheckedTrueRowAgreementB (.andor X Y Z) root env flags pa po := by
-  have material := checkedMaterial_canonical_root path rootNodup rootCanonical (env := env) (flags := flags) (pa := pa) (po := po)
+    CheckedTrueRowAgreementBIn sc (.andor X Y Z) root env flags pa po := by
+  have material := checkedMaterial_canonical_root (sc := sc) path rootNodup rootCanonical (env := env) (flags := flags) (pa := pa) (po := po)
   obtain ⟨mx, my, mz, hx, hy, hz, nx, ny, nz, ex⟩ := andor_malleability_children mal nm
   cases typed_B_shape typed with
   | andor tx d u ty tz =>
@@ -425,18 +435,18 @@ theorem checkedB_andor_step {X Y Z root : CoreFragment} {env : SatEnv} {flags : 
         root env flags pa po oz resultTop rest ccz bz runZ resultTruth
       rcases andor_candidate_rows canonical with
           ⟨sx, sy, expectedEq, satX, satY, excluded⟩ | ⟨dx, sz, expectedEq, dsatX, satZ, _⟩
-      · have sourcesZ : Items (LocalSlot Z env oz []) expected := by
+      · have sourcesZ : Items (CheckedSlot sc Z env flags oz []) expected := by
           rw [expectedEq]
           exact items_combine
-            ((foreign_pair ccz (fun key member => context.childKeys key (kx key member))
+            ((foreign_checked_pair ccz (fun key member => context.childKeys key (kx key member)) (fun l h => context.childLocks l (lx l h))
               (fun key hk other ho => Ne.symm (sepXZ other ho key hk))).1 sx satX)
-            ((foreign_pair ccz (fun key member => context.childKeys key (ky key member))
+            ((foreign_checked_pair ccz (fun key member => context.childKeys key (ky key member)) (fun l h => context.childLocks l (ly l h))
               (fun key hk other ho => Ne.symm (sepYZ other ho key hk))).1 sy satY)
         have freeZ := free_of_sources material context canonical kz (fun _ h => List.mem_append_left _ h) sourcesZ
         exact evidenceZ.elim (fun raw => (excluded (unsigned_combine rawD raw)).elim)
           (fun sig => (freeZ sig).elim)
       · have freeX := fallback_noChecked material context ccx tx wf.1 hx nx ex canonical expectedEq
-          dsatX satZ kx kz (fun _ h => List.mem_append_right _ h) sepXZ
+          dsatX satZ kx kz lz (fun _ h => List.mem_append_right _ h) sepXZ
         have eqX := false_agreement tx wf.1 hx nx d u ex ccx ndx dsatX bx runX falsehood freeX
         have eqZ := agree_B tz wf.2.2.1 hz nz iz ccz ndz satZ bz runZ resultTruth
         rw [expectedEq, eqX, eqZ]
@@ -451,16 +461,16 @@ theorem checkedB_andor_step {X Y Z root : CoreFragment} {env : SatEnv} {flags : 
       · have eqX := agree_B tx wf.1 hx nx ix ccx ndx satX bx runX truth
         have eqY := agree_B ty wf.2.1 hy ny iy ccy ndy satY byBound runY resultTruth
         rw [expectedEq, eqX, eqY]
-      · have sourcesX : Items (LocalSlot X env ox []) expected := by
+      · have sourcesX : Items (CheckedSlot sc X env flags ox []) expected := by
           rw [expectedEq]
-          exact items_combine (dsat_sources tx wf.1 hx nx ex context.sound
-            (fun key member => context.keySizes key (context.childKeys key (kx key member))) dsatX)
-            ((foreign_pair ccx (fun key member => context.childKeys key (kz key member)) sepXZ).1 sz satZ)
-        have sourcesY : Items (LocalSlot Y env oy []) expected := by
+          exact items_combine (expressive_dsat_checked_slots tx wf.1 hx nx ex context
+            (fun key member => context.childKeys key (kx key member)) dsatX)
+            ((foreign_checked_pair ccx (fun key member => context.childKeys key (kz key member)) (fun l h => context.childLocks l (lz l h)) sepXZ).1 sz satZ)
+        have sourcesY : Items (CheckedSlot sc Y env flags oy []) expected := by
           rw [expectedEq]
-          exact items_combine (dsat_sources tx wf.1 hx nx ex context.sound
-            (fun key member => context.keySizes key (context.childKeys key (kx key member))) dsatX)
-            ((foreign_pair ccy (fun key member => context.childKeys key (kz key member)) sepYZ).1 sz satZ)
+          exact items_combine (expressive_dsat_checked_slots tx wf.1 hx nx ex context
+            (fun key member => context.childKeys key (kx key member)) dsatX)
+            ((foreign_checked_pair ccy (fun key member => context.childKeys key (kz key member)) (fun l h => context.childLocks l (lz l h)) sepYZ).1 sz satZ)
         have freeX := free_of_sources material context canonical kx (fun _ h => List.mem_append_right _ h) sourcesX
         have freeY := free_of_sources material context canonical ky (fun _ h => List.mem_append_left _ h) sourcesY
         rcases evidenceX with rawX | sigX
@@ -472,19 +482,19 @@ theorem checkedB_andor_step {X Y Z root : CoreFragment} {env : SatEnv} {flags : 
 
 def BPendingWithoutConditions (fragment : CoreFragment) : Prop :=
   fragment.keys ≠ [] ∧ match fragment with
-    | .c (.pk_k _) | .c (.pk_h _) | .multi_a _ _ | .and_v _ _ | .or_i _ _ | .and_b _ _ | .or_b _ _ | .j _ | .n _ | .or_d _ _ | .andor _ _ _ => False
+    | .c (.pk_k _) | .c (.pk_h _) | .multi _ _ | .multi_a _ _ | .and_v _ _ | .or_i _ _ | .and_b _ _ | .or_b _ _ | .j _ | .n _ | .or_d _ _ | .andor _ _ _ => False
     | _ => True
 
 theorem checkedB_without_conditions_step {fragment root : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
     {pa po : Witness} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, cm⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment mm) (nm : mm.nonMalleable = true)
-    (path : SlotPath fragment root) (rootWF : root.WellFormed .tapscript) (rootNodup : root.keys.Nodup)
+    (typed : HasType sc fragment ⟨.B, cm⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment mm) (nm : mm.nonMalleable = true)
+    (path : SlotPath fragment root) (rootWF : root.WellFormed sc) (rootNodup : root.keys.Nodup)
     (rootCanonical : (satisfactionCandidates root env).sat.CanonicalWhenUsable)
-    (ihB : SmallerCheckedB fragment root env flags pa po)
-    (ihV : SmallerCheckedV fragment root env flags pa po)
-    (rest : BPendingWithoutConditions fragment → CheckedTrueRowAgreementB fragment root env flags pa po) :
-    CheckedTrueRowAgreementB fragment root env flags pa po := by
+    (ihB : SmallerCheckedBIn sc fragment root env flags pa po)
+    (ihV : SmallerCheckedVIn sc fragment root env flags pa po)
+    (rest : BPendingWithoutConditions fragment → CheckedTrueRowAgreementBIn sc fragment root env flags pa po) :
+    CheckedTrueRowAgreementBIn sc fragment root env flags pa po := by
   cases fragment with
   | or_d X Y => exact checkedB_or_d_step typed wf mal nm path rootNodup ihB rootCanonical
   | andor X Y Z => exact checkedB_andor_step typed wf mal nm path rootNodup ihB rootCanonical
@@ -509,14 +519,14 @@ open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
 
 theorem d_true_zero_frame {child : CoreFragment} {cm : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {own : Witness} {top : StackElement} {rest : Stack}
-    (typed : HasType .tapscript child ⟨.V, cm⟩) (wf : child.WellFormed .tapscript)
-    (zero : cm.z = true) (version : env.txCtx.sigVersion = .tapscript)
+    (typed : HasType sc child ⟨.V, cm⟩) (wf : child.WellFormed sc)
+    (zero : cm.z = true) (version : Active.WitnessRules flags env.txCtx)
     (bounded : ∀ item ∈ own.toInitialStack ++ rest, item.size ≤ maxScriptElementSize)
     (run : Eval (compile (.d child)) (own.toInitialStack ++ rest) [] flags env.txCtx (.success (top :: rest) []))
     (truth : castToBool top = true) :
     top = trueElement ∧ own = [trueElement] ∧
       Eval (compile child) (trueElement :: rest) [] flags env.txCtx (.success (trueElement :: rest) []) := by
-  have topEq := unit_d typed wf zero env flags _ rest top version bounded run truth
+  have topEq := unit_d_of_rules typed wf zero env flags _ rest top version bounded run truth
   obtain ⟨active, ownEq, childRun⟩ := d_run_frame typed wf run truth
   have empty := zero_V_consumed typed wf zero childRun
   refine ⟨topEq, ?_, ?_⟩
@@ -526,19 +536,19 @@ theorem d_true_zero_frame {child : CoreFragment} {cm : CorrectnessModifiers}
 theorem d_true_child_projection {child root : CoreFragment} {cm : CorrectnessModifiers}
     {mm : MalleabilityModifiers} {env : SatEnv} {flags : ScriptFlags} {pa po own : Witness}
     {top : StackElement} {rest : Stack}
-    (typed : HasType .tapscript child ⟨.V, cm⟩) (wf : child.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript child mm) (nm : mm.nonMalleable = true) (zero : cm.z = true)
-    (context : ExecutionContext root (.d child) env flags pa po own)
+    (typed : HasType sc child ⟨.V, cm⟩) (wf : child.WellFormed sc)
+    (mal : HasMalleability sc child mm) (nm : mm.nonMalleable = true) (zero : cm.z = true)
+    (context : ExecutionContextIn sc root (.d child) env flags pa po own)
     (bounded : ∀ item ∈ own.toInitialStack ++ rest, item.size ≤ maxScriptElementSize)
     (run : Eval (compile (.d child)) (own.toInitialStack ++ rest) [] flags env.txCtx (.success (top :: rest) []))
     (truth : castToBool top = true) :
     top = trueElement ∧ own = [trueElement] ∧ satisfy child env = some [] ∧
       (satisfactionCandidates child env).dsat = .impossible ∧
-      ExecutionContext root child env flags pa po [] ∧
+      ExecutionContextIn sc root child env flags pa po [] ∧
       (∀ item ∈ trueElement :: rest, item.size ≤ maxScriptElementSize) ∧
       Eval (compile child) (trueElement :: rest) [] flags env.txCtx (.success (trueElement :: rest) []) := by
-  obtain ⟨topEq, ownEq, childRun⟩ := d_true_zero_frame typed wf zero context.version bounded run truth
-  have cc : ExecutionContext root child env flags pa po [] :=
+  obtain ⟨topEq, ownEq, childRun⟩ := d_true_zero_frame typed wf zero context.rules bounded run truth
+  have cc : ExecutionContextIn sc root child env flags pa po [] :=
     executionContext_restrict context (active := child) (fun _ h => h) (fun _ h => h)
       (by intro item member; cases member)
   have bound : ∀ item ∈ trueElement :: rest, item.size ≤ maxScriptElementSize := by
@@ -549,9 +559,9 @@ theorem d_true_child_projection {child root : CoreFragment} {cm : CorrectnessMod
 theorem d_true_available {child root : CoreFragment} {cm : CorrectnessModifiers}
     {mm : MalleabilityModifiers} {env : SatEnv} {flags : ScriptFlags} {pa po own : Witness}
     {top : StackElement} {rest : Stack}
-    (typed : HasType .tapscript (.d child) ⟨.B, cm⟩) (wf : (CoreFragment.d child).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.d child) mm) (nm : mm.nonMalleable = true)
-    (context : ExecutionContext root (.d child) env flags pa po own)
+    (typed : HasType sc (.d child) ⟨.B, cm⟩) (wf : (CoreFragment.d child).WellFormed sc)
+    (mal : HasMalleability sc (.d child) mm) (nm : mm.nonMalleable = true)
+    (context : ExecutionContextIn sc root (.d child) env flags pa po own)
     (bounded : ∀ item ∈ own.toInitialStack ++ rest, item.size ≤ maxScriptElementSize)
     (run : Eval (compile (.d child)) (own.toInitialStack ++ rest) [] flags env.txCtx (.success (top :: rest) []))
     (truth : castToBool top = true) :
@@ -566,9 +576,9 @@ theorem d_true_available {child root : CoreFragment} {cm : CorrectnessModifiers}
 theorem d_true_agreement {child root : CoreFragment} {cm : CorrectnessModifiers}
     {mm : MalleabilityModifiers} {env : SatEnv} {flags : ScriptFlags} {pa po own expected : Witness}
     {top : StackElement} {rest : Stack}
-    (typed : HasType .tapscript (.d child) ⟨.B, cm⟩) (wf : (CoreFragment.d child).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.d child) mm) (nm : mm.nonMalleable = true)
-    (context : ExecutionContext root (.d child) env flags pa po own)
+    (typed : HasType sc (.d child) ⟨.B, cm⟩) (wf : (CoreFragment.d child).WellFormed sc)
+    (mal : HasMalleability sc (.d child) mm) (nm : mm.nonMalleable = true)
+    (context : ExecutionContextIn sc root (.d child) env flags pa po own)
     (canonical : satisfy (.d child) env = some expected)
     (bounded : ∀ item ∈ own.toInitialStack ++ rest, item.size ≤ maxScriptElementSize)
     (run : Eval (compile (.d child)) (own.toInitialStack ++ rest) [] flags env.txCtx (.success (top :: rest) []))
@@ -578,27 +588,27 @@ theorem d_true_agreement {child root : CoreFragment} {cm : CorrectnessModifiers}
 
 theorem checked_d_step {child root : CoreFragment} {cm : CorrectnessModifiers}
     {mm : MalleabilityModifiers} {env : SatEnv} {flags : ScriptFlags} {pa po : Witness}
-    (typed : HasType .tapscript (.d child) ⟨.B, cm⟩) (wf : (CoreFragment.d child).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.d child) mm) (nm : mm.nonMalleable = true) :
-    CheckedTrueRowAgreementB (.d child) root env flags pa po := by
+    (typed : HasType sc (.d child) ⟨.B, cm⟩) (wf : (CoreFragment.d child).WellFormed sc)
+    (mal : HasMalleability sc (.d child) mm) (nm : mm.nonMalleable = true) :
+    CheckedTrueRowAgreementBIn sc (.d child) root env flags pa po := by
   intro own expected top rest context _nodup canonical bounded run truth _checked
   exact d_true_agreement typed wf mal nm context canonical bounded run truth
 
 def BPendingWithoutD (fragment : CoreFragment) : Prop :=
   fragment.keys ≠ [] ∧ match fragment with
-    | .c (.pk_k _) | .c (.pk_h _) | .multi_a _ _ | .and_v _ _ | .or_i _ _ | .and_b _ _ | .or_b _ _ | .j _ | .n _ | .or_d _ _ | .andor _ _ _ | .d _ => False
+    | .c (.pk_k _) | .c (.pk_h _) | .multi _ _ | .multi_a _ _ | .and_v _ _ | .or_i _ _ | .and_b _ _ | .or_b _ _ | .j _ | .n _ | .or_d _ _ | .andor _ _ _ | .d _ => False
     | _ => True
 
 theorem checkedB_without_d_step {fragment root : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
     {pa po : Witness} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, cm⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment mm) (nm : mm.nonMalleable = true)
-    (path : SlotPath fragment root) (rootWF : root.WellFormed .tapscript) (rootNodup : root.keys.Nodup)
+    (typed : HasType sc fragment ⟨.B, cm⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment mm) (nm : mm.nonMalleable = true)
+    (path : SlotPath fragment root) (rootWF : root.WellFormed sc) (rootNodup : root.keys.Nodup)
     (rootCanonical : (satisfactionCandidates root env).sat.CanonicalWhenUsable)
-    (ihB : SmallerCheckedB fragment root env flags pa po)
-    (ihV : SmallerCheckedV fragment root env flags pa po)
-    (rest : BPendingWithoutD fragment → CheckedTrueRowAgreementB fragment root env flags pa po) :
-    CheckedTrueRowAgreementB fragment root env flags pa po := by
+    (ihB : SmallerCheckedBIn sc fragment root env flags pa po)
+    (ihV : SmallerCheckedVIn sc fragment root env flags pa po)
+    (rest : BPendingWithoutD fragment → CheckedTrueRowAgreementBIn sc fragment root env flags pa po) :
+    CheckedTrueRowAgreementBIn sc fragment root env flags pa po := by
   cases fragment with
   | d child => exact checked_d_step typed wf mal nm
   | c child =>

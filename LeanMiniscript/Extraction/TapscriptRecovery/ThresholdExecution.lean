@@ -5,6 +5,8 @@ import LeanMiniscript.Extraction.TapscriptRecovery.KeyExecution
 set_option maxRecDepth 4000
 set_option maxHeartbeats 4000000
 
+variable {sc : LeanMiniscript.Miniscript.ScriptContext}
+
 namespace LeanMiniscript.Extraction.TapscriptRecovery.ThresholdAlt
 
 open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
@@ -25,24 +27,24 @@ theorem child_size_lt_list {child : CoreFragment} {children : List CoreFragment}
 theorem uniform_savedAltTransfer (fragment : CoreFragment) : SavedAltTransfer fragment :=
   fun _ _ _ _ _ run => Miniscript.Eval.compile_erase_altStack run
 
-theorem uniform_savedAltPremise (fragment : CoreFragment) : SavedAltPremise fragment := by
+theorem uniform_savedAltPremise (fragment : CoreFragment) : SavedAltPremiseIn sc fragment := by
   intro _mods _mm _typed _wf _mal _nm
   exact uniform_savedAltTransfer fragment
 
 theorem ambientExecutionW_step {fragment : CoreFragment} {mods : CorrectnessModifiers}
     {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.W, mods⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment mm) (nm : mm.nonMalleable = true)
-    (ihB : ∀ child, sizeOf child < sizeOf fragment → BExecutionPremise child) :
-    AmbientExecutionW fragment :=
+    (typed : HasType sc fragment ⟨.W, mods⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment mm) (nm : mm.nonMalleable = true)
+    (ihB : ∀ child, sizeOf child < sizeOf fragment → BExecutionPremiseIn sc child) :
+    AmbientExecutionWIn sc fragment :=
   ambientExecutionW_from_smaller_B typed wf mal nm ihB (fun child _ => uniform_savedAltTransfer child)
 
 theorem ambientExecutionB_from_threshold {fragment : CoreFragment} {mods : CorrectnessModifiers}
     {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, mods⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment mm) (nm : mm.nonMalleable = true)
-    (remaining : ∀ child, sizeOf child ≤ sizeOf fragment → RemainingBThresh child → BExecutionPremise child) :
-    AmbientExecutionB fragment :=
+    (typed : HasType sc fragment ⟨.B, mods⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment mm) (nm : mm.nonMalleable = true)
+    (remaining : ∀ child, sizeOf child ≤ sizeOf fragment → RemainingBThresh child → BExecutionPremiseIn sc child) :
+    AmbientExecutionBIn sc fragment :=
   ambientExecutionB_from_thresh_and_transfer typed wf mal nm remaining
     (fun child _ => uniform_savedAltPremise child)
 
@@ -67,8 +69,8 @@ export _root_.LeanMiniscript.Extraction.TapscriptWitness (threshold_witness_fram
 export _root_.LeanMiniscript.Extraction.TapscriptWitness (threshold_candidate_guard)
 
 theorem threshold_malleability_children {k : Nat} {children : List CoreFragment} {mm : MalleabilityModifiers}
-    (mal : HasMalleability .tapscript (.thresh k children) mm) (nm : mm.nonMalleable = true) :
-    ∃ childMods, HasMalleabilityList .tapscript children childMods ∧
+    (mal : HasMalleability sc (.thresh k children) mm) (nm : mm.nonMalleable = true) :
+    ∃ childMods, HasMalleabilityList sc children childMods ∧
       MalleabilityModifiers.allNonMalleable childMods = true ∧
       MalleabilityModifiers.allE childMods = true ∧ MalleabilityModifiers.countNonS childMods ≤ k := by
   cases mal with
@@ -80,9 +82,9 @@ export _root_.LeanMiniscript.Extraction.TapscriptWitness (threshold_children_sta
 
 theorem threshold_children_dsat_unsigned {k : Nat} {children : List CoreFragment}
     {mods : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript (.thresh k children) ⟨.B, mods⟩)
-    (wf : (CoreFragment.thresh k children).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.thresh k children) mm) (nm : mm.nonMalleable = true)
+    (typed : HasType sc (.thresh k children) ⟨.B, mods⟩)
+    (wf : (CoreFragment.thresh k children).WellFormed sc)
+    (mal : HasMalleability sc (.thresh k children) mm) (nm : mm.nonMalleable = true)
     (env : SatEnv) : ∀ child ∈ children, RawUnsigned (satisfactionCandidates child env).dsat := by
   intro child member
   obtain ⟨ty, cm, ct, cw, ch, cn, ce⟩ := threshold_children_static typed wf mal nm child member
@@ -200,7 +202,7 @@ theorem UnsignedRows.threshold_unsigned {children : List CandidatePair} {count}
     exact ⟨_, result, flag⟩
 
 theorem threshold_sat_unsigned_of_rows {k : Nat} {children : List CoreFragment} {env : SatEnv}
-    (wf : (CoreFragment.thresh k children).WellFormed .tapscript)
+    (wf : (CoreFragment.thresh k children).WellFormed sc)
     (rows : UnsignedRows (satisfactionCandidatesList children env) k) :
     RawUnsigned (satisfactionCandidates (.thresh k children) env).sat := by
   simpa only [satisfactionCandidates, _root_.LeanMiniscript.Extraction.TapscriptWitness.threshold_candidate_guard wf, if_true] using rows.threshold_unsigned
@@ -221,7 +223,7 @@ inductive EvidenceRows (parent : CoreFragment) (env : SatEnv) (flags : ScriptFla
 
 theorem threshold_evidence_of_rows {k : Nat} {children : List CoreFragment} {env : SatEnv}
     {flags : ScriptFlags} {consumed : Witness}
-    (wf : (CoreFragment.thresh k children).WellFormed .tapscript)
+    (wf : (CoreFragment.thresh k children).WellFormed sc)
     (rows : EvidenceRows (.thresh k children) env flags (satisfactionCandidatesList children env) k consumed) :
     ExecutionEvidence (.thresh k children) env flags consumed := by
   have classify {pairs count own} (trace : EvidenceRows (.thresh k children) env flags pairs count own) :
@@ -241,8 +243,8 @@ theorem threshold_evidence_of_rows {k : Nat} {children : List CoreFragment} {env
   exact (classify rows).imp (threshold_sat_unsigned_of_rows wf) id
 
 theorem threshold_singleton_run {k : Nat} {child : CoreFragment} {mods : CorrectnessModifiers}
-    (typed : HasType .tapscript (.thresh k [child]) ⟨.B, mods⟩)
-    (wf : (CoreFragment.thresh k [child]).WellFormed .tapscript)
+    (typed : HasType sc (.thresh k [child]) ⟨.B, mods⟩)
+    (wf : (CoreFragment.thresh k [child]).WellFormed sc)
     {input rest alt : Stack} {top : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (run : Eval (compile (.thresh k [child])) input alt flags ctx (.success (top :: rest) alt))
     (truth : castToBool top = true) :
@@ -255,9 +257,9 @@ theorem threshold_singleton_run {k : Nat} {child : CoreFragment} {mods : Correct
   exact firstRun
 
 theorem threshold_singleton_execution {k : Nat} {child : CoreFragment} {mods : CorrectnessModifiers}
-    (typed : HasType .tapscript (.thresh k [child]) ⟨.B, mods⟩)
-    (wf : (CoreFragment.thresh k [child]).WellFormed .tapscript)
-    (execute : AmbientExecutionB child) : AmbientExecutionB (.thresh k [child]) := by
+    (typed : HasType sc (.thresh k [child]) ⟨.B, mods⟩)
+    (wf : (CoreFragment.thresh k [child]).WellFormed sc)
+    (execute : AmbientExecutionBIn sc child) : AmbientExecutionBIn sc (.thresh k [child]) := by
   have kEq : k = 1 := by have := wf.1; simp only [validThreshold, List.length_singleton] at this; omega
   subst k
   intro parent env flags pa po consumed top rest context bounded run truth
@@ -282,11 +284,11 @@ theorem threshold_child_smaller {k : Nat} {children : List CoreFragment} {child 
 
 theorem threshold_singleton_step {k : Nat} {child : CoreFragment} {mods : CorrectnessModifiers}
     {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript (.thresh k [child]) ⟨.B, mods⟩)
-    (wf : (CoreFragment.thresh k [child]).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.thresh k [child]) mm) (nm : mm.nonMalleable = true)
-    (ihB : ∀ fragment, sizeOf fragment < sizeOf (CoreFragment.thresh k [child]) → BExecutionPremise fragment) :
-    AmbientExecutionB (.thresh k [child]) := by
+    (typed : HasType sc (.thresh k [child]) ⟨.B, mods⟩)
+    (wf : (CoreFragment.thresh k [child]).WellFormed sc)
+    (mal : HasMalleability sc (.thresh k [child]) mm) (nm : mm.nonMalleable = true)
+    (ihB : ∀ fragment, sizeOf fragment < sizeOf (CoreFragment.thresh k [child]) → BExecutionPremiseIn sc fragment) :
+    AmbientExecutionBIn sc (.thresh k [child]) := by
   apply threshold_singleton_execution typed wf
   obtain ⟨ty, cm, _ct, cw, ch, cn, _ce⟩ := threshold_children_static typed wf mal nm child (by simp)
   cases typed with
@@ -301,11 +303,11 @@ def RemainingMultiThreshold : CoreFragment → Prop
 
 theorem ambientExecutionB_from_multiThreshold {fragment : CoreFragment} {mods : CorrectnessModifiers}
     {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, mods⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment mm) (nm : mm.nonMalleable = true)
-    (remaining : ∀ child, sizeOf child ≤ sizeOf fragment → RemainingMultiThreshold child → BExecutionPremise child) :
-    AmbientExecutionB fragment := by
-  have childB : ∀ child, sizeOf child < sizeOf fragment → BExecutionPremise child := by
+    (typed : HasType sc fragment ⟨.B, mods⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment mm) (nm : mm.nonMalleable = true)
+    (remaining : ∀ child, sizeOf child ≤ sizeOf fragment → RemainingMultiThreshold child → BExecutionPremiseIn sc child) :
+    AmbientExecutionBIn sc fragment := by
+  have childB : ∀ child, sizeOf child < sizeOf fragment → BExecutionPremiseIn sc child := by
     intro child smaller cm hm tc wc hc nc
     exact ambientExecutionB_from_multiThreshold tc wc hc nc
       (fun residual bound h => remaining residual (Nat.le_trans bound (Nat.le_of_lt smaller)) h)
@@ -359,9 +361,9 @@ theorem nat_boundary_decode {n : Nat} {value : Int} {minimal : Bool}
 
 export _root_.LeanMiniscript.Extraction.TapscriptWitness (TailRunTrace.initial_decode)
 
-export _root_.LeanMiniscript.Extraction.TapscriptWitness (UnitB)
+export _root_.LeanMiniscript.Extraction.TapscriptWitness (UnitB UnitBIn)
 
-export _root_.LeanMiniscript.Extraction.TapscriptWitness (UnitW)
+export _root_.LeanMiniscript.Extraction.TapscriptWitness (UnitW UnitWIn)
 
 export _root_.LeanMiniscript.Extraction.TapscriptWitness (threshold_keys_member)
 
@@ -372,14 +374,14 @@ theorem tail_rows {env : SatEnv} {flags : ScriptFlags} {root parent : CoreFragme
     {input rest : Stack} {k : Nat}
     (trace : TailRunTrace flags env.txCtx [] children acc input final rest)
     (finalEq : final = scriptNat k) (kbound : k < maxArithmeticScriptNatExclusive)
-    (executors : ∀ child ∈ children, AmbientExecutionW child)
-    (units : ∀ child ∈ children, UnitW child)
+    (executors : ∀ child ∈ children, AmbientExecutionWIn sc child)
+    (units : ∀ child ∈ children, UnitWIn sc child)
     (falseRows : ∀ child ∈ children, RawUnsigned (satisfactionCandidates child env).dsat)
     (keys : ∀ child ∈ children, ∀ key ∈ child.keys, key ∈ root.keys)
     (locks : ∀ child ∈ children, ∀ lock ∈ child.hashLocks, lock ∈ root.hashLocks)
     (remaining previous : Witness) (prior : List CandidatePair) (count : Nat)
     (frame : input = remaining.toInitialStack ++ rest)
-    (context : ExecutionContext parent root env flags pa po (remaining ++ previous))
+    (context : ExecutionContextIn sc parent root env flags pa po (remaining ++ previous))
     (bounded : ∀ item ∈ input, item.size ≤ maxScriptElementSize)
     (countBound : count < maxArithmeticScriptNatExclusive)
     (decoded : decodeScriptNum acc flags.minimalData maxArithmeticScriptNumBytes = .ok (count : Int))
@@ -441,7 +443,7 @@ theorem tail_rows {env : SatEnv} {flags : ScriptFlags} {root parent : CoreFragme
         have promoted : RawUnsigned (satisfactionCandidates child env).sat ∨ CheckedSignature root env flags args.reverse :=
           evidence.imp_right (checkedSignature_mono (keys child (by simp)) (fun _ h => h))
         simpa [truth] using EvidenceRows.sat args.reverse rows promoted
-    have nextContext : ExecutionContext parent root env flags pa po (tailArgs.reverse ++ (args.reverse ++ previous)) := by
+    have nextContext : ExecutionContextIn sc parent root env flags pa po (tailArgs.reverse ++ (args.reverse ++ previous)) := by
       simpa [ownEq, List.append_assoc] using context
     have nextFrame : tail = Witness.toInitialStack tailArgs.reverse ++ rest := by
       simpa [Witness.toInitialStack] using tailEq
@@ -458,13 +460,13 @@ termination_by sizeOf children
 
 theorem threshold_execution_of_units {k : Nat} {children : List CoreFragment}
     {mods : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript (.thresh k children) ⟨.B, mods⟩)
-    (wf : (CoreFragment.thresh k children).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.thresh k children) mm) (nm : mm.nonMalleable = true)
-    (ihB : ∀ fragment, sizeOf fragment < sizeOf (CoreFragment.thresh k children) → BExecutionPremise fragment)
-    (unitsB : ∀ child ∈ children, ∀ cm, HasType .tapscript child ⟨.B, cm⟩ → cm.u = true → UnitB child)
-    (unitsW : ∀ child ∈ children, ∀ cm, HasType .tapscript child ⟨.W, cm⟩ → cm.u = true → UnitW child) :
-    AmbientExecutionB (.thresh k children) := by
+    (typed : HasType sc (.thresh k children) ⟨.B, mods⟩)
+    (wf : (CoreFragment.thresh k children).WellFormed sc)
+    (mal : HasMalleability sc (.thresh k children) mm) (nm : mm.nonMalleable = true)
+    (ihB : ∀ fragment, sizeOf fragment < sizeOf (CoreFragment.thresh k children) → BExecutionPremiseIn sc fragment)
+    (unitsB : ∀ child ∈ children, ∀ cm, HasType sc child ⟨.B, cm⟩ → cm.u = true → UnitBIn sc child)
+    (unitsW : ∀ child ∈ children, ∀ cm, HasType sc child ⟨.W, cm⟩ → cm.u = true → UnitWIn sc child) :
+    AmbientExecutionBIn sc (.thresh k children) := by
   intro parent env flags pa po consumed top rest context bounded run truth
   obtain ⟨first, remaining, firstMods, types, firstArgs, tailArgs, value,
     eq, ft, _fd, fu, tt, ts, witnessEq, firstRun, trace⟩ := threshold_witness_frame typed wf run truth
@@ -499,14 +501,14 @@ theorem threshold_execution_of_units {k : Nat} {children : List CoreFragment}
   have kbound : k < maxArithmeticScriptNatExclusive := wf.2.2.2
   obtain ⟨firstN, firstDecoded⟩ := TailRunTrace.initial_decode trace rfl kbound
   rw [decoded_unit_count firstDecoded firstUnit] at firstDecoded
-  have executeTail : ∀ child ∈ remaining, AmbientExecutionW child := by
+  have executeTail : ∀ child ∈ remaining, AmbientExecutionWIn sc child := by
     intro child member
     obtain ⟨cm, ct, _cd, _cu⟩ := threshold_rest_member_type tt ts child member
     have member' : child ∈ first :: remaining := by simp [member]
     obtain ⟨_ty, hm, _ct, cw, ch, cn, _ce⟩ := threshold_children_static typed wf mal nm child member'
     exact ambientExecutionW_step ct cw ch cn
       (fun sub smaller => ihB sub (Nat.lt_trans smaller (threshold_child_smaller member')))
-  have unitTail : ∀ child ∈ remaining, UnitW child := by
+  have unitTail : ∀ child ∈ remaining, UnitWIn sc child := by
     intro child member
     obtain ⟨cm, ct, _cd, cu⟩ := threshold_rest_member_type tt ts child member
     exact unitsW child (by simp [member]) cm ct cu
@@ -537,9 +539,13 @@ theorem if_minimal_of_success {script : Script} {selector : StackElement} {input
   generalize resultEq : ExecResult.success output outAlt = result at run
   cases run <;> simp_all [Opcode.isUpgradeableNop]
 
-theorem unit_d {X : CoreFragment} {mx : CorrectnessModifiers}
-    (tx : HasType .tapscript X ⟨.V, mx⟩) (wx : X.WellFormed .tapscript)
-    (zero : mx.z = true) : UnitB (.d X) := by
+theorem unit_d_of_rules {X : CoreFragment} {mx : CorrectnessModifiers}
+    (tx : HasType sc X ⟨.V, mx⟩) (wx : X.WellFormed sc)
+    (zero : mx.z = true) :
+    ∀ (env : SatEnv) (flags : ScriptFlags) (input rest : Stack) (top : StackElement),
+    Active.WitnessRules flags env.txCtx → (∀ item ∈ input, item.size ≤ maxScriptElementSize) →
+    Eval (compile (.d X)) input [] flags env.txCtx (.success (top :: rest) []) →
+    castToBool top = true → top = trueElement := by
   intro env flags input rest top version _bounded run truth
   have rx := d_success_child run truth
   obtain ⟨_, effect⟩ := refinedBaseTypeGuarantee_of_hasType tx wx _ _ _ _ _ rx
@@ -554,11 +560,17 @@ theorem unit_d {X : CoreFragment} {mx : CorrectnessModifiers}
     rename_i next
     cases outputEq
     have minimal := if_minimal_of_success next
-    rcases minimal_selector version minimal with falseTop | trueTop
+    rcases Active.minimal_selector_of_rules version minimal with falseTop | trueTop
     · rw [falseTop] at truth
       cases truth
     · exact trueTop
   all_goals cases outputEq
+
+theorem unit_d {X : CoreFragment} {mx : CorrectnessModifiers}
+    (tx : HasType .tapscript X ⟨.V, mx⟩) (wx : X.WellFormed .tapscript)
+    (zero : mx.z = true) : UnitB (.d X) :=
+  fun env flags input rest top version =>
+    unit_d_of_rules tx wx zero env flags input rest top (.inl version)
 
 export _root_.LeanMiniscript.Extraction.TapscriptWitness (unitB_of_hasType)
 
@@ -566,11 +578,11 @@ export _root_.LeanMiniscript.Extraction.TapscriptWitness (unitW_of_hasType)
 
 theorem threshold_execution_step {k : Nat} {children : List CoreFragment}
     {mods : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript (.thresh k children) ⟨.B, mods⟩)
-    (wf : (CoreFragment.thresh k children).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.thresh k children) mm) (nm : mm.nonMalleable = true)
-    (ihB : ∀ fragment, sizeOf fragment < sizeOf (CoreFragment.thresh k children) → BExecutionPremise fragment) :
-    AmbientExecutionB (.thresh k children) := by
+    (typed : HasType sc (.thresh k children) ⟨.B, mods⟩)
+    (wf : (CoreFragment.thresh k children).WellFormed sc)
+    (mal : HasMalleability sc (.thresh k children) mm) (nm : mm.nonMalleable = true)
+    (ihB : ∀ fragment, sizeOf fragment < sizeOf (CoreFragment.thresh k children) → BExecutionPremiseIn sc fragment) :
+    AmbientExecutionBIn sc (.thresh k children) := by
   apply threshold_execution_of_units typed wf mal nm ihB
   · intro child member cm ct cu
     obtain ⟨_ty, _mm, _ct, cw, _ch, _cn, _ce⟩ := threshold_children_static typed wf mal nm child member
@@ -581,9 +593,9 @@ theorem threshold_execution_step {k : Nat} {children : List CoreFragment}
 
 theorem ambientExecutionB_of_judgments {fragment : CoreFragment} {mods : CorrectnessModifiers}
     {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, mods⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment mm) (nm : mm.nonMalleable = true) :
-    AmbientExecutionB fragment := by
+    (typed : HasType sc fragment ⟨.B, mods⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment mm) (nm : mm.nonMalleable = true) :
+    AmbientExecutionBIn sc fragment := by
   apply ambientExecutionB_from_multiThreshold typed wf mal nm
   intro child bound residual cm hm tc wc hc nc
   cases child <;> simp only [RemainingMultiThreshold] at residual
@@ -595,7 +607,7 @@ theorem ambientExecutionB_of_judgments {fragment : CoreFragment} {mods : Correct
 termination_by sizeOf fragment
 decreasing_by omega
 
-theorem uniform_B_execution : ∀ fragment, BExecutionPremise fragment := by
+theorem uniform_B_execution : ∀ fragment, BExecutionPremiseIn sc fragment := by
   intro fragment mods mm typed wf mal nm
   exact ambientExecutionB_of_judgments typed wf mal nm
 
@@ -637,8 +649,8 @@ theorem child_keys_nodup {children : List CoreFragment} {child : CoreFragment}
     · exact ih tail member
 
 theorem allWF_member {children : List CoreFragment}
-    (wf : CoreFragment.allWellFormed .tapscript children) {child : CoreFragment}
-    (member : child ∈ children) : child.WellFormed .tapscript := by
+    (wf : CoreFragment.allWellFormed sc children) {child : CoreFragment}
+    (member : child ∈ children) : child.WellFormed sc := by
   induction children with
   | nil => simp at member
   | cons head tail ih =>

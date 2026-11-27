@@ -5,6 +5,8 @@ import LeanMiniscript.Extraction.TapscriptRecovery.UnsignedThreshold
 set_option maxRecDepth 4000
 set_option maxHeartbeats 4000000
 
+variable {sc : LeanMiniscript.Miniscript.ScriptContext}
+
 namespace LeanMiniscript.Extraction.TapscriptRecovery.OrBFalse
 
 open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
@@ -101,8 +103,8 @@ theorem boolor_order_false {order : BaseWOutputOrder}
 
 theorem or_b_false_frame {X Y : CoreFragment} {cx cy : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {own : Witness} {top : StackElement} {rest : Stack}
-    (tx : HasType .tapscript X ⟨.B, cx⟩) (ty : HasType .tapscript Y ⟨.W, cy⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript)
+    (tx : HasType sc X ⟨.B, cx⟩) (ty : HasType sc Y ⟨.W, cy⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc)
     (run : Eval (compile (.or_b X Y)) (own.toInitialStack ++ rest) [] flags env.txCtx
       (.success (top :: rest) [])) (falsehood : castToBool top = false) :
     ∃ (left right : Witness) (x y : StackElement) (order : BaseWOutputOrder),
@@ -144,26 +146,28 @@ theorem or_b_false_frame {X Y : CoreFragment} {cx cy : CorrectnessModifiers}
   · rw [tailEq] at runY
     simpa [Witness.toInitialStack] using runY
 
-def DecodedZeroDsatCompleteW (fragment : CoreFragment) : Prop :=
+def DecodedZeroDsatCompleteWIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
   ∀ (parent : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
     (pa po own : Witness) (saved value : StackElement) (rest : Stack) (order : BaseWOutputOrder),
-    ExecutionContext parent fragment env flags pa po own → fragment.keys.Nodup →
+    ExecutionContextIn sc parent fragment env flags pa po own → fragment.keys.Nodup →
     (∀ item ∈ saved :: (own.toInitialStack ++ rest), item.size ≤ maxScriptElementSize) →
     Eval (compile fragment) (saved :: (own.toInitialStack ++ rest)) [] flags env.txCtx
       (.success (order.outputs saved value ++ rest) []) →
     decodeScriptNum value flags.minimalData maxArithmeticScriptNumBytes = .ok (0 : Int) →
     ¬ CheckedSignature fragment env flags own → dissatisfy fragment env = some own
 
-theorem decodedZero_of_ambient {fragment : CoreFragment} (complete : AmbientDsatComplete fragment) :
-    DecodedZeroDsatComplete fragment := by
+abbrev DecodedZeroDsatCompleteW := DecodedZeroDsatCompleteWIn .tapscript
+
+theorem decodedZero_of_ambient {fragment : CoreFragment} (complete : AmbientDsatCompleteIn sc fragment) :
+    DecodedZeroDsatCompleteIn sc fragment := by
   intro parent env flags pa po own value rest context nodup bounds run zero free
   exact complete parent env flags pa po own value rest context nodup bounds run (decoded_zero_false zero) free
 
 theorem ambientDsatComplete_or_b_decoded {X Y : CoreFragment} {cx cy : CorrectnessModifiers}
-    (tx : HasType .tapscript X ⟨.B, cx⟩) (ty : HasType .tapscript Y ⟨.W, cy⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript)
-    (completeX : DecodedZeroDsatComplete X) (completeY : DecodedZeroDsatCompleteW Y) :
-    AmbientDsatComplete (.or_b X Y) := by
+    (tx : HasType sc X ⟨.B, cx⟩) (ty : HasType sc Y ⟨.W, cy⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc)
+    (completeX : DecodedZeroDsatCompleteIn sc X) (completeY : DecodedZeroDsatCompleteWIn sc Y) :
+    AmbientDsatCompleteIn sc (.or_b X Y) := by
   intro parent env flags pa po own top rest context nodup bounded run falsehood free
   obtain ⟨left, right, x, y, order, eq, runX, runY, zeroX, zeroY, bx, _by, _fx, _fy⟩ :=
     or_b_false_frame tx ty wx wy run falsehood
@@ -194,13 +198,13 @@ theorem ambientDsatComplete_or_b_decoded {X Y : CoreFragment} {cx cy : Correctne
   exact CandidateResult.combine_usableWitness_iff.mpr ⟨left, right, dx, dy, rfl⟩
 
 theorem or_b_unsigned_guards {X Y : CoreFragment} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript (.or_b X Y) ⟨.B, cm⟩)
-    (mal : HasMalleability .tapscript (.or_b X Y) mm) (nm : mm.nonMalleable = true)
+    (typed : HasType sc (.or_b X Y) ⟨.B, cm⟩)
+    (mal : HasMalleability sc (.or_b X Y) mm) (nm : mm.nonMalleable = true)
     (s : mm.s = false) :
     cm.d = true ∧ cm.u = true ∧ mm.e = true ∧
-    ∃ cx cy mx my, HasType .tapscript X ⟨.B, cx⟩ ∧ cx.d = true ∧
-      HasType .tapscript Y ⟨.W, cy⟩ ∧ cy.d = true ∧
-      HasMalleability .tapscript X mx ∧ HasMalleability .tapscript Y my ∧
+    ∃ cx cy mx my, HasType sc X ⟨.B, cx⟩ ∧ cx.d = true ∧
+      HasType sc Y ⟨.W, cy⟩ ∧ cy.d = true ∧
+      HasMalleability sc X mx ∧ HasMalleability sc Y my ∧
       mx.nonMalleable = true ∧ my.nonMalleable = true ∧ mx.e = true ∧ my.e = true ∧
       ((mx.s = true ∧ my.s = false) ∨ (mx.s = false ∧ my.s = true)) := by
   cases typed with
@@ -215,17 +219,19 @@ theorem or_b_unsigned_guards {X Y : CoreFragment} {cm : CorrectnessModifiers} {m
         cases a <;> cases b <;> simp
       exact split _ _ signed s
 
-def UnsignedNonunitZero (fragment : CoreFragment) : Prop :=
-  ∀ cm mm, HasType .tapscript fragment ⟨.B, cm⟩ → fragment.WellFormed .tapscript →
-    HasMalleability .tapscript fragment mm → mm.nonMalleable = true →
-    cm.d = true → cm.u = false → mm.e = true → mm.s = false → DecodedZeroDsatComplete fragment
+def UnsignedNonunitZeroIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
+  ∀ cm mm, HasType sc fragment ⟨.B, cm⟩ → fragment.WellFormed sc →
+    HasMalleability sc fragment mm → mm.nonMalleable = true →
+    cm.d = true → cm.u = false → mm.e = true → mm.s = false → DecodedZeroDsatCompleteIn sc fragment
+
+abbrev UnsignedNonunitZero := UnsignedNonunitZeroIn .tapscript
 
 theorem decodedZeroB_of_families {fragment : CoreFragment} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, cm⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment mm) (nm : mm.nonMalleable = true)
+    (typed : HasType sc fragment ⟨.B, cm⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment mm) (nm : mm.nonMalleable = true)
     (d : cm.d = true) (e : mm.e = true)
-    (unit : UnsignedFalse fragment) (nonunit : UnsignedNonunitZero fragment)
-    (signed : SignedDsatCompleteB fragment) : DecodedZeroDsatComplete fragment := by
+    (unit : UnsignedFalseIn sc fragment) (nonunit : UnsignedNonunitZeroIn sc fragment)
+    (signed : SignedDsatCompleteBIn sc fragment) : DecodedZeroDsatCompleteIn sc fragment := by
   cases s : mm.s with
   | true => exact decodedZero_of_ambient (signed cm mm typed wf mal nm d e s)
   | false =>
@@ -234,12 +240,12 @@ theorem decodedZeroB_of_families {fragment : CoreFragment} {cm : CorrectnessModi
     | false => exact nonunit cm mm typed wf mal nm d u e s
 
 theorem decodedZeroW_from_smaller_B {fragment : CoreFragment} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.W, cm⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment mm) (nm : mm.nonMalleable = true)
+    (typed : HasType sc fragment ⟨.W, cm⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment mm) (nm : mm.nonMalleable = true)
     (d : cm.d = true) (e : mm.e = true)
-    (unit : ∀ sub, sizeOf sub < sizeOf fragment → UnsignedFalse sub)
-    (nonunit : ∀ sub, sizeOf sub < sizeOf fragment → UnsignedNonunitZero sub)
-    (signed : ∀ sub, sizeOf sub < sizeOf fragment → SignedDsatCompleteB sub) : DecodedZeroDsatCompleteW fragment := by
+    (unit : ∀ sub, sizeOf sub < sizeOf fragment → UnsignedFalseIn sc sub)
+    (nonunit : ∀ sub, sizeOf sub < sizeOf fragment → UnsignedNonunitZeroIn sc sub)
+    (signed : ∀ sub, sizeOf sub < sizeOf fragment → SignedDsatCompleteBIn sc sub) : DecodedZeroDsatCompleteWIn sc fragment := by
   rcases typed_W_d_children typed with ⟨child, cx, rfl, tx, deq⟩ | ⟨child, cx, rfl, tx, one, deq⟩
   · have cd : cx.d = true := deq.symm.trans d
     cases mal with
@@ -270,10 +276,10 @@ theorem decodedZeroW_from_smaller_B {fragment : CoreFragment} {cm : CorrectnessM
       · exact Or.inr (Or.inr member)
 
 theorem unsignedFalse_or_b (X Y : CoreFragment)
-    (unit : ∀ sub, sizeOf sub < sizeOf (CoreFragment.or_b X Y) → UnsignedFalse sub)
-    (nonunit : ∀ sub, sizeOf sub < sizeOf (CoreFragment.or_b X Y) → UnsignedNonunitZero sub)
-    (signed : ∀ sub, sizeOf sub < sizeOf (CoreFragment.or_b X Y) → SignedDsatCompleteB sub) :
-    UnsignedFalse (.or_b X Y) := by
+    (unit : ∀ sub, sizeOf sub < sizeOf (CoreFragment.or_b X Y) → UnsignedFalseIn sc sub)
+    (nonunit : ∀ sub, sizeOf sub < sizeOf (CoreFragment.or_b X Y) → UnsignedNonunitZeroIn sc sub)
+    (signed : ∀ sub, sizeOf sub < sizeOf (CoreFragment.or_b X Y) → SignedDsatCompleteBIn sc sub) :
+    UnsignedFalseIn sc (.or_b X Y) := by
   intro cm mm typed wf mal nm _d _u _e s
   obtain ⟨_, _, _, cx, cy, mx, my, tx, dx, ty, dy, hx, hy, nx, ny, ex, ey, _split⟩ :=
     or_b_unsigned_guards typed mal nm s
@@ -285,8 +291,8 @@ theorem unsignedFalse_or_b (X Y : CoreFragment)
       (fun sub smaller => nonunit sub (Nat.lt_trans smaller (by simp; omega)))
       (fun sub smaller => signed sub (Nat.lt_trans smaller (by simp; omega)))
 
-theorem unsignedFalse_n (child : CoreFragment) (unit : UnsignedFalse child)
-    (nonunit : UnsignedNonunitZero child) : UnsignedFalse (.n child) := by
+theorem unsignedFalse_n (child : CoreFragment) (unit : UnsignedFalseIn sc child)
+    (nonunit : UnsignedNonunitZeroIn sc child) : UnsignedFalseIn sc (.n child) := by
   intro cm mm typed wf mal nm d _u e s
   cases typed with
   | @n_wrap _ cx tx =>
@@ -306,10 +312,10 @@ open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
   OrBComplete UnsignedFalse
 
 theorem andor_type_guards {X Y Z : CoreFragment} {cm : CorrectnessModifiers}
-    (typed : HasType .tapscript (.andor X Y Z) ⟨.B, cm⟩) (d : cm.d = true) (u : cm.u = true) :
-    ∃ cx cy cz, HasType .tapscript X ⟨.B, cx⟩ ∧ cx.d = true ∧ cx.u = true ∧
-      HasType .tapscript Y ⟨.B, cy⟩ ∧ cy.u = true ∧
-      HasType .tapscript Z ⟨.B, cz⟩ ∧ cz.d = true ∧ cz.u = true := by
+    (typed : HasType sc (.andor X Y Z) ⟨.B, cm⟩) (d : cm.d = true) (u : cm.u = true) :
+    ∃ cx cy cz, HasType sc X ⟨.B, cx⟩ ∧ cx.d = true ∧ cx.u = true ∧
+      HasType sc Y ⟨.B, cy⟩ ∧ cy.u = true ∧
+      HasType sc Z ⟨.B, cz⟩ ∧ cz.d = true ∧ cz.u = true := by
   generalize typeEq : (⟨.B, cm⟩ : MiniType) = ty at typed
   have baseEq := congrArg MiniType.base typeEq
   have pd : ty.mods.d = true := by rw [← typeEq]; exact d
@@ -329,10 +335,10 @@ theorem andor_type_guards {X Y Z : CoreFragment} {cm : CorrectnessModifiers}
         exact ⟨_, cy, cz, tx, dx, ux, ty, uy, tz, pd, uz⟩
 
 theorem andor_expressive_guards {X Y Z : CoreFragment} {mm : MalleabilityModifiers}
-    (mal : HasMalleability .tapscript (.andor X Y Z) mm) (nm : mm.nonMalleable = true)
+    (mal : HasMalleability sc (.andor X Y Z) mm) (nm : mm.nonMalleable = true)
     (e : mm.e = true) :
-    ∃ mx my mz, HasMalleability .tapscript X mx ∧ HasMalleability .tapscript Y my ∧
-      HasMalleability .tapscript Z mz ∧ mx.nonMalleable = true ∧ my.nonMalleable = true ∧
+    ∃ mx my mz, HasMalleability sc X mx ∧ HasMalleability sc Y my ∧
+      HasMalleability sc Z mz ∧ mx.nonMalleable = true ∧ my.nonMalleable = true ∧
       mz.nonMalleable = true ∧ mx.e = true ∧ mz.e = true ∧ (mx.s = true ∨ my.f = true) := by
   cases mal with
   | andor hx hy hz =>
@@ -341,10 +347,10 @@ theorem andor_expressive_guards {X Y Z : CoreFragment} {mm : MalleabilityModifie
     exact ⟨_, _, _, hx, hy, hz, nx, ny, nz, ex, ez, Bool.or_eq_true_iff.mp guard⟩
 
 theorem andor_unsigned_guards {X Y Z : CoreFragment} {mm : MalleabilityModifiers}
-    (mal : HasMalleability .tapscript (.andor X Y Z) mm) (nm : mm.nonMalleable = true)
+    (mal : HasMalleability sc (.andor X Y Z) mm) (nm : mm.nonMalleable = true)
     (e : mm.e = true) (s : mm.s = false) :
-    ∃ mx my mz, HasMalleability .tapscript X mx ∧ HasMalleability .tapscript Y my ∧
-      HasMalleability .tapscript Z mz ∧ mx.nonMalleable = true ∧ my.nonMalleable = true ∧
+    ∃ mx my mz, HasMalleability sc X mx ∧ HasMalleability sc Y my ∧
+      HasMalleability sc Z mz ∧ mx.nonMalleable = true ∧ my.nonMalleable = true ∧
       mz.nonMalleable = true ∧ mx.e = true ∧ mz.e = true ∧
       ((mx.s = true ∧ mz.s = false) ∨
        (mx.s = false ∧ my.f = true ∧
@@ -364,11 +370,11 @@ theorem andor_unsigned_guards {X Y Z : CoreFragment} {mm : MalleabilityModifiers
 
 theorem andor_dsat_selector {X Y Z : CoreFragment} {cx cy cz : CorrectnessModifiers}
     {mx my mz : MalleabilityModifiers}
-    (tx : HasType .tapscript X ⟨.B, cx⟩) (ty : HasType .tapscript Y ⟨.B, cy⟩)
-    (tz : HasType .tapscript Z ⟨.B, cz⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript) (wz : Z.WellFormed .tapscript)
-    (hx : HasMalleability .tapscript X mx) (hy : HasMalleability .tapscript Y my)
-    (hz : HasMalleability .tapscript Z mz) (nx : mx.nonMalleable = true) (nz : mz.nonMalleable = true)
+    (tx : HasType sc X ⟨.B, cx⟩) (ty : HasType sc Y ⟨.B, cy⟩)
+    (tz : HasType sc Z ⟨.B, cz⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc) (wz : Z.WellFormed sc)
+    (hx : HasMalleability sc X mx) (hy : HasMalleability sc Y my)
+    (hz : HasMalleability sc Z mz) (nx : mx.nonMalleable = true) (nz : mz.nonMalleable = true)
     (ex : mx.e = true) (ez : mz.e = true) (guard : mx.s = true ∨ my.f = true) (env : SatEnv) :
     (satisfactionCandidates (.andor X Y Z) env).dsat =
       (satisfactionCandidates X env).dsat.combine (satisfactionCandidates Z env).dsat := by
@@ -380,9 +386,9 @@ theorem andor_dsat_selector {X Y Z : CoreFragment} {cx cy cz : CorrectnessModifi
   · exact ((malleabilityCandidateSound env wy ty hy).forcedDsat fy).combine_right.markNonCanonical
 
 theorem andor_dsat_selector_expressive {X Y Z : CoreFragment} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript (.andor X Y Z) ⟨.B, cm⟩)
-    (wf : (CoreFragment.andor X Y Z).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.andor X Y Z) mm) (nm : mm.nonMalleable = true)
+    (typed : HasType sc (.andor X Y Z) ⟨.B, cm⟩)
+    (wf : (CoreFragment.andor X Y Z).WellFormed sc)
+    (mal : HasMalleability sc (.andor X Y Z) mm) (nm : mm.nonMalleable = true)
     (e : mm.e = true) (env : SatEnv) :
     (satisfactionCandidates (.andor X Y Z) env).dsat =
       (satisfactionCandidates X env).dsat.combine (satisfactionCandidates Z env).dsat := by
@@ -393,12 +399,12 @@ theorem andor_dsat_selector_expressive {X Y Z : CoreFragment} {cm : CorrectnessM
 theorem andor_false_active {X Y Z parent : CoreFragment} {cx cy cz : CorrectnessModifiers}
     {mx : MalleabilityModifiers} {env : SatEnv} {flags : ScriptFlags} {pa po own : Witness}
     {resultTop : StackElement} {rest : Stack}
-    (tx : HasType .tapscript X ⟨.B, cx⟩) (ty : HasType .tapscript Y ⟨.B, cy⟩)
-    (tz : HasType .tapscript Z ⟨.B, cz⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript) (wz : Z.WellFormed .tapscript)
-    (hx : HasMalleability .tapscript X mx) (nx : mx.nonMalleable = true)
-    (exclude : mx.s = true ∨ AmbientForcedFalse Y)
-    (context : ExecutionContext parent (.andor X Y Z) env flags pa po own)
+    (tx : HasType sc X ⟨.B, cx⟩) (ty : HasType sc Y ⟨.B, cy⟩)
+    (tz : HasType sc Z ⟨.B, cz⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc) (wz : Z.WellFormed sc)
+    (hx : HasMalleability sc X mx) (nx : mx.nonMalleable = true)
+    (exclude : mx.s = true ∨ AmbientForcedFalseIn sc Y)
+    (context : ExecutionContextIn sc parent (.andor X Y Z) env flags pa po own)
     (nodup : (CoreFragment.andor X Y Z).keys.Nodup)
     (bounded : ∀ item ∈ own.toInitialStack ++ rest, item.size ≤ maxScriptElementSize)
     (run : Eval (compile (.andor X Y Z)) (own.toInitialStack ++ rest) [] flags env.txCtx
@@ -435,14 +441,14 @@ theorem andor_false_active {X Y Z parent : CoreFragment} {cx cy cz : Correctness
 
 theorem ambientDsatComplete_andor {X Y Z : CoreFragment} {cx cy cz : CorrectnessModifiers}
     {mx : MalleabilityModifiers}
-    (tx : HasType .tapscript X ⟨.B, cx⟩) (ty : HasType .tapscript Y ⟨.B, cy⟩)
-    (tz : HasType .tapscript Z ⟨.B, cz⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript) (wz : Z.WellFormed .tapscript)
-    (hx : HasMalleability .tapscript X mx) (nx : mx.nonMalleable = true)
+    (tx : HasType sc X ⟨.B, cx⟩) (ty : HasType sc Y ⟨.B, cy⟩)
+    (tz : HasType sc Z ⟨.B, cz⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc) (wz : Z.WellFormed sc)
+    (hx : HasMalleability sc X mx) (nx : mx.nonMalleable = true)
     (selector : ∀ env, (satisfactionCandidates (.andor X Y Z) env).dsat =
       (satisfactionCandidates X env).dsat.combine (satisfactionCandidates Z env).dsat)
-    (completeX : AmbientDsatComplete X) (completeZ : AmbientDsatComplete Z)
-    (exclude : mx.s = true ∨ AmbientForcedFalse Y) : AmbientDsatComplete (.andor X Y Z) := by
+    (completeX : AmbientDsatCompleteIn sc X) (completeZ : AmbientDsatCompleteIn sc Z)
+    (exclude : mx.s = true ∨ AmbientForcedFalseIn sc Y) : AmbientDsatCompleteIn sc (.andor X Y Z) := by
   intro parent env flags pa po own resultTop rest context nodup bounded run resultFalse free
   obtain ⟨left, right, top, eq, runX, falseX, runZ⟩ :=
     andor_false_active tx ty tz wx wy wz hx nx exclude context nodup bounded run resultFalse free
@@ -470,22 +476,24 @@ theorem ambientDsatComplete_andor {X Y Z : CoreFragment} {cx cy cz : Correctness
   rw [selector env]
   exact CandidateResult.combine_usableWitness_iff.mpr ⟨left, right, dx, dz, rfl⟩
 
-def ForcedUnitB (signed : Bool) (fragment : CoreFragment) : Prop :=
-  ∀ cm mm, HasType .tapscript fragment ⟨.B, cm⟩ → fragment.WellFormed .tapscript →
-    HasMalleability .tapscript fragment mm → mm.nonMalleable = true →
-    cm.u = true → mm.f = true → mm.s = signed → AmbientForcedFalse fragment
+def ForcedUnitBIn (sc : ScriptContext) (signed : Bool) (fragment : CoreFragment) : Prop :=
+  ∀ cm mm, HasType sc fragment ⟨.B, cm⟩ → fragment.WellFormed sc →
+    HasMalleability sc fragment mm → mm.nonMalleable = true →
+    cm.u = true → mm.f = true → mm.s = signed → AmbientForcedFalseIn sc fragment
 
-theorem unsignedForcedNu_of_unit {fragment : CoreFragment} (forced : ForcedUnitB false fragment) :
-    UnsignedForcedNu fragment := by
+abbrev ForcedUnitB := ForcedUnitBIn .tapscript
+
+theorem unsignedForcedNu_of_unit {fragment : CoreFragment} (forced : ForcedUnitBIn sc false fragment) :
+    UnsignedForcedNuIn sc fragment := by
   intro cm mm typed wf mal nm _n u f s
   exact forced cm mm typed wf mal nm u f s
 
 theorem unsignedFalse_andor (X Y Z : CoreFragment)
-    (unit : ∀ sub, sizeOf sub < sizeOf (CoreFragment.andor X Y Z) → UnsignedFalse sub)
-    (signed : ∀ sub, sizeOf sub < sizeOf (CoreFragment.andor X Y Z) → SignedDsatCompleteB sub)
-    (forcedSigned : ∀ sub, sizeOf sub < sizeOf (CoreFragment.andor X Y Z) → ForcedUnitB true sub)
-    (forcedUnsigned : ∀ sub, sizeOf sub < sizeOf (CoreFragment.andor X Y Z) → ForcedUnitB false sub) :
-    UnsignedFalse (.andor X Y Z) := by
+    (unit : ∀ sub, sizeOf sub < sizeOf (CoreFragment.andor X Y Z) → UnsignedFalseIn sc sub)
+    (signed : ∀ sub, sizeOf sub < sizeOf (CoreFragment.andor X Y Z) → SignedDsatCompleteBIn sc sub)
+    (forcedSigned : ∀ sub, sizeOf sub < sizeOf (CoreFragment.andor X Y Z) → ForcedUnitBIn sc true sub)
+    (forcedUnsigned : ∀ sub, sizeOf sub < sizeOf (CoreFragment.andor X Y Z) → ForcedUnitBIn sc false sub) :
+    UnsignedFalseIn sc (.andor X Y Z) := by
   intro cm mm typed wf mal nm d u e s
   obtain ⟨cx, cy, cz, tx, dx, ux, ty, uy, tz, dz, uz⟩ := andor_type_guards typed d u
   obtain ⟨mx, my, mz, hx, hy, hz, nx, ny, nz, ex, ez, split⟩ := andor_unsigned_guards mal nm e s
@@ -510,16 +518,16 @@ open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
   LeanMiniscript.Extraction OrI OrDC Dsat ForcedK SignedDsat OrIDsat
   CompoundKDsat OrBComplete UnsignedFalse OrBFalse AndorUnsignedFalse
 
-theorem forcedSignedUnit (fragment : CoreFragment) : ForcedUnitB true fragment := by
+theorem forcedSignedUnit (fragment : CoreFragment) : ForcedUnitBIn sc true fragment := by
   intro cm mm typed wf mal nm _u f s
   exact uniform_signedForcedB fragment cm mm typed wf mal nm s f
 
 theorem or_i_unsigned_guards {X Y : CoreFragment} {cm : CorrectnessModifiers}
-    {mm : MalleabilityModifiers} (typed : HasType .tapscript (.or_i X Y) ⟨.B, cm⟩)
-    (mal : HasMalleability .tapscript (.or_i X Y) mm)
+    {mm : MalleabilityModifiers} (typed : HasType sc (.or_i X Y) ⟨.B, cm⟩)
+    (mal : HasMalleability sc (.or_i X Y) mm)
     (nm : mm.nonMalleable = true) (u : cm.u = true) (e : mm.e = true) (s : mm.s = false) :
-    ∃ cx cy mx my, HasType .tapscript X ⟨.B, cx⟩ ∧ HasType .tapscript Y ⟨.B, cy⟩ ∧
-      HasMalleability .tapscript X mx ∧ HasMalleability .tapscript Y my ∧
+    ∃ cx cy mx my, HasType sc X ⟨.B, cx⟩ ∧ HasType sc Y ⟨.B, cy⟩ ∧
+      HasMalleability sc X mx ∧ HasMalleability sc Y my ∧
       mx.nonMalleable = true ∧ my.nonMalleable = true ∧ cx.u = true ∧ cy.u = true ∧
       ((mx.s = true ∧ my.s = false) ∨ (mx.s = false ∧ my.s = true)) ∧
       ((cx.d = true ∧ mx.e = true ∧ my.f = true) ∨
@@ -552,25 +560,25 @@ theorem or_i_unsigned_guards {X Y : CoreFragment} {cm : CorrectnessModifiers}
 
 theorem or_i_false_children {X Y parent : CoreFragment} {cx cy : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {pa po own : Witness} {top : StackElement} {rest : Stack}
-    (tx : HasType .tapscript X ⟨.B, cx⟩) (ty : HasType .tapscript Y ⟨.B, cy⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript)
-    (context : ExecutionContext parent (.or_i X Y) env flags pa po own)
+    (tx : HasType sc X ⟨.B, cx⟩) (ty : HasType sc Y ⟨.B, cy⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc)
+    (context : ExecutionContextIn sc parent (.or_i X Y) env flags pa po own)
     (nodup : (CoreFragment.or_i X Y).keys.Nodup)
     (bounded : ∀ item ∈ own.toInitialStack ++ rest, item.size ≤ maxScriptElementSize)
     (run : Eval (compile (.or_i X Y)) (own.toInitialStack ++ rest) [] flags env.txCtx
       (.success (top :: rest) [])) (falsehood : castToBool top = false)
     (free : ¬ CheckedSignature (.or_i X Y) env flags own) :
     (∃ active, own = active ++ [trueElement] ∧
-      ExecutionContext parent X env flags pa po active ∧ X.keys.Nodup ∧
+      ExecutionContextIn sc parent X env flags pa po active ∧ X.keys.Nodup ∧
       (∀ item ∈ active.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) ∧
       Eval (compile X) (active.toInitialStack ++ rest) [] flags env.txCtx (.success (top :: rest) []) ∧
       castToBool top = false ∧ ¬ CheckedSignature X env flags active) ∨
     (∃ active, own = active ++ [falseElement] ∧
-      ExecutionContext parent Y env flags pa po active ∧ Y.keys.Nodup ∧
+      ExecutionContextIn sc parent Y env flags pa po active ∧ Y.keys.Nodup ∧
       (∀ item ∈ active.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) ∧
       Eval (compile Y) (active.toInitialStack ++ rest) [] flags env.txCtx (.success (top :: rest) []) ∧
       castToBool top = false ∧ ¬ CheckedSignature Y env flags active) := by
-  rcases or_i_run_B tx ty wx wy context.version run with
+  rcases or_i_run_B tx ty wx wy context.rules run with
     ⟨active, eq, childRun⟩ | ⟨active, eq, childRun⟩
   · subst own
     have keys : ∀ key ∈ X.keys, key ∈ (CoreFragment.or_i X Y).keys :=
@@ -610,12 +618,12 @@ theorem or_i_right_usable_iff {X Y : CoreFragment} {env : SatEnv} {own : Witness
   exact CandidateResult.withSelector_usableWitness_iff
 
 theorem or_i_left_false_complete {X Y : CoreFragment} {cx cy : CorrectnessModifiers}
-    (tx : HasType .tapscript X ⟨.B, cx⟩) (ty : HasType .tapscript Y ⟨.B, cy⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript)
+    (tx : HasType sc X ⟨.B, cx⟩) (ty : HasType sc Y ⟨.B, cy⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc)
     (raw : ∀ env, RawUnsigned (satisfactionCandidates X env).dsat)
     (signed : ∀ env, (satisfactionCandidates Y env).dsat.Signed)
-    (completeX : AmbientDsatComplete X) (forcedY : AmbientForcedFalse Y) :
-    AmbientDsatComplete (.or_i X Y) := by
+    (completeX : AmbientDsatCompleteIn sc X) (forcedY : AmbientForcedFalseIn sc Y) :
+    AmbientDsatCompleteIn sc (.or_i X Y) := by
   intro parent env flags pa po own top rest context nodup bounded run falsehood free
   rcases or_i_false_children tx ty wx wy context nodup bounded run falsehood free with
     ⟨active, eq, ctx, nd, bound, childRun, childFalse, absent⟩ |
@@ -625,12 +633,12 @@ theorem or_i_left_false_complete {X Y : CoreFragment} {cx cy : CorrectnessModifi
   · exact (absent (forcedY parent env flags pa po active top rest ctx nd bound childRun childFalse)).elim
 
 theorem or_i_right_false_complete {X Y : CoreFragment} {cx cy : CorrectnessModifiers}
-    (tx : HasType .tapscript X ⟨.B, cx⟩) (ty : HasType .tapscript Y ⟨.B, cy⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript)
+    (tx : HasType sc X ⟨.B, cx⟩) (ty : HasType sc Y ⟨.B, cy⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc)
     (signed : ∀ env, (satisfactionCandidates X env).dsat.Signed)
     (raw : ∀ env, RawUnsigned (satisfactionCandidates Y env).dsat)
-    (forcedX : AmbientForcedFalse X) (completeY : AmbientDsatComplete Y) :
-    AmbientDsatComplete (.or_i X Y) := by
+    (forcedX : AmbientForcedFalseIn sc X) (completeY : AmbientDsatCompleteIn sc Y) :
+    AmbientDsatCompleteIn sc (.or_i X Y) := by
   intro parent env flags pa po own top rest context nodup bounded run falsehood free
   rcases or_i_false_children tx ty wx wy context nodup bounded run falsehood free with
     ⟨active, _eq, ctx, nd, bound, childRun, childFalse, absent⟩ |
@@ -640,19 +648,19 @@ theorem or_i_right_false_complete {X Y : CoreFragment} {cx cy : CorrectnessModif
       ⟨active, completeY parent env flags pa po active top rest ctx nd bound childRun childFalse absent, eq⟩
 
 theorem forcedUnit_of_unsigned {fragment : CoreFragment} {cm : CorrectnessModifiers}
-    {mm : MalleabilityModifiers} (typed : HasType .tapscript fragment ⟨.B, cm⟩)
-    (wf : fragment.WellFormed .tapscript) (mal : HasMalleability .tapscript fragment mm)
+    {mm : MalleabilityModifiers} (typed : HasType sc fragment ⟨.B, cm⟩)
+    (wf : fragment.WellFormed sc) (mal : HasMalleability sc fragment mm)
     (nm : mm.nonMalleable = true) (u : cm.u = true) (f : mm.f = true)
-    (unsigned : ForcedUnitB false fragment) : AmbientForcedFalse fragment := by
+    (unsigned : ForcedUnitBIn sc false fragment) : AmbientForcedFalseIn sc fragment := by
   cases s : mm.s with
   | false => exact unsigned cm mm typed wf mal nm u f s
   | true => exact forcedSignedUnit fragment cm mm typed wf mal nm u f s
 
 theorem unsignedFalse_or_i (X Y : CoreFragment)
-    (unit : ∀ child, sizeOf child < sizeOf (CoreFragment.or_i X Y) → UnsignedFalse child)
-    (signed : ∀ child, sizeOf child < sizeOf (CoreFragment.or_i X Y) → SignedDsatCompleteB child)
-    (forced : ∀ child, sizeOf child < sizeOf (CoreFragment.or_i X Y) → ForcedUnitB false child) :
-    UnsignedFalse (.or_i X Y) := by
+    (unit : ∀ child, sizeOf child < sizeOf (CoreFragment.or_i X Y) → UnsignedFalseIn sc child)
+    (signed : ∀ child, sizeOf child < sizeOf (CoreFragment.or_i X Y) → SignedDsatCompleteBIn sc child)
+    (forced : ∀ child, sizeOf child < sizeOf (CoreFragment.or_i X Y) → ForcedUnitBIn sc false child) :
+    UnsignedFalseIn sc (.or_i X Y) := by
   intro cm mm typed wf mal nm _d u e s
   obtain ⟨cx, cy, mx, my, tx, ty, hx, hy, nx, ny, ux, uy, _signedness, choice⟩ :=
     or_i_unsigned_guards typed mal nm u e s
@@ -671,11 +679,11 @@ theorem unsignedFalse_or_i (X Y : CoreFragment)
         (signed Y (by simp; omega)) cy my ty wf.2 hy ny dy uy ey)
 
 theorem unsignedFalse_constructor_step (fragment : CoreFragment)
-    (unit : ∀ child, sizeOf child < sizeOf fragment → UnsignedFalse child)
-    (signed : ∀ child, sizeOf child < sizeOf fragment → SignedDsatCompleteB child)
-    (forced : ∀ child, sizeOf child < sizeOf fragment → ForcedUnitB false child)
-    (nonunit : ∀ child, sizeOf child < sizeOf fragment → UnsignedNonunitZero child) :
-    UnsignedFalse fragment := by
+    (unit : ∀ child, sizeOf child < sizeOf fragment → UnsignedFalseIn sc child)
+    (signed : ∀ child, sizeOf child < sizeOf fragment → SignedDsatCompleteBIn sc child)
+    (forced : ∀ child, sizeOf child < sizeOf fragment → ForcedUnitBIn sc false child)
+    (nonunit : ∀ child, sizeOf child < sizeOf fragment → UnsignedNonunitZeroIn sc child) :
+    UnsignedFalseIn sc fragment := by
   intro cm mm typed wf mal nm d u e s
   cases unsigned_false_shape typed mal e s with
   | d child => exact unsignedFalse_d child cm mm typed wf mal nm d u e s
@@ -693,10 +701,10 @@ theorem unsignedFalse_constructor_step (fragment : CoreFragment)
       cm mm typed wf mal nm d u e s
 
 theorem falseFamilies_from_boundaries (fragment : CoreFragment)
-    (forced : ∀ child, sizeOf child < sizeOf fragment → ForcedUnitB false child)
-    (nonunit : ∀ child, sizeOf child < sizeOf fragment → UnsignedNonunitZero child) :
-    SignedDsatB fragment ∧ UnsignedFalse fragment := by
-  have ih : ∀ child, sizeOf child < sizeOf fragment → SignedDsatB child ∧ UnsignedFalse child := by
+    (forced : ∀ child, sizeOf child < sizeOf fragment → ForcedUnitBIn sc false child)
+    (nonunit : ∀ child, sizeOf child < sizeOf fragment → UnsignedNonunitZeroIn sc child) :
+    SignedDsatBIn sc fragment ∧ UnsignedFalseIn sc fragment := by
+  have ih : ∀ child, sizeOf child < sizeOf fragment → SignedDsatBIn sc child ∧ UnsignedFalseIn sc child := by
     intro child smaller
     exact falseFamilies_from_boundaries child
       (fun sub bound => forced sub (Nat.lt_trans bound smaller))
@@ -710,9 +718,9 @@ theorem falseFamilies_from_boundaries (fragment : CoreFragment)
 termination_by sizeOf fragment
 
 theorem conditionFalse_from_boundaries (fragment : CoreFragment)
-    (forced : ∀ child, sizeOf child < sizeOf fragment → ForcedUnitB false child)
-    (nonunit : ∀ child, sizeOf child < sizeOf fragment → UnsignedNonunitZero child) :
-    VRestComplete.BConditionFalseComplete fragment := by
+    (forced : ∀ child, sizeOf child < sizeOf fragment → ForcedUnitBIn sc false child)
+    (nonunit : ∀ child, sizeOf child < sizeOf fragment → UnsignedNonunitZeroIn sc child) :
+    VRestComplete.BConditionFalseCompleteIn sc fragment := by
   obtain ⟨signed, unsigned⟩ := falseFamilies_from_boundaries fragment forced nonunit
   exact conditionFalse_of_unsigned_signed unsigned signed
 

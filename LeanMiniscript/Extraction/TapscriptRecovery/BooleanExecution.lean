@@ -5,6 +5,8 @@ import LeanMiniscript.Extraction.TapscriptRecovery.Dissatisfaction
 set_option maxRecDepth 4000
 set_option maxHeartbeats 4000000
 
+variable {sc : LeanMiniscript.Miniscript.ScriptContext}
+
 namespace LeanMiniscript.Extraction.TapscriptRecovery.BExecution
 
 open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
@@ -12,7 +14,7 @@ open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
 
 theorem branch_B_frame {X Y : CoreFragment} {modsY : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {other : Witness} {rest args tail : Stack} {top resultTop : StackElement}
-    (typedY : HasType .tapscript Y ⟨.B, modsY⟩) (wfY : Y.WellFormed .tapscript)
+    (typedY : HasType sc Y ⟨.B, modsY⟩) (wfY : Y.WellFormed sc)
     (inputEq : other.toInitialStack ++ rest = args ++ tail)
     (runX : Eval (compile X) (args ++ tail) [] flags env.txCtx (.success (top :: tail) []))
     (runY : Eval (compile Y) tail [] flags env.txCtx (.success (resultTop :: rest) [])) :
@@ -33,9 +35,9 @@ theorem branch_B_frame {X Y : CoreFragment} {modsY : CorrectnessModifiers}
 
 theorem andor_run_B_frame {X Y Z : CoreFragment} {modsX modsY modsZ : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {other : Witness} {rest : Stack} {resultTop : StackElement}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩)
-    (typedY : HasType .tapscript Y ⟨.B, modsY⟩) (typedZ : HasType .tapscript Z ⟨.B, modsZ⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript) (wfZ : Z.WellFormed .tapscript)
+    (typedX : HasType sc X ⟨.B, modsX⟩)
+    (typedY : HasType sc Y ⟨.B, modsY⟩) (typedZ : HasType sc Z ⟨.B, modsZ⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc) (wfZ : Z.WellFormed sc)
     (run : Eval (compile (.andor X Y Z)) (other.toInitialStack ++ rest) [] flags env.txCtx (.success (resultTop :: rest) [])) :
     (∃ left right top, other = right ++ left ∧
       Eval (compile X) (left.toInitialStack ++ (right.toInitialStack ++ rest)) [] flags env.txCtx
@@ -64,12 +66,12 @@ theorem andor_run_B_frame {X Y Z : CoreFragment} {modsX modsY modsZ : Correctnes
     exact Or.inr ⟨left, right, top, eq, rx, truth, ry⟩
 
 theorem ambientExecutionB_andor {X Y Z : CoreFragment} {modsX modsY modsZ : CorrectnessModifiers}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩)
-    (typedY : HasType .tapscript Y ⟨.B, modsY⟩) (typedZ : HasType .tapscript Z ⟨.B, modsZ⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript) (wfZ : Z.WellFormed .tapscript)
-    (executeX : AmbientExecutionB X) (executeY : AmbientExecutionB Y) (executeZ : AmbientExecutionB Z)
+    (typedX : HasType sc X ⟨.B, modsX⟩)
+    (typedY : HasType sc Y ⟨.B, modsY⟩) (typedZ : HasType sc Z ⟨.B, modsZ⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc) (wfZ : Z.WellFormed sc)
+    (executeX : AmbientExecutionBIn sc X) (executeY : AmbientExecutionBIn sc Y) (executeZ : AmbientExecutionBIn sc Z)
     (unsignedX : ∀ env, RawUnsigned (satisfactionCandidates X env).dsat) :
-    AmbientExecutionB (.andor X Y Z) := by
+    AmbientExecutionBIn sc (.andor X Y Z) := by
   intro parent env flags pa po consumed resultTop rest context bounded run outputTruth
   have keysX : ∀ key ∈ X.keys, key ∈ (CoreFragment.andor X Y Z).keys :=
     fun _ h => List.mem_append_left _ (List.mem_append_left _ h)
@@ -107,32 +109,34 @@ theorem ambientExecutionB_andor {X Y Z : CoreFragment} {modsX modsY modsZ : Corr
 
 theorem ambientExecutionB_andor_from_children {X Y Z : CoreFragment}
     {modsX modsY modsZ : CorrectnessModifiers} {mods : MalleabilityModifiers}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩)
-    (typedY : HasType .tapscript Y ⟨.B, modsY⟩) (typedZ : HasType .tapscript Z ⟨.B, modsZ⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript) (wfZ : Z.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.andor X Y Z) mods) (nm : mods.nonMalleable = true)
-    (executeX : AmbientExecutionB X) (executeY : AmbientExecutionB Y) (executeZ : AmbientExecutionB Z) :
-    AmbientExecutionB (.andor X Y Z) := by
+    (typedX : HasType sc X ⟨.B, modsX⟩)
+    (typedY : HasType sc Y ⟨.B, modsY⟩) (typedZ : HasType sc Z ⟨.B, modsZ⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc) (wfZ : Z.WellFormed sc)
+    (mal : HasMalleability sc (.andor X Y Z) mods) (nm : mods.nonMalleable = true)
+    (executeX : AmbientExecutionBIn sc X) (executeY : AmbientExecutionBIn sc Y) (executeZ : AmbientExecutionBIn sc Z) :
+    AmbientExecutionBIn sc (.andor X Y Z) := by
   obtain ⟨mx, _my, _mz, hx, _hy, _hz, nx, _ny, _nz, ex⟩ := andor_malleability_children mal nm
   exact ambientExecutionB_andor typedX typedY typedZ wfX wfY wfZ executeX executeY executeZ
     (expressive_rawUnsigned wfX typedX hx nx ex)
 
-inductive KShape : CoreFragment → Prop where
-  | pk_k (key : PubKey) : KShape (.pk_k key)
-  | pk_h (key : PubKey) : KShape (.pk_h key)
+inductive KShapeIn (sc : ScriptContext) : CoreFragment → Prop where
+  | pk_k (key : PubKey) : KShapeIn sc (.pk_k key)
+  | pk_h (key : PubKey) : KShapeIn sc (.pk_h key)
   | and_v {X Y : CoreFragment} {mx my : CorrectnessModifiers}
-      (typedX : HasType .tapscript X ⟨.V, mx⟩)
-      (typedY : HasType .tapscript Y ⟨.K, my⟩) : KShape (.and_v X Y)
+      (typedX : HasType sc X ⟨.V, mx⟩)
+      (typedY : HasType sc Y ⟨.K, my⟩) : KShapeIn sc (.and_v X Y)
   | or_i {X Y : CoreFragment} {mx my : CorrectnessModifiers}
-      (typedX : HasType .tapscript X ⟨.K, mx⟩)
-      (typedY : HasType .tapscript Y ⟨.K, my⟩) : KShape (.or_i X Y)
+      (typedX : HasType sc X ⟨.K, mx⟩)
+      (typedY : HasType sc Y ⟨.K, my⟩) : KShapeIn sc (.or_i X Y)
   | andor {X Y Z : CoreFragment} {mx my mz : CorrectnessModifiers}
-      (typedX : HasType .tapscript X ⟨.B, mx⟩) (d : mx.d = true) (u : mx.u = true)
-      (typedY : HasType .tapscript Y ⟨.K, my⟩)
-      (typedZ : HasType .tapscript Z ⟨.K, mz⟩) : KShape (.andor X Y Z)
+      (typedX : HasType sc X ⟨.B, mx⟩) (d : mx.d = true) (u : mx.u = true)
+      (typedY : HasType sc Y ⟨.K, my⟩)
+      (typedZ : HasType sc Z ⟨.K, mz⟩) : KShapeIn sc (.andor X Y Z)
+
+abbrev KShape := KShapeIn .tapscript
 
 theorem typed_K_shape {fragment : CoreFragment} {mods : CorrectnessModifiers}
-    (typed : HasType .tapscript fragment ⟨.K, mods⟩) : KShape fragment := by
+    (typed : HasType sc fragment ⟨.K, mods⟩) : KShapeIn sc fragment := by
   generalize typeEq : (⟨.K, mods⟩ : MiniType) = ty at typed
   have baseEq := congrArg MiniType.base typeEq
   cases typed <;> try { cases baseEq }
@@ -175,32 +179,34 @@ def RemainingB : CoreFragment → Prop
   | .c (.and_v _ _) | .c (.or_i _ _) | .c (.andor _ _ _) => True
   | _ => False
 
-inductive BShape : CoreFragment → Prop where
-  | zero : BShape .zero
-  | one : BShape .one
-  | sha256 (hash : Hash256) : BShape (.sha256 hash)
-  | hash160 (hash : Hash160) : BShape (.hash160 hash)
-  | c_pk_k (key : PubKey) : BShape (.c (.pk_k key))
-  | c_pk_h (key : PubKey) : BShape (.c (.pk_h key))
-  | multi (k : Nat) (keys : List PubKey) : BShape (.multi k keys)
-  | multi_a (k : Nat) (keys : List PubKey) : BShape (.multi_a k keys)
+inductive BShapeIn (sc : ScriptContext) : CoreFragment → Prop where
+  | zero : BShapeIn sc .zero
+  | one : BShapeIn sc .one
+  | sha256 (hash : Hash256) : BShapeIn sc (.sha256 hash)
+  | hash160 (hash : Hash160) : BShapeIn sc (.hash160 hash)
+  | c_pk_k (key : PubKey) : BShapeIn sc (.c (.pk_k key))
+  | c_pk_h (key : PubKey) : BShapeIn sc (.c (.pk_h key))
+  | multi (k : Nat) (keys : List PubKey) : BShapeIn sc (.multi k keys)
+  | multi_a (k : Nat) (keys : List PubKey) : BShapeIn sc (.multi_a k keys)
   | and_v {X Y : CoreFragment} {mx my : CorrectnessModifiers}
-      (typedX : HasType .tapscript X ⟨.V, mx⟩)
-      (typedY : HasType .tapscript Y ⟨.B, my⟩) : BShape (.and_v X Y)
+      (typedX : HasType sc X ⟨.V, mx⟩)
+      (typedY : HasType sc Y ⟨.B, my⟩) : BShapeIn sc (.and_v X Y)
   | or_d {X Y : CoreFragment} {mx my : CorrectnessModifiers}
-      (typedX : HasType .tapscript X ⟨.B, mx⟩) (d : mx.d = true) (u : mx.u = true)
-      (typedY : HasType .tapscript Y ⟨.B, my⟩) : BShape (.or_d X Y)
+      (typedX : HasType sc X ⟨.B, mx⟩) (d : mx.d = true) (u : mx.u = true)
+      (typedY : HasType sc Y ⟨.B, my⟩) : BShapeIn sc (.or_d X Y)
   | or_i {X Y : CoreFragment} {mx my : CorrectnessModifiers}
-      (typedX : HasType .tapscript X ⟨.B, mx⟩)
-      (typedY : HasType .tapscript Y ⟨.B, my⟩) : BShape (.or_i X Y)
+      (typedX : HasType sc X ⟨.B, mx⟩)
+      (typedY : HasType sc Y ⟨.B, my⟩) : BShapeIn sc (.or_i X Y)
   | andor {X Y Z : CoreFragment} {mx my mz : CorrectnessModifiers}
-      (typedX : HasType .tapscript X ⟨.B, mx⟩) (d : mx.d = true) (u : mx.u = true)
-      (typedY : HasType .tapscript Y ⟨.B, my⟩)
-      (typedZ : HasType .tapscript Z ⟨.B, mz⟩) : BShape (.andor X Y Z)
-  | remaining {fragment : CoreFragment} (unproved : RemainingB fragment) : BShape fragment
+      (typedX : HasType sc X ⟨.B, mx⟩) (d : mx.d = true) (u : mx.u = true)
+      (typedY : HasType sc Y ⟨.B, my⟩)
+      (typedZ : HasType sc Z ⟨.B, mz⟩) : BShapeIn sc (.andor X Y Z)
+  | remaining {fragment : CoreFragment} (unproved : RemainingB fragment) : BShapeIn sc fragment
+
+abbrev BShape := BShapeIn .tapscript
 
 theorem typed_B_shape {fragment : CoreFragment} {mods : CorrectnessModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, mods⟩) : BShape fragment := by
+    (typed : HasType sc fragment ⟨.B, mods⟩) : BShapeIn sc fragment := by
   generalize typeEq : (⟨.B, mods⟩ : MiniType) = ty at typed
   have baseEq := congrArg MiniType.base typeEq
   cases typed <;> try { cases baseEq }
@@ -258,7 +264,7 @@ theorem typed_B_shape {fragment : CoreFragment} {mods : CorrectnessModifiers}
   case multi => exact .multi _ _
   case multi_a => exact .multi_a _ _
 
-theorem ambientExecutionB_zero : AmbientExecutionB .zero := by
+theorem ambientExecutionB_zero : AmbientExecutionBIn sc .zero := by
   intro parent env flags pa po consumed top rest _context _bounded run truth
   have canonical : Eval (compile .zero) (consumed.toInitialStack ++ rest) [] flags env.txCtx
       (.success (scriptNum 0 :: (consumed.toInitialStack ++ rest)) []) := by
@@ -270,7 +276,7 @@ theorem ambientExecutionB_zero : AmbientExecutionB .zero := by
   change false = true at truth
   cases truth
 
-theorem ambientExecutionB_one : AmbientExecutionB .one := by
+theorem ambientExecutionB_one : AmbientExecutionBIn sc .one := by
   intro parent env flags pa po consumed top rest _context _bounded _run _truth
   exact Or.inl ⟨{ witness := [], hasSig := false }, rfl, rfl⟩
 
@@ -280,20 +286,20 @@ theorem no_wellFormed_tapscript_multi (k : Nat) (keys : List PubKey) :
   exact wf.1
 
 theorem andor_B_typed_children {X Y Z : CoreFragment} {mods : CorrectnessModifiers}
-    (typed : HasType .tapscript (.andor X Y Z) ⟨.B, mods⟩) :
-    ∃ mx my mz, HasType .tapscript X ⟨.B, mx⟩ ∧ mx.d = true ∧ mx.u = true ∧
-      HasType .tapscript Y ⟨.B, my⟩ ∧ HasType .tapscript Z ⟨.B, mz⟩ := by
+    (typed : HasType sc (.andor X Y Z) ⟨.B, mods⟩) :
+    ∃ mx my mz, HasType sc X ⟨.B, mx⟩ ∧ mx.d = true ∧ mx.u = true ∧
+      HasType sc Y ⟨.B, my⟩ ∧ HasType sc Z ⟨.B, mz⟩ := by
   cases typed_B_shape typed with
   | andor tx d u ty tz => exact ⟨_, _, _, tx, d, u, ty, tz⟩
   | remaining impossible => cases impossible
 
 theorem andor_B_parent_step {X Y Z : CoreFragment} {mods : CorrectnessModifiers}
     {malMods : MalleabilityModifiers}
-    (typed : HasType .tapscript (.andor X Y Z) ⟨.B, mods⟩)
-    (wf : (CoreFragment.andor X Y Z).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.andor X Y Z) malMods) (nm : malMods.nonMalleable = true)
-    (ihB : ∀ child, sizeOf child < sizeOf (CoreFragment.andor X Y Z) → BExecutionPremise child) :
-    AmbientExecutionB (.andor X Y Z) := by
+    (typed : HasType sc (.andor X Y Z) ⟨.B, mods⟩)
+    (wf : (CoreFragment.andor X Y Z).WellFormed sc)
+    (mal : HasMalleability sc (.andor X Y Z) malMods) (nm : malMods.nonMalleable = true)
+    (ihB : ∀ child, sizeOf child < sizeOf (CoreFragment.andor X Y Z) → BExecutionPremiseIn sc child) :
+    AmbientExecutionBIn sc (.andor X Y Z) := by
   obtain ⟨modsX, modsY, modsZ, typedX, _d, _u, typedY, typedZ⟩ := andor_B_typed_children typed
   obtain ⟨mx, my, mz, hx, hy, hz, nx, ny, nz, _ex⟩ := andor_malleability_children mal nm
   exact ambientExecutionB_andor_from_children typedX typedY typedZ wf.1 wf.2.1 wf.2.2.1 mal nm
@@ -303,11 +309,11 @@ theorem andor_B_parent_step {X Y Z : CoreFragment} {mods : CorrectnessModifiers}
 
 theorem ambientExecutionB_from_remaining {fragment : CoreFragment} {mods : CorrectnessModifiers}
     {malMods : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, mods⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment malMods) (nm : malMods.nonMalleable = true)
-    (remaining : ∀ child, sizeOf child ≤ sizeOf fragment → RemainingB child → BExecutionPremise child) :
-    AmbientExecutionB fragment := by
-  have childB : ∀ child, sizeOf child < sizeOf fragment → BExecutionPremise child := by
+    (typed : HasType sc fragment ⟨.B, mods⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment malMods) (nm : malMods.nonMalleable = true)
+    (remaining : ∀ child, sizeOf child ≤ sizeOf fragment → RemainingB child → BExecutionPremiseIn sc child) :
+    AmbientExecutionBIn sc fragment := by
+  have childB : ∀ child, sizeOf child < sizeOf fragment → BExecutionPremiseIn sc child := by
     intro child smaller cm mm tc wfc mc nmc
     exact ambientExecutionB_from_remaining tc wfc mc nmc
       (fun residual bound isRemaining => remaining residual (Nat.le_trans bound (Nat.le_of_lt smaller)) isRemaining)
@@ -318,8 +324,14 @@ theorem ambientExecutionB_from_remaining {fragment : CoreFragment} {mods : Corre
   | hash160 hash => exact ambientExecution_hash160 hash
   | c_pk_k key => exact ambientExecution_c_pk_k key
   | c_pk_h key => exact ambientExecution_c_pk_h key
-  | multi k keys => exact (no_wellFormed_tapscript_multi k keys wf).elim
-  | multi_a k keys => exact ambientExecution_multi_a k keys wf.2.1 wf.2.2.1
+  | multi k keys =>
+    cases sc with
+    | p2wsh => exact ambientExecution_multi wf
+    | tapscript => exact wf.1.elim
+  | multi_a k keys =>
+    cases sc with
+    | p2wsh => exact wf.1.elim
+    | tapscript => exact ambientExecution_multi_a k keys wf.2.1 wf.2.2.1
   | and_v typedX typedY =>
     obtain ⟨mx, my, hx, hy, nx, ny⟩ := and_v_malleability_children mal nm
     exact ambientExecution_and_v typedX typedY wf.1 wf.2.1
@@ -370,7 +382,7 @@ theorem accepts_ripemd160_inversion {flags : ScriptFlags} {txCtx : TxContext}
       (HashLock.ripemd160 h).Matches preimage := by
   exact _root_.LeanMiniscript.Extraction.TapscriptWitness.hashLock_frame (lock := .ripemd160 h) bounded run truth
 
-theorem ambientExecution_hash256 (hash : Hash256) : AmbientExecutionB (.hash256 hash) := by
+theorem ambientExecution_hash256 (hash : Hash256) : AmbientExecutionBIn sc (.hash256 hash) := by
   intro parent env flags parentArgs parentOther consumed top rest context bounded run truth
   obtain ⟨p, eq, matched⟩ := accepts_hash256_inversion bounded run truth
   have consumedEq : consumed = [p] := witness_eq_singleton_of_toInitialStack
@@ -381,7 +393,7 @@ theorem ambientExecution_hash256 (hash : Hash256) : AmbientExecutionB (.hash256 
   exact Or.inl ⟨{witness := [p], hasSig := false},
     by simp [satisfactionCandidates, hashCandidates, selected, CandidateResult.usable], rfl⟩
 
-theorem ambientExecution_ripemd160 (hash : Hash160) : AmbientExecutionB (.ripemd160 hash) := by
+theorem ambientExecution_ripemd160 (hash : Hash160) : AmbientExecutionBIn sc (.ripemd160 hash) := by
   intro parent env flags parentArgs parentOther consumed top rest context bounded run truth
   obtain ⟨p, eq, matched⟩ := accepts_ripemd160_inversion bounded run truth
   have consumedEq : consumed = [p] := witness_eq_singleton_of_toInitialStack
@@ -426,31 +438,31 @@ theorem after_success_satisfied {n : Nat} {input out alt outAlt : Stack}
     | upgradeableNop _ _ _ _ _ _ _ upgradable _ _ =>
       simp [Opcode.isUpgradeableNop] at upgradable
 
-theorem ambientExecution_older (n : Nat) (valid : validTimelockArg n) : AmbientExecutionB (.older n) := by
+theorem ambientExecution_older (n : Nat) (valid : validTimelockArg n) : AmbientExecutionBIn sc (.older n) := by
   intro parent env flags pa po consumed top rest _context _bounded run _truth
   have satisfied := older_success_satisfied valid run
   exact Or.inl ⟨{ witness := [], hasSig := false },
     by simp [satisfactionCandidates, satisfied, CandidateResult.usable], rfl⟩
 
-theorem ambientExecution_after (n : Nat) (valid : validTimelockArg n) : AmbientExecutionB (.after n) := by
+theorem ambientExecution_after (n : Nat) (valid : validTimelockArg n) : AmbientExecutionBIn sc (.after n) := by
   intro parent env flags pa po consumed top rest _context _bounded run _truth
   have satisfied := after_success_satisfied valid run
   exact Or.inl ⟨{ witness := [], hasSig := false },
     by simp [satisfactionCandidates, satisfied, CandidateResult.usable], rfl⟩
 
-theorem older_BExecutionPremise (n : Nat) : BExecutionPremise (.older n) := by
+theorem older_BExecutionPremise (n : Nat) : BExecutionPremiseIn sc (.older n) := by
   intro mods malMods _typed wf _mal _nm
   exact ambientExecution_older n wf
 
-theorem after_BExecutionPremise (n : Nat) : BExecutionPremise (.after n) := by
+theorem after_BExecutionPremise (n : Nat) : BExecutionPremiseIn sc (.after n) := by
   intro mods malMods _typed wf _mal _nm
   exact ambientExecution_after n wf
 
-theorem hash256_BExecutionPremise (hash : Hash256) : BExecutionPremise (.hash256 hash) := by
+theorem hash256_BExecutionPremise (hash : Hash256) : BExecutionPremiseIn sc (.hash256 hash) := by
   intro mods malMods _typed _wf _mal _nm
   exact ambientExecution_hash256 hash
 
-theorem ripemd160_BExecutionPremise (hash : Hash160) : BExecutionPremise (.ripemd160 hash) := by
+theorem ripemd160_BExecutionPremise (hash : Hash160) : BExecutionPremiseIn sc (.ripemd160 hash) := by
   intro mods malMods _typed _wf _mal _nm
   exact ambientExecution_ripemd160 hash
 
@@ -461,7 +473,7 @@ def RemainingBComposite : CoreFragment → Prop
   | _ => False
 
 theorem discharge_remaining_leaves {fragment : CoreFragment} (old : RemainingB fragment)
-    (composite : RemainingBComposite fragment → BExecutionPremise fragment) : BExecutionPremise fragment := by
+    (composite : RemainingBComposite fragment → BExecutionPremiseIn sc fragment) : BExecutionPremiseIn sc fragment := by
   cases fragment <;> simp only [RemainingB] at old
   all_goals try contradiction
   case older n => exact older_BExecutionPremise n
@@ -476,10 +488,10 @@ theorem discharge_remaining_leaves {fragment : CoreFragment} (old : RemainingB f
 
 theorem ambientExecutionB_from_composite {fragment : CoreFragment} {mods : CorrectnessModifiers}
     {malMods : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, mods⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment malMods) (nm : malMods.nonMalleable = true)
-    (remaining : ∀ child, sizeOf child ≤ sizeOf fragment → RemainingBComposite child → BExecutionPremise child) :
-    AmbientExecutionB fragment := by
+    (typed : HasType sc fragment ⟨.B, mods⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment malMods) (nm : malMods.nonMalleable = true)
+    (remaining : ∀ child, sizeOf child ≤ sizeOf fragment → RemainingBComposite child → BExecutionPremiseIn sc child) :
+    AmbientExecutionBIn sc fragment := by
   apply ambientExecutionB_from_remaining typed wf mal nm
   intro child bound old
   exact discharge_remaining_leaves old (remaining child bound)
@@ -574,7 +586,7 @@ theorem d_success_child {X : CoreFragment} {input rest : Stack} {top : StackElem
 
 theorem d_run_frame {X : CoreFragment} {mods : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {other : Witness} {top : StackElement} {rest : Stack}
-    (typed : HasType .tapscript X ⟨.V, mods⟩) (wf : X.WellFormed .tapscript)
+    (typed : HasType sc X ⟨.V, mods⟩) (wf : X.WellFormed sc)
     (run : Eval (compile (.d X)) (other.toInitialStack ++ rest) [] flags env.txCtx (.success (top :: rest) []))
     (truth : castToBool top = true) :
     ∃ active, other = [top] ++ active ∧
@@ -589,8 +601,8 @@ theorem d_run_frame {X : CoreFragment} {mods : CorrectnessModifiers}
   exact ⟨active, otherEq, by rw [← inputEq]; exact childRun⟩
 
 theorem ambientExecution_d {X : CoreFragment} {mods : CorrectnessModifiers}
-    (typed : HasType .tapscript X ⟨.V, mods⟩) (wf : X.WellFormed .tapscript)
-    (execute : AmbientExecutionV X) : AmbientExecutionB (.d X) := by
+    (typed : HasType sc X ⟨.V, mods⟩) (wf : X.WellFormed sc)
+    (execute : AmbientExecutionVIn sc X) : AmbientExecutionBIn sc (.d X) := by
   intro parent env flags pa po consumed top rest context bounded run truth
   obtain ⟨active, eq, childRun⟩ := d_run_frame typed wf run truth
   subst consumed
@@ -631,7 +643,7 @@ theorem j_success_child {X : CoreFragment} {input rest : Stack} {top : StackElem
     | upgradeableNop _ _ _ _ _ _ _ upgradable _ _ => simp [Opcode.isUpgradeableNop] at upgradable
   | upgradeableNop _ _ _ _ _ _ _ upgradable _ _ => simp [Opcode.isUpgradeableNop] at upgradable
 
-theorem ambientExecution_j {X : CoreFragment} (execute : AmbientExecutionB X) : AmbientExecutionB (.j X) := by
+theorem ambientExecution_j {X : CoreFragment} (execute : AmbientExecutionBIn sc X) : AmbientExecutionBIn sc (.j X) := by
   intro parent env flags pa po consumed top rest context bounded run truth
   have childContext := executionContext_restrict context (active := X) (fun _ h => h) (fun _ h => h) (fun _ h => h)
   exact execute parent env flags pa po consumed top rest childContext bounded (j_success_child bounded run truth) truth
@@ -659,64 +671,64 @@ theorem n_success_child {X : CoreFragment} {input rest : Stack} {top : StackElem
       | true => rfl
   | upgradeableNop _ _ _ _ _ _ _ upgradable _ _ => simp [Opcode.isUpgradeableNop] at upgradable
 
-theorem ambientExecution_n {X : CoreFragment} (execute : AmbientExecutionB X) : AmbientExecutionB (.n X) := by
+theorem ambientExecution_n {X : CoreFragment} (execute : AmbientExecutionBIn sc X) : AmbientExecutionBIn sc (.n X) := by
   intro parent env flags pa po consumed top rest context bounded run truth
   obtain ⟨value, childRun, childTruth⟩ := n_success_child run truth
   have childContext := executionContext_restrict context (active := X) (fun _ h => h) (fun _ h => h) (fun _ h => h)
   exact execute parent env flags pa po consumed value rest childContext bounded childRun childTruth
 
 theorem d_static {X : CoreFragment} {mods : CorrectnessModifiers} {malMods : MalleabilityModifiers}
-    (typed : HasType .tapscript (.d X) ⟨.B, mods⟩) (wf : (CoreFragment.d X).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.d X) malMods) (nm : malMods.nonMalleable = true) :
-    ∃ cm mm, HasType .tapscript X ⟨.V, cm⟩ ∧ cm.z = true ∧ X.WellFormed .tapscript ∧
-      HasMalleability .tapscript X mm ∧ mm.nonMalleable = true := by
+    (typed : HasType sc (.d X) ⟨.B, mods⟩) (wf : (CoreFragment.d X).WellFormed sc)
+    (mal : HasMalleability sc (.d X) malMods) (nm : malMods.nonMalleable = true) :
+    ∃ cm mm, HasType sc X ⟨.V, cm⟩ ∧ cm.z = true ∧ X.WellFormed sc ∧
+      HasMalleability sc X mm ∧ mm.nonMalleable = true := by
   cases typed with
   | d_wrap typedX zeroArgs =>
     cases mal with
     | d childMal => exact ⟨_, _, typedX, zeroArgs, wf, childMal, nm⟩
 
 theorem j_static {X : CoreFragment} {mods : CorrectnessModifiers} {malMods : MalleabilityModifiers}
-    (typed : HasType .tapscript (.j X) ⟨.B, mods⟩) (wf : (CoreFragment.j X).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.j X) malMods) (nm : malMods.nonMalleable = true) :
-    ∃ cm mm, HasType .tapscript X ⟨.B, cm⟩ ∧ cm.n = true ∧ X.WellFormed .tapscript ∧
-      HasMalleability .tapscript X mm ∧ mm.nonMalleable = true := by
+    (typed : HasType sc (.j X) ⟨.B, mods⟩) (wf : (CoreFragment.j X).WellFormed sc)
+    (mal : HasMalleability sc (.j X) malMods) (nm : malMods.nonMalleable = true) :
+    ∃ cm mm, HasType sc X ⟨.B, cm⟩ ∧ cm.n = true ∧ X.WellFormed sc ∧
+      HasMalleability sc X mm ∧ mm.nonMalleable = true := by
   cases typed with
   | j_wrap typedX nonzero =>
     cases mal with
     | j childMal => exact ⟨_, _, typedX, nonzero, wf, childMal, nm⟩
 
 theorem n_static {X : CoreFragment} {mods : CorrectnessModifiers} {malMods : MalleabilityModifiers}
-    (typed : HasType .tapscript (.n X) ⟨.B, mods⟩) (wf : (CoreFragment.n X).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.n X) malMods) (nm : malMods.nonMalleable = true) :
-    ∃ cm mm, HasType .tapscript X ⟨.B, cm⟩ ∧ X.WellFormed .tapscript ∧
-      HasMalleability .tapscript X mm ∧ mm.nonMalleable = true := by
+    (typed : HasType sc (.n X) ⟨.B, mods⟩) (wf : (CoreFragment.n X).WellFormed sc)
+    (mal : HasMalleability sc (.n X) malMods) (nm : malMods.nonMalleable = true) :
+    ∃ cm mm, HasType sc X ⟨.B, cm⟩ ∧ X.WellFormed sc ∧
+      HasMalleability sc X mm ∧ mm.nonMalleable = true := by
   cases typed with
   | n_wrap typedX =>
     cases mal with
     | n childMal => exact ⟨_, _, typedX, wf, childMal, nm⟩
 
 theorem d_parent_step {X : CoreFragment} {mods : CorrectnessModifiers} {malMods : MalleabilityModifiers}
-    (typed : HasType .tapscript (.d X) ⟨.B, mods⟩) (wf : (CoreFragment.d X).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.d X) malMods) (nm : malMods.nonMalleable = true)
-    (ihB : ∀ child, sizeOf child < sizeOf (CoreFragment.d X) → BExecutionPremise child) :
-    AmbientExecutionB (.d X) := by
+    (typed : HasType sc (.d X) ⟨.B, mods⟩) (wf : (CoreFragment.d X).WellFormed sc)
+    (mal : HasMalleability sc (.d X) malMods) (nm : malMods.nonMalleable = true)
+    (ihB : ∀ child, sizeOf child < sizeOf (CoreFragment.d X) → BExecutionPremiseIn sc child) :
+    AmbientExecutionBIn sc (.d X) := by
   obtain ⟨cm, mm, typedX, _zeroArgs, wfX, malX, nmX⟩ := d_static typed wf mal nm
   exact ambientExecution_d typedX wfX (ambientExecutionV_from_smaller_B typedX wfX malX nmX
     (fun child smaller => ihB child (Nat.lt_trans smaller (by simp))))
 
 theorem j_parent_step {X : CoreFragment} {mods : CorrectnessModifiers} {malMods : MalleabilityModifiers}
-    (typed : HasType .tapscript (.j X) ⟨.B, mods⟩) (wf : (CoreFragment.j X).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.j X) malMods) (nm : malMods.nonMalleable = true)
-    (ihB : ∀ child, sizeOf child < sizeOf (CoreFragment.j X) → BExecutionPremise child) :
-    AmbientExecutionB (.j X) := by
+    (typed : HasType sc (.j X) ⟨.B, mods⟩) (wf : (CoreFragment.j X).WellFormed sc)
+    (mal : HasMalleability sc (.j X) malMods) (nm : malMods.nonMalleable = true)
+    (ihB : ∀ child, sizeOf child < sizeOf (CoreFragment.j X) → BExecutionPremiseIn sc child) :
+    AmbientExecutionBIn sc (.j X) := by
   obtain ⟨cm, mm, typedX, _nonzero, wfX, malX, nmX⟩ := j_static typed wf mal nm
   exact ambientExecution_j (ihB X (by simp) cm mm typedX wfX malX nmX)
 
 theorem n_parent_step {X : CoreFragment} {mods : CorrectnessModifiers} {malMods : MalleabilityModifiers}
-    (typed : HasType .tapscript (.n X) ⟨.B, mods⟩) (wf : (CoreFragment.n X).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.n X) malMods) (nm : malMods.nonMalleable = true)
-    (ihB : ∀ child, sizeOf child < sizeOf (CoreFragment.n X) → BExecutionPremise child) :
-    AmbientExecutionB (.n X) := by
+    (typed : HasType sc (.n X) ⟨.B, mods⟩) (wf : (CoreFragment.n X).WellFormed sc)
+    (mal : HasMalleability sc (.n X) malMods) (nm : malMods.nonMalleable = true)
+    (ihB : ∀ child, sizeOf child < sizeOf (CoreFragment.n X) → BExecutionPremiseIn sc child) :
+    AmbientExecutionBIn sc (.n X) := by
   obtain ⟨cm, mm, typedX, wfX, malX, nmX⟩ := n_static typed wf mal nm
   exact ambientExecution_n (ihB X (by simp) cm mm typedX wfX malX nmX)
 
@@ -727,11 +739,11 @@ def RemainingBKW : CoreFragment → Prop
 
 theorem ambientExecutionB_from_KW {fragment : CoreFragment} {mods : CorrectnessModifiers}
     {malMods : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, mods⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment malMods) (nm : malMods.nonMalleable = true)
-    (remaining : ∀ child, sizeOf child ≤ sizeOf fragment → RemainingBKW child → BExecutionPremise child) :
-    AmbientExecutionB fragment := by
-  have childB : ∀ child, sizeOf child < sizeOf fragment → BExecutionPremise child := by
+    (typed : HasType sc fragment ⟨.B, mods⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment malMods) (nm : malMods.nonMalleable = true)
+    (remaining : ∀ child, sizeOf child ≤ sizeOf fragment → RemainingBKW child → BExecutionPremiseIn sc child) :
+    AmbientExecutionBIn sc fragment := by
+  have childB : ∀ child, sizeOf child < sizeOf fragment → BExecutionPremiseIn sc child := by
     intro child smaller cm mm tc wfc mc nmc
     exact ambientExecutionB_from_KW tc wfc mc nmc
       (fun residual bound h => remaining residual (Nat.le_trans bound (Nat.le_of_lt smaller)) h)
