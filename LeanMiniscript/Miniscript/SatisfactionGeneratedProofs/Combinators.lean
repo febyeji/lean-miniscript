@@ -382,7 +382,7 @@ theorem thresh
     (positive : 1 ≤ threshold)
     (atMost : threshold ≤ (first :: fragments).length)
     (safe : ArithmeticScriptNatSafe threshold) :
-    ({ sat := CandidatePair.selectExactly threshold (firstPair :: restPairs)
+    ({ sat := CandidatePair.thresholdSatisfaction threshold (firstPair :: restPairs)
        dsat := CandidatePair.thresholdDissatisfaction threshold
          (CandidatePair.countCandidates (firstPair :: restPairs)) } :
       CandidatePair).SupportsGeneratedContract scriptCtx
@@ -399,11 +399,11 @@ theorem thresh
     ⟨by omega, atMost, safe⟩
   refine ⟨.thresh firstSupported.typed firstD firstUnit restSupported.typed
     restTyped positive atMost, ?_, ?_⟩
-  · change (CandidatePair.selectExactly threshold
+  · change (CandidatePair.thresholdSatisfaction threshold
       (firstPair :: restPairs)).Supports _
     intro witness selected
     obtain ⟨frames, trace⟩ :=
-      CandidatePair.selectExactly_choiceTrace selected
+      CandidatePair.thresholdSatisfaction_choiceTrace selected
     obtain ⟨truths, choices, sumEq⟩ := trace.toChoiceFrames
     have generated := choices.generated allSupported
     apply GeneratedContract.b

@@ -1082,7 +1082,7 @@ example :
         some [falseElement, signature, signature] ∧
       dissatisfy signedThreshold signingEnv =
         some [falseElement, falseElement, falseElement] := by
-  exact ⟨rfl, rfl, rfl, rfl⟩
+  exact ⟨by cbv, rfl, by cbv, rfl⟩
 
 private def keyB : PubKey := ⟨⟨#[2, 4]⟩⟩
 private def keyC : PubKey := ⟨⟨#[2, 5]⟩⟩
@@ -1105,7 +1105,25 @@ private def costThreshold : CoreFragment :=
     signatures from the second and third children. -/
 example : (satisfactionCandidates costThreshold thresholdCostEnv).sat =
     CandidateResult.usable [falseElement, countItemB, falseElement] true := by
-  rfl
+  cbv
+
+private def unsignedBranch : Nat → CoreFragment
+  | 0 => .or_i .one .zero
+  | n + 1 => .or_i (.and_v (.v (unsignedBranch n)) .one) .zero
+
+private def priorityRoot (depth : Nat) : CoreFragment :=
+  let first : PubKey := ⟨⟨Array.replicate 32 1⟩⟩
+  let second : PubKey := ⟨⟨Array.replicate 32 2⟩⟩
+  .thresh 2 [.c (.pk_k first), .a (.c (.pk_k second)), .a (unsignedBranch depth)]
+
+/-- At depth 32 the unsigned row costs 66 bytes. Taking two 64-byte signatures
+    would save one byte, but would omit the unsigned satisfaction. -/
+theorem thresh_expensive_unsigned_selected :
+    let sig : StackElement := ⟨Array.replicate 64 7⟩
+    let env := { signingEnv with signatureFor := fun _ => some sig }
+    satisfyFinal (priorityRoot 32) env =
+      some (List.replicate 33 trueElement ++ [falseElement, sig]) := by
+  cbv
 
 /-- Multiple no-HASSIG one-of-two hash paths select a concrete representative
     but mark it DONTUSE. The inherited canonical origin remains distinct from

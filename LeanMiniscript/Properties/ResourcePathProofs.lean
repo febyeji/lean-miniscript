@@ -1029,14 +1029,14 @@ private theorem supportsStackPathBounds_of_wellFormed_hasType
         rw [satisfactionCandidates_thresh_valid threshold (first :: rest) env valid]
         refine ⟨.thresh firstTyped firstD firstUnit restTyped restThreshold
           positive atMost, ?_, ?_⟩
-        · change (CandidatePair.selectExactly threshold
+        · change (CandidatePair.thresholdSatisfaction threshold
             (List.map (fun fragment => satisfactionCandidates fragment env)
               (first :: rest))).Supports
             (StackTraceSet.BoundsWitness
               (stackPathBounds (.thresh threshold (first :: rest))).sat .B)
           intro witness selected
           obtain ⟨frames, trace⟩ :=
-            CandidatePair.selectExactly_choiceTrace selected
+            CandidatePair.thresholdSatisfaction_choiceTrace selected
           obtain ⟨netDiff, path, witnessBound⟩ :=
             LeanMiniscript.Properties.CandidatePair.ChoiceTrace.toThresholdStackPath
               trace allSupported offsets

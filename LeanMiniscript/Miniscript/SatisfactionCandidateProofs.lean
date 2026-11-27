@@ -572,6 +572,52 @@ theorem extendCounts_getD_succ (states : List CandidateResult)
     simp [inBounds, nextPast, List.getD_eq_getElem?_getD,
       CandidateResult.combine, CandidateResult.select]
 
+theorem assembleThreshold_choiceTrace {positions : List Nat} {prior : List CandidatePair}
+    {endIndex count : Nat} {witness : Witness}
+    (selected : (assembleThreshold positions endIndex count prior).usableWitness? = some witness) :
+    ∃ frames, ChoiceTrace prior.reverse count frames witness := by
+  induction prior generalizing count endIndex witness with
+  | nil =>
+    cases count <;> simp [assembleThreshold, CandidateResult.usable, CandidateResult.usableWitness?] at selected
+    subst witness
+    exact ⟨[], .nil⟩
+  | cons child prior ih =>
+    simp only [assembleThreshold] at selected
+    split at selected
+    · cases count with
+      | zero => contradiction
+      | succ n =>
+        obtain ⟨_, w, prefixSelected, childSelected, rfl⟩ :=
+          CandidateResult.combine_usableWitness_iff.mp selected
+        obtain ⟨frames, trace⟩ := ih prefixSelected
+        exact ⟨frames ++ [w], by simpa using trace.sat childSelected⟩
+    · obtain ⟨_, w, prefixSelected, childSelected, rfl⟩ :=
+        CandidateResult.combine_usableWitness_iff.mp selected
+      obtain ⟨frames, trace⟩ := ih prefixSelected
+      exact ⟨frames ++ [w], by simpa using trace.dsat childSelected⟩
+
+/-- The actual usable witness is assembled from the positions chosen by the
+    non-malleable threshold rule. -/
+theorem thresholdSatisfaction_usable_positions {children : List CandidatePair} {count : Nat}
+    {witness : Witness}
+    (selected : (thresholdSatisfaction count children).usableWitness? = some witness) :
+    ∃ positions, thresholdPositions count children = some positions ∧
+      (assembleThreshold positions children.length count children.reverse).usableWitness? =
+        some witness := by
+  rcases thresholdSatisfaction_cases count children with fallback | ⟨pos, _, chosen, assembled, result⟩
+  · rw [fallback] at selected
+    cases h : selectExactly count children <;> rw [h] at selected <;> contradiction
+  · exact ⟨pos, chosen, by rwa [assembled, ← result]⟩
+
+/-- A usable general threshold witness has the same source-order provenance
+    required by the generated execution and resource bounds. -/
+theorem thresholdSatisfaction_choiceTrace {children : List CandidatePair} {count : Nat}
+    {witness : Witness}
+    (selected : (thresholdSatisfaction count children).usableWitness? = some witness) :
+    ∃ frames, ChoiceTrace children count frames witness := by
+  obtain ⟨_, _, assembled⟩ := thresholdSatisfaction_usable_positions selected
+  simpa using assembleThreshold_choiceTrace assembled
+
 /-- A usable exact-count output has a source-order trace selecting exactly that
     many child satisfactions. -/
 theorem selectExactly_choiceTrace {children : List CandidatePair} {count : Nat}
