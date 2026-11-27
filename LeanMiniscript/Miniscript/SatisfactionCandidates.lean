@@ -617,15 +617,21 @@ def assembleThreshold (positions : List Nat) (endIndex count : Nat) :
         | n + 1 => (assembleThreshold positions (endIndex - 1) n prior).combine child.sat
       else (assembleThreshold positions (endIndex - 1) count prior).combine child.dsat
 
-/-- When no non-malleable assignment can be assembled, retain a possible
-    exact-count witness as DONTUSE. Its HASSIG still affects parent selection. -/
-def thresholdSatisfaction (count : Nat) (children : List CandidatePair) : CandidateResult :=
+/-- When no non-malleable assignment can be assembled, take the exact-count
+    witness from the children's count table and mark it DONTUSE. Inlining keeps
+    the table lazy for callers that only need a satisfaction. -/
+@[macro_inline] def thresholdSatisfactionFromCounts (count : Nat) (children : List CandidatePair)
+    (states : List CandidateResult) : CandidateResult :=
   let assembled : CandidateResult := match thresholdPositions count children with
     | none => .impossible
     | some positions => assembleThreshold positions children.length count children.reverse
   match assembled with
   | .candidate sat => .candidate sat
-  | .impossible => (selectExactly count children).markDontUse
+  | .impossible => (states.getD count .impossible).markDontUse
+
+/-- Select a threshold satisfaction when the caller has no exact-count table. -/
+abbrev thresholdSatisfaction (count : Nat) (children : List CandidatePair) : CandidateResult :=
+  thresholdSatisfactionFromCounts count children (countCandidates children)
 
 /-- Excess unsigned satisfactions retain raw possibility and forbid usable output. -/
 theorem thresholdSatisfaction_excess {count : Nat} {children : List CandidatePair}
@@ -633,7 +639,7 @@ theorem thresholdSatisfaction_excess {count : Nat} {children : List CandidatePai
     (thresholdSatisfaction count children).usableWitness? = none := by
   have rejected : thresholdPositions count children = none := by
     simp [thresholdPositions, Nat.not_le_of_lt excess]
-  simp only [thresholdSatisfaction, rejected]
+  simp only [thresholdSatisfaction, thresholdSatisfactionFromCounts, rejected, ← selectExactly_eq_getD]
   cases selectExactly count children <;> rfl
 
 theorem thresholdSatisfaction_cases (count : Nat) (children : List CandidatePair) :
@@ -641,12 +647,13 @@ theorem thresholdSatisfaction_cases (count : Nat) (children : List CandidatePair
       ∃ positions sat, thresholdPositions count children = some positions ∧
         assembleThreshold positions children.length count children.reverse = .candidate sat ∧
         thresholdSatisfaction count children = .candidate sat := by
+  unfold thresholdSatisfaction thresholdSatisfactionFromCounts
   cases hp : thresholdPositions count children with
-  | none => exact .inl (by simp [thresholdSatisfaction, hp])
+  | none => exact .inl rfl
   | some positions =>
     cases ha : assembleThreshold positions children.length count children.reverse with
-    | impossible => exact .inl (by simp [thresholdSatisfaction, hp, ha])
-    | candidate sat => exact .inr ⟨positions, sat, rfl, ha, by simp [thresholdSatisfaction, hp, ha]⟩
+    | impossible => exact .inl (by simp [ha])
+    | candidate sat => exact .inr ⟨positions, sat, rfl, ha, by simp [ha]⟩
 
 /-- Select the threshold dissatisfaction from an exact-count table. Count zero
     is the canonical all-dissatisfied row. Every positive count other than the

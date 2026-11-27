@@ -314,7 +314,7 @@ private theorem usable_all_unsigned {pairs bits frames} (rows : RowLayout pairs 
     · have off : (List.range pairs.length)[i]? = none := List.getElem?_eq_none (by simpa using Nat.le_of_not_lt bound)
       simp [TapscriptWitness.positionFlags, List.getElem?_eq_none (Nat.le_of_not_lt bound), off]
   have assembled := assemble_selected_frames (layout_choices rows) selected matchBits
-  unfold CandidatePair.thresholdSatisfaction
+  unfold CandidatePair.thresholdSatisfaction CandidatePair.thresholdSatisfactionFromCounts
   rw [choice]
   generalize eq : CandidatePair.assembleThreshold selected pairs.length (bits.count true) pairs.reverse = r at *
   cases r <;> simp_all [CandidateResult.usableWitness?]
