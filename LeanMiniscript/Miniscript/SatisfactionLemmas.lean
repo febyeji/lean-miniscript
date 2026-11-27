@@ -625,8 +625,8 @@ open LeanMiniscript.Script
     satisfactionCandidates (.thresh threshold fragments) env = {} := by
   simp [satisfactionCandidates, invalid]
 
-/-- A valid raw threshold uses the shared exact-count table for satisfaction
-    and the canonical/overcomplete count selection for dissatisfaction. -/
+/-- A valid threshold chooses unsigned satisfactions first and obtains its
+    dissatisfaction from the canonical and overcomplete count rows. -/
 @[simp] theorem satisfactionCandidates_thresh_valid
     (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
     (valid : candidateThresholdValid threshold fragments.length) :
@@ -634,7 +634,7 @@ open LeanMiniscript.Script
       let children := fragments.map (fun fragment =>
         satisfactionCandidates fragment env)
       let states := CandidatePair.countCandidates children
-      { sat := CandidatePair.selectExactly threshold children
+      { sat := CandidatePair.thresholdSatisfaction threshold children
         dsat := CandidatePair.thresholdDissatisfaction threshold states } := by
   simp [satisfactionCandidates, valid]
 
@@ -642,7 +642,7 @@ open LeanMiniscript.Script
     (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
     (valid : candidateThresholdValid threshold fragments.length) :
     (satisfactionCandidates (.thresh threshold fragments) env).sat =
-      CandidatePair.selectExactly threshold
+      CandidatePair.thresholdSatisfaction threshold
         (fragments.map (fun fragment => satisfactionCandidates fragment env)) := by
   rw [satisfactionCandidates_thresh_valid threshold fragments env valid]
 
@@ -672,7 +672,7 @@ open LeanMiniscript.Script
     (threshold : Nat) (fragments : List CoreFragment) (env : SatEnv)
     (valid : candidateThresholdValid threshold fragments.length) :
     satisfy (.thresh threshold fragments) env =
-      (CandidatePair.selectExactly threshold
+      (CandidatePair.thresholdSatisfaction threshold
         (fragments.map (fun fragment =>
           satisfactionCandidates fragment env))).usableWitness? := by
   unfold satisfy

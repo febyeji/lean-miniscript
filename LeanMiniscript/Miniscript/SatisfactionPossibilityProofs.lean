@@ -202,6 +202,37 @@ theorem selectExactly_possible_iff (count : Nat) (children : List CandidatePair)
   rw [selectExactly_eq_getD]
   exact countCandidates_getD_possible_iff children childrenDsat count
 
+private theorem assembleThreshold_possible_count {positions : List Nat}
+    {endIndex count : Nat} {prior : List CandidatePair}
+    (possible : (assembleThreshold positions endIndex count prior).Possible) :
+    count ≤ satCount prior.reverse := by
+  induction prior generalizing endIndex count with
+  | nil =>
+    cases count <;> simp_all [assembleThreshold, satCount]
+  | cons child prior ih =>
+    simp only [assembleThreshold] at possible
+    simp only [List.reverse_cons, satCount_append]
+    split at possible
+    · cases count with
+      | zero => omega
+      | succ n =>
+        obtain ⟨hp, hc⟩ := (CandidateResult.combine_possible_iff _ _).mp possible
+        simp only [(CandidateResult.isPossible_eq_true_iff _).mpr hc, if_true]
+        have := ih hp
+        omega
+    · have := ih ((CandidateResult.combine_possible_iff _ _).mp possible).1
+      omega
+
+theorem thresholdSatisfaction_possible_iff (count : Nat) (children : List CandidatePair)
+    (childrenDsat : ∀ child, child ∈ children → child.dsat.Possible) :
+    (thresholdSatisfaction count children).Possible ↔ count ≤ satCount children := by
+  rcases thresholdSatisfaction_cases count children with fallback | ⟨_, sat, _, assembled, result⟩
+  · rw [fallback, ← selectExactly_possible_iff _ _ childrenDsat]
+    cases selectExactly count children <;> simp [CandidateResult.markDontUse]
+  · have h := assembleThreshold_possible_count (assembled ▸ CandidateResult.candidate_possible sat)
+    rw [result]
+    exact iff_of_true (CandidateResult.candidate_possible sat) (by simpa using h)
+
 end CandidatePair
 
 namespace SatisfactionPossibility
@@ -424,7 +455,7 @@ theorem satisfactionPossible_iff_isSatisfiableWith
       have ihRest := satCount_satisfactionCandidates
         restTyped childrenWellFormed.2 env
       rw [satisfactionCandidates_thresh_sat threshold (first :: rest) env valid,
-        CandidatePair.selectExactly_possible_iff _ _ childrenDsat]
+        CandidatePair.thresholdSatisfaction_possible_iff _ _ childrenDsat]
       have hFirst : (satisfactionCandidates first env).sat.isPossible =
           first.isSatisfiableWith env.material.atom := by
         apply Bool.eq_iff_iff.mpr

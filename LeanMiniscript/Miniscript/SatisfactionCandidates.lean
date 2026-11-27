@@ -554,6 +554,100 @@ theorem selectExactly_eq_impossible_of_lt
                 CandidateResult.usable, SatisfactionCandidate.combine,
                 CandidateStatus.combine, CandidateOrigin.combine]
 
+/-- Every possible satisfaction without HASSIG competes at the parent, including
+    a child that already carries DONTUSE. -/
+def unsignedSat (child : CandidatePair) : Bool :=
+  match child.sat with
+  | .candidate sat => !sat.hasSig
+  | .impossible => false
+
+/-- Stable sort key for the signed choices. Prefer usable satisfactions with an
+    unavailable dissatisfaction, then minimize the extra serialized witness cost. -/
+private def thresholdWeight (sat : SatisfactionCandidate) (dsat : CandidateResult) :
+    Nat × Int :=
+  match dsat with
+  | .impossible => (if sat.status == .usable then 0 else 2, 0)
+  | .candidate d =>
+      (if sat.status == .dontUse then 2 else if d.status == .dontUse then 0 else 1,
+       (sat.cost : Int) - (d.cost : Int))
+
+/-- Select positions before assembling the witness. The stable sort receives
+    signed positions in source order, so equal marginal costs keep that order. -/
+def thresholdPositions (count : Nat) (children : List CandidatePair) : Option (List Nat) :=
+  let unsigned := (children.zipIdx.filter (fun row => row.1.unsignedSat)).map Prod.snd
+  let signed := children.zipIdx.filterMap fun (child, i) =>
+    match child.sat with
+    | .candidate sat =>
+        if sat.hasSig then some (i, thresholdWeight sat child.dsat) else none
+    | .impossible => none
+  if unsigned.length ≤ count ∧ count - unsigned.length ≤ signed.length then
+    let byCost := signed.mergeSort fun a b => a.2.1 < b.2.1 || (a.2.1 == b.2.1 && a.2.2 ≤ b.2.2)
+    some (unsigned ++ (byCost.take (count - unsigned.length)).map Prod.fst)
+  else none
+
+/-- A successful choice contains exactly the requested number of positions and
+    includes each possible unsigned satisfaction, regardless of its cost. -/
+theorem thresholdPositions_spec {count : Nat} {children : List CandidatePair}
+    {chosen : List Nat} (selected : thresholdPositions count children = some chosen) :
+    chosen.length = count ∧ ∀ i child, children[i]? = some child →
+      child.unsignedSat = true → i ∈ chosen := by
+  simp only [thresholdPositions] at selected
+  split at selected
+  next fits =>
+    cases selected
+    constructor
+    · simp only [List.length_append, List.length_map, List.length_take,
+        List.length_mergeSort] at *
+      omega
+    · intro i child lookup unsigned
+      exact List.mem_append_left _ (List.mem_map.mpr ⟨(child, i),
+        List.mem_filter.mpr ⟨List.mk_mem_zipIdx_iff_getElem?.mpr lookup, unsigned⟩, rfl⟩)
+  next => contradiction
+
+/-- Assemble a prescribed set of source positions in serialized witness order.
+    The reversed input exposes the last source child; `endIndex` is the exclusive
+    end of the remaining source prefix and `count` its remaining sat quota. -/
+def assembleThreshold (positions : List Nat) (endIndex count : Nat) :
+    List CandidatePair → CandidateResult
+  | [] => if count = 0 then .usable [] false else .impossible
+  | child :: prior =>
+      if endIndex - 1 ∈ positions then
+        match count with
+        | 0 => .impossible
+        | n + 1 => (assembleThreshold positions (endIndex - 1) n prior).combine child.sat
+      else (assembleThreshold positions (endIndex - 1) count prior).combine child.dsat
+
+/-- When no non-malleable assignment can be assembled, retain a possible
+    exact-count witness as DONTUSE. Its HASSIG still affects parent selection. -/
+def thresholdSatisfaction (count : Nat) (children : List CandidatePair) : CandidateResult :=
+  let assembled : CandidateResult := match thresholdPositions count children with
+    | none => .impossible
+    | some positions => assembleThreshold positions children.length count children.reverse
+  match assembled with
+  | .candidate sat => .candidate sat
+  | .impossible => (selectExactly count children).markDontUse
+
+/-- Excess unsigned satisfactions retain raw possibility and forbid usable output. -/
+theorem thresholdSatisfaction_excess {count : Nat} {children : List CandidatePair}
+    (excess : count < (children.zipIdx.filter (fun row => row.1.unsignedSat)).length) :
+    (thresholdSatisfaction count children).usableWitness? = none := by
+  have rejected : thresholdPositions count children = none := by
+    simp [thresholdPositions, Nat.not_le_of_lt excess]
+  simp only [thresholdSatisfaction, rejected]
+  cases selectExactly count children <;> rfl
+
+theorem thresholdSatisfaction_cases (count : Nat) (children : List CandidatePair) :
+    thresholdSatisfaction count children = (selectExactly count children).markDontUse ∨
+      ∃ positions sat, thresholdPositions count children = some positions ∧
+        assembleThreshold positions children.length count children.reverse = .candidate sat ∧
+        thresholdSatisfaction count children = .candidate sat := by
+  cases hp : thresholdPositions count children with
+  | none => exact .inl (by simp [thresholdSatisfaction, hp])
+  | some positions =>
+    cases ha : assembleThreshold positions children.length count children.reverse with
+    | impossible => exact .inl (by simp [thresholdSatisfaction, hp, ha])
+    | candidate sat => exact .inr ⟨positions, sat, rfl, ha, by simp [thresholdSatisfaction, hp, ha]⟩
+
 /-- Select the threshold dissatisfaction from an exact-count table. Count zero
     is the canonical all-dissatisfied row. Every positive count other than the
     satisfying threshold is a possible overcomplete row, so it retains its

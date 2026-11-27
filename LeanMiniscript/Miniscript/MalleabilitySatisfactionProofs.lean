@@ -782,6 +782,68 @@ theorem multiASignatureSecurity (keys : List PubKey) (env : SatEnv) :
   | zero => rfl
   | succ count ih => simpa [List.replicate_succ, countUnsigned] using ih
 
+private theorem assembleThreshold_signed {pairs : List CandidatePair} {flags : List Bool}
+    (security : SignatureSecurityList pairs flags) {count : Nat}
+    (fewer : countUnsigned flags < count) (positions : List Nat) (endIndex : Nat) :
+    (assembleThreshold positions endIndex count pairs).Signed := by
+  induction security generalizing count endIndex with
+  | nil =>
+    cases count with
+    | zero => omega
+    | succ n => exact CandidateResult.signed_impossible
+  | @cons pair flag pairs flags head tail ih =>
+    simp only [assembleThreshold]
+    split
+    · cases count with
+      | zero => exact CandidateResult.signed_impossible
+      | succ n =>
+        cases flag with
+        | true => exact CandidateResult.Signed.combine_right (head.satSigned rfl)
+        | false =>
+          apply CandidateResult.Signed.combine_left
+          apply ih
+          simp [countUnsigned] at fewer
+          omega
+    · apply CandidateResult.Signed.combine_left
+      apply ih
+      cases flag <;> simp [countUnsigned] at fewer <;> omega
+
+theorem thresholdSatisfaction_signed_of_countUnsigned_lt
+    {pairs : List CandidatePair} {flags : List Bool}
+    (security : SignatureSecurityList pairs flags) {count : Nat}
+    (fewer : countUnsigned flags < count) : (thresholdSatisfaction count pairs).Signed := by
+  rcases thresholdSatisfaction_cases count pairs with fallback | ⟨_, _, _, assembled, result⟩
+  · rw [fallback]
+    exact (selectExactly_signed_of_countUnsigned_lt security fewer).markDontUse
+  · rw [result, ← assembled]
+    exact assembleThreshold_signed security.reverse (by simpa using fewer) _ _
+
+private theorem assembleThreshold_canonicalWhenUsable
+    {pairs : List CandidatePair} {flags : List Bool} (security : ChoiceSecurityList pairs flags)
+    (positions : List Nat) (endIndex count : Nat) :
+    (assembleThreshold positions endIndex count pairs).CanonicalWhenUsable := by
+  induction security generalizing endIndex count with
+  | nil =>
+    cases count with
+    | zero => exact CandidateResult.canonicalWhenUsable_usable [] false
+    | succ n => exact CandidateResult.canonicalWhenUsable_impossible
+  | cons head tail ih =>
+    simp only [assembleThreshold]
+    split
+    · cases count with
+      | zero => exact CandidateResult.canonicalWhenUsable_impossible
+      | succ n => exact (ih _ _).combine head.satCanonical
+    · exact (ih _ _).combine head.dsatUnconditional.canonicalWhenUsable
+
+theorem thresholdSatisfaction_canonicalWhenUsable {pairs : List CandidatePair} {flags : List Bool}
+    (security : ChoiceSecurityList pairs flags) (count : Nat) :
+    (thresholdSatisfaction count pairs).CanonicalWhenUsable := by
+  rcases thresholdSatisfaction_cases count pairs with fallback | ⟨_, _, _, assembled, result⟩
+  · rw [fallback]
+    exact CandidateResult.canonicalWhenUsable_markDontUse _
+  · rw [result, ← assembled]
+    exact assembleThreshold_canonicalWhenUsable security.reverse _ _ _
+
 end CandidatePair
 
 /-! ## Sound interpretation of malleability modifiers -/
@@ -1448,7 +1510,7 @@ theorem malleabilityCandidateSound {ctx : ScriptContext} {fragment : CoreFragmen
                   satisfactionCandidates fragment env))
                 (malleabilitySignedFlags malMods) := by
               simpa [satisfactionCandidatesList_eq_map] using signatureSecurity
-            apply CandidatePair.selectExactly_signed_of_countUnsigned_lt
+            apply CandidatePair.thresholdSatisfaction_signed_of_countUnsigned_lt
               signatureSecurity'
             have fewer : MalleabilityModifiers.countNonS malMods < k := by
               simpa [MalleabilityModifiers.fewerThanNonS] using signed
@@ -1460,7 +1522,7 @@ theorem malleabilityCandidateSound {ctx : ScriptContext} {fragment : CoreFragmen
               allNonMalleable allExpressive
             rw [satisfactionCandidates_thresh_sat k (X :: Xs) env valid]
             simpa [satisfactionCandidatesList_eq_map] using
-              CandidatePair.selectExactly_canonicalWhenUsable security k
+              CandidatePair.thresholdSatisfaction_canonicalWhenUsable security k
           · intro nonMalleable expressive
             obtain ⟨allNonMalleable, allExpressive, atMost⟩ :=
               (boolAnd3_eq_true _ _ _).mp nonMalleable
