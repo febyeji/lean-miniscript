@@ -8,6 +8,8 @@ namespace LeanMiniscript.Extraction.TapscriptWitness
 
 open LeanMiniscript.Script LeanMiniscript.Miniscript
 
+variable {sc : ScriptContext}
+
 theorem decode_pair_parts {flags : ScriptFlags} {aBytes bBytes : StackElement} {a b : Int}
     (decoded : decodeBinaryScriptNums flags aBytes bBytes = .ok (a, b)) :
     decodeScriptNum aBytes flags.minimalData maxArithmeticScriptNumBytes = .ok a ∧
@@ -74,8 +76,8 @@ theorem TailRunTrace.input_frame {flags : ScriptFlags} {ctx : TxContext} {alt : 
     exact ⟨args ++ tailArgs, by simp [List.append_assoc]⟩
 
 theorem typed_thresh_tail_inv {children : List CoreFragment} {types : List MiniType}
-    (typed : HasTypeList .tapscript children types) (shape : thresholdRestTypes types)
-    (wf : CoreFragment.allWellFormed .tapscript children)
+    (typed : HasTypeList sc children types) (shape : thresholdRestTypes types)
+    (wf : CoreFragment.allWellFormed sc children)
     {acc : StackElement} {input alt output outAlt : Stack} {flags : ScriptFlags} {ctx : TxContext}
     (run : Eval (compileThreshTail children) (acc :: input) alt flags ctx (.success output outAlt)) :
     outAlt = alt ∧ ∃ final rest, output = final :: rest ∧
@@ -134,16 +136,16 @@ theorem push_equal_truth_inv {k : Nat} {acc top : StackElement}
 /-- A complete accepted threshold run retains the first B child and every
 W-tail child, the actual ADD decodes, and the terminal byte equality. -/
 theorem typed_threshold_run_inv {k : Nat} {children : List CoreFragment} {mods : CorrectnessModifiers}
-    (typed : HasType .tapscript (.thresh k children) ⟨.B, mods⟩)
-    (wf : (CoreFragment.thresh k children).WellFormed .tapscript)
+    (typed : HasType sc (.thresh k children) ⟨.B, mods⟩)
+    (wf : (CoreFragment.thresh k children).WellFormed sc)
     {input rest alt outAlt : Stack} {top : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (run : Eval (compile (.thresh k children)) input alt flags ctx (.success (top :: rest) outAlt))
     (truth : castToBool top = true) :
     outAlt = alt ∧ top = trueElement ∧
     ∃ first remaining firstMods types args firstRest value,
       children = first :: remaining ∧
-      HasType .tapscript first ⟨.B, firstMods⟩ ∧ firstMods.d = true ∧ firstMods.u = true ∧
-      HasTypeList .tapscript remaining types ∧ thresholdRestTypes types ∧
+      HasType sc first ⟨.B, firstMods⟩ ∧ firstMods.d = true ∧ firstMods.u = true ∧
+      HasTypeList sc remaining types ∧ thresholdRestTypes types ∧
       input = args ++ firstRest ∧
       Eval (compile first) (args ++ firstRest) alt flags ctx (.success (value :: firstRest) alt) ∧
       TailRunTrace flags ctx alt remaining value firstRest (scriptNat k) rest := by
@@ -172,15 +174,15 @@ theorem typed_threshold_run_inv {k : Nat} {children : List CoreFragment} {mods :
 /-- The trace also records exactly how the whole witness precedes the
 preserved suffix, in serialized reverse-runtime order. -/
 theorem threshold_witness_frame {k : Nat} {children : List CoreFragment} {mods : CorrectnessModifiers}
-    (typed : HasType .tapscript (.thresh k children) ⟨.B, mods⟩)
-    (wf : (CoreFragment.thresh k children).WellFormed .tapscript)
+    (typed : HasType sc (.thresh k children) ⟨.B, mods⟩)
+    (wf : (CoreFragment.thresh k children).WellFormed sc)
     {consumed : Witness} {rest alt : Stack} {top : StackElement} {flags : ScriptFlags} {ctx : TxContext}
     (run : Eval (compile (.thresh k children)) (consumed.toInitialStack ++ rest) alt flags ctx
       (.success (top :: rest) alt)) (truth : castToBool top = true) :
     ∃ first remaining firstMods types firstArgs tailArgs value,
       children = first :: remaining ∧
-      HasType .tapscript first ⟨.B, firstMods⟩ ∧ firstMods.d = true ∧ firstMods.u = true ∧
-      HasTypeList .tapscript remaining types ∧ thresholdRestTypes types ∧
+      HasType sc first ⟨.B, firstMods⟩ ∧ firstMods.d = true ∧ firstMods.u = true ∧
+      HasTypeList sc remaining types ∧ thresholdRestTypes types ∧
       consumed = tailArgs.reverse ++ firstArgs.reverse ∧
       Eval (compile first) (firstArgs ++ (tailArgs ++ rest)) alt flags ctx
         (.success (value :: (tailArgs ++ rest)) alt) ∧
@@ -197,7 +199,7 @@ theorem threshold_witness_frame {k : Nat} {children : List CoreFragment} {mods :
     eq, ft, fd, fu, tt, ts, witnessEq, firstRun, trace⟩
 
 theorem threshold_candidate_guard {k : Nat} {children : List CoreFragment}
-    (wf : (CoreFragment.thresh k children).WellFormed .tapscript) :
+    (wf : (CoreFragment.thresh k children).WellFormed sc) :
     candidateThresholdValid k children.length := by
   exact ⟨by have := wf.1.1; omega, wf.1.2, ArithmeticScriptNatSafe.of_lt wf.2.2.2⟩
 

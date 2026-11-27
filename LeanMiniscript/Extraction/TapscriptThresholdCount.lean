@@ -6,6 +6,8 @@ namespace LeanMiniscript.Extraction.TapscriptWitness
 
 open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
 
+variable {sc : ScriptContext}
+
 private theorem decode_false_zero4 {operand : StackElement} {minimal : Bool} {value : Int}
     (decoded : decodeScriptNum operand minimal maxArithmeticScriptNumBytes = .ok value)
     (falsehood : castToBool operand = false) : value = 0 := by
@@ -75,8 +77,8 @@ theorem decoded_unit_count {value : StackElement} {n : Int} {minimal : Bool}
     simpa [truth] using eq
 
 theorem threshold_rest_member_type {children : List CoreFragment} {types : List MiniType}
-    (typed : HasTypeList .tapscript children types) (shape : thresholdRestTypes types) :
-    ∀ child ∈ children, ∃ cm, HasType .tapscript child ⟨.W, cm⟩ ∧ cm.d = true ∧ cm.u = true := by
+    (typed : HasTypeList sc children types) (shape : thresholdRestTypes types) :
+    ∀ child ∈ children, ∃ cm, HasType sc child ⟨.W, cm⟩ ∧ cm.d = true ∧ cm.u = true := by
   cases typed with
   | nil => simp
   | @cons first ty children types headTyped tailTyped =>
@@ -148,8 +150,8 @@ private theorem tail_truths_count {env : SatEnv} {flags : ScriptFlags}
     {children : List CoreFragment} {acc final : StackElement} {input rest : Stack}
     {trace : TailRunTrace flags env.txCtx [] children acc input final rest} {truths : List Bool} {k : Nat}
     (observed : TailTruths trace truths) (finalEq : final = scriptNat k)
-    (kbound : k < maxArithmeticScriptNatExclusive) (version : env.txCtx.sigVersion = .tapscript)
-    (units : ∀ child ∈ children, UnitW child)
+    (kbound : k < maxArithmeticScriptNatExclusive) (version : ModeledContextVersion sc env.txCtx)
+    (units : ∀ child ∈ children, UnitWIn sc child)
     (bounded : ∀ item ∈ input, item.size ≤ maxScriptElementSize)
     (count : Nat) (countBound : count < maxArithmeticScriptNatExclusive)
     (decoded : decodeScriptNum acc flags.minimalData maxArithmeticScriptNumBytes = .ok (count : Int)) :
@@ -185,8 +187,8 @@ private theorem tail_truths_count {env : SatEnv} {flags : ScriptFlags}
     simpa [List.sum_cons, Nat.add_assoc] using answer
 
 private theorem allWF_member {children : List CoreFragment}
-    (wf : CoreFragment.allWellFormed .tapscript children) {child : CoreFragment}
-    (member : child ∈ children) : child.WellFormed .tapscript := by
+    (wf : CoreFragment.allWellFormed sc children) {child : CoreFragment}
+    (member : child ∈ children) : child.WellFormed sc := by
   induction children with
   | nil => simp at member
   | cons head tail ih =>
@@ -199,11 +201,11 @@ without an execution or witness-equality induction assumption. -/
 theorem threshold_trace_truth_count {first : CoreFragment} {children : List CoreFragment}
     {cm : CorrectnessModifiers} {types : List MiniType} {env : SatEnv} {flags : ScriptFlags}
     {firstArgs tailArgs rest : Stack} {value : StackElement} {k : Nat}
-    (firstTyped : HasType .tapscript first ⟨.B, cm⟩) (firstUnit : cm.u = true)
-    (firstWF : first.WellFormed .tapscript)
-    (tailTyped : HasTypeList .tapscript children types) (shape : thresholdRestTypes types)
-    (tailWF : CoreFragment.allWellFormed .tapscript children)
-    (version : env.txCtx.sigVersion = .tapscript) (kbound : k < maxArithmeticScriptNatExclusive)
+    (firstTyped : HasType sc first ⟨.B, cm⟩) (firstUnit : cm.u = true)
+    (firstWF : first.WellFormed sc)
+    (tailTyped : HasTypeList sc children types) (shape : thresholdRestTypes types)
+    (tailWF : CoreFragment.allWellFormed sc children)
+    (version : ModeledContextVersion sc env.txCtx) (kbound : k < maxArithmeticScriptNatExclusive)
     (bounded : ∀ item ∈ firstArgs ++ (tailArgs ++ rest), item.size ≤ maxScriptElementSize)
     (firstRun : Eval (compile first) (firstArgs ++ (tailArgs ++ rest)) [] flags env.txCtx
       (.success (value :: (tailArgs ++ rest)) []))
@@ -215,7 +217,7 @@ theorem threshold_trace_truth_count {first : CoreFragment} {children : List Core
   rw [firstNorm] at decoded
   have countBound : (castToBool value).toNat < maxArithmeticScriptNatExclusive := by
     cases castToBool value <;> decide
-  have units : ∀ child ∈ children, UnitW child := by
+  have units : ∀ child ∈ children, UnitWIn sc child := by
     intro child member
     obtain ⟨wm, wt, _wd, wu⟩ := threshold_rest_member_type tailTyped shape child member
     exact unitW_of_hasType wt (allWF_member tailWF member) wu
@@ -263,9 +265,9 @@ private theorem count_true_eq_sum (bits : List Bool) : bits.count true = (bits.m
 /-- In an accepted threshold execution, exactly k child runs return true. The
     input witness is the concatenation of those actual child frames in wire order. -/
 theorem threshold_executed_rows {env : SatEnv} {flags : ScriptFlags} {k children mods consumed rest top}
-    (typed : HasType .tapscript (.thresh k children) ⟨.B, mods⟩)
-    (wf : (CoreFragment.thresh k children).WellFormed .tapscript)
-    (version : env.txCtx.sigVersion = .tapscript)
+    (typed : HasType sc (.thresh k children) ⟨.B, mods⟩)
+    (wf : (CoreFragment.thresh k children).WellFormed sc)
+    (version : ModeledContextVersion sc env.txCtx)
     (bounded : ∀ item ∈ Witness.toInitialStack consumed ++ rest, item.size ≤ maxScriptElementSize)
     (run : Eval (compile (.thresh k children)) (Witness.toInitialStack consumed ++ rest) [] flags env.txCtx
       (.success (top :: rest) [])) (truth : castToBool top = true) :

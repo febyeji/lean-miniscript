@@ -5,6 +5,8 @@ import LeanMiniscript.Extraction.TapscriptRecovery.ThresholdDissatisfaction
 set_option maxRecDepth 4000
 set_option maxHeartbeats 4000000
 
+variable {sc : LeanMiniscript.Miniscript.ScriptContext}
+
 namespace LeanMiniscript.Extraction.TapscriptRecovery.ZeroComplete
 
 open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
@@ -12,8 +14,8 @@ open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
   ThresholdRun ThresholdUnit DsatMaterial SignedExchange UnsignedComplete
 
 theorem zero_threshold_shape {k : Nat} {children : List CoreFragment} {cm : CorrectnessModifiers}
-    (typed : HasType .tapscript (.thresh k children) ⟨.B, cm⟩) (zero : cm.z = true) :
-    k = 1 ∧ ∃ child cx, children = [child] ∧ HasType .tapscript child ⟨.B, cx⟩ ∧
+    (typed : HasType sc (.thresh k children) ⟨.B, cm⟩) (zero : cm.z = true) :
+    k = 1 ∧ ∃ child cx, children = [child] ∧ HasType sc child ⟨.B, cx⟩ ∧
       cx.z = true ∧ cx.d = true ∧ cx.u = true := by
   cases typed with
   | @thresh k child children cx types tx dx ux tails restTypes lower upper =>
@@ -29,7 +31,7 @@ theorem zero_threshold_shape {k : Nat} {children : List CoreFragment} {cm : Corr
     exact ⟨count, child, cx, rfl, tx, zx, dx, ux⟩
 
 theorem zero_d_candidates {fragment : CoreFragment} {cm : CorrectnessModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, cm⟩) (wf : fragment.WellFormed .tapscript)
+    (typed : HasType sc fragment ⟨.B, cm⟩) (wf : fragment.WellFormed sc)
     (zero : cm.z = true) (d : cm.d = true) (env : SatEnv) :
     satisfactionCandidates fragment env = {sat := .impossible, dsat := .usable [] false} := by
   generalize typeEq : (⟨.B, cm⟩ : MiniType) = ty at typed
@@ -92,7 +94,7 @@ theorem zero_d_candidates {fragment : CoreFragment} {cm : CorrectnessModifiers}
 termination_by sizeOf fragment
 
 theorem zero_sat_candidates {fragment : CoreFragment} {ty : MiniType}
-    (typed : HasType .tapscript fragment ty) (wf : fragment.WellFormed .tapscript)
+    (typed : HasType sc fragment ty) (wf : fragment.WellFormed sc)
     (zero : ty.mods.z = true) (env : SatEnv) :
     (satisfactionCandidates fragment env).sat = .impossible ∨
       (satisfactionCandidates fragment env).sat = .usable [] false := by
@@ -166,7 +168,7 @@ theorem zero_sat_candidates {fragment : CoreFragment} {ty : MiniType}
 termination_by sizeOf fragment
 
 theorem zero_usable_of_raw {fragment : CoreFragment} {ty : MiniType} {env : SatEnv}
-    (typed : HasType .tapscript fragment ty) (wf : fragment.WellFormed .tapscript)
+    (typed : HasType sc fragment ty) (wf : fragment.WellFormed sc)
     (zero : ty.mods.z = true) (raw : RawUnsigned (satisfactionCandidates fragment env).sat) :
     satisfy fragment env = some [] := by
   rcases zero_sat_candidates typed wf zero env with impossible | usable
@@ -175,12 +177,14 @@ theorem zero_usable_of_raw {fragment : CoreFragment} {ty : MiniType} {env : SatE
     cases eq
   · simp [satisfy, usable, CandidateResult.usable, CandidateResult.usableWitness?]
 
-def CompleteBz (fragment : CoreFragment) : Prop :=
-  ∀ cm mm, HasType .tapscript fragment ⟨.B, cm⟩ → fragment.WellFormed .tapscript →
-    HasMalleability .tapscript fragment mm → mm.nonMalleable = true → cm.z = true →
-    AmbientUnsignedSatCompleteB fragment
+def CompleteBzIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
+  ∀ cm mm, HasType sc fragment ⟨.B, cm⟩ → fragment.WellFormed sc →
+    HasMalleability sc fragment mm → mm.nonMalleable = true → cm.z = true →
+    AmbientUnsignedSatCompleteBIn sc fragment
 
-theorem uniform_completeBz (fragment : CoreFragment) : CompleteBz fragment := by
+abbrev CompleteBz := CompleteBzIn .tapscript
+
+theorem uniform_completeBz (fragment : CoreFragment) : CompleteBzIn sc fragment := by
   intro cm mm typed wf mal nm zero parent env flags pa po own top rest context _nodup bounded run truth free
   have empty := zero_B_consumed typed wf zero run
   have raw := execution_without_checked_signature
@@ -188,7 +192,7 @@ theorem uniform_completeBz (fragment : CoreFragment) : CompleteBz fragment := by
       context bounded run truth) free
   simpa [empty] using zero_usable_of_raw typed wf zero raw
 
-theorem uniform_completeVz (fragment : CoreFragment) : CompleteVz fragment := by
+theorem uniform_completeVz (fragment : CoreFragment) : CompleteVzIn sc fragment := by
   intro cm mm typed wf mal nm zero parent env flags pa po own rest context _nodup bounded run free
   have empty := zero_V_consumed typed wf zero run
   have execute := ambientExecutionV_from_smaller_B typed wf mal nm (fun child _ => uniform_B_execution child)
@@ -197,18 +201,18 @@ theorem uniform_completeVz (fragment : CoreFragment) : CompleteVz fragment := by
   simpa [empty] using zero_usable_of_raw typed wf zero raw
 
 theorem complete_d_discharged {child : CoreFragment} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript (.d child) ⟨.B, cm⟩) (wf : (CoreFragment.d child).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.d child) mm) (nm : mm.nonMalleable = true) :
-    AmbientUnsignedSatCompleteB (.d child) := by
+    (typed : HasType sc (.d child) ⟨.B, cm⟩) (wf : (CoreFragment.d child).WellFormed sc)
+    (mal : HasMalleability sc (.d child) mm) (nm : mm.nonMalleable = true) :
+    AmbientUnsignedSatCompleteBIn sc (.d child) := by
   obtain ⟨cx, mx, tx, zx, wx, hx, nx⟩ := d_static typed wf mal nm
   exact complete_d tx wx zx (uniform_completeVz child cx mx tx wx hx nx zx)
 
 theorem zero_V_success_projection {fragment parent : CoreFragment}
     {cm : CorrectnessModifiers} {mm : MalleabilityModifiers} {env : SatEnv} {flags : ScriptFlags}
     {pa po own : Witness} {rest : Stack}
-    (typed : HasType .tapscript fragment ⟨.V, cm⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment mm) (nm : mm.nonMalleable = true) (zero : cm.z = true)
-    (context : ExecutionContext parent fragment env flags pa po own)
+    (typed : HasType sc fragment ⟨.V, cm⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment mm) (nm : mm.nonMalleable = true) (zero : cm.z = true)
+    (context : ExecutionContextIn sc parent fragment env flags pa po own)
     (bounded : ∀ item ∈ own.toInitialStack ++ rest, item.size ≤ maxScriptElementSize)
     (run : Eval (compile fragment) (own.toInitialStack ++ rest) [] flags env.txCtx (.success rest [])) :
     own = [] ∧ satisfy fragment env = some [] := by
@@ -222,10 +226,10 @@ theorem zero_V_success_projection {fragment parent : CoreFragment}
   exact ⟨empty, zero_usable_of_raw typed wf zero raw⟩
 
 theorem completeV_and_v {X Y : CoreFragment} {cx cy : CorrectnessModifiers}
-    (tx : HasType .tapscript X ⟨.V, cx⟩) (ty : HasType .tapscript Y ⟨.V, cy⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript)
-    (ix : AmbientUnsignedSatCompleteV X) (iy : AmbientUnsignedSatCompleteV Y) :
-    AmbientUnsignedSatCompleteV (.and_v X Y) := by
+    (tx : HasType sc X ⟨.V, cx⟩) (ty : HasType sc Y ⟨.V, cy⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc)
+    (ix : AmbientUnsignedSatCompleteVIn sc X) (iy : AmbientUnsignedSatCompleteVIn sc Y) :
+    AmbientUnsignedSatCompleteVIn sc (.and_v X Y) := by
   intro parent env flags pa po own rest context nodup bounded run free
   obtain ⟨left, right, eq, runX, runY⟩ := and_v_run_V_frame tx ty wx wy run
   subst own
@@ -254,14 +258,14 @@ open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
   UnsignedComplete ZeroComplete
 
 theorem typed_W_n_false {fragment : CoreFragment} {ty : MiniType}
-    (typed : HasType .tapscript fragment ty) (base : ty.base = .W) : ty.mods.n = false := by
+    (typed : HasType sc fragment ty) (base : ty.base = .W) : ty.mods.n = false := by
   cases typed <;> simp_all [branchBase]
 
 theorem completeB_and_v {X Y : CoreFragment} {cx cy : CorrectnessModifiers}
-    (tx : HasType .tapscript X ⟨.V, cx⟩) (ty : HasType .tapscript Y ⟨.B, cy⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript)
-    (ix : AmbientUnsignedSatCompleteV X) (iy : AmbientUnsignedSatCompleteB Y) :
-    AmbientUnsignedSatCompleteB (.and_v X Y) := by
+    (tx : HasType sc X ⟨.V, cx⟩) (ty : HasType sc Y ⟨.B, cy⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc)
+    (ix : AmbientUnsignedSatCompleteVIn sc X) (iy : AmbientUnsignedSatCompleteBIn sc Y) :
+    AmbientUnsignedSatCompleteBIn sc (.and_v X Y) := by
   intro parent env flags pa po own top rest context nodup bounded run truth free
   obtain ⟨left, right, eq, runX, runY⟩ := and_v_run_B_frame tx ty wx wy run
   subst own
@@ -281,10 +285,10 @@ theorem completeB_and_v {X Y : CoreFragment} {cx cy : CorrectnessModifiers}
   exact CandidateResult.combine_usableWitness_iff.mpr ⟨left, right, sx, sy, rfl⟩
 
 theorem completeB_and_b {X Y : CoreFragment} {cx cy : CorrectnessModifiers}
-    (tx : HasType .tapscript X ⟨.B, cx⟩) (ty : HasType .tapscript Y ⟨.W, cy⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript)
-    (ix : AmbientUnsignedSatCompleteB X) (iy : AmbientUnsignedSatCompleteW Y) :
-    AmbientUnsignedSatCompleteB (.and_b X Y) := by
+    (tx : HasType sc X ⟨.B, cx⟩) (ty : HasType sc Y ⟨.W, cy⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc)
+    (ix : AmbientUnsignedSatCompleteBIn sc X) (iy : AmbientUnsignedSatCompleteWIn sc Y) :
+    AmbientUnsignedSatCompleteBIn sc (.and_b X Y) := by
   intro parent env flags pa po own top rest context nodup bounded run truth free
   obtain ⟨left, right, x, y, order, eq, runX, runY, bx, _by, actual⟩ :=
     boolean_run_frame (isOr := false) tx ty wx wy run truth
@@ -309,17 +313,19 @@ theorem completeB_and_b {X Y : CoreFragment} {cx cy : CorrectnessModifiers}
     boundY runY actual.2 (fun checked => free (checkedSignature_mono keysY inY checked))
   exact CandidateResult.combine_usableWitness_iff.mpr ⟨left, right, sx, sy, rfl⟩
 
-def CompleteVn (fragment : CoreFragment) : Prop :=
-  ∀ cm mm, HasType .tapscript fragment ⟨.V, cm⟩ → fragment.WellFormed .tapscript →
-    HasMalleability .tapscript fragment mm → mm.nonMalleable = true → cm.n = true → mm.s = false →
-    AmbientUnsignedSatCompleteV fragment
+def CompleteVnIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
+  ∀ cm mm, HasType sc fragment ⟨.V, cm⟩ → fragment.WellFormed sc →
+    HasMalleability sc fragment mm → mm.nonMalleable = true → cm.n = true → mm.s = false →
+    AmbientUnsignedSatCompleteVIn sc fragment
+
+abbrev CompleteVn := CompleteVnIn .tapscript
 
 theorem completeB_split {fragment : CoreFragment} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, cm⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment mm) (nm : mm.nonMalleable = true)
-    (nf : cm.n = true → AmbientUnsignedSatCompleteB fragment)
-    (remaining : cm.n = false → cm.z = false → mm.s = false → AmbientUnsignedSatCompleteB fragment) :
-    AmbientUnsignedSatCompleteB fragment := by
+    (typed : HasType sc fragment ⟨.B, cm⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment mm) (nm : mm.nonMalleable = true)
+    (nf : cm.n = true → AmbientUnsignedSatCompleteBIn sc fragment)
+    (remaining : cm.n = false → cm.z = false → mm.s = false → AmbientUnsignedSatCompleteBIn sc fragment) :
+    AmbientUnsignedSatCompleteBIn sc fragment := by
   by_cases signed : mm.s = true
   · exact complete_of_signed typed wf mal nm signed
   · have unsigned : mm.s = false := by cases flag : mm.s <;> simp_all
@@ -338,15 +344,19 @@ open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
   LeanMiniscript.Extraction OrI WBoolean ThresholdAlt SignedExchange
   UnsignedComplete ZeroComplete NFComplete
 
-def CompleteBn (fragment : CoreFragment) : Prop :=
-  ∀ cm mm, HasType .tapscript fragment ⟨.B, cm⟩ → fragment.WellFormed .tapscript →
-    HasMalleability .tapscript fragment mm → mm.nonMalleable = true → cm.n = true → mm.s = false →
-    AmbientUnsignedSatCompleteB fragment
+def CompleteBnIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
+  ∀ cm mm, HasType sc fragment ⟨.B, cm⟩ → fragment.WellFormed sc →
+    HasMalleability sc fragment mm → mm.nonMalleable = true → cm.n = true → mm.s = false →
+    AmbientUnsignedSatCompleteBIn sc fragment
 
-def CompleteBRest (fragment : CoreFragment) : Prop :=
-  ∀ cm mm, HasType .tapscript fragment ⟨.B, cm⟩ → fragment.WellFormed .tapscript →
-    HasMalleability .tapscript fragment mm → mm.nonMalleable = true →
-    cm.n = false → cm.z = false → mm.s = false → AmbientUnsignedSatCompleteB fragment
+abbrev CompleteBn := CompleteBnIn .tapscript
+
+def CompleteBRestIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
+  ∀ cm mm, HasType sc fragment ⟨.B, cm⟩ → fragment.WellFormed sc →
+    HasMalleability sc fragment mm → mm.nonMalleable = true →
+    cm.n = false → cm.z = false → mm.s = false → AmbientUnsignedSatCompleteBIn sc fragment
+
+abbrev CompleteBRest := CompleteBRestIn .tapscript
 
 inductive UnsignedBnShape : CoreFragment → Prop where
   | sha256 (h : Hash256) : UnsignedBnShape (.sha256 h)
@@ -360,8 +370,8 @@ inductive UnsignedBnShape : CoreFragment → Prop where
   | n (X : CoreFragment) : UnsignedBnShape (.n X)
 
 theorem bn_unsigned_shape {fragment : CoreFragment} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, cm⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment mm)
+    (typed : HasType sc fragment ⟨.B, cm⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment mm)
     (nonzero : cm.n = true) (unsigned : mm.s = false) : UnsignedBnShape fragment := by
   generalize typeEq : (⟨.B, cm⟩ : MiniType) = ty at typed
   have baseEq := congrArg MiniType.base typeEq
@@ -386,18 +396,18 @@ theorem bn_unsigned_shape {fragment : CoreFragment} {cm : CorrectnessModifiers} 
   case j_wrap => exact .j _
   case n_wrap => exact .n _
   case thresh => cases n
-  case multi => exact wf.1.elim
+  case multi => cases mal; cases unsigned
   case multi_a => cases n
 
 theorem and_v_n_static {X Y : CoreFragment} {base : BaseType}
     {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript (.and_v X Y) ⟨base, cm⟩)
-    (wf : (CoreFragment.and_v X Y).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.and_v X Y) mm) (nm : mm.nonMalleable = true)
+    (typed : HasType sc (.and_v X Y) ⟨base, cm⟩)
+    (wf : (CoreFragment.and_v X Y).WellFormed sc)
+    (mal : HasMalleability sc (.and_v X Y) mm) (nm : mm.nonMalleable = true)
     (nonzero : cm.n = true) (unsigned : mm.s = false) :
-    ∃ cx cy mx my, HasType .tapscript X ⟨.V, cx⟩ ∧ HasType .tapscript Y ⟨base, cy⟩ ∧
-      X.WellFormed .tapscript ∧ Y.WellFormed .tapscript ∧
-      HasMalleability .tapscript X mx ∧ HasMalleability .tapscript Y my ∧
+    ∃ cx cy mx my, HasType sc X ⟨.V, cx⟩ ∧ HasType sc Y ⟨base, cy⟩ ∧
+      X.WellFormed sc ∧ Y.WellFormed sc ∧
+      HasMalleability sc X mx ∧ HasMalleability sc Y my ∧
       mx.nonMalleable = true ∧ my.nonMalleable = true ∧ mx.s = false ∧ my.s = false ∧
       (cx.n = true ∨ cx.z = true ∧ cy.n = true) := by
   generalize typeEq : (⟨base, cm⟩ : MiniType) = ty at typed
@@ -419,13 +429,13 @@ theorem and_v_n_static {X Y : CoreFragment} {base : BaseType}
           by simpa only [Bool.or_eq_true, Bool.and_eq_true] using n⟩
 
 theorem and_b_n_static {X Y : CoreFragment} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript (.and_b X Y) ⟨.B, cm⟩)
-    (wf : (CoreFragment.and_b X Y).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.and_b X Y) mm) (nm : mm.nonMalleable = true)
+    (typed : HasType sc (.and_b X Y) ⟨.B, cm⟩)
+    (wf : (CoreFragment.and_b X Y).WellFormed sc)
+    (mal : HasMalleability sc (.and_b X Y) mm) (nm : mm.nonMalleable = true)
     (nonzero : cm.n = true) (unsigned : mm.s = false) :
-    ∃ cx cy mx my, HasType .tapscript X ⟨.B, cx⟩ ∧ HasType .tapscript Y ⟨.W, cy⟩ ∧
-      X.WellFormed .tapscript ∧ Y.WellFormed .tapscript ∧
-      HasMalleability .tapscript X mx ∧ HasMalleability .tapscript Y my ∧
+    ∃ cx cy mx my, HasType sc X ⟨.B, cx⟩ ∧ HasType sc Y ⟨.W, cy⟩ ∧
+      X.WellFormed sc ∧ Y.WellFormed sc ∧
+      HasMalleability sc X mx ∧ HasMalleability sc Y my ∧
       mx.nonMalleable = true ∧ my.nonMalleable = true ∧ mx.s = false ∧ my.s = false ∧ cx.n = true := by
   cases typed with
   | and_b tx ty =>
@@ -440,12 +450,12 @@ theorem and_b_n_static {X Y : CoreFragment} {cm : CorrectnessModifiers} {mm : Ma
       exact ⟨_, _, _, _, tx, ty, wf.1, wf.2.1, hx, hy, nx, ny, sx, sy, xn⟩
 
 theorem completeW_unsigned {fragment : CoreFragment} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.W, cm⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment mm) (nm : mm.nonMalleable = true) (unsigned : mm.s = false)
+    (typed : HasType sc fragment ⟨.W, cm⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment mm) (nm : mm.nonMalleable = true) (unsigned : mm.s = false)
     (ih : ∀ sub, sizeOf sub < sizeOf fragment → ∀ cx mx,
-      HasType .tapscript sub ⟨.B, cx⟩ → sub.WellFormed .tapscript →
-      HasMalleability .tapscript sub mx → mx.nonMalleable = true → mx.s = false →
-      AmbientUnsignedSatCompleteB sub) : AmbientUnsignedSatCompleteW fragment := by
+      HasType sc sub ⟨.B, cx⟩ → sub.WellFormed sc →
+      HasMalleability sc sub mx → mx.nonMalleable = true → mx.s = false →
+      AmbientUnsignedSatCompleteBIn sc sub) : AmbientUnsignedSatCompleteWIn sc fragment := by
   cases typed_W_shape typed with
   | @a child cx tx =>
     cases mal with
@@ -474,16 +484,16 @@ theorem completeW_unsigned {fragment : CoreFragment} {cm : CorrectnessModifiers}
       · exact Or.inr (Or.inr member)
 
 theorem completeBn_step {fragment : CoreFragment} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, cm⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment mm) (nm : mm.nonMalleable = true)
+    (typed : HasType sc fragment ⟨.B, cm⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment mm) (nm : mm.nonMalleable = true)
     (nonzero : cm.n = true) (unsigned : mm.s = false)
-    (ih : ∀ sub, sizeOf sub < sizeOf fragment → CompleteBn sub ∧ CompleteVn sub)
-    (br : ∀ sub, sizeOf sub < sizeOf fragment → CompleteBRest sub) :
-    AmbientUnsignedSatCompleteB fragment := by
+    (ih : ∀ sub, sizeOf sub < sizeOf fragment → CompleteBnIn sc sub ∧ CompleteVnIn sc sub)
+    (br : ∀ sub, sizeOf sub < sizeOf fragment → CompleteBRestIn sc sub) :
+    AmbientUnsignedSatCompleteBIn sc fragment := by
   have childB : ∀ sub, sizeOf sub < sizeOf fragment → ∀ cx mx,
-      HasType .tapscript sub ⟨.B, cx⟩ → sub.WellFormed .tapscript →
-      HasMalleability .tapscript sub mx → mx.nonMalleable = true → mx.s = false →
-      AmbientUnsignedSatCompleteB sub := by
+      HasType sc sub ⟨.B, cx⟩ → sub.WellFormed sc →
+      HasMalleability sc sub mx → mx.nonMalleable = true → mx.s = false →
+      AmbientUnsignedSatCompleteBIn sc sub := by
     intro sub smaller cx mx tx wx hx nx sx
     exact completeB_split tx wx hx nx
       (fun nn => (ih sub smaller).1 cx mx tx wx hx nx nn sx)

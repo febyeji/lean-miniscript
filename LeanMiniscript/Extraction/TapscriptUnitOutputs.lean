@@ -7,21 +7,26 @@ namespace LeanMiniscript.Extraction.TapscriptWitness
 
 open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
 
-def UnitB (fragment : CoreFragment) : Prop :=
+variable {sc : ScriptContext}
+
+def UnitBIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
   ∀ (env : SatEnv) (flags : ScriptFlags) (input rest : Stack) (top : StackElement),
-    env.txCtx.sigVersion = .tapscript →
+    ModeledContextVersion sc env.txCtx →
     (∀ item ∈ input, item.size ≤ maxScriptElementSize) →
     Eval (compile fragment) input [] flags env.txCtx (.success (top :: rest) []) →
     castToBool top = true → top = trueElement
 
-def UnitW (fragment : CoreFragment) : Prop :=
+def UnitWIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
   ∀ (env : SatEnv) (flags : ScriptFlags) (own : Witness) (saved top : StackElement)
     (rest : Stack) (order : BaseWOutputOrder),
-    env.txCtx.sigVersion = .tapscript →
+    ModeledContextVersion sc env.txCtx →
     (∀ item ∈ saved :: (own.toInitialStack ++ rest), item.size ≤ maxScriptElementSize) →
     Eval (compile fragment) (saved :: (own.toInitialStack ++ rest)) [] flags env.txCtx
       (.success (order.outputs saved top ++ rest) []) →
     castToBool top = true → top = trueElement
+
+abbrev UnitB := UnitBIn .tapscript
+abbrev UnitW := UnitWIn .tapscript
 
 private theorem minimal_selector {flags : ScriptFlags} {ctx : TxContext} {selector : StackElement}
     (version : ctx.sigVersion = .tapscript)
@@ -78,7 +83,7 @@ private theorem shortCircuit_tail_cases {keep : Bool} {body : Script} {selector 
 
 private theorem shortCircuit_run_cases {X Y : CoreFragment} {modsX : CorrectnessModifiers}
     {keep : Bool} {env : SatEnv} {flags : ScriptFlags} {input out : Stack}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩) (wfX : X.WellFormed .tapscript)
+    (typedX : HasType sc X ⟨.B, modsX⟩) (wfX : X.WellFormed sc)
     (run : Eval (compile (shortCircuit keep X Y)) input [] flags env.txCtx (.success out [])) :
     (∃ args rest top, input = args ++ rest ∧
       Eval (compile X) (args ++ rest) [] flags env.txCtx (.success (top :: rest) []) ∧
@@ -180,15 +185,15 @@ private theorem unit_opcode {opcode : Opcode} (unit : UnitOpcode opcode)
 
 private theorem unit_last {fragment : CoreFragment} {body : Script} {opcode : Opcode}
     (shape : compile fragment = body ++ [.op opcode])
-    (balanced : BalancedControlFlow body) (unit : UnitOpcode opcode) : UnitB fragment := by
+    (balanced : BalancedControlFlow body) (unit : UnitOpcode opcode) : UnitBIn sc fragment := by
   intro env flags input rest top _version _bounded run truth
   rw [shape] at run
   obtain ⟨mid, midAlt, _before, last⟩ := LeanMiniscript.Miniscript.Eval.splitBalancedAppend_success balanced run
   exact unit_opcode unit last truth
 
 private theorem unit_and_v {X Y : CoreFragment} {mx : CorrectnessModifiers}
-    (tx : HasType .tapscript X ⟨.V, mx⟩) (wx : X.WellFormed .tapscript)
-    (uy : UnitB Y) : UnitB (.and_v X Y) := by
+    (tx : HasType sc X ⟨.V, mx⟩) (wx : X.WellFormed sc)
+    (uy : UnitBIn sc Y) : UnitBIn sc (.and_v X Y) := by
   intro env flags input rest top version bounded run truth
   change Eval (compile X ++ compile Y) _ _ _ _ _ at run
   obtain ⟨mid, alt, rx, ry⟩ := LeanMiniscript.Miniscript.Eval.splitBalancedAppend_success (compile_balancedControlFlow X) run
@@ -200,7 +205,7 @@ private theorem unit_and_v {X Y : CoreFragment} {mx : CorrectnessModifiers}
   rw [eq]
   exact List.mem_append_right _ member
 
-private theorem unit_or_i {X Y : CoreFragment} (ux : UnitB X) (uy : UnitB Y) : UnitB (.or_i X Y) := by
+private theorem unit_or_i {X Y : CoreFragment} (ux : UnitBIn sc X) (uy : UnitBIn sc Y) : UnitBIn sc (.or_i X Y) := by
   intro env flags input rest top version bounded run truth
   change Eval ([.op .OP_IF] ++ compile X ++ [.op .OP_ELSE] ++ compile Y ++ [.op .OP_ENDIF])
     input [] flags env.txCtx (.success (top :: rest) []) at run
@@ -217,8 +222,8 @@ private theorem unit_or_i {X Y : CoreFragment} (ux : UnitB X) (uy : UnitB Y) : U
     · exact uy env flags tail rest top version tailBound ry truth
 
 private theorem unit_or_d {X Y : CoreFragment} {mx : CorrectnessModifiers}
-    (tx : HasType .tapscript X ⟨.B, mx⟩) (wx : X.WellFormed .tapscript)
-    (ux : UnitB X) (uy : UnitB Y) : UnitB (.or_d X Y) := by
+    (tx : HasType sc X ⟨.B, mx⟩) (wx : X.WellFormed sc)
+    (ux : UnitBIn sc X) (uy : UnitBIn sc Y) : UnitBIn sc (.or_d X Y) := by
   intro env flags input rest top version bounded run truth
   rcases shortCircuit_run_cases (keep := true) tx wx run with
     ⟨args, tail, value, eq, rx, trueX, out⟩ | ⟨args, tail, value, eq, _rx, _falseX, ry⟩
@@ -232,8 +237,8 @@ private theorem unit_or_d {X Y : CoreFragment} {mx : CorrectnessModifiers}
     exact List.mem_append_right _ member
 
 private theorem unit_andor {X Y Z : CoreFragment} {mx : CorrectnessModifiers}
-    (tx : HasType .tapscript X ⟨.B, mx⟩) (wx : X.WellFormed .tapscript)
-    (uy : UnitB Y) (uz : UnitB Z) : UnitB (.andor X Y Z) := by
+    (tx : HasType sc X ⟨.B, mx⟩) (wx : X.WellFormed sc)
+    (uy : UnitBIn sc Y) (uz : UnitBIn sc Z) : UnitBIn sc (.andor X Y Z) := by
   intro env flags input rest top version bounded run truth
   have combined : Eval (compile X ++ ([.op .OP_NOTIF] ++ compile Z ++ [.op .OP_ELSE] ++ compile Y ++ [.op .OP_ENDIF]))
       input [] flags env.txCtx (.success (top :: rest) []) := by
@@ -252,7 +257,7 @@ private theorem unit_andor {X Y Z : CoreFragment} {mx : CorrectnessModifiers}
   · exact uz env flags tail rest top version bound rz truth
   · exact uy env flags tail rest top version bound ry truth
 
-private theorem unit_j {X : CoreFragment} (ux : UnitB X) : UnitB (.j X) := by
+private theorem unit_j {X : CoreFragment} (ux : UnitBIn sc X) : UnitBIn sc (.j X) := by
   intro env flags input rest top version bounded run truth
   exact ux env flags input rest top version bounded (j_success_child bounded run truth) truth
 
@@ -265,7 +270,7 @@ private theorem if_minimal_of_success {script : Script} {selector : StackElement
 
 private theorem unit_d {X : CoreFragment} {mx : CorrectnessModifiers}
     (tx : HasType .tapscript X ⟨.V, mx⟩) (wx : X.WellFormed .tapscript)
-    (zero : mx.z = true) : UnitB (.d X) := by
+    (zero : mx.z = true) : UnitBIn .tapscript (.d X) := by
   intro env flags input rest top version _bounded run truth
   have rx := d_success_child run truth
   obtain ⟨_, effect⟩ := refinedBaseTypeGuarantee_of_hasType tx wx _ _ _ _ _ rx
@@ -289,8 +294,8 @@ private theorem unit_d {X : CoreFragment} {mx : CorrectnessModifiers}
 /-- Arbitrary bounded successful B execution with u=true is normalized.
 The induction follows the executed branch. -/
 theorem unitB_of_hasType {fragment : CoreFragment} {mods : CorrectnessModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, mods⟩) (wf : fragment.WellFormed .tapscript)
-    (u : mods.u = true) : UnitB fragment := by
+    (typed : HasType sc fragment ⟨.B, mods⟩) (wf : fragment.WellFormed sc)
+    (u : mods.u = true) : UnitBIn sc fragment := by
   generalize typeEq : (⟨.B, mods⟩ : MiniType) = ty at typed
   have baseEq := congrArg MiniType.base typeEq
   have unitEq : ty.mods.u = true := by rw [← typeEq]; exact u
@@ -359,13 +364,21 @@ theorem unitB_of_hasType {fragment : CoreFragment} {mods : CorrectnessModifiers}
         obtain ⟨uy, uz⟩ := Bool.and_eq_true_iff.mp unitEq
         exact unit_andor tx wf.1 (unitB_of_hasType ty wf.2.1 uy) (unitB_of_hasType tz wf.2.2.1 uz)
   case c_wrap tx => exact unit_last rfl (compile_balancedControlFlow _) .checksig
-  case d_wrap tx zero => exact unit_d tx wf zero
+  case d_wrap tx zero =>
+    cases sc with
+    | p2wsh => contradiction
+    | tapscript => exact unit_d tx wf zero
   case j_wrap tx _nonzero => exact unit_j (unitB_of_hasType tx wf unitEq)
   case n_wrap tx => exact unit_last rfl (compile_balancedControlFlow _) .zeroNotEqual
   case thresh firstTyped fd fu tailTyped tailShape positive atMost =>
     intro env flags input rest top _version _bounded run truth
     exact (typed_threshold_run_inv (.thresh firstTyped fd fu tailTyped tailShape positive atMost) wf run truth).2.1
-  case multi => cases wf.1
+  case multi =>
+    intro env flags input rest top _ _ run truth
+    obtain ⟨_, _, _, _, result, _, output, _⟩ :=
+      Miniscript.Eval.legacyMulti_checked_frame wf.2.2.1 wf.2.1.2 run
+    obtain ⟨rfl, _⟩ := List.cons.inj output
+    cases result <;> first | rfl | cases truth
   case multi_a k keys _positive _atMost =>
     apply unit_last (body := compileCheckSigAdd keys ++ [.pushNum k]) (opcode := .OP_NUMEQUAL)
     · simp [compile, compileWithKeyHash, List.append_assoc]
@@ -376,8 +389,8 @@ termination_by sizeOf fragment
 /-- Both W wrappers inherit normalization from their B child, using the
 already checked alternate-stack transfer for a:. -/
 theorem unitW_of_hasType {fragment : CoreFragment} {mods : CorrectnessModifiers}
-    (typed : HasType .tapscript fragment ⟨.W, mods⟩) (wf : fragment.WellFormed .tapscript)
-    (u : mods.u = true) : UnitW fragment := by
+    (typed : HasType sc fragment ⟨.W, mods⟩) (wf : fragment.WellFormed sc)
+    (u : mods.u = true) : UnitWIn sc fragment := by
   generalize typeEq : (⟨.W, mods⟩ : MiniType) = ty at typed
   have baseEq := congrArg MiniType.base typeEq
   have unitEq : ty.mods.u = true := by rw [← typeEq]; exact u

@@ -501,7 +501,9 @@ private theorem decodeCheckMultiSigOperandsFor_compiled_shape
     (dummyOk : checkMultiSigDummy flags operands.dummy = .ok ()) :
     ∃ signatures dummy rest,
       stack = signatures ++ dummy :: rest ∧
-      signatures.length = threshold ∧ operands.rest = rest := by
+      signatures.length = threshold ∧ operands.rest = rest ∧
+      operands.signatures = signatures ∧ operands.pubkeys = (keys.map PubKey.bytes).reverse ∧
+      operands.dummy = some dummy := by
   have decodeKeys := decodeScriptNum_scriptNat_multi_count keys.length flags
     keyBound
   have decodeThreshold := decodeScriptNum_scriptNat_multi_count threshold flags
@@ -528,7 +530,7 @@ private theorem decodeCheckMultiSigOperandsFor_compiled_shape
         simp [checkMultiSigDummy] at dummyOk
       · rename_i dummy rest afterDrop
         cases decoded
-        refine ⟨stack.take threshold, dummy, rest, ?_, ?_, rfl⟩
+        refine ⟨stack.take threshold, dummy, rest, ?_, ?_, rfl, rfl, rfl, rfl⟩
         · have parts := List.take_append_drop threshold stack
           rw [afterDrop] at parts
           exact parts.symm
@@ -544,9 +546,9 @@ private theorem compileKeyPushes_balancedControlFlow (keys : List PubKey) :
   | cons key keys ih =>
       exact .append (.atom (by simp [NonConditional])) ih
 
-/-- Successful legacy multisignature compilation consumes an input prefix and
-    replaces it with one boolean result. -/
-theorem Eval.legacyMulti_success_shape
+/-- Invert a successful compiled CHECKMULTISIG, retaining the matched keys,
+    signature count, dummy check, and NULLFAIL condition. -/
+theorem Eval.legacyMulti_checked_frame
     {threshold : Nat} {keys : List PubKey}
     {stack altStack finalStack finalAlt : Stack}
     {flags : ScriptFlags} {ctx : TxContext}
@@ -556,8 +558,11 @@ theorem Eval.legacyMulti_success_shape
       ([.pushNum threshold] ++ compileKeyPushes keys ++
         [.pushNum keys.length, .op .OP_CHECKMULTISIG])
       stack altStack flags ctx (.success finalStack finalAlt)) :
-    finalAlt = altStack ∧ ∃ args rest result,
-      stack = args ++ rest ∧ finalStack = result :: rest := by
+    finalAlt = altStack ∧ ∃ sigs dummy rest result,
+      stack = sigs ++ dummy :: rest ∧ finalStack = boolToElement result :: rest ∧
+      sigs.length = threshold ∧ checkMultiSigDummy flags (some dummy) = .ok () ∧
+      checkMultiSigFor checkSig flags ctx sigs (keys.map PubKey.bytes).reverse = .ok result ∧
+      (result = true ∨ nullFailSatisfied flags sigs) := by
   have combined : Eval
       (([.pushNum threshold] ++ compileKeyPushes keys ++
           [.pushNum keys.length]) ++ [.op .OP_CHECKMULTISIG])
@@ -598,86 +603,41 @@ theorem Eval.legacyMulti_success_shape
     exact Eval.append (Eval.append thresholdRun keysRun) countRun
   have prefixEq := Eval.result_unique prefixRun canonicalPrefix
   cases prefixEq
-  let opcodeStack : Stack :=
-    scriptNat keys.length ::
-      (keys.map (fun key => key.bytes)).reverse ++
-        scriptNat threshold :: stack
-  cases decodedEq : decodeCheckMultiSigOperandsFor flags ctx opcodeStack with
-  | error error =>
-      have failed : Eval [.op .OP_CHECKMULTISIG] opcodeStack altStack flags ctx
-          (.failure error) :=
-        Eval.checkmultisig_operand_failure opcodeStack [] altStack flags ctx
-          error decodedEq
-      exact (Eval.success_failure_absurd checkRun failed).elim
-  | ok operands =>
-      cases checkedEq : checkMultiSigFor checkSig flags ctx
-          operands.signatures operands.pubkeys with
-      | error error =>
-          have failed : Eval [.op .OP_CHECKMULTISIG] opcodeStack altStack
-              flags ctx (.failure error) :=
-            Eval.checkmultisig_encoding_failure opcodeStack operands []
-              altStack flags ctx error decodedEq checkedEq
-          exact (Eval.success_failure_absurd checkRun failed).elim
-      | ok checked =>
-          cases checked with
-          | false =>
-              by_cases nullFail : nullFailSatisfied flags operands.signatures
-              · cases dummyEq : checkMultiSigDummy flags operands.dummy with
-                | error error =>
-                    have failed : Eval [.op .OP_CHECKMULTISIG] opcodeStack
-                        altStack flags ctx (.failure error) :=
-                      Eval.checkmultisig_dummy_failure opcodeStack operands []
-                        altStack flags ctx false error decodedEq checkedEq
-                        (Or.inr nullFail) dummyEq
-                    exact (Eval.success_failure_absurd checkRun failed).elim
-                | ok successValue =>
-                    cases successValue
-                    have canonical : Eval [.op .OP_CHECKMULTISIG] opcodeStack
-                        altStack flags ctx
-                        (.success (falseElement :: operands.rest) altStack) :=
-                      Eval.checkmultisig_failure opcodeStack operands []
-                        altStack flags ctx _ decodedEq checkedEq nullFail dummyEq
-                        Eval.done
-                    have equal := Eval.result_unique checkRun canonical
-                    cases equal
-                    obtain ⟨signatures, dummy, rest, inputEq,
-                        signatureCount, restEq⟩ :=
-                      decodeCheckMultiSigOperandsFor_compiled_shape keyBound
-                        thresholdBound decodedEq dummyEq
-                    rw [restEq]
-                    refine ⟨rfl, signatures ++ [dummy], rest, falseElement,
-                      ?_, rfl⟩
-                    simpa [List.append_assoc] using inputEq
-              · have failed : Eval [.op .OP_CHECKMULTISIG] opcodeStack
-                    altStack flags ctx (.failure .sigNullFail) :=
-                  Eval.checkmultisig_nullfail_failure opcodeStack operands []
-                    altStack flags ctx decodedEq checkedEq nullFail
-                exact (Eval.success_failure_absurd checkRun failed).elim
-          | true =>
-              cases dummyEq : checkMultiSigDummy flags operands.dummy with
-              | error error =>
-                  have failed : Eval [.op .OP_CHECKMULTISIG] opcodeStack
-                      altStack flags ctx (.failure error) :=
-                    Eval.checkmultisig_dummy_failure opcodeStack operands []
-                      altStack flags ctx true error decodedEq checkedEq
-                      (Or.inl rfl) dummyEq
-                  exact (Eval.success_failure_absurd checkRun failed).elim
-              | ok successValue =>
-                  cases successValue
-                  have canonical : Eval [.op .OP_CHECKMULTISIG] opcodeStack
-                      altStack flags ctx
-                      (.success (trueElement :: operands.rest) altStack) :=
-                    Eval.checkmultisig_success opcodeStack operands [] altStack
-                      flags ctx _ decodedEq checkedEq dummyEq Eval.done
-                  have equal := Eval.result_unique checkRun canonical
-                  cases equal
-                  obtain ⟨signatures, dummy, rest, inputEq,
-                      signatureCount, restEq⟩ :=
-                    decodeCheckMultiSigOperandsFor_compiled_shape keyBound
-                      thresholdBound decodedEq dummyEq
-                  rw [restEq]
-                  refine ⟨rfl, signatures ++ [dummy], rest, trueElement,
-                    ?_, rfl⟩
-                  simpa [List.append_assoc] using inputEq
+  generalize inputEq : scriptNat keys.length :: (keys.map PubKey.bytes).reverse ++
+    scriptNat threshold :: stack = opcodeStack at checkRun
+  cases checkRun with
+  | checkmultisig_success _ operands _ _ _ _ _ decoded checked dummyOk done =>
+    cases done
+    rw [← inputEq] at decoded
+    obtain ⟨sigs, dummy, rest, input, count, tailEq, sigEq, pubEq, dummyEq⟩ :=
+      decodeCheckMultiSigOperandsFor_compiled_shape keyBound thresholdBound decoded dummyOk
+    exact ⟨rfl, sigs, dummy, rest, true, input, by rw [tailEq]; rfl, count,
+      dummyEq ▸ dummyOk, sigEq ▸ pubEq ▸ checked, Or.inl rfl⟩
+  | checkmultisig_failure _ operands _ _ _ _ _ decoded checked allowed dummyOk done =>
+    cases done
+    rw [← inputEq] at decoded
+    obtain ⟨sigs, dummy, rest, input, count, tailEq, sigEq, pubEq, dummyEq⟩ :=
+      decodeCheckMultiSigOperandsFor_compiled_shape keyBound thresholdBound decoded dummyOk
+    exact ⟨rfl, sigs, dummy, rest, false, input, by rw [tailEq]; rfl, count,
+      dummyEq ▸ dummyOk, sigEq ▸ pubEq ▸ checked, Or.inr (sigEq ▸ allowed)⟩
+  | upgradeableNop _ _ _ _ _ _ _ nop _ _ => cases nop
+
+/-- Successful legacy multisignature compilation consumes an input prefix and
+    replaces it with one boolean result. -/
+theorem Eval.legacyMulti_success_shape
+    {threshold : Nat} {keys : List PubKey}
+    {stack altStack finalStack finalAlt : Stack}
+    {flags : ScriptFlags} {ctx : TxContext}
+    (keyBound : keys.length ≤ maxPubKeysPerMultiSig)
+    (thresholdBound : threshold ≤ keys.length)
+    (run : Eval
+      ([.pushNum threshold] ++ compileKeyPushes keys ++
+        [.pushNum keys.length, .op .OP_CHECKMULTISIG])
+      stack altStack flags ctx (.success finalStack finalAlt)) :
+    finalAlt = altStack ∧ ∃ args rest result,
+      stack = args ++ rest ∧ finalStack = result :: rest := by
+  obtain ⟨alt, sigs, dummy, rest, result, input, output, _⟩ :=
+    Eval.legacyMulti_checked_frame keyBound thresholdBound run
+  exact ⟨alt, sigs ++ [dummy], rest, boolToElement result, by simpa using input, output⟩
 
 end LeanMiniscript.Miniscript

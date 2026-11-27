@@ -5,6 +5,8 @@ import LeanMiniscript.Extraction.TapscriptRecovery.AtomicFrames
 set_option maxRecDepth 4000
 set_option maxHeartbeats 4000000
 
+variable {sc : LeanMiniscript.Miniscript.ScriptContext}
+
 namespace LeanMiniscript.Extraction.TapscriptRecovery.OrI
 
 open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
@@ -92,7 +94,7 @@ def CheckedSignature (fragment : CoreFragment) (env : SatEnv) (flags : ScriptFla
 
 theorem or_i_run_cases {X Y : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
     {input out : Stack}
-    (version : env.txCtx.sigVersion = .tapscript)
+    (version : WitnessRules flags env.txCtx)
     (run : Eval (compile (.or_i X Y)) input [] flags env.txCtx (.success out [])) :
     (∃ stack, input = trueElement :: stack ∧
       Eval (compile X) stack [] flags env.txCtx (.success out [])) ∨
@@ -116,7 +118,7 @@ theorem or_i_run_cases {X Y : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
 
 theorem typed_B_input_frame {fragment : CoreFragment} {mods : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {input rest : Stack} {top : StackElement}
-    (typed : HasType .tapscript fragment ⟨.B, mods⟩) (wf : fragment.WellFormed .tapscript)
+    (typed : HasType sc fragment ⟨.B, mods⟩) (wf : fragment.WellFormed sc)
     (run : Eval (compile fragment) input [] flags env.txCtx (.success (top :: rest) [])) :
     ∃ consumed : Witness, input = consumed.toInitialStack ++ rest := by
   obtain ⟨_, effect⟩ := refinedBaseTypeGuarantee_of_hasType typed wf
@@ -128,7 +130,7 @@ theorem typed_B_input_frame {fragment : CoreFragment} {mods : CorrectnessModifie
 
 theorem typed_V_input_frame {fragment : CoreFragment} {mods : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {input rest : Stack}
-    (typed : HasType .tapscript fragment ⟨.V, mods⟩) (wf : fragment.WellFormed .tapscript)
+    (typed : HasType sc fragment ⟨.V, mods⟩) (wf : fragment.WellFormed sc)
     (run : Eval (compile fragment) input [] flags env.txCtx (.success rest [])) :
     ∃ consumed : Witness, input = consumed.toInitialStack ++ rest := by
   obtain ⟨_, effect⟩ := refinedBaseTypeGuarantee_of_hasType typed wf
@@ -145,9 +147,9 @@ theorem witness_selector_frame {other consumed : Witness} {selector : StackEleme
 
 theorem or_i_run_B {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {other : Witness} {rest : Stack} {top : StackElement}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩) (typedY : HasType .tapscript Y ⟨.B, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
-    (version : env.txCtx.sigVersion = .tapscript)
+    (typedX : HasType sc X ⟨.B, modsX⟩) (typedY : HasType sc Y ⟨.B, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
+    (version : WitnessRules flags env.txCtx)
     (run : Eval (compile (.or_i X Y)) (other.toInitialStack ++ rest) [] flags env.txCtx
       (.success (top :: rest) [])) :
     (∃ consumed, other = consumed ++ [trueElement] ∧
@@ -162,9 +164,9 @@ theorem or_i_run_B {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
 
 theorem or_i_run_V {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {other : Witness} {rest : Stack}
-    (typedX : HasType .tapscript X ⟨.V, modsX⟩) (typedY : HasType .tapscript Y ⟨.V, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
-    (version : env.txCtx.sigVersion = .tapscript)
+    (typedX : HasType sc X ⟨.V, modsX⟩) (typedY : HasType sc Y ⟨.V, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
+    (version : WitnessRules flags env.txCtx)
     (run : Eval (compile (.or_i X Y)) (other.toInitialStack ++ rest) [] flags env.txCtx (.success rest [])) :
     (∃ consumed, other = consumed ++ [trueElement] ∧
       Eval (compile X) (consumed.toInitialStack ++ rest) [] flags env.txCtx (.success rest [])) ∨
@@ -176,13 +178,16 @@ theorem or_i_run_V {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
   · obtain ⟨consumed, rfl⟩ := typed_V_input_frame typedY wfY childRun
     exact Or.inr ⟨consumed, witness_selector_frame eq, childRun⟩
 
-structure ExecutionContext (parent child : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
+structure ExecutionContextIn (sc : ScriptContext) (parent child : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
     (parentArgs parentOther consumed : Witness) : Prop where
   sound : env.Sound
   encoding : env.EncodingSound flags
-  version : env.txCtx.sigVersion = .tapscript
-  modeled : ModeledContextFlags .tapscript flags
-  keySizes : ∀ key ∈ parent.keys, key.bytes.size = 32
+  version : ModeledContextVersion sc env.txCtx
+  modeled : ModeledContextFlags sc flags
+  material : match sc with
+    | .tapscript => ∀ key ∈ parent.keys, key.bytes.size = 32
+    | .p2wsh => ∃ sane : SaneFragment .p2wsh, sane.checked.fragment = parent ∧
+        LocalPreimageSignatureDisjoint parent env flags parentArgs
   recover : LocalHashSlotRecovery parent env parentArgs
   canonical : satisfy parent env = some parentArgs
   thirdParty : ThirdPartyWitness parent env.txCtx parentArgs parentOther
@@ -190,26 +195,48 @@ structure ExecutionContext (parent child : CoreFragment) (env : SatEnv) (flags :
   childLocks : ∀ lock ∈ child.hashLocks, lock ∈ parent.hashLocks
   consumedIn : ∀ item ∈ consumed, item ∈ parentOther
 
+abbrev ExecutionContext := ExecutionContextIn .tapscript
+
+theorem ExecutionContextIn.rules {parent child env flags pa po own}
+    (context : ExecutionContextIn sc parent child env flags pa po own) :
+    WitnessRules flags env.txCtx := witnessRules_of_modeled context.version context.modeled
+
+theorem ExecutionContextIn.keySizes {parent child env flags pa po own}
+    (context : ExecutionContext parent child env flags pa po own) :
+    ∀ key ∈ parent.keys, key.bytes.size = 32 := context.material
+
+theorem ExecutionContextIn.saneFrame {parent child env flags pa po own}
+    (context : ExecutionContextIn .p2wsh parent child env flags pa po own) :
+    ∃ sane : SaneFragment .p2wsh, sane.checked.fragment = parent ∧
+      P2WSHRecovery.ExecutionContext sane child env flags pa po own := by
+  obtain ⟨sane, rfl, disjoint⟩ := context.material
+  exact ⟨sane, rfl, context.sound, context.version, context.modeled, context.canonical,
+    context.thirdParty, ⟨context.recover, disjoint⟩, context.childKeys, context.childLocks, context.consumedIn⟩
+
 def ExecutionEvidence (fragment : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
     (consumed : Witness) : Prop :=
   RawUnsigned (satisfactionCandidates fragment env).sat ∨ CheckedSignature fragment env flags consumed
 
-def AmbientExecutionB (fragment : CoreFragment) : Prop :=
+def AmbientExecutionBIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
   ∀ (parent : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
     (parentArgs parentOther consumed : Witness) (top : StackElement) (rest : Stack),
-    ExecutionContext parent fragment env flags parentArgs parentOther consumed →
+    ExecutionContextIn sc parent fragment env flags parentArgs parentOther consumed →
     (∀ item ∈ consumed.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) →
     Eval (compile fragment) (consumed.toInitialStack ++ rest) [] flags env.txCtx
       (.success (top :: rest) []) → castToBool top = true →
     ExecutionEvidence fragment env flags consumed
 
-def AmbientExecutionV (fragment : CoreFragment) : Prop :=
+abbrev AmbientExecutionB := AmbientExecutionBIn .tapscript
+
+def AmbientExecutionVIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
   ∀ (parent : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
     (parentArgs parentOther consumed : Witness) (rest : Stack),
-    ExecutionContext parent fragment env flags parentArgs parentOther consumed →
+    ExecutionContextIn sc parent fragment env flags parentArgs parentOther consumed →
     (∀ item ∈ consumed.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) →
     Eval (compile fragment) (consumed.toInitialStack ++ rest) [] flags env.txCtx (.success rest []) →
     ExecutionEvidence fragment env flags consumed
+
+abbrev AmbientExecutionV := AmbientExecutionVIn .tapscript
 
 theorem signed_execution_consumes {fragment : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
     {consumed : Witness} (signed : (satisfactionCandidates fragment env).sat.Signed)
@@ -226,14 +253,14 @@ theorem execution_without_checked_signature {fragment : CoreFragment} {env : Sat
     RawUnsigned (satisfactionCandidates fragment env).sat := by
   exact evidence.resolve_right absent
 
-theorem ambientExecution_c_pk_k (key : PubKey) : AmbientExecutionB (.c (.pk_k key)) := by
+theorem ambientExecution_c_pk_k (key : PubKey) : AmbientExecutionBIn sc (.c (.pk_k key)) := by
   intro parent env flags parentArgs parentOther consumed top rest _context _bounded run truth
   obtain ⟨sig, eq, checked⟩ := accepts_c_pk_k_inversion run truth
   have consumedEq : consumed = [sig] := witness_eq_singleton_of_toInitialStack
     (List.append_cancel_right eq)
   exact Or.inr ⟨sig, by simp [consumedEq], key, by simp [CoreFragment.keys], checked⟩
 
-theorem ambientExecution_sha256 (hash : Hash256) : AmbientExecutionB (.sha256 hash) := by
+theorem ambientExecution_sha256 (hash : Hash256) : AmbientExecutionBIn sc (.sha256 hash) := by
   intro parent env flags parentArgs parentOther consumed top rest context bounded run truth
   obtain ⟨p, eq, matched⟩ := accepts_sha256_inversion bounded run truth
   have consumedEq : consumed = [p] := witness_eq_singleton_of_toInitialStack
@@ -244,7 +271,7 @@ theorem ambientExecution_sha256 (hash : Hash256) : AmbientExecutionB (.sha256 ha
   exact Or.inl ⟨{witness := [p], hasSig := false},
     by simp [satisfactionCandidates, hashCandidates, selected, CandidateResult.usable], rfl⟩
 
-theorem ambientExecution_hash160 (hash : Hash160) : AmbientExecutionB (.hash160 hash) := by
+theorem ambientExecution_hash160 (hash : Hash160) : AmbientExecutionBIn sc (.hash160 hash) := by
   intro parent env flags parentArgs parentOther consumed top rest context bounded run truth
   obtain ⟨p, eq, matched⟩ := accepts_hash160_inversion bounded run truth
   have consumedEq : consumed = [p] := witness_eq_singleton_of_toInitialStack
@@ -279,12 +306,12 @@ theorem unsigned_select_right_raw {left right : CandidateResult}
 
 theorem executionContext_restrict {parent child active : CoreFragment} {env : SatEnv}
     {flags : ScriptFlags} {parentArgs parentOther consumed activeConsumed : Witness}
-    (context : ExecutionContext parent child env flags parentArgs parentOther consumed)
+    (context : ExecutionContextIn sc parent child env flags parentArgs parentOther consumed)
     (keys : ∀ key ∈ active.keys, key ∈ child.keys)
     (locks : ∀ lock ∈ active.hashLocks, lock ∈ child.hashLocks)
     (consumedIn : ∀ item ∈ activeConsumed, item ∈ consumed) :
-    ExecutionContext parent active env flags parentArgs parentOther activeConsumed :=
-  ⟨context.sound, context.encoding, context.version, context.modeled, context.keySizes,
+    ExecutionContextIn sc parent active env flags parentArgs parentOther activeConsumed :=
+  ⟨context.sound, context.encoding, context.version, context.modeled, context.material,
     context.recover, context.canonical, context.thirdParty,
     fun k h => context.childKeys k (keys k h), fun l h => context.childLocks l (locks l h),
     fun item h => context.consumedIn item (consumedIn item h)⟩
@@ -304,13 +331,13 @@ theorem evidence_or_i_right {X Y : CoreFragment} {env : SatEnv} {flags : ScriptF
   · exact Or.inr ⟨sig, consumedIn sig hs, key, List.mem_append_right _ hk, checked⟩
 
 theorem ambientExecution_or_i_B {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩)
-    (typedY : HasType .tapscript Y ⟨.B, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
-    (executeX : AmbientExecutionB X) (executeY : AmbientExecutionB Y) :
-    AmbientExecutionB (.or_i X Y) := by
+    (typedX : HasType sc X ⟨.B, modsX⟩)
+    (typedY : HasType sc Y ⟨.B, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
+    (executeX : AmbientExecutionBIn sc X) (executeY : AmbientExecutionBIn sc Y) :
+    AmbientExecutionBIn sc (.or_i X Y) := by
   intro parent env flags parentArgs parentOther consumed top rest context bounded run truth
-  rcases or_i_run_B typedX typedY wfX wfY context.version run with
+  rcases or_i_run_B typedX typedY wfX wfY context.rules run with
       ⟨active, eq, childRun⟩ | ⟨active, eq, childRun⟩
   · subst consumed
     have activeIn : ∀ item ∈ active, item ∈ active ++ [trueElement] :=
@@ -328,13 +355,13 @@ theorem ambientExecution_or_i_B {X Y : CoreFragment} {modsX modsY : CorrectnessM
       rest childContext (bounded_without_selector bounded) childRun truth)
 
 theorem ambientExecution_or_i_V {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
-    (typedX : HasType .tapscript X ⟨.V, modsX⟩)
-    (typedY : HasType .tapscript Y ⟨.V, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
-    (executeX : AmbientExecutionV X) (executeY : AmbientExecutionV Y) :
-    AmbientExecutionV (.or_i X Y) := by
+    (typedX : HasType sc X ⟨.V, modsX⟩)
+    (typedY : HasType sc Y ⟨.V, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
+    (executeX : AmbientExecutionVIn sc X) (executeY : AmbientExecutionVIn sc Y) :
+    AmbientExecutionVIn sc (.or_i X Y) := by
   intro parent env flags parentArgs parentOther consumed rest context bounded run
-  rcases or_i_run_V typedX typedY wfX wfY context.version run with
+  rcases or_i_run_V typedX typedY wfX wfY context.rules run with
       ⟨active, eq, childRun⟩ | ⟨active, eq, childRun⟩
   · subst consumed
     have activeIn : ∀ item ∈ active, item ∈ active ++ [trueElement] :=
@@ -351,11 +378,11 @@ theorem ambientExecution_or_i_V {X Y : CoreFragment} {modsX modsY : CorrectnessM
     exact evidence_or_i_right activeIn (executeY parent env flags parentArgs parentOther active
       rest childContext (bounded_without_selector bounded) childRun)
 
-theorem ambientExecution_verify {fragment : CoreFragment} (execute : AmbientExecutionB fragment) :
-    AmbientExecutionV (.v fragment) := by
+theorem ambientExecution_verify {fragment : CoreFragment} (execute : AmbientExecutionBIn sc fragment) :
+    AmbientExecutionVIn sc (.v fragment) := by
   intro parent env flags parentArgs parentOther consumed rest context bounded run
-  have childContext : ExecutionContext parent fragment env flags parentArgs parentOther consumed :=
-    ⟨context.sound, context.encoding, context.version, context.modeled, context.keySizes,
+  have childContext : ExecutionContextIn sc parent fragment env flags parentArgs parentOther consumed :=
+    ⟨context.sound, context.encoding, context.version, context.modeled, context.material,
       context.recover, context.canonical, context.thirdParty, context.childKeys,
       context.childLocks, context.consumedIn⟩
   have unfused := LeanMiniscript.Miniscript.Eval.compileVerify_success_inverse
@@ -372,13 +399,13 @@ theorem ambientExecution_verify {fragment : CoreFragment} (execute : AmbientExec
 
 theorem signed_consumption_of_malleability {fragment : CoreFragment} {env : SatEnv}
     {flags : ScriptFlags} {consumed : Witness} {ty : MiniType} {mods : MalleabilityModifiers}
-    (wf : fragment.WellFormed .tapscript) (typed : HasType .tapscript fragment ty)
-    (mal : HasMalleability .tapscript fragment mods) (signed : mods.s = true)
+    (wf : fragment.WellFormed sc) (typed : HasType sc fragment ty)
+    (mal : HasMalleability sc fragment mods) (signed : mods.s = true)
     (evidence : ExecutionEvidence fragment env flags consumed) :
     CheckedSignature fragment env flags consumed :=
   signed_execution_consumes ((malleabilityCandidateSound env wf typed mal).signedSat signed) evidence
 
-theorem ambientExecution_c_pk_h (key : PubKey) : AmbientExecutionB (.c (.pk_h key)) := by
+theorem ambientExecution_c_pk_h (key : PubKey) : AmbientExecutionBIn sc (.c (.pk_h key)) := by
   intro parent env flags parentArgs parentOther consumed top rest context _bounded run truth
   obtain ⟨sig, pubkey, eq, imageEq, checked⟩ := accepts_c_pk_h_inversion run truth
   have consumedEq : consumed = [sig, pubkey] := witness_eq_pair_of_toInitialStack
@@ -388,6 +415,12 @@ theorem ambientExecution_c_pk_h (key : PubKey) : AmbientExecutionB (.c (.pk_h ke
     key (context.childKeys key (by simp [CoreFragment.keys])) imageEq
   rw [pubkeyEq] at checked
   exact Or.inr ⟨sig, by simp [consumedEq], key, by simp [CoreFragment.keys], checked⟩
+
+theorem ambientExecution_multi {k : Nat} {keys : List PubKey}
+    (wf : (CoreFragment.multi k keys).WellFormed .p2wsh) : AmbientExecutionBIn .p2wsh (.multi k keys) := by
+  intro parent env flags pa po own top rest context _ run truth
+  obtain ⟨_, _, frame⟩ := context.saneFrame
+  exact Or.inr (P2WSHRecovery.multi_checked frame wf context.encoding run truth)
 
 theorem ambientExecution_multi_a (k : Nat) (keys : List PubKey)
     (threshold : validThreshold k keys.length) (keyCount : keys.length ≤ MAX_PUBKEYS_PER_MULTI_A) :
@@ -427,10 +460,10 @@ theorem unsigned_combine {left right : CandidateResult}
   exact ⟨a.combine b, rfl, by simp [SatisfactionCandidate.combine, ha, hb]⟩
 
 theorem ambientExecution_and_v {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
-    (typedX : HasType .tapscript X ⟨.V, modsX⟩) (typedY : HasType .tapscript Y ⟨.B, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
-    (executeX : AmbientExecutionV X) (executeY : AmbientExecutionB Y) :
-    AmbientExecutionB (.and_v X Y) := by
+    (typedX : HasType sc X ⟨.V, modsX⟩) (typedY : HasType sc Y ⟨.B, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
+    (executeX : AmbientExecutionVIn sc X) (executeY : AmbientExecutionBIn sc Y) :
+    AmbientExecutionBIn sc (.and_v X Y) := by
   intro parent env flags parentArgs parentOther consumed top rest context bounded run truth
   change Eval (compile X ++ compile Y) _ _ _ _ _ at run
   obtain ⟨mid, midAlt, runX, runY⟩ :=
@@ -576,7 +609,7 @@ theorem shortCircuit_tail_cases {keep : Bool} {body : Script} {selector : StackE
 
 theorem shortCircuit_run_cases {X Y : CoreFragment} {modsX : CorrectnessModifiers}
     {keep : Bool} {env : SatEnv} {flags : ScriptFlags} {input out : Stack}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩) (wfX : X.WellFormed .tapscript)
+    (typedX : HasType sc X ⟨.B, modsX⟩) (wfX : X.WellFormed sc)
     (run : Eval (compile (shortCircuit keep X Y)) input [] flags env.txCtx (.success out [])) :
     (∃ args rest top, input = args ++ rest ∧
       Eval (compile X) (args ++ rest) [] flags env.txCtx (.success (top :: rest) []) ∧
@@ -608,12 +641,14 @@ def modeOutput (keep : Bool) (top : StackElement) (rest : Stack) : Stack :=
 
 def modeAccept (keep : Bool) (top : StackElement) : Prop := keep = true → castToBool top = true
 
-def ModeExecution (keep : Bool) (fragment : CoreFragment) : Prop :=
-  if keep then AmbientExecutionB fragment else AmbientExecutionV fragment
+def ModeExecutionIn (sc : ScriptContext) (keep : Bool) (fragment : CoreFragment) : Prop :=
+  if keep then AmbientExecutionBIn sc fragment else AmbientExecutionVIn sc fragment
+
+abbrev ModeExecution := ModeExecutionIn .tapscript
 
 theorem mode_input_frame {keep : Bool} {fragment : CoreFragment} {mods : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {input rest : Stack} {top : StackElement}
-    (typed : HasType .tapscript fragment ⟨modeBase keep, mods⟩) (wf : fragment.WellFormed .tapscript)
+    (typed : HasType sc fragment ⟨modeBase keep, mods⟩) (wf : fragment.WellFormed sc)
     (run : Eval (compile fragment) input [] flags env.txCtx (.success (modeOutput keep top rest) [])) :
     ∃ consumed : Witness, input = consumed.toInitialStack ++ rest := by
   cases keep
@@ -622,9 +657,9 @@ theorem mode_input_frame {keep : Bool} {fragment : CoreFragment} {mods : Correct
 
 theorem shortCircuit_run_frame {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
     {keep : Bool} {env : SatEnv} {flags : ScriptFlags} {other : Witness} {rest : Stack} {top : StackElement}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩)
-    (typedY : HasType .tapscript Y ⟨modeBase keep, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
+    (typedX : HasType sc X ⟨.B, modsX⟩)
+    (typedY : HasType sc Y ⟨modeBase keep, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
     (run : Eval (compile (shortCircuit keep X Y)) (other.toInitialStack ++ rest) [] flags env.txCtx
       (.success (modeOutput keep top rest) [])) :
     (∃ value, Eval (compile X) (other.toInitialStack ++ rest) [] flags env.txCtx
@@ -656,15 +691,15 @@ theorem shortCircuit_run_frame {X Y : CoreFragment} {modsX modsY : CorrectnessMo
     · rw [← tailEq]; exact runY
 
 theorem expressive_rawUnsigned {fragment : CoreFragment} {ty : MiniType} {mods : MalleabilityModifiers}
-    (wf : fragment.WellFormed .tapscript) (typed : HasType .tapscript fragment ty)
-    (mal : HasMalleability .tapscript fragment mods) (nm : mods.nonMalleable = true) (expressive : mods.e = true)
+    (wf : fragment.WellFormed sc) (typed : HasType sc fragment ty)
+    (mal : HasMalleability sc fragment mods) (nm : mods.nonMalleable = true) (expressive : mods.e = true)
     (env : SatEnv) : RawUnsigned (satisfactionCandidates fragment env).dsat := by
   obtain ⟨candidate, eq, unsigned, _⟩ := (malleabilityCandidateSound env wf typed mal).expressiveDsat nm expressive
   exact ⟨candidate, eq, unsigned⟩
 
 theorem shortCircuit_malleability_children {keep : Bool} {X Y : CoreFragment} {mods : MalleabilityModifiers}
-    (mal : HasMalleability .tapscript (shortCircuit keep X Y) mods) (nm : mods.nonMalleable = true) :
-    ∃ mx my, HasMalleability .tapscript X mx ∧ HasMalleability .tapscript Y my ∧
+    (mal : HasMalleability sc (shortCircuit keep X Y) mods) (nm : mods.nonMalleable = true) :
+    ∃ mx my, HasMalleability sc X mx ∧ HasMalleability sc Y my ∧
       mx.nonMalleable = true ∧ my.nonMalleable = true ∧ mx.e = true ∧ (mx.s = true ∨ my.s = true) := by
   cases keep
   · cases mal with
@@ -676,26 +711,30 @@ theorem shortCircuit_malleability_children {keep : Bool} {X Y : CoreFragment} {m
       obtain ⟨nx, ny, ex, sig⟩ := (boolAnd4_eq_true _ _ _ _).mp nm
       exact ⟨_, _, hx, hy, nx, ny, ex, Bool.or_eq_true_iff.mp sig⟩
 
-def AmbientDsatComplete (fragment : CoreFragment) : Prop :=
+def AmbientDsatCompleteIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
   ∀ (parent : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
     (parentArgs parentOther consumed : Witness) (top : StackElement) (rest : Stack),
-    ExecutionContext parent fragment env flags parentArgs parentOther consumed → fragment.keys.Nodup →
+    ExecutionContextIn sc parent fragment env flags parentArgs parentOther consumed → fragment.keys.Nodup →
     (∀ item ∈ consumed.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) →
     Eval (compile fragment) (consumed.toInitialStack ++ rest) [] flags env.txCtx (.success (top :: rest) []) →
     castToBool top = false → ¬ CheckedSignature fragment env flags consumed →
     dissatisfy fragment env = some consumed
 
-def UniformExecution (keep : Bool) (fragment : CoreFragment) : Prop :=
+abbrev AmbientDsatComplete := AmbientDsatCompleteIn .tapscript
+
+def UniformExecutionIn (sc : ScriptContext) (keep : Bool) (fragment : CoreFragment) : Prop :=
   ∀ (parent : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
     (parentArgs parentOther consumed : Witness) (top : StackElement) (rest : Stack),
-    ExecutionContext parent fragment env flags parentArgs parentOther consumed →
+    ExecutionContextIn sc parent fragment env flags parentArgs parentOther consumed →
     (∀ item ∈ consumed.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) →
     Eval (compile fragment) (consumed.toInitialStack ++ rest) [] flags env.txCtx
       (.success (modeOutput keep top rest) []) → modeAccept keep top →
     ExecutionEvidence fragment env flags consumed
 
+abbrev UniformExecution := UniformExecutionIn .tapscript
+
 theorem mode_execution_iff {keep : Bool} {fragment : CoreFragment} :
-    ModeExecution keep fragment ↔ UniformExecution keep fragment := by
+    ModeExecutionIn sc keep fragment ↔ UniformExecutionIn sc keep fragment := by
   cases keep
   · constructor
     · intro h parent env flags pa po other top rest context bound run _accept
@@ -730,12 +769,12 @@ theorem evidence_shortCircuit_right {keep : Bool} {X Y : CoreFragment} {env : Sa
   · exact Or.inr ⟨sig, consumedIn sig hs, key, by simp [shortCircuit_keys, hk], checked⟩
 
 theorem ambientExecution_shortCircuit {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers} {keep : Bool}
-    (typedX : HasType .tapscript X ⟨.B, modsX⟩)
-    (typedY : HasType .tapscript Y ⟨modeBase keep, modsY⟩)
-    (wfX : X.WellFormed .tapscript) (wfY : Y.WellFormed .tapscript)
-    (executeX : AmbientExecutionB X) (executeY : ModeExecution keep Y)
+    (typedX : HasType sc X ⟨.B, modsX⟩)
+    (typedY : HasType sc Y ⟨modeBase keep, modsY⟩)
+    (wfX : X.WellFormed sc) (wfY : Y.WellFormed sc)
+    (executeX : AmbientExecutionBIn sc X) (executeY : ModeExecutionIn sc keep Y)
     (unsignedX : ∀ env, RawUnsigned (satisfactionCandidates X env).dsat) :
-    ModeExecution keep (shortCircuit keep X Y) := by
+    ModeExecutionIn sc keep (shortCircuit keep X Y) := by
   apply mode_execution_iff.mpr
   intro parent env flags parentArgs parentOther other top rest context bounded run accept
   rcases shortCircuit_run_frame typedX typedY wfX wfY run with
@@ -759,7 +798,7 @@ theorem ambientExecution_shortCircuit {X Y : CoreFragment} {modsX modsY : Correc
 
 theorem false_c_pk_k_inversion {flags : ScriptFlags} {ctx : TxContext} {key : PubKey}
     {input rest : Stack} {top : StackElement}
-    (version : ctx.sigVersion = .tapscript)
+    (version : Active.WitnessRules flags ctx)
     (run : Eval (compile (.c (.pk_k key))) input [] flags ctx (.success (top :: rest) []))
     (falsehood : castToBool top = false) : input = falseElement :: rest := by
   change Eval [.pushData key.bytes, .op .OP_CHECKSIG] input [] flags ctx (.success (top :: rest) []) at run
@@ -772,19 +811,19 @@ theorem false_c_pk_k_inversion {flags : ScriptFlags} {ctx : TxContext} {key : Pu
     | checksig_failure pubkey sig tail script alt flags ctx result checked final =>
       cases final with
       | empty stack alt flags ctx =>
-        rw [MultiA.eq_falseElement_of_checkSigWithEncoding_false version checked]
+        rw [Active.false_signature_empty version checked]
     | upgradeableNop _ _ _ _ _ _ _ upgradable _ _ => simp [Opcode.isUpgradeableNop] at upgradable
 
-theorem ambientDsatComplete_c_pk_k (key : PubKey) : AmbientDsatComplete (.c (.pk_k key)) := by
+theorem ambientDsatComplete_c_pk_k (key : PubKey) : AmbientDsatCompleteIn sc (.c (.pk_k key)) := by
   intro parent env flags parentArgs parentOther consumed top rest context _noDup _bounded run falsehood _noChecked
-  have stackEq := false_c_pk_k_inversion context.version run falsehood
+  have stackEq := false_c_pk_k_inversion context.rules run falsehood
   have eq : consumed = [falseElement] := witness_eq_singleton_of_toInitialStack (List.append_cancel_right stackEq)
   rw [eq]
   rfl
 
 theorem false_c_pk_h_inversion {flags : ScriptFlags} {ctx : TxContext} {key : PubKey}
     {input rest : Stack} {top : StackElement}
-    (version : ctx.sigVersion = .tapscript)
+    (version : Active.WitnessRules flags ctx)
     (run : Eval (compile (.c (.pk_h key))) input [] flags ctx (.success (top :: rest) []))
     (falsehood : castToBool top = false) :
     ∃ pubkey, input = pubkey :: falseElement :: rest ∧
@@ -806,16 +845,16 @@ theorem false_c_pk_h_inversion {flags : ScriptFlags} {ctx : TxContext} {key : Pu
           | checksig_failure pubkey sig tail script alt flags ctx result checked final =>
             cases final with
             | empty stack alt flags ctx =>
-              exact ⟨x, by rw [MultiA.eq_falseElement_of_checkSigWithEncoding_false version checked],
+              exact ⟨x, by rw [Active.false_signature_empty version checked],
                 imageEq.symm⟩
           | upgradeableNop _ _ _ _ _ _ _ upgradable _ _ => simp [Opcode.isUpgradeableNop] at upgradable
         | upgradeableNop _ _ _ _ _ _ _ upgradable _ _ => simp [Opcode.isUpgradeableNop] at upgradable
     | upgradeableNop _ _ _ _ _ _ _ upgradable _ _ => simp [Opcode.isUpgradeableNop] at upgradable
   | upgradeableNop _ _ _ _ _ _ _ upgradable _ _ => simp [Opcode.isUpgradeableNop] at upgradable
 
-theorem ambientDsatComplete_c_pk_h (key : PubKey) : AmbientDsatComplete (.c (.pk_h key)) := by
+theorem ambientDsatComplete_c_pk_h (key : PubKey) : AmbientDsatCompleteIn sc (.c (.pk_h key)) := by
   intro parent env flags parentArgs parentOther consumed top rest context _noDup _bounded run falsehood _noChecked
-  obtain ⟨pubkey, stackEq, imageEq⟩ := false_c_pk_h_inversion context.version run falsehood
+  obtain ⟨pubkey, stackEq, imageEq⟩ := false_c_pk_h_inversion context.rules run falsehood
   have consumedEq : consumed = [falseElement, pubkey] :=
     witness_eq_pair_of_toInitialStack (List.append_cancel_right stackEq)
   have pubkeyEq : pubkey = key.bytes := context.thirdParty.2.2.2 pubkey

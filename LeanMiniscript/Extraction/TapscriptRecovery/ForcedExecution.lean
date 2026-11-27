@@ -5,6 +5,8 @@ import LeanMiniscript.Extraction.TapscriptRecovery.UnsignedCandidates
 set_option maxRecDepth 4000
 set_option maxHeartbeats 4000000
 
+variable {sc : LeanMiniscript.Miniscript.ScriptContext}
+
 namespace LeanMiniscript.Extraction.TapscriptRecovery.AndBForced
 
 open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
@@ -107,8 +109,8 @@ theorem booland_order_false {order : BaseWOutputOrder}
 
 theorem and_b_false_run_frame {X Y : CoreFragment} {cx cy : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {own : Witness} {top : StackElement} {rest : Stack}
-    (tx : HasType .tapscript X ⟨.B, cx⟩) (ty : HasType .tapscript Y ⟨.W, cy⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript)
+    (tx : HasType sc X ⟨.B, cx⟩) (ty : HasType sc Y ⟨.W, cy⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc)
     (bounded : ∀ item ∈ own.toInitialStack ++ rest, item.size ≤ maxScriptElementSize)
     (run : Eval (compile (.and_b X Y)) (own.toInitialStack ++ rest) [] flags env.txCtx
       (.success (top :: rest) [])) (falsehood : castToBool top = false) :
@@ -166,23 +168,27 @@ theorem and_b_signed_forced_choice (sx sy fx fy : Bool)
     (sx = true ∧ fx = true) ∨ (sy = true ∧ fy = true) := by
   cases sx <;> cases sy <;> cases fx <;> cases fy <;> simp_all
 
-def AmbientForcedFalseW (fragment : CoreFragment) : Prop :=
+def AmbientForcedFalseWIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
   ∀ (parent : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
     (pa po own : Witness) (saved top : StackElement) (rest : Stack) (order : BaseWOutputOrder),
-    ExecutionContext parent fragment env flags pa po own → fragment.keys.Nodup →
+    ExecutionContextIn sc parent fragment env flags pa po own → fragment.keys.Nodup →
     (∀ item ∈ saved :: (own.toInitialStack ++ rest), item.size ≤ maxScriptElementSize) →
     Eval (compile fragment) (saved :: (own.toInitialStack ++ rest)) [] flags env.txCtx
       (.success (order.outputs saved top ++ rest) []) →
     castToBool top = false → CheckedSignature fragment env flags own
 
-def SignedForcedB (fragment : CoreFragment) : Prop :=
-  ∀ cm mm, HasType .tapscript fragment ⟨.B, cm⟩ → fragment.WellFormed .tapscript →
-    HasMalleability .tapscript fragment mm → mm.nonMalleable = true →
-    mm.s = true → mm.f = true → AmbientForcedFalse fragment
+abbrev AmbientForcedFalseW := AmbientForcedFalseWIn .tapscript
+
+def SignedForcedBIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
+  ∀ cm mm, HasType sc fragment ⟨.B, cm⟩ → fragment.WellFormed sc →
+    HasMalleability sc fragment mm → mm.nonMalleable = true →
+    mm.s = true → mm.f = true → AmbientForcedFalseIn sc fragment
+
+abbrev SignedForcedB := SignedForcedBIn .tapscript
 
 theorem forcedFalseW_a {X : CoreFragment} {cx : CorrectnessModifiers}
-    (tx : HasType .tapscript X ⟨.B, cx⟩) (wx : X.WellFormed .tapscript)
-    (forced : AmbientForcedFalse X) : AmbientForcedFalseW (.a X) := by
+    (tx : HasType sc X ⟨.B, cx⟩) (wx : X.WellFormed sc)
+    (forced : AmbientForcedFalseIn sc X) : AmbientForcedFalseWIn sc (.a X) := by
   intro parent env flags pa po own saved top rest order context nodup bounded run falsehood
   have childRun := uniform_savedAltTransfer X _ _ saved flags env.txCtx (a_run_child tx wx run)
   exact forced parent env flags pa po own top rest
@@ -190,8 +196,8 @@ theorem forcedFalseW_a {X : CoreFragment} {cx : CorrectnessModifiers}
     nodup (fun item h => bounded item (List.mem_cons_of_mem _ h)) childRun falsehood
 
 theorem forcedFalseW_s {X : CoreFragment} {cx : CorrectnessModifiers}
-    (tx : HasType .tapscript X ⟨.B, cx⟩) (one : cx.o = true) (wx : X.WellFormed .tapscript)
-    (forced : AmbientForcedFalse X) : AmbientForcedFalseW (.s X) := by
+    (tx : HasType sc X ⟨.B, cx⟩) (one : cx.o = true) (wx : X.WellFormed sc)
+    (forced : AmbientForcedFalseIn sc X) : AmbientForcedFalseWIn sc (.s X) := by
   intro parent env flags pa po own saved top rest order context nodup bounded run falsehood
   obtain ⟨_, childRun⟩ := s_run_child tx one wx run
   apply forced parent env flags pa po own top (saved :: rest)
@@ -202,11 +208,11 @@ theorem forcedFalseW_s {X : CoreFragment} {cx : CorrectnessModifiers}
   simpa only [List.mem_append, List.mem_cons, or_assoc, or_left_comm, or_comm] using member
 
 theorem signedForcedW_from_smaller_B {fragment : CoreFragment} {cm : CorrectnessModifiers}
-    {mm : MalleabilityModifiers} (typed : HasType .tapscript fragment ⟨.W, cm⟩)
-    (wf : fragment.WellFormed .tapscript) (mal : HasMalleability .tapscript fragment mm)
+    {mm : MalleabilityModifiers} (typed : HasType sc fragment ⟨.W, cm⟩)
+    (wf : fragment.WellFormed sc) (mal : HasMalleability sc fragment mm)
     (nm : mm.nonMalleable = true) (s : mm.s = true) (f : mm.f = true)
-    (ih : ∀ child, sizeOf child < sizeOf fragment → SignedForcedB child) :
-    AmbientForcedFalseW fragment := by
+    (ih : ∀ child, sizeOf child < sizeOf fragment → SignedForcedBIn sc child) :
+    AmbientForcedFalseWIn sc fragment := by
   cases typed_W_shape typed with
   | a tx =>
     cases mal with
@@ -217,15 +223,15 @@ theorem signedForcedW_from_smaller_B {fragment : CoreFragment} {cm : Correctness
 
 theorem forced_and_b_of_signed_false {X Y : CoreFragment} {cx cy : CorrectnessModifiers}
     {mx my : MalleabilityModifiers}
-    (tx : HasType .tapscript X ⟨.B, cx⟩) (ty : HasType .tapscript Y ⟨.W, cy⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript)
-    (hx : HasMalleability .tapscript X mx) (hy : HasMalleability .tapscript Y my)
+    (tx : HasType sc X ⟨.B, cx⟩) (ty : HasType sc Y ⟨.W, cy⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc)
+    (hx : HasMalleability sc X mx) (hy : HasMalleability sc Y my)
     (nx : mx.nonMalleable = true) (ny : my.nonMalleable = true)
     (signed : (mx.s || my.s) = true)
     (forced : ((mx.f && my.f) || (mx.s && mx.f) || (my.s && my.f)) = true)
-    (falseX : mx.s = true → mx.f = true → AmbientForcedFalse X)
-    (falseY : my.s = true → my.f = true → AmbientForcedFalseW Y) :
-    AmbientForcedFalse (.and_b X Y) := by
+    (falseX : mx.s = true → mx.f = true → AmbientForcedFalseIn sc X)
+    (falseY : my.s = true → my.f = true → AmbientForcedFalseWIn sc Y) :
+    AmbientForcedFalseIn sc (.and_b X Y) := by
   intro parent env flags pa po own top rest context nodup bounded run falsehood
   obtain ⟨left, right, x, y, order, a, b, eq, runX, runY, _da, _db, _zero, _falses, boundsX, boundsY⟩ :=
     and_b_false_run_frame tx ty wx wy bounded run falsehood
@@ -259,8 +265,8 @@ theorem forced_and_b_of_signed_false {X Y : CoreFragment} {cx cy : CorrectnessMo
           parent env flags pa po right x y rest order contextY boundsY runY truth)
 
 theorem signedForcedB_and_b_step {X Y : CoreFragment}
-    (ih : ∀ child, sizeOf child < sizeOf (CoreFragment.and_b X Y) → SignedForcedB child) :
-    SignedForcedB (.and_b X Y) := by
+    (ih : ∀ child, sizeOf child < sizeOf (CoreFragment.and_b X Y) → SignedForcedBIn sc child) :
+    SignedForcedBIn sc (.and_b X Y) := by
   intro cm mm typed wf mal nm s f
   cases typed with
   | and_b tx ty =>
@@ -290,8 +296,8 @@ theorem n_false_child_decoded {X : CoreFragment}
       exact ⟨operand, childRun, decoded_zero_false decoded⟩
   | upgradeableNop _ _ _ _ _ _ _ upgradable _ _ => simp [Opcode.isUpgradeableNop] at upgradable
 
-theorem forced_n_decoded {X : CoreFragment} (forced : AmbientForcedFalse X) :
-    AmbientForcedFalse (.n X) := by
+theorem forced_n_decoded {X : CoreFragment} (forced : AmbientForcedFalseIn sc X) :
+    AmbientForcedFalseIn sc (.n X) := by
   intro parent env flags pa po own top rest context nodup bounded run falsehood
   obtain ⟨value, childRun, childFalse⟩ := n_false_child_decoded run falsehood
   exact forced parent env flags pa po own value rest
@@ -299,8 +305,8 @@ theorem forced_n_decoded {X : CoreFragment} (forced : AmbientForcedFalse X) :
     nodup bounded childRun childFalse
 
 theorem signedForcedB_n_step {X : CoreFragment}
-    (ih : ∀ child, sizeOf child < sizeOf (CoreFragment.n X) → SignedForcedB child) :
-    SignedForcedB (.n X) := by
+    (ih : ∀ child, sizeOf child < sizeOf (CoreFragment.n X) → SignedForcedBIn sc child) :
+    SignedForcedBIn sc (.n X) := by
   intro cm mm typed wf mal nm s f
   cases typed with
   | n_wrap tx =>
@@ -315,18 +321,22 @@ open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
   LeanMiniscript.Extraction OrI Dsat ForcedAndV SignedV BExecution
   CompoundK ThresholdUnit ForcedMiddle AndBForced
 
-def AmbientForcedK (fragment : CoreFragment) : Prop :=
+def AmbientForcedKIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
   ∀ (parent : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
     (pa po own : Witness) (keyBytes : StackElement) (rest : Stack),
-    ExecutionContext parent fragment env flags pa po own → fragment.keys.Nodup →
+    ExecutionContextIn sc parent fragment env flags pa po own → fragment.keys.Nodup →
     (∀ item ∈ own.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) →
     Eval (compile fragment) (own.toInitialStack ++ rest) [] flags env.txCtx
       (.success (keyBytes :: rest) []) → CheckedSignature fragment env flags own
 
-def ForcedK (fragment : CoreFragment) : Prop :=
-  ∀ cm mm, HasType .tapscript fragment ⟨.K, cm⟩ → fragment.WellFormed .tapscript →
-    HasMalleability .tapscript fragment mm → mm.nonMalleable = true →
-    mm.f = true → AmbientForcedK fragment
+abbrev AmbientForcedK := AmbientForcedKIn .tapscript
+
+def ForcedKIn (sc : ScriptContext) (fragment : CoreFragment) : Prop :=
+  ∀ cm mm, HasType sc fragment ⟨.K, cm⟩ → fragment.WellFormed sc →
+    HasMalleability sc fragment mm → mm.nonMalleable = true →
+    mm.f = true → AmbientForcedKIn sc fragment
+
+abbrev ForcedK := ForcedKIn .tapscript
 
 theorem checksig_false_frame {input alt rest : Stack} {top : StackElement}
     {flags : ScriptFlags} {ctx : TxContext}
@@ -345,7 +355,7 @@ theorem checksig_false_frame {input alt rest : Stack} {top : StackElement}
 
 theorem c_false_run_frame {X : CoreFragment} {cm : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {other : Witness} {top : StackElement} {rest : Stack}
-    (typed : HasType .tapscript X ⟨.K, cm⟩) (wf : X.WellFormed .tapscript)
+    (typed : HasType sc X ⟨.K, cm⟩) (wf : X.WellFormed sc)
     (run : Eval (compile (.c X)) (other.toInitialStack ++ rest) [] flags env.txCtx
       (.success (top :: rest) [])) (falsehood : castToBool top = false) :
     ∃ (own : Witness) (sig keyBytes : StackElement), other = [sig] ++ own ∧
@@ -368,10 +378,10 @@ theorem c_false_run_frame {X : CoreFragment} {cm : CorrectnessModifiers}
 
 theorem forcedK_and_v {X Y : CoreFragment} {cx cy : CorrectnessModifiers}
     {mx : MalleabilityModifiers}
-    (tx : HasType .tapscript X ⟨.V, cx⟩) (ty : HasType .tapscript Y ⟨.K, cy⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript)
-    (hx : HasMalleability .tapscript X mx) (nx : mx.nonMalleable = true)
-    (route : mx.s = true ∨ AmbientForcedK Y) : AmbientForcedK (.and_v X Y) := by
+    (tx : HasType sc X ⟨.V, cx⟩) (ty : HasType sc Y ⟨.K, cy⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc)
+    (hx : HasMalleability sc X mx) (nx : mx.nonMalleable = true)
+    (route : mx.s = true ∨ AmbientForcedKIn sc Y) : AmbientForcedKIn sc (.and_v X Y) := by
   intro parent env flags pa po own keyBytes rest context nodup bounded run
   obtain ⟨left, right, eq, runX, runY⟩ := and_v_run_K_frame tx ty wx wy run
   subst own
@@ -395,11 +405,11 @@ theorem forcedK_and_v {X Y : CoreFragment} {cx cy : CorrectnessModifiers}
         (fun item h => bounds item (List.mem_append_right _ h)) runY)
 
 theorem forcedK_or_i {X Y : CoreFragment} {cx cy : CorrectnessModifiers}
-    (tx : HasType .tapscript X ⟨.K, cx⟩) (ty : HasType .tapscript Y ⟨.K, cy⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript)
-    (forcedX : AmbientForcedK X) (forcedY : AmbientForcedK Y) : AmbientForcedK (.or_i X Y) := by
+    (tx : HasType sc X ⟨.K, cx⟩) (ty : HasType sc Y ⟨.K, cy⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc)
+    (forcedX : AmbientForcedKIn sc X) (forcedY : AmbientForcedKIn sc Y) : AmbientForcedKIn sc (.or_i X Y) := by
   intro parent env flags pa po own keyBytes rest context nodup bounded run
-  rcases or_i_run_K tx ty wx wy context.version run with ⟨active, eq, runX⟩ | ⟨active, eq, runY⟩
+  rcases or_i_run_K tx ty wx wy context.rules run with ⟨active, eq, runX⟩ | ⟨active, eq, runY⟩
   · subst own
     have keysX : ∀ key ∈ X.keys, key ∈ (CoreFragment.or_i X Y).keys := fun _ h => List.mem_append_left _ h
     have inside : ∀ item ∈ active, item ∈ active ++ [trueElement] := fun _ h => List.mem_append_left _ h
@@ -417,12 +427,12 @@ theorem forcedK_or_i {X Y : CoreFragment} {cx cy : CorrectnessModifiers}
 
 theorem forcedK_andor {X Y Z : CoreFragment} {cx cy cz : CorrectnessModifiers}
     {mx : MalleabilityModifiers}
-    (tx : HasType .tapscript X ⟨.B, cx⟩) (ty : HasType .tapscript Y ⟨.K, cy⟩)
-    (tz : HasType .tapscript Z ⟨.K, cz⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript) (wz : Z.WellFormed .tapscript)
-    (hx : HasMalleability .tapscript X mx) (nx : mx.nonMalleable = true)
-    (forcedZ : AmbientForcedK Z) (route : mx.s = true ∨ AmbientForcedK Y) :
-    AmbientForcedK (.andor X Y Z) := by
+    (tx : HasType sc X ⟨.B, cx⟩) (ty : HasType sc Y ⟨.K, cy⟩)
+    (tz : HasType sc Z ⟨.K, cz⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc) (wz : Z.WellFormed sc)
+    (hx : HasMalleability sc X mx) (nx : mx.nonMalleable = true)
+    (forcedZ : AmbientForcedKIn sc Z) (route : mx.s = true ∨ AmbientForcedKIn sc Y) :
+    AmbientForcedKIn sc (.andor X Y Z) := by
   intro parent env flags pa po own keyBytes rest context nodup bounded run
   have keysX : ∀ key ∈ X.keys, key ∈ (CoreFragment.andor X Y Z).keys :=
     fun _ h => List.mem_append_left _ (List.mem_append_left _ h)
@@ -462,7 +472,7 @@ theorem forcedK_andor {X Y Z : CoreFragment} {cx cy cz : CorrectnessModifiers}
           (fun item h => bounds item (List.mem_append_right _ h)) runY)
 
 theorem forcedK_constructor_step (fragment : CoreFragment)
-    (ih : ∀ child, sizeOf child < sizeOf fragment → ForcedK child) : ForcedK fragment := by
+    (ih : ∀ child, sizeOf child < sizeOf fragment → ForcedKIn sc child) : ForcedKIn sc fragment := by
   intro cm mm typed wf mal nm f
   cases typed_K_shape typed with
   | pk_k key => cases mal; cases f
@@ -494,13 +504,13 @@ theorem forcedK_constructor_step (fragment : CoreFragment)
       · exact Or.inl sx
       · exact Or.inr (ih _ (by simp; omega) _ _ ty wf.2.1 hy ny fy)
 
-theorem uniform_forcedK (fragment : CoreFragment) : ForcedK fragment :=
+theorem uniform_forcedK (fragment : CoreFragment) : ForcedKIn sc fragment :=
   forcedK_constructor_step fragment (fun child _smaller => uniform_forcedK child)
 termination_by sizeOf fragment
 
 theorem forced_c_of_K {X : CoreFragment} {cm : CorrectnessModifiers}
-    (typed : HasType .tapscript X ⟨.K, cm⟩) (wf : X.WellFormed .tapscript)
-    (forced : AmbientForcedK X) : AmbientForcedFalse (.c X) := by
+    (typed : HasType sc X ⟨.K, cm⟩) (wf : X.WellFormed sc)
+    (forced : AmbientForcedKIn sc X) : AmbientForcedFalseIn sc (.c X) := by
   intro parent env flags pa po other top rest context nodup bounded run falsehood
   obtain ⟨own, sig, keyBytes, eq, runX, _checkFalse⟩ := c_false_run_frame typed wf run falsehood
   subst other
@@ -511,7 +521,7 @@ theorem forced_c_of_K {X : CoreFragment} {cm : CorrectnessModifiers}
   exact checkedSignature_mono (fun _ h => h) (fun _ h => List.mem_append_right _ h)
     (forced parent env flags pa po own keyBytes (sig :: rest) child nodup bounds runX)
 
-theorem signedForcedB_c (X : CoreFragment) : SignedForcedB (.c X) := by
+theorem signedForcedB_c (X : CoreFragment) : SignedForcedBIn sc (.c X) := by
   intro cm mm typed wf mal nm _s f
   cases typed with
   | c_wrap tx =>
@@ -519,8 +529,8 @@ theorem signedForcedB_c (X : CoreFragment) : SignedForcedB (.c X) := by
     | c hx => exact forced_c_of_K tx wf (uniform_forcedK X _ _ tx wf hx nm f)
 
 theorem signedForcedB_and_v_step {X Y : CoreFragment}
-    (ih : ∀ child, sizeOf child < sizeOf (CoreFragment.and_v X Y) → SignedForcedB child) :
-    SignedForcedB (.and_v X Y) := by
+    (ih : ∀ child, sizeOf child < sizeOf (CoreFragment.and_v X Y) → SignedForcedBIn sc child) :
+    SignedForcedBIn sc (.and_v X Y) := by
   intro cm mm typed wf mal nm s f
   cases typed_B_shape typed with
   | remaining impossible => simp [RemainingB] at impossible
@@ -536,8 +546,8 @@ theorem signedForcedB_and_v_step {X Y : CoreFragment}
             (ih _ (by simp; omega) _ _ ty wf.2.1 hy ny sy fy)
 
 theorem signedForcedB_or_d_step {X Y : CoreFragment}
-    (ih : ∀ child, sizeOf child < sizeOf (CoreFragment.or_d X Y) → SignedForcedB child) :
-    SignedForcedB (.or_d X Y) := by
+    (ih : ∀ child, sizeOf child < sizeOf (CoreFragment.or_d X Y) → SignedForcedBIn sc child) :
+    SignedForcedBIn sc (.or_d X Y) := by
   intro cm mm typed wf mal nm s f
   cases typed with
   | or_d tx _d _u ty =>
@@ -548,8 +558,8 @@ theorem signedForcedB_or_d_step {X Y : CoreFragment}
       exact forced_or_d tx ty wf.1 wf.2 (ih _ (by simp; omega) _ _ ty wf.2 hy ny sy f)
 
 theorem signedForcedB_or_i_step {X Y : CoreFragment}
-    (ih : ∀ child, sizeOf child < sizeOf (CoreFragment.or_i X Y) → SignedForcedB child) :
-    SignedForcedB (.or_i X Y) := by
+    (ih : ∀ child, sizeOf child < sizeOf (CoreFragment.or_i X Y) → SignedForcedBIn sc child) :
+    SignedForcedBIn sc (.or_i X Y) := by
   intro cm mm typed wf mal nm s f
   cases typed_B_shape typed with
   | remaining impossible => simp [RemainingB] at impossible
@@ -564,8 +574,8 @@ theorem signedForcedB_or_i_step {X Y : CoreFragment}
         (ih _ (by simp; omega) _ _ ty wf.2 hy ny sy fy)
 
 theorem signedForcedB_andor_step {X Y Z : CoreFragment}
-    (ih : ∀ child, sizeOf child < sizeOf (CoreFragment.andor X Y Z) → SignedForcedB child) :
-    SignedForcedB (.andor X Y Z) := by
+    (ih : ∀ child, sizeOf child < sizeOf (CoreFragment.andor X Y Z) → SignedForcedBIn sc child) :
+    SignedForcedBIn sc (.andor X Y Z) := by
   intro cm mm typed wf mal nm s f
   cases typed_B_shape typed with
   | remaining impossible => simp [RemainingB] at impossible
@@ -576,7 +586,7 @@ theorem signedForcedB_andor_step {X Y Z : CoreFragment}
       obtain ⟨sz, signedChoice⟩ := Bool.and_eq_true_iff.mp s
       obtain ⟨fz, forcedChoice⟩ := Bool.and_eq_true_iff.mp f
       have forcedZ := ih Z (by simp; omega) _ mz tz wf.2.2.1 hz nz sz fz
-      have route : mx.s = true ∨ AmbientForcedFalse Y := by
+      have route : mx.s = true ∨ AmbientForcedFalseIn sc Y := by
         rcases Bool.or_eq_true_iff.mp signedChoice with sx | sy
         · exact Or.inl sx
         · rcases Bool.or_eq_true_iff.mp forcedChoice with sx | fy
@@ -621,8 +631,8 @@ theorem signedForcedB_andor_step {X Y Z : CoreFragment}
               (fun item h => bounds item (List.mem_append_right _ h)) runY falsehood)
 
 theorem signedForcedB_constructor_step (fragment : CoreFragment)
-    (ih : ∀ child, sizeOf child < sizeOf fragment → SignedForcedB child) :
-    SignedForcedB fragment := by
+    (ih : ∀ child, sizeOf child < sizeOf fragment → SignedForcedBIn sc child) :
+    SignedForcedBIn sc fragment := by
   intro cm mm typed wf mal nm s f
   cases fragment with
   | zero => cases mal; cases f
@@ -653,7 +663,7 @@ theorem signedForcedB_constructor_step (fragment : CoreFragment)
   | multi_a k keys => cases mal; cases f
   | thresh k children => cases mal; cases f
 
-theorem uniform_signedForcedB (fragment : CoreFragment) : SignedForcedB fragment :=
+theorem uniform_signedForcedB (fragment : CoreFragment) : SignedForcedBIn sc fragment :=
   signedForcedB_constructor_step fragment (fun child _smaller => uniform_signedForcedB child)
 termination_by sizeOf fragment
 

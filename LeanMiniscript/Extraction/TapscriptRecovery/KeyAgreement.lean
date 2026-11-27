@@ -5,6 +5,8 @@ import LeanMiniscript.Extraction.TapscriptRecovery.BooleanAgreement
 set_option maxRecDepth 4000
 set_option maxHeartbeats 4000000
 
+variable {sc : LeanMiniscript.Miniscript.ScriptContext}
+
 namespace LeanMiniscript.Extraction.TapscriptRecovery.KAgreement
 
 open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
@@ -12,10 +14,10 @@ open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
   SignedV CompoundK OriginCounts CheckedRows SlotLocal CompositeRows
   VConditions BChoiceMaterial DAgreement
 
-def PendingTrueK (fragment root : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
+def PendingTrueKIn (sc : ScriptContext) (fragment root : CoreFragment) (env : SatEnv) (flags : ScriptFlags)
     (pa po : Witness) : Prop :=
   ∀ (own expected : Witness) (sig keyBytes : StackElement) (rest : Stack),
-    ExecutionContext root fragment env flags pa po ([sig] ++ own) → fragment.keys.Nodup →
+    ExecutionContextIn sc root fragment env flags pa po ([sig] ++ own) → fragment.keys.Nodup →
     satisfy fragment env = some expected →
     (∀ item ∈ own.toInitialStack ++ (sig :: rest), item.size ≤ maxScriptElementSize) →
     Eval (compile fragment) (own.toInitialStack ++ (sig :: rest)) [] flags env.txCtx
@@ -23,10 +25,12 @@ def PendingTrueK (fragment root : CoreFragment) (env : SatEnv) (flags : ScriptFl
     checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx sig keyBytes = .ok true →
     [sig] ++ own = expected
 
+abbrev PendingTrueK := PendingTrueKIn .tapscript
+
 theorem pending_checked {fragment root : CoreFragment} {cm : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {pa po own : Witness} {sig keyBytes : StackElement} {rest : Stack}
-    (typed : HasType .tapscript fragment ⟨.K, cm⟩) (wf : fragment.WellFormed .tapscript)
-    (context : ExecutionContext root fragment env flags pa po ([sig] ++ own))
+    (typed : HasType sc fragment ⟨.K, cm⟩) (wf : fragment.WellFormed sc)
+    (context : ExecutionContextIn sc root fragment env flags pa po ([sig] ++ own))
     (run : Eval (compile fragment) (own.toInitialStack ++ (sig :: rest)) [] flags env.txCtx
       (.success (keyBytes :: sig :: rest) []))
     (checked : checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx sig keyBytes = .ok true) :
@@ -38,15 +42,15 @@ theorem pending_checked {fragment root : CoreFragment} {cm : CorrectnessModifier
 
 theorem pending_of_checked_c {fragment root : CoreFragment} {cm : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {pa po : Witness}
-    (typed : HasType .tapscript fragment ⟨.K, cm⟩) (wf : fragment.WellFormed .tapscript)
-    (agreement : CheckedTrueRowAgreementB (.c fragment) root env flags pa po) :
-    PendingTrueK fragment root env flags pa po := by
+    (typed : HasType sc fragment ⟨.K, cm⟩) (wf : fragment.WellFormed sc)
+    (agreement : CheckedTrueRowAgreementBIn sc (.c fragment) root env flags pa po) :
+    PendingTrueKIn sc fragment root env flags pa po := by
   intro own expected sig keyBytes rest context nodup canonical bounded run checked
   have crun : Eval (compile (.c fragment)) (Witness.toInitialStack ([sig] ++ own) ++ rest) [] flags env.txCtx
       (.success (trueElement :: rest) []) := by
     simpa [compile, compileWithKeyHash, Witness.toInitialStack, List.reverse_append, List.append_assoc] using
       Eval.append run (Eval.checksigTrue checked (Eval.done (stack := trueElement :: rest)))
-  have cc : ExecutionContext root (.c fragment) env flags pa po ([sig] ++ own) :=
+  have cc : ExecutionContextIn sc root (.c fragment) env flags pa po ([sig] ++ own) :=
     executionContext_restrict context (fun _ h => h) (fun _ h => h) (fun _ h => h)
   exact agreement _ expected trueElement rest cc nodup (by simpa using canonical)
     (by simpa [Witness.toInitialStack, List.reverse_append, List.append_assoc] using bounded)
@@ -54,29 +58,29 @@ theorem pending_of_checked_c {fragment root : CoreFragment} {cm : CorrectnessMod
 
 theorem checked_c_of_pending {fragment root : CoreFragment} {cm : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {pa po : Witness}
-    (typed : HasType .tapscript fragment ⟨.K, cm⟩) (wf : fragment.WellFormed .tapscript)
-    (agreement : PendingTrueK fragment root env flags pa po) :
-    CheckedTrueRowAgreementB (.c fragment) root env flags pa po := by
+    (typed : HasType sc fragment ⟨.K, cm⟩) (wf : fragment.WellFormed sc)
+    (agreement : PendingTrueKIn sc fragment root env flags pa po) :
+    CheckedTrueRowAgreementBIn sc (.c fragment) root env flags pa po := by
   intro other expected top rest context nodup canonical bounded run truth _checked
   obtain ⟨own, sig, keyBytes, eq, krun, checked⟩ := c_run_frame typed wf run truth
   subst other
-  have cc : ExecutionContext root fragment env flags pa po ([sig] ++ own) :=
+  have cc : ExecutionContextIn sc root fragment env flags pa po ([sig] ++ own) :=
     executionContext_restrict context (fun _ h => h) (fun _ h => h) (fun _ h => h)
   exact agreement own expected sig keyBytes rest cc nodup (by simpa using canonical)
     (by simpa [Witness.toInitialStack, List.reverse_append, List.append_assoc] using bounded) krun checked
 
 theorem pending_and_v {X Y root : CoreFragment} {cx cy : CorrectnessModifiers}
     {mx : MalleabilityModifiers} {env : SatEnv} {flags : ScriptFlags} {pa po : Witness}
-    (tx : HasType .tapscript X ⟨.V, cx⟩) (ty : HasType .tapscript Y ⟨.K, cy⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript)
-    (hx : HasMalleability .tapscript X mx) (nx : mx.nonMalleable = true)
-    (ix : CheckedTrueRowAgreementV X root env flags pa po)
-    (iy : PendingTrueK Y root env flags pa po) : PendingTrueK (.and_v X Y) root env flags pa po := by
+    (tx : HasType sc X ⟨.V, cx⟩) (ty : HasType sc Y ⟨.K, cy⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc)
+    (hx : HasMalleability sc X mx) (nx : mx.nonMalleable = true)
+    (ix : CheckedTrueRowAgreementVIn sc X root env flags pa po)
+    (iy : PendingTrueKIn sc Y root env flags pa po) : PendingTrueKIn sc (.and_v X Y) root env flags pa po := by
   intro own expected sig keyBytes rest context nodup canonical bounded run checked
   obtain ⟨ox, oy, ownEq, rx, ry⟩ := and_v_run_K_frame tx ty wx wy run
   subst own
   obtain ⟨sx, sy, satX, satY, expectedEq⟩ := CandidateResult.combine_usableWitness_iff.mp canonical
-  have cc : ExecutionContext root (.and_v X Y) env flags pa po (([sig] ++ oy) ++ ox) := by
+  have cc : ExecutionContextIn sc root (.and_v X Y) env flags pa po (([sig] ++ oy) ++ ox) := by
     simpa only [List.append_assoc] using context
   have bound : ∀ item ∈ Witness.toInitialStack (([sig] ++ oy) ++ ox) ++ rest, item.size ≤ maxScriptElementSize := by
     simpa [Witness.toInitialStack, List.reverse_append, List.append_assoc] using bounded
@@ -91,13 +95,13 @@ theorem pending_and_v {X Y root : CoreFragment} {cx cy : CorrectnessModifiers}
 
 theorem pending_or_i {X Y root : CoreFragment} {cx cy : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {pa po : Witness}
-    (tx : HasType .tapscript X ⟨.K, cx⟩) (ty : HasType .tapscript Y ⟨.K, cy⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript)
-    (material : CheckedMaterial (.or_i X Y) root env flags pa po)
-    (ix : PendingTrueK X root env flags pa po) (iy : PendingTrueK Y root env flags pa po) :
-    PendingTrueK (.or_i X Y) root env flags pa po := by
+    (tx : HasType sc X ⟨.K, cx⟩) (ty : HasType sc Y ⟨.K, cy⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc)
+    (material : CheckedMaterialIn sc (.or_i X Y) root env flags pa po)
+    (ix : PendingTrueKIn sc X root env flags pa po) (iy : PendingTrueKIn sc Y root env flags pa po) :
+    PendingTrueKIn sc (.or_i X Y) root env flags pa po := by
   intro own expected sig keyBytes rest context nodup canonical bounded run checked
-  rcases or_i_run_K tx ty wx wy context.version run with ⟨active, eq, childRun⟩ | ⟨active, eq, childRun⟩
+  rcases or_i_run_K tx ty wx wy context.rules run with ⟨active, eq, childRun⟩ | ⟨active, eq, childRun⟩
   · subst own
     have included : ∀ item ∈ [sig] ++ active, item ∈ [sig] ++ (active ++ [trueElement]) := by
       intro item member; simpa only [List.append_assoc] using List.mem_append_left [trueElement] member
@@ -121,14 +125,14 @@ theorem pending_or_i {X Y root : CoreFragment} {cx cy : CorrectnessModifiers}
 
 theorem pending_andor {X Y Z root : CoreFragment} {cx cy cz : CorrectnessModifiers}
     {mx : MalleabilityModifiers} {env : SatEnv} {flags : ScriptFlags} {pa po : Witness}
-    (tx : HasType .tapscript X ⟨.B, cx⟩) (d : cx.d = true) (u : cx.u = true)
-    (ty : HasType .tapscript Y ⟨.K, cy⟩) (tz : HasType .tapscript Z ⟨.K, cz⟩)
-    (wx : X.WellFormed .tapscript) (wy : Y.WellFormed .tapscript) (wz : Z.WellFormed .tapscript)
-    (hx : HasMalleability .tapscript X mx) (nx : mx.nonMalleable = true) (ex : mx.e = true)
-    (material : CheckedMaterial (.andor X Y Z) root env flags pa po)
-    (ix : CheckedTrueRowAgreementB X root env flags pa po)
-    (iy : PendingTrueK Y root env flags pa po) (iz : PendingTrueK Z root env flags pa po) :
-    PendingTrueK (.andor X Y Z) root env flags pa po := by
+    (tx : HasType sc X ⟨.B, cx⟩) (d : cx.d = true) (u : cx.u = true)
+    (ty : HasType sc Y ⟨.K, cy⟩) (tz : HasType sc Z ⟨.K, cz⟩)
+    (wx : X.WellFormed sc) (wy : Y.WellFormed sc) (wz : Z.WellFormed sc)
+    (hx : HasMalleability sc X mx) (nx : mx.nonMalleable = true) (ex : mx.e = true)
+    (material : CheckedMaterialIn sc (.andor X Y Z) root env flags pa po)
+    (ix : CheckedTrueRowAgreementBIn sc X root env flags pa po)
+    (iy : PendingTrueKIn sc Y root env flags pa po) (iz : PendingTrueKIn sc Z root env flags pa po) :
+    PendingTrueKIn sc (.andor X Y Z) root env flags pa po := by
   intro own expected sig keyBytes rest context nodup canonical bounded run checked
   have kx : ∀ key ∈ X.keys, key ∈ (CoreFragment.andor X Y Z).keys :=
     fun _ h => List.mem_append_left _ (List.mem_append_left _ h)
@@ -151,7 +155,7 @@ theorem pending_andor {X Y Z root : CoreFragment} {cx cy cz : CorrectnessModifie
   rcases andor_run_K_frame tx ty tz wx wy wz run with
       ⟨ox, oz, value, ownEq, runX, falsehood, runZ⟩ | ⟨ox, oy, value, ownEq, runX, truth, runY⟩
   · subst own
-    have cc : ExecutionContext root (.andor X Y Z) env flags pa po (([sig] ++ oz) ++ ox) := by
+    have cc : ExecutionContextIn sc root (.andor X Y Z) env flags pa po (([sig] ++ oz) ++ ox) := by
       simpa only [List.append_assoc] using context
     have bound : ∀ item ∈ Witness.toInitialStack (([sig] ++ oz) ++ ox) ++ rest, item.size ≤ maxScriptElementSize := by
       simpa [Witness.toInitialStack, List.reverse_append, List.append_assoc] using bounded
@@ -161,23 +165,23 @@ theorem pending_andor {X Y Z root : CoreFragment} {cx cy cz : CorrectnessModifie
       intro item member; simpa only [List.append_assoc] using List.mem_append_left ox member
     rcases andor_candidate_rows canonical with
         ⟨sx, sy, expectedEq, satX, satY, _excluded⟩ | ⟨dx, sz, expectedEq, dsatX, satZ, _excluded⟩
-    · have sourcesZ : Items (LocalSlot Z env ([sig] ++ oz) []) expected := by
+    · have sourcesZ : Items (CheckedSlot sc Z env flags ([sig] ++ oz) []) expected := by
         rw [expectedEq]
         exact items_combine
-          ((foreign_pair ccz (fun key member => context.childKeys key (kx key member))
+          ((foreign_checked_pair ccz (fun key member => context.childKeys key (kx key member)) (fun l h => context.childLocks l (lx l h))
             (fun key hk other ho => Ne.symm (sepXZ other ho key hk))).1 sx satX)
-          ((foreign_pair ccz (fun key member => context.childKeys key (ky key member))
+          ((foreign_checked_pair ccz (fun key member => context.childKeys key (ky key member)) (fun l h => context.childLocks l (ly l h))
             (fun key hk other ho => Ne.symm (sepYZ other ho key hk))).1 sy satY)
       exact (free_of_sources material context canonical kz inZ sourcesZ evidenceZ).elim
     · have freeX := fallback_noChecked material context ccx tx wx hx nx ex canonical expectedEq
-        dsatX satZ kx kz (fun _ h => List.mem_append_right _ (List.mem_append_right _ h)) sepXZ
+        dsatX satZ kx kz lz (fun _ h => List.mem_append_right _ (List.mem_append_right _ h)) sepXZ
       have eqX := false_agreement tx wx hx nx d u ex ccx ndx dsatX bx
         (by simpa [Witness.toInitialStack, List.reverse_append, List.append_assoc] using runX) falsehood freeX
       have eqZ := iz oz sz sig keyBytes rest ccz ndz satZ
         (by simpa [Witness.toInitialStack, List.reverse_append, List.append_assoc] using bz) runZ checked
       rw [expectedEq, ← eqX, ← eqZ, List.append_assoc]
   · subst own
-    have cc : ExecutionContext root (.andor X Y Z) env flags pa po (([sig] ++ oy) ++ ox) := by
+    have cc : ExecutionContextIn sc root (.andor X Y Z) env flags pa po (([sig] ++ oy) ++ ox) := by
       simpa only [List.append_assoc] using context
     have bound : ∀ item ∈ Witness.toInitialStack (([sig] ++ oy) ++ ox) ++ rest, item.size ≤ maxScriptElementSize := by
       simpa [Witness.toInitialStack, List.reverse_append, List.append_assoc] using bounded
@@ -192,29 +196,29 @@ theorem pending_andor {X Y Z root : CoreFragment} {cx cy cz : CorrectnessModifie
       have eqY := iy oy sy sig keyBytes rest ccy ndy satY
         (by simpa [Witness.toInitialStack, List.reverse_append, List.append_assoc] using byBound) runY checked
       rw [expectedEq, ← eqX, ← eqY, List.append_assoc]
-    · have sourcesY : Items (LocalSlot Y env ([sig] ++ oy) []) expected := by
+    · have sourcesY : Items (CheckedSlot sc Y env flags ([sig] ++ oy) []) expected := by
         rw [expectedEq]
-        exact items_combine (dsat_sources tx wx hx nx ex context.sound
-          (fun key member => context.keySizes key (context.childKeys key (kx key member))) dsatX)
-          ((foreign_pair ccy (fun key member => context.childKeys key (kz key member)) sepYZ).1 sz satZ)
+        exact items_combine (expressive_dsat_checked_slots tx wx hx nx ex context
+          (fun key member => context.childKeys key (kx key member)) dsatX)
+          ((foreign_checked_pair ccy (fun key member => context.childKeys key (kz key member)) (fun l h => context.childLocks l (lz l h)) sepYZ).1 sz satZ)
       exact (free_of_sources material context canonical ky inY sourcesY evidenceY).elim
 
 theorem pending_from_smaller_B {fragment root : CoreFragment} {cm : CorrectnessModifiers}
     {mm : MalleabilityModifiers} {env : SatEnv} {flags : ScriptFlags} {pa po : Witness}
-    (typed : HasType .tapscript fragment ⟨.K, cm⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment mm) (nm : mm.nonMalleable = true)
+    (typed : HasType sc fragment ⟨.K, cm⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment mm) (nm : mm.nonMalleable = true)
     (path : SlotPath fragment root) (rootNodup : root.keys.Nodup)
     (rootCanonical : (satisfactionCandidates root env).sat.CanonicalWhenUsable)
-    (ihB : SmallerCheckedB fragment root env flags pa po) : PendingTrueK fragment root env flags pa po := by
+    (ihB : SmallerCheckedBIn sc fragment root env flags pa po) : PendingTrueKIn sc fragment root env flags pa po := by
   have smaller : ∀ sub, sizeOf sub < sizeOf fragment → ∀ cx mx,
-      HasType .tapscript sub ⟨.K, cx⟩ → sub.WellFormed .tapscript →
-      HasMalleability .tapscript sub mx → mx.nonMalleable = true → SlotPath sub root →
-      PendingTrueK sub root env flags pa po := by
+      HasType sc sub ⟨.K, cx⟩ → sub.WellFormed sc →
+      HasMalleability sc sub mx → mx.nonMalleable = true → SlotPath sub root →
+      PendingTrueKIn sc sub root env flags pa po := by
     intro sub small cx mx tx wx hx nx subPath
     apply pending_from_smaller_B tx wx hx nx subPath rootNodup rootCanonical
     intro inner innerSmall ci mi ti wi hi ni innerPath
     exact ihB inner (Nat.lt_trans innerSmall small) ci mi ti wi hi ni innerPath
-  have material := checkedMaterial_canonical_root (env := env) (flags := flags) (pa := pa) (po := po)
+  have material := checkedMaterial_canonical_root (sc := sc) (env := env) (flags := flags) (pa := pa) (po := po)
     path rootNodup rootCanonical
   cases typed_K_shape typed with
   | pk_k key => exact pending_of_checked_c typed wf (checkedTrue_c_pk_k key root env flags pa po)
@@ -241,12 +245,12 @@ termination_by sizeOf fragment
 
 theorem checked_c_step {fragment root : CoreFragment} {cm : CorrectnessModifiers}
     {mm : MalleabilityModifiers} {env : SatEnv} {flags : ScriptFlags} {pa po : Witness}
-    (typed : HasType .tapscript (.c fragment) ⟨.B, cm⟩) (wf : (CoreFragment.c fragment).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.c fragment) mm) (nm : mm.nonMalleable = true)
+    (typed : HasType sc (.c fragment) ⟨.B, cm⟩) (wf : (CoreFragment.c fragment).WellFormed sc)
+    (mal : HasMalleability sc (.c fragment) mm) (nm : mm.nonMalleable = true)
     (path : SlotPath (.c fragment) root) (rootNodup : root.keys.Nodup)
     (rootCanonical : (satisfactionCandidates root env).sat.CanonicalWhenUsable)
-    (ihB : SmallerCheckedB (.c fragment) root env flags pa po) :
-    CheckedTrueRowAgreementB (.c fragment) root env flags pa po := by
+    (ihB : SmallerCheckedBIn sc (.c fragment) root env flags pa po) :
+    CheckedTrueRowAgreementBIn sc (.c fragment) root env flags pa po := by
   obtain ⟨cx, mx, tx, wx, hx, nx⟩ := c_static typed wf mal nm
   apply checked_c_of_pending tx wx
   apply pending_from_smaller_B tx wx hx nx (path_trans (.wrapper .c .here) path) rootNodup rootCanonical
@@ -254,23 +258,22 @@ theorem checked_c_step {fragment root : CoreFragment} {cm : CorrectnessModifiers
   exact ihB sub (Nat.lt_trans small (by simp)) cy my ty wy hy ny subPath
 
 theorem pending_only_c_or_thresh {fragment : CoreFragment} {cm : CorrectnessModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, cm⟩) (wf : fragment.WellFormed .tapscript)
+    (typed : HasType sc fragment ⟨.B, cm⟩) (_wf : fragment.WellFormed sc)
     (pending : BPendingWithoutD fragment) :
     (∃ child, fragment = .c child) ∨ (∃ k children, fragment = .thresh k children) := by
   cases fragment <;> simp_all [BPendingWithoutD, CoreFragment.keys]
   all_goals cases typed
-  exact noLegacyMulti_tapscript _ _ wf
 
 theorem checkedB_threshold_step {fragment root : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
     {pa po : Witness} {cm : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript fragment ⟨.B, cm⟩) (wf : fragment.WellFormed .tapscript)
-    (mal : HasMalleability .tapscript fragment mm) (nm : mm.nonMalleable = true)
-    (path : SlotPath fragment root) (rootWF : root.WellFormed .tapscript) (rootNodup : root.keys.Nodup)
+    (typed : HasType sc fragment ⟨.B, cm⟩) (wf : fragment.WellFormed sc)
+    (mal : HasMalleability sc fragment mm) (nm : mm.nonMalleable = true)
+    (path : SlotPath fragment root) (rootWF : root.WellFormed sc) (rootNodup : root.keys.Nodup)
     (rootCanonical : (satisfactionCandidates root env).sat.CanonicalWhenUsable)
-    (ihB : SmallerCheckedB fragment root env flags pa po)
-    (ihV : SmallerCheckedV fragment root env flags pa po)
-    (rest : (∃ k children, fragment = .thresh k children) → CheckedTrueRowAgreementB fragment root env flags pa po) :
-    CheckedTrueRowAgreementB fragment root env flags pa po := by
+    (ihB : SmallerCheckedBIn sc fragment root env flags pa po)
+    (ihV : SmallerCheckedVIn sc fragment root env flags pa po)
+    (rest : (∃ k children, fragment = .thresh k children) → CheckedTrueRowAgreementBIn sc fragment root env flags pa po) :
+    CheckedTrueRowAgreementBIn sc fragment root env flags pa po := by
   apply checkedB_without_d_step typed wf mal nm path rootWF rootNodup rootCanonical ihB ihV
   intro pending
   rcases pending_only_c_or_thresh typed wf pending with ⟨child, rfl⟩ | threshold

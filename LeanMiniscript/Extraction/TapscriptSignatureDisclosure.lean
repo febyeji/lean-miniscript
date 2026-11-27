@@ -387,86 +387,113 @@ private theorem c_foreign_pair {root : CoreFragment} {target other : CoreFragmen
   ⟨c_of_supports (foreign_pair context keysIn distinct).1,
     c_of_supports (foreign_pair context keysIn distinct).2⟩
 
-private theorem c_path_pair {root : CoreFragment} {target parent : CoreFragment} {env : SatEnv}
-    {pa po expected : Witness} (path : FragmentPath target parent)
-    (context : SignatureScope root target env pa po)
-    (base : CanonicalPairItems (LocalSlot target env po expected) (satisfactionCandidates target env)) :
-    (∀ key ∈ parent.keys, key ∈ root.keys) → parent.keys.Nodup →
-    CanonicalPairItems (LocalSlot target env po expected) (satisfactionCandidates parent env) := by
-  have empty : LocalSlot target env po expected falseElement := localSlot_short (by decide)
-  have one : LocalSlot target env po expected trueElement := localSlot_short (by decide)
+theorem FragmentPath.trans {x y z : CoreFragment} (inner : FragmentPath x y)
+    (outer : FragmentPath y z) : FragmentPath x z := by
+  induction outer with
+  | here => exact inner
+  | wrapper op _ ih => exact .wrapper op ih
+  | left op _ ih => exact .left op ih
+  | right op _ ih => exact .right op ih
+  | condition _ ih => exact .condition ih
+  | thenBranch _ ih => exact .thenBranch ih
+  | elseBranch _ ih => exact .elseBranch ih
+  | threshold k before after _ ih => exact .threshold k before after ih
+
+theorem FragmentPath.locks {target parent : CoreFragment} (path : FragmentPath target parent) :
+    ∀ lock ∈ target.hashLocks, lock ∈ parent.hashLocks := by
+  induction path with
+  | here => exact fun _ h => h
+  | wrapper op _ ih => cases op <;> exact ih
+  | left op _ ih => intro l hl; cases op <;> exact List.mem_append_left _ (ih l hl)
+  | right op _ ih => intro l hl; cases op <;> exact List.mem_append_right _ (ih l hl)
+  | condition _ ih => intro l hl; exact List.mem_append_left _ (List.mem_append_left _ (ih l hl))
+  | thenBranch _ ih => intro l hl; exact List.mem_append_left _ (List.mem_append_right _ (ih l hl))
+  | elseBranch _ ih => intro l hl; exact List.mem_append_right _ (ih l hl)
+  | threshold k before after _ ih =>
+    intro l hl
+    exact threshold_locks_member (List.mem_append_right before (.head after)) _ (ih l hl)
+
+/-- Lift a canonical row property through the root. Sibling paths supply
+    their keys and locks to the signature-version-specific material rule. -/
+theorem canonical_path_items {root target parent : CoreFragment} {env : SatEnv}
+    {P : StackElement → Prop} (path : FragmentPath target parent)
+    (empty : P falseElement) (one : P trueElement)
+    (foreign : ∀ {other}, FragmentPath other root →
+      (∀ key ∈ target.keys, ∀ k ∈ other.keys, key ≠ k) →
+      CanonicalPairItems P (satisfactionCandidates other env))
+    (base : CanonicalPairItems P (satisfactionCandidates target env)) :
+    FragmentPath parent root → parent.keys.Nodup →
+    CanonicalPairItems P (satisfactionCandidates parent env) := by
   induction path with
   | here => intro _ _; exact base
   | wrapper op _ ih =>
-    intro keysIn nodup
-    exact c_pair_wrap empty one (ih (by simpa using keysIn) (by simpa using nodup)) op
+    intro outer nodup
+    exact c_pair_wrap empty one (ih (FragmentPath.trans (.wrapper op .here) outer)
+      (by simpa using nodup)) op
   | @left x y op path ih =>
-    intro keysIn nodup
-    rw [join_keys] at keysIn nodup
+    intro outer nodup
+    rw [join_keys] at nodup
     obtain ⟨nx, ny, separate⟩ := List.pairwise_append.mp nodup
-    exact c_pair_join empty one (ih (fun key hk => keysIn key (List.mem_append_left _ hk)) nx)
-      (c_foreign_pair context (fun key hk => keysIn key (List.mem_append_right _ hk))
+    exact c_pair_join empty one (ih (FragmentPath.trans (.left op .here) outer) nx)
+      (foreign (FragmentPath.trans (.right op .here) outer)
         (fun key hk other ho => separate key (path.keys key hk) other ho)) op
   | @right x y op path ih =>
-    intro keysIn nodup
-    rw [join_keys] at keysIn nodup
+    intro outer nodup
+    rw [join_keys] at nodup
     obtain ⟨nx, ny, separate⟩ := List.pairwise_append.mp nodup
     exact c_pair_join empty one
-      (c_foreign_pair context (fun key hk => keysIn key (List.mem_append_left _ hk))
+      (foreign (FragmentPath.trans (.left op .here) outer)
         (fun key hk other ho => Ne.symm (separate other ho key (path.keys key hk))))
-      (ih (fun key hk => keysIn key (List.mem_append_right _ hk)) ny) op
+      (ih (FragmentPath.trans (.right op .here) outer) ny) op
   | @condition x y z path ih =>
-    intro keysIn nodup
+    intro outer nodup
     obtain ⟨nxy, nz, sxy⟩ := List.pairwise_append.mp nodup
     obtain ⟨nx, ny, sx⟩ := List.pairwise_append.mp nxy
     exact c_pair_andor
-      (ih (fun key hk => keysIn key (List.mem_append_left _ (List.mem_append_left _ hk))) nx)
-      (c_foreign_pair context (fun key hk => keysIn key (List.mem_append_left _ (List.mem_append_right _ hk)))
+      (ih (FragmentPath.trans (.condition .here) outer) nx)
+      (foreign (FragmentPath.trans (.thenBranch .here) outer)
         (fun key hk other ho => sx key (path.keys key hk) other ho))
-      (c_foreign_pair context (fun key hk => keysIn key (List.mem_append_right _ hk))
+      (foreign (FragmentPath.trans (.elseBranch .here) outer)
         (fun key hk other ho => sxy key (List.mem_append_left _ (path.keys key hk)) other ho))
   | @thenBranch x y z path ih =>
-    intro keysIn nodup
+    intro outer nodup
     obtain ⟨nxy, nz, sxy⟩ := List.pairwise_append.mp nodup
     obtain ⟨nx, ny, sx⟩ := List.pairwise_append.mp nxy
     exact c_pair_andor
-      (c_foreign_pair context (fun key hk => keysIn key (List.mem_append_left _ (List.mem_append_left _ hk)))
+      (foreign (FragmentPath.trans (.condition .here) outer)
         (fun key hk other ho => Ne.symm (sx other ho key (path.keys key hk))))
-      (ih (fun key hk => keysIn key (List.mem_append_left _ (List.mem_append_right _ hk))) ny)
-      (c_foreign_pair context (fun key hk => keysIn key (List.mem_append_right _ hk))
+      (ih (FragmentPath.trans (.thenBranch .here) outer) ny)
+      (foreign (FragmentPath.trans (.elseBranch .here) outer)
         (fun key hk other ho => sxy key (List.mem_append_right _ (path.keys key hk)) other ho))
   | @elseBranch x y z path ih =>
-    intro keysIn nodup
+    intro outer nodup
     obtain ⟨nxy, nz, sxy⟩ := List.pairwise_append.mp nodup
     exact c_pair_andor
-      (c_foreign_pair context (fun key hk => keysIn key (List.mem_append_left _ (List.mem_append_left _ hk)))
+      (foreign (FragmentPath.trans (.condition .here) outer)
         (fun key hk other ho => Ne.symm (sxy other (List.mem_append_left _ ho) key (path.keys key hk))))
-      (c_foreign_pair context (fun key hk => keysIn key (List.mem_append_left _ (List.mem_append_right _ hk)))
+      (foreign (FragmentPath.trans (.thenBranch .here) outer)
         (fun key hk other ho => Ne.symm (sxy other (List.mem_append_right _ ho) key (path.keys key hk))))
-      (ih (fun key hk => keysIn key (List.mem_append_right _ hk)) nz)
+      (ih (FragmentPath.trans (.elseBranch .here) outer) nz)
   | @threshold x k before after path ih =>
-    intro keysIn nodup
-    simp only [CoreFragment.keys, keysList_append, CoreFragment.keysList] at keysIn nodup
+    intro outer nodup
+    simp only [CoreFragment.keys, keysList_append, CoreFragment.keysList] at nodup
     obtain ⟨nb, nxa, separateBefore⟩ := List.pairwise_append.mp nodup
     obtain ⟨nx, na, separateAfter⟩ := List.pairwise_append.mp nxa
     apply c_pair_thresh
     intro row member
     rw [satisfactionCandidatesList_eq_map] at member
     obtain ⟨fragment, fragmentMem, rfl⟩ := List.mem_map.mp member
+    have rowPath := FragmentPath.trans (FragmentPath.of_threshold_member k fragmentMem .here) outer
     rcases List.mem_append.mp fragmentMem with beforeMem | tailMem
-    · apply c_foreign_pair context
-      · intro key hk
-        exact keysIn key (List.mem_append_left _ (threshold_keys_member beforeMem key hk))
-      · intro key hk other ho
-        exact Ne.symm (separateBefore other (threshold_keys_member beforeMem other ho)
+    · apply foreign rowPath
+      intro key hk other ho
+      exact Ne.symm (separateBefore other (threshold_keys_member beforeMem other ho)
           key (List.mem_append_left _ (path.keys key hk)))
     · rcases List.mem_cons.mp tailMem with rfl | afterMem
-      · exact ih (fun key hk => keysIn key (List.mem_append_right _ (List.mem_append_left _ hk))) nx
-      · apply c_foreign_pair context
-        · intro key hk
-          exact keysIn key (List.mem_append_right _ (List.mem_append_right _ (threshold_keys_member afterMem key hk)))
-        · intro key hk other ho
-          exact separateAfter key (path.keys key hk) other (threshold_keys_member afterMem other ho)
+      · exact ih rowPath nx
+      · apply foreign rowPath
+        intro key hk other ho
+        exact separateAfter key (path.keys key hk) other (threshold_keys_member afterMem other ho)
 
 private theorem c_hole {child : CoreFragment} {env : SatEnv} {own expected : Witness}
     (sizes : ∀ key ∈ child.keys, key.bytes.size = 32)
@@ -489,7 +516,8 @@ theorem SignatureScope.signature_in_satisfaction {root child env arguments other
     (checked : checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx sig key.bytes = .ok true) :
     sig ∈ expected := by
   have sizes := fun key hk => scope.keySizes key (scope.keys key hk)
-  have supported := c_path_pair path scope (c_hole sizes canonical) (fun _ h => h) nodup
+  have supported := canonical_path_items path (localSlot_short (by decide)) (localSlot_short (by decide))
+    (fun sub => c_foreign_pair scope sub.keys) (c_hole sizes canonical) .here nodup
   have valid := verifySigFor_of_checkSigWithEncoding checked
   have disclosed := scope.thirdParty.2.1 sig eligible key (scope.keys _ keyMem) valid
   unfold satisfy at projection

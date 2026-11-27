@@ -1,12 +1,14 @@
-import LeanMiniscript.Extraction.TapscriptSignatureDisclosure
+import LeanMiniscript.Extraction.P2WSHRecovery.Frames
 
 namespace LeanMiniscript.Extraction.TapscriptWitness
 
 open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript CandidatePair
 
+variable {sc : ScriptContext}
+
 private theorem threshold_malleability_children {k : Nat} {children : List CoreFragment} {mm : MalleabilityModifiers}
-    (mal : HasMalleability .tapscript (.thresh k children) mm) (nm : mm.nonMalleable = true) :
-    ∃ childMods, HasMalleabilityList .tapscript children childMods ∧
+    (mal : HasMalleability sc (.thresh k children) mm) (nm : mm.nonMalleable = true) :
+    ∃ childMods, HasMalleabilityList sc children childMods ∧
       MalleabilityModifiers.allNonMalleable childMods = true ∧
       MalleabilityModifiers.allE childMods = true ∧ MalleabilityModifiers.countNonS childMods ≤ k := by
   cases mal with
@@ -16,13 +18,13 @@ private theorem threshold_malleability_children {k : Nat} {children : List CoreF
 
 private theorem list_child_static {children : List CoreFragment} {types : List MiniType}
     {childMods : List MalleabilityModifiers}
-    (typed : HasTypeList .tapscript children types)
-    (wf : CoreFragment.allWellFormed .tapscript children)
-    (mal : HasMalleabilityList .tapscript children childMods)
+    (typed : HasTypeList sc children types)
+    (wf : CoreFragment.allWellFormed sc children)
+    (mal : HasMalleabilityList sc children childMods)
     (nm : MalleabilityModifiers.allNonMalleable childMods = true)
     (expressive : MalleabilityModifiers.allE childMods = true) :
-    ∀ child ∈ children, ∃ ty mm, HasType .tapscript child ty ∧ child.WellFormed .tapscript ∧
-      HasMalleability .tapscript child mm ∧ mm.nonMalleable = true ∧ mm.e = true := by
+    ∀ child ∈ children, ∃ ty mm, HasType sc child ty ∧ child.WellFormed sc ∧
+      HasMalleability sc child mm ∧ mm.nonMalleable = true ∧ mm.e = true := by
   cases typed with
   | nil => simp
   | cons headTyped tailTyped =>
@@ -38,11 +40,11 @@ termination_by sizeOf children
 
 theorem threshold_children_static {k : Nat} {children : List CoreFragment}
     {mods : CorrectnessModifiers} {mm : MalleabilityModifiers}
-    (typed : HasType .tapscript (.thresh k children) ⟨.B, mods⟩)
-    (wf : (CoreFragment.thresh k children).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.thresh k children) mm) (nm : mm.nonMalleable = true) :
-    ∀ child ∈ children, ∃ ty cm, HasType .tapscript child ty ∧ child.WellFormed .tapscript ∧
-      HasMalleability .tapscript child cm ∧ cm.nonMalleable = true ∧ cm.e = true := by
+    (typed : HasType sc (.thresh k children) ⟨.B, mods⟩)
+    (wf : (CoreFragment.thresh k children).WellFormed sc)
+    (mal : HasMalleability sc (.thresh k children) mm) (nm : mm.nonMalleable = true) :
+    ∀ child ∈ children, ∃ ty cm, HasType sc child ty ∧ child.WellFormed sc ∧
+      HasMalleability sc child cm ∧ cm.nonMalleable = true ∧ cm.e = true := by
   obtain ⟨childMods, childrenMal, allNm, allE, _⟩ := threshold_malleability_children mal nm
   cases typed with
   | thresh firstTyped _ _ tailTyped _ _ _ =>
@@ -51,10 +53,10 @@ theorem threshold_children_static {k : Nat} {children : List CoreFragment}
 /-- The retained source row for a checked key is selected, even when the
     threshold is nested inside another branch. -/
 theorem checked_threshold_position_of_path {k children root env flags args other consumed canonical cm mm positions}
-    (typed : HasType .tapscript (.thresh k children) ⟨.B, cm⟩)
-    (wf : (CoreFragment.thresh k children).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.thresh k children) mm) (nm : mm.nonMalleable = true)
-    (ctx : ExecutionContext root (.thresh k children) env flags args other consumed)
+    (typed : HasType sc (.thresh k children) ⟨.B, cm⟩)
+    (wf : (CoreFragment.thresh k children).WellFormed sc)
+    (mal : HasMalleability sc (.thresh k children) mm) (nm : mm.nonMalleable = true)
+    (ctx : ExecutionContextIn sc root (.thresh k children) env flags args other consumed)
     (path : FragmentPath (.thresh k children) root.checked.fragment)
     (sat : satisfy (.thresh k children) env = some canonical)
     (chosen : thresholdPositions k (satisfactionCandidatesList children env) = some positions)
@@ -63,7 +65,10 @@ theorem checked_threshold_position_of_path {k children root env flags args other
     i ∈ positions := by
   have childMem := List.mem_of_getElem? childAt
   have keyIn := threshold_keys_member childMem key member
-  have available := ctx.signature_in_satisfaction path sat eligible keyIn checked
+  have available : sig ∈ canonical := by
+    cases sc with
+    | tapscript => exact ExecutionContext.signature_in_satisfaction ctx path sat eligible keyIn checked
+    | p2wsh => exact P2WSHRecovery.signature_in_satisfaction ctx path sat eligible keyIn checked
   have selected : (thresholdSatisfaction k (satisfactionCandidatesList children env)).usableWitness? = some canonical := by
     simpa [satisfy, satisfactionCandidates, threshold_candidate_guard wf] using sat
   obtain ⟨frame, row, contains⟩ := checked_threshold_source ctx (path.noDup root.noDuplicateKeys)
@@ -72,9 +77,14 @@ theorem checked_threshold_position_of_path {k children root env flags args other
   · exact included
   exfalso
   obtain ⟨_, _, ct, cw, ch, cn, ce⟩ := threshold_children_static typed wf mal nm child childMem
-  apply expressive_dsat_excludes_signature ct cw ch cn ce ctx.sound ctx.version
-    (show dissatisfy child env = some frame by simpa [dissatisfy, included] using row)
-    (wellFormed_keySizes child cw key member) checked contains
+  have dsat : dissatisfy child env = some frame := by simpa [dissatisfy, included] using row
+  cases sc with
+  | tapscript =>
+    exact expressive_dsat_excludes_signature ct cw ch cn ce ctx.sound ctx.version dsat
+      (wellFormed_keySizes child cw key member) checked contains
+  | p2wsh =>
+    exact P2WSHRecovery.expressive_dsat_excludes_checked ctx ct cw ch cn ce
+      (fun k hk => ctx.keys k (threshold_keys_member childMem k hk)) dsat checked contains
 
 private theorem ExecutedRows.true_at {env flags bases children bits blocks}
     (rows : ExecutedRows env flags bases children bits blocks) {i : Nat} {child : CoreFragment}
@@ -96,28 +106,28 @@ private theorem ExecutedRows.true_at {env flags bases children bits blocks}
 /-- The child induction hypotheses concern only the execution of the child
     itself. Selection, disjointness, and disclosure are discharged at the parent. -/
 theorem threshold_frame_of_children {k children root env flags args other consumed canonical cm mm rest top}
-    (typed : HasType .tapscript (.thresh k children) ⟨.B, cm⟩)
-    (wf : (CoreFragment.thresh k children).WellFormed .tapscript)
-    (mal : HasMalleability .tapscript (.thresh k children) mm) (nm : mm.nonMalleable = true)
-    (ctx : ExecutionContext root (.thresh k children) env flags args other consumed)
+    (typed : HasType sc (.thresh k children) ⟨.B, cm⟩)
+    (wf : (CoreFragment.thresh k children).WellFormed sc)
+    (mal : HasMalleability sc (.thresh k children) mm) (nm : mm.nonMalleable = true)
+    (ctx : ExecutionContextIn sc root (.thresh k children) env flags args other consumed)
     (path : FragmentPath (.thresh k children) root.checked.fragment)
     (sat : satisfy (.thresh k children) env = some canonical)
     (bounded : ∀ item ∈ consumed.toInitialStack ++ rest, item.size ≤ maxScriptElementSize)
     (run : Eval (compile (.thresh k children)) (consumed.toInitialStack ++ rest) [] flags env.txCtx
       (.success (top :: rest) [])) (truth : castToBool top = true)
     (evidence : ∀ child ∈ children, ∀ {block rest top base mods},
-      HasType .tapscript child ⟨base, mods⟩ → ExecutionContext root child env flags args other block →
+      HasType sc child ⟨base, mods⟩ → ExecutionContextIn sc root child env flags args other block →
       ExecutedRow env flags child block rest top base →
       (∀ item ∈ block.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) → castToBool top = true →
       (satisfactionCandidates child env).unsignedSat = true ∨
         ∃ sig ∈ block, ∃ key ∈ child.keys,
           checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx sig key.bytes = .ok true)
     (recover : ∀ {child : CoreFragment}, child ∈ children →
-      ∀ {block rest top base mods expected}, HasType .tapscript child ⟨base, mods⟩ →
+      ∀ {block rest top base mods expected}, HasType sc child ⟨base, mods⟩ →
       mods.d = true → mods.u = true →
       (castToBool top = false → ∀ sig ∈ block, ∀ key ∈ child.keys,
         checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx sig key.bytes ≠ .ok true) →
-      ExecutionContext root child env flags args other block →
+      ExecutionContextIn sc root child env flags args other block →
       ExecutedRow env flags child block rest top base →
       (∀ item ∈ block.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) →
       (if castToBool top then (satisfactionCandidates child env).sat else (satisfactionCandidates child env).dsat).usableWitness? =
@@ -133,7 +143,7 @@ theorem threshold_frame_of_children {k children root env flags args other consum
   intro first tail bits blocks positions shape rows wire chosen i child childAt positive signed
   obtain ⟨_, block, _, _, baseAt, seen, row, bound, childTruth⟩ := rows.true_at childAt positive
   have member := List.mem_of_getElem? childAt
-  have childCtx : ExecutionContext root child env flags args other block := by
+  have childCtx : ExecutionContextIn sc root child env flags args other block := by
     apply ctx.restrict (threshold_keys_member member) (threshold_locks_member member)
     intro item occurs
     have inside : item ∈ (blocks.map Witness.toInitialStack).flatten :=
