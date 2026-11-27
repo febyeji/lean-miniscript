@@ -68,9 +68,27 @@ theorem ExecutionContextIn.preimage {sc root child env flags args other consumed
 
 abbrev ExecutionContext := ExecutionContextIn .tapscript
 
-abbrev ExecutionContext.restrict := @ExecutionContextIn.restrict .tapscript
-abbrev ExecutionContext.signature := @ExecutionContextIn.signature .tapscript
-abbrev ExecutionContext.preimage := @ExecutionContextIn.preimage .tapscript
+-- Dot notation on this abbreviation needs an explicit `ExecutionContext` receiver.
+abbrev ExecutionContext.restrict {root child env flags args other consumed}
+    (ctx : ExecutionContext root child env flags args other consumed)
+    {inner : CoreFragment} {part : Witness} (keys : ∀ k ∈ inner.keys, k ∈ child.keys)
+    (locks : ∀ l ∈ inner.hashLocks, l ∈ child.hashLocks) (items : ∀ i ∈ part, i ∈ consumed) :
+    ExecutionContext root inner env flags args other part :=
+  ExecutionContextIn.restrict ctx keys locks items
+
+abbrev ExecutionContext.signature {root child env flags args other consumed}
+    (ctx : ExecutionContext root child env flags args other consumed)
+    {sig : StackElement} {key : PubKey} (present : key ∈ child.keys) (member : sig ∈ consumed)
+    (checked : checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx sig key.bytes = .ok true) :
+    env.signatureFor key = some sig :=
+  ExecutionContextIn.signature ctx present member checked
+
+abbrev ExecutionContext.preimage {root child env flags args other consumed}
+    (ctx : ExecutionContext root child env flags args other consumed)
+    {item : StackElement} {lock : HashLock} (present : lock ∈ child.hashLocks)
+    (member : item ∈ consumed) (matched : lock.Matches item) :
+    env.preimageFor lock = some item :=
+  ExecutionContextIn.preimage ctx present member matched
 
 /-- Uniqueness of the consumed satisfaction above an arbitrary suffix. B and W
     must succeed with a true result; V verifies it internally. For K the caller
