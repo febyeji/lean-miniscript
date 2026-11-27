@@ -68,6 +68,10 @@ theorem ExecutionContextIn.preimage {sc root child env flags args other consumed
 
 abbrev ExecutionContext := ExecutionContextIn .tapscript
 
+abbrev ExecutionContext.restrict := @ExecutionContextIn.restrict .tapscript
+abbrev ExecutionContext.signature := @ExecutionContextIn.signature .tapscript
+abbrev ExecutionContext.preimage := @ExecutionContextIn.preimage .tapscript
+
 /-- Uniqueness of the consumed satisfaction above an arbitrary suffix. B and W
     must succeed with a true result; V verifies it internally. For K the caller
     supplies the successful check on the pending signature and returned key. -/
