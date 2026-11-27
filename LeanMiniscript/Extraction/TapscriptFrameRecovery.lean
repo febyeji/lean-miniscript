@@ -1,4 +1,4 @@
-import LeanMiniscript.Extraction.TapscriptHashWitnessProofs
+import LeanMiniscript.Extraction.P2WSHRecovery.SignatureMaterial
 import LeanMiniscript.Miniscript.TypeSoundnessProofs.BaseType
 
 /-! Recover a child frame relative to the generated and observed witnesses of
@@ -10,52 +10,71 @@ open LeanMiniscript.Script LeanMiniscript.Bitcoin LeanMiniscript.Miniscript
 
 /-- Material available while inverting a subfragment. Only the consumed part of
     its input comes from the third-party witness; a caller may supply a suffix. -/
-structure ExecutionContext (root : SaneFragment .tapscript) (child : CoreFragment)
+structure ExecutionContextIn (sc : ScriptContext) (root : SaneFragment sc) (child : CoreFragment)
     (env : SatEnv) (flags : ScriptFlags) (arguments other consumed : Witness) : Prop where
   sound : env.Sound
-  version : env.txCtx.sigVersion = .tapscript
-  modeled : ModeledContextFlags .tapscript flags
+  version : ModeledContextVersion sc env.txCtx
+  modeled : ModeledContextFlags sc flags
   canonical : satisfy root.checked.fragment env = some arguments
   thirdParty : ThirdPartyWitness root.checked.fragment env.txCtx arguments other
-  recover : LocalHashSlotRecovery root.checked.fragment env arguments
+  recover : match sc with
+    | .tapscript => LocalHashSlotRecovery root.checked.fragment env arguments
+    | .p2wsh => LocalHashSlotRecovery root.checked.fragment env arguments ∧
+        LocalPreimageSignatureDisjoint root.checked.fragment env flags arguments
   keys : ∀ key ∈ child.keys, key ∈ root.checked.fragment.keys
   locks : ∀ lock ∈ child.hashLocks, lock ∈ root.checked.fragment.hashLocks
   items : ∀ item ∈ consumed, item ∈ other
 
-theorem ExecutionContext.restrict {root child env flags args other consumed}
-    (ctx : ExecutionContext root child env flags args other consumed)
+theorem ExecutionContextIn.restrict {sc root child env flags args other consumed}
+    (ctx : ExecutionContextIn sc root child env flags args other consumed)
     {inner : CoreFragment} {part : Witness} (keys : ∀ k ∈ inner.keys, k ∈ child.keys)
     (locks : ∀ l ∈ inner.hashLocks, l ∈ child.hashLocks) (items : ∀ i ∈ part, i ∈ consumed) :
-    ExecutionContext root inner env flags args other part :=
+    ExecutionContextIn sc root inner env flags args other part :=
   { ctx with
     keys := fun k hk => ctx.keys k (keys k hk)
     locks := fun l hl => ctx.locks l (locks l hl)
     items := fun i hi => ctx.items i (items i hi) }
 
-theorem ExecutionContext.signature {root child env flags args other consumed}
-    (ctx : ExecutionContext root child env flags args other consumed)
+theorem ExecutionContextIn.signature {sc root child env flags args other consumed}
+    (ctx : ExecutionContextIn sc root child env flags args other consumed)
     {sig : StackElement} {key : PubKey} (present : key ∈ child.keys) (member : sig ∈ consumed)
     (checked : checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx sig key.bytes = .ok true) :
     env.signatureFor key = some sig :=
-  disclosed_signature_selected ctx.sound ctx.version
-    (wellFormed_keySizes _ root.checked.wellFormed) ctx.canonical ctx.thirdParty
-    (ctx.items _ member) (ctx.keys _ present) checked
+  by
+    cases sc with
+    | tapscript =>
+      exact disclosed_signature_selected ctx.sound ctx.version
+        (wellFormed_keySizes _ root.checked.wellFormed) ctx.canonical ctx.thirdParty
+        (ctx.items _ member) (ctx.keys _ present) checked
+    | p2wsh =>
+      have pub := ctx.thirdParty.2.1 sig (ctx.items _ member) key (ctx.keys _ present)
+        (verifySigFor_of_checkSigWithEncoding checked)
+      exact (P2WSHRecovery.checked_source_signature root ctx.sound ctx.version ctx.modeled
+        ctx.thirdParty ctx.recover.2 (ctx.items _ member) (ctx.keys _ present)
+        (fun _ h => h) (fun _ h => h) (satisfy_material ctx.canonical sig pub) checked).2
 
-theorem ExecutionContext.preimage {root child env flags args other consumed}
-    (ctx : ExecutionContext root child env flags args other consumed)
+theorem ExecutionContextIn.preimage {sc root child env flags args other consumed}
+    (ctx : ExecutionContextIn sc root child env flags args other consumed)
     {item : StackElement} {lock : HashLock} (present : lock ∈ child.hashLocks)
     (member : item ∈ consumed) (matched : lock.Matches item) :
     env.preimageFor lock = some item :=
-  hash_slot_recovery_iff.mp ctx.recover other ctx.thirdParty item (ctx.items _ member)
-    lock (ctx.locks _ present) matched
+  by
+    have recovery : LocalHashSlotRecovery root.checked.fragment env args := by
+      cases sc with
+      | tapscript => exact ctx.recover
+      | p2wsh => exact ctx.recover.1
+    exact hash_slot_recovery_iff.mp recovery other ctx.thirdParty item (ctx.items _ member)
+      lock (ctx.locks _ present) matched
+
+abbrev ExecutionContext := ExecutionContextIn .tapscript
 
 /-- Uniqueness of the consumed satisfaction above an arbitrary suffix. B and W
     must succeed with a true result; V verifies it internally. For K the caller
     supplies the successful check on the pending signature and returned key. -/
-def FrameUnique (base : BaseType) (child : CoreFragment) : Prop :=
+def FrameUniqueIn (sc : ScriptContext) (base : BaseType) (child : CoreFragment) : Prop :=
   ∀ {root env flags arguments other consumed own}, ∀ {mods : CorrectnessModifiers},
-    HasType .tapscript child ⟨base, mods⟩ → child.WellFormed .tapscript →
-    ExecutionContext root child env flags arguments other consumed →
+    HasType sc child ⟨base, mods⟩ → child.WellFormed sc →
+    ExecutionContextIn sc root child env flags arguments other consumed →
     satisfy child env = some own → ∀ (rest : Stack),
     (∀ item ∈ consumed.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) →
     match base with
@@ -71,12 +90,14 @@ def FrameUnique (base : BaseType) (child : CoreFragment) : Prop :=
         Eval (compile child) (saved :: (consumed.toInitialStack ++ rest)) [] flags env.txCtx
           (.success (order.outputs saved top ++ rest) []) → castToBool top = true → consumed = own
 
+abbrev FrameUnique := FrameUniqueIn .tapscript
+
 private theorem witness_of_frame {consumed frame : Witness} {rest : Stack}
     (equal : consumed.toInitialStack ++ rest = frame.toInitialStack ++ rest) :
     consumed = frame := by
   simpa [Witness.toInitialStack] using congrArg List.reverse (List.append_cancel_right equal)
 
-theorem frameUnique_c_pk_k (key : PubKey) : FrameUnique .B (.c (.pk_k key)) := by
+theorem frameUnique_c_pk_k {sc : ScriptContext} (key : PubKey) : FrameUniqueIn sc .B (.c (.pk_k key)) := by
   intro root env flags args other consumed own _ _ _ ctx generated rest _ top run truth
   obtain ⟨sig, shape, checked⟩ := c_pk_k_frame run truth
   have eq := witness_of_frame (frame := [sig]) shape
@@ -84,7 +105,7 @@ theorem frameUnique_c_pk_k (key : PubKey) : FrameUnique .B (.c (.pk_k key)) := b
   have lookup := ctx.signature (key := key) (.head _) (.head _) checked
   simpa [satisfy_c_pk_k, lookup, List.singleton] using generated
 
-theorem frameUnique_c_pk_h (key : PubKey) : FrameUnique .B (.c (.pk_h key)) := by
+theorem frameUnique_c_pk_h {sc : ScriptContext} (key : PubKey) : FrameUniqueIn sc .B (.c (.pk_h key)) := by
   intro root env flags args other consumed own _ _ _ ctx generated rest _ top run truth
   obtain ⟨sig, pubkey, shape, imageEq, checked⟩ := c_pk_h_frame run truth
   have eq := witness_of_frame (frame := [sig, pubkey]) shape
@@ -95,7 +116,7 @@ theorem frameUnique_c_pk_h (key : PubKey) : FrameUnique .B (.c (.pk_h key)) := b
   have lookup := ctx.signature (key := key) (.head _) (.head _) checked
   simpa [satisfy_c_pk_h, lookup] using generated
 
-theorem frameUnique_hashLock (lock : HashLock) : FrameUnique .B lock.fragment := by
+theorem frameUnique_hashLock {sc : ScriptContext} (lock : HashLock) : FrameUniqueIn sc .B lock.fragment := by
   intro root env flags args other consumed own _ _ _ ctx generated rest bounded top run truth
   obtain ⟨p, shape, matched⟩ := hashLock_frame bounded run truth
   have eq := witness_of_frame (frame := [p]) shape
@@ -103,10 +124,10 @@ theorem frameUnique_hashLock (lock : HashLock) : FrameUnique .B lock.fragment :=
   have lookup := ctx.preimage (by cases lock <;> exact .head _) (.head _) matched
   cases lock <;> simpa [HashLock.fragment, lookup, List.singleton] using generated
 
-theorem frameUnique_verify {child : CoreFragment} (unique : FrameUnique .B child) :
-    FrameUnique .V (.v child) := by
+theorem frameUnique_verify {sc : ScriptContext} {child : CoreFragment} (unique : FrameUniqueIn sc .B child) :
+    FrameUniqueIn sc .V (.v child) := by
   intro root env flags args other consumed own mods typed wf ctx generated rest bounded run
-  have childTyped : ∃ cm, HasType .tapscript child ⟨.B, cm⟩ := by
+  have childTyped : ∃ cm, HasType sc child ⟨.B, cm⟩ := by
     generalize heq : (⟨.V, mods⟩ : MiniType) = ty at typed
     cases typed with | v_wrap h => exact ⟨_, h⟩
   obtain ⟨_, ht⟩ := childTyped
@@ -121,11 +142,11 @@ theorem frameUnique_verify {child : CoreFragment} (unique : FrameUnique .B child
   | upgradeableNop _ _ _ _ _ _ _ upgradable _ _ => cases upgradable
 
 /-- The K rule and its checking wrapper describe the same pending signature. -/
-theorem frameUnique_key_iff {child : CoreFragment} :
-    FrameUnique .K child ↔ FrameUnique .B (.c child) := by
+theorem frameUnique_key_iff {sc : ScriptContext} {child : CoreFragment} :
+    FrameUniqueIn sc .K child ↔ FrameUniqueIn sc .B (.c child) := by
   constructor
   · intro unique root env flags args other consumed own mods typed wf ctx generated rest bounded top run truth
-    have keyTyped : ∃ cm, HasType .tapscript child ⟨.K, cm⟩ := by
+    have keyTyped : ∃ cm, HasType sc child ⟨.K, cm⟩ := by
       generalize parentType : (⟨.B, mods⟩ : MiniType) = ty at typed
       cases typed with | c_wrap childTyped => exact ⟨_, childTyped⟩
     obtain ⟨_, ht⟩ := keyTyped
@@ -140,15 +161,15 @@ theorem frameUnique_key_iff {child : CoreFragment} :
     | checksig_failure _ _ _ _ _ _ _ _ _ done => cases done; contradiction
     | upgradeableNop _ _ _ _ _ _ _ h _ _ => cases h
   · intro unique root env flags args other consumed own mods typed wf ctx generated rest bounded sig key run checked
-    have wrapper : ExecutionContext root (.c child) env flags args other consumed :=
+    have wrapper : ExecutionContextIn sc root (.c child) env flags args other consumed :=
       ctx.restrict (fun _ h => h) (fun _ h => h) (fun _ h => h)
     apply unique (.c_wrap typed) wf wrapper generated rest bounded trueElement _ rfl
     exact Eval.append run (Eval.checksigTrue checked Eval.done)
 
-theorem a_run_child {X : CoreFragment} {mods : CorrectnessModifiers}
+theorem a_run_child {sc : ScriptContext} {X : CoreFragment} {mods : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {consumed : Witness} {saved top : StackElement}
     {rest : Stack} {order : BaseWOutputOrder}
-    (typed : HasType .tapscript X ⟨.B, mods⟩) (wf : X.WellFormed .tapscript)
+    (typed : HasType sc X ⟨.B, mods⟩) (wf : X.WellFormed sc)
     (run : Eval (compile (.a X)) (saved :: (consumed.toInitialStack ++ rest)) [] flags env.txCtx
       (.success (order.outputs saved top ++ rest) [])) :
     Eval (compile X) (consumed.toInitialStack ++ rest) [saved] flags env.txCtx
@@ -171,10 +192,10 @@ theorem a_run_child {X : CoreFragment} {mods : CorrectnessModifiers}
     exact runX
   | upgradeableNop _ _ _ _ _ _ _ upgradable _ _ => simp [Opcode.isUpgradeableNop] at upgradable
 
-theorem s_run_child {X : CoreFragment} {mods : CorrectnessModifiers}
+theorem s_run_child {sc : ScriptContext} {X : CoreFragment} {mods : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {consumed : Witness} {saved top : StackElement}
     {rest : Stack} {order : BaseWOutputOrder}
-    (typed : HasType .tapscript X ⟨.B, mods⟩) (one : mods.o = true) (wf : X.WellFormed .tapscript)
+    (typed : HasType sc X ⟨.B, mods⟩) (one : mods.o = true) (wf : X.WellFormed sc)
     (run : Eval (compile (.s X)) (saved :: (consumed.toInitialStack ++ rest)) [] flags env.txCtx
       (.success (order.outputs saved top ++ rest) [])) :
     (∃ argument, consumed = [argument]) ∧
@@ -206,8 +227,8 @@ theorem s_run_child {X : CoreFragment} {mods : CorrectnessModifiers}
         simpa [Witness.toInitialStack, outEq] using runX
   | upgradeableNop _ _ _ _ _ _ _ upgradable _ _ => simp [Opcode.isUpgradeableNop] at upgradable
 
-theorem frameUnique_a {child : CoreFragment} (unique : FrameUnique .B child) :
-    FrameUnique .W (.a child) := by
+theorem frameUnique_a {sc : ScriptContext} {child : CoreFragment} (unique : FrameUniqueIn sc .B child) :
+    FrameUniqueIn sc .W (.a child) := by
   intro root env flags args other consumed own mods typed wf ctx generated rest bounded saved top order _ run truth
   generalize h : (⟨.W, mods⟩ : MiniType) = ty at typed
   cases typed with
@@ -215,8 +236,8 @@ theorem frameUnique_a {child : CoreFragment} (unique : FrameUnique .B child) :
     exact unique ht wf (ctx.restrict (fun _ h => h) (fun _ h => h) (fun _ h => h))
       generated rest bounded top (Miniscript.Eval.compile_erase_altStack (a_run_child ht wf run)) truth
 
-theorem frameUnique_s {child : CoreFragment} (unique : FrameUnique .B child) :
-    FrameUnique .W (.s child) := by
+theorem frameUnique_s {sc : ScriptContext} {child : CoreFragment} (unique : FrameUniqueIn sc .B child) :
+    FrameUniqueIn sc .W (.s child) := by
   intro root env flags args other consumed own mods typed wf ctx generated rest bounded saved top order size run truth
   generalize h : (⟨.W, mods⟩ : MiniType) = ty at typed
   cases typed with
@@ -231,12 +252,12 @@ theorem frameUnique_s {child : CoreFragment} (unique : FrameUnique .B child) :
       · exact bounded _ (List.mem_append_right _ member)
 
 /-- Split generated and observed arguments independently at an `and_v` boundary. -/
-theorem and_v_decompose {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
+theorem and_v_decompose {sc : ScriptContext} {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers}
     {env : SatEnv} {flags : ScriptFlags} {arguments other : Witness}
     {top : StackElement} {rest : Stack}
-    (typedX : HasType .tapscript X ⟨.V, modsX⟩)
-    (typedY : HasType .tapscript Y ⟨.B, modsY⟩)
-    (wellFormedX : X.WellFormed .tapscript) (wellFormedY : Y.WellFormed .tapscript)
+    (typedX : HasType sc X ⟨.V, modsX⟩)
+    (typedY : HasType sc Y ⟨.B, modsY⟩)
+    (wellFormedX : X.WellFormed sc) (wellFormedY : Y.WellFormed sc)
     (canonical : satisfy (.and_v X Y) env = some arguments)
     (run : Eval (compile (.and_v X Y)) (other.toInitialStack ++ rest) [] flags env.txCtx
       (.success (top :: rest) [])) :
@@ -274,8 +295,8 @@ theorem and_v_decompose {X Y : CoreFragment} {modsX modsY : CorrectnessModifiers
     simpa [Witness.toInitialStack] using runX
   · simpa [Witness.toInitialStack, List.reverse_reverse, inputEqY] using runY
 
-theorem frameUnique_and_v {first second : CoreFragment} (left : FrameUnique .V first)
-    (right : FrameUnique .B second) : FrameUnique .B (.and_v first second) := by
+theorem frameUnique_and_v {sc : ScriptContext} {first second : CoreFragment} (left : FrameUniqueIn sc .V first)
+    (right : FrameUniqueIn sc .B second) : FrameUniqueIn sc .B (.and_v first second) := by
   intro root env flags args other consumed own mods typed wf ctx generated rest bounded top run truth
   generalize heq : (⟨.B, mods⟩ : MiniType) = ty at typed
   cases typed with
@@ -307,8 +328,8 @@ inductive KeyHashConjunction : CoreFragment → Prop
   | and_v {x y} : KeyHashConjunction x → KeyHashConjunction y →
       KeyHashConjunction (.and_v (.v x) y)
 
-theorem KeyHashConjunction.frameUnique {fragment} (shape : KeyHashConjunction fragment) :
-    FrameUnique .B fragment := by
+theorem KeyHashConjunction.frameUnique {sc : ScriptContext} {fragment} (shape : KeyHashConjunction fragment) :
+    FrameUniqueIn sc .B fragment := by
   induction shape with
   | pk_k key => exact frameUnique_c_pk_k key
   | pk_h key => exact frameUnique_c_pk_h key

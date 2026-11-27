@@ -24,6 +24,12 @@ def PublishedPreimageSignatureAgreement (root : CoreFragment) (env : SatEnv)
       checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx item key.bytes = .ok true →
       env.signatureFor key = some item
 
+theorem agreement_of_disjoint {root env flags arguments}
+    (disjoint : LocalPreimageSignatureDisjoint root env flags arguments) :
+    PublishedPreimageSignatureAgreement root env flags arguments :=
+  fun item mem eligible opened key hk checked =>
+    (disjoint item mem eligible opened key hk checked).elim
+
 private theorem valid_of_allKeysValid {ctx : ScriptContext} {keys : List PubKey}
     (valid : CoreFragment.allKeysValid ctx keys) :
     ∀ key ∈ keys, validResolvedPubKey ctx key := by
@@ -40,6 +46,21 @@ private theorem wellFormed_keys {ctx : ScriptContext} (root : CoreFragment) :
   | _ =>
     simp_all [CoreFragment.keys, CoreFragment.keysList, CoreFragment.WellFormed,
       CoreFragment.allWellFormed] <;> grind
+
+/-- STRICTENC separates a checked signature from every compressed key of the
+    enclosing script, including a key other than the one being checked. -/
+theorem checked_ne_key (sane : SaneFragment .p2wsh)
+    {env : SatEnv} {flags : ScriptFlags} {item : StackElement} {key k : PubKey}
+    (version : env.txCtx.sigVersion = .witnessV0) (strict : flags.strictEncoding = true)
+    (member : k ∈ sane.checked.fragment.keys)
+    (checked : checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx item key.bytes = .ok true) :
+    item ≠ k.bytes := by
+  have encoded := P2WSHNonMalleabilityInversion.encoding_of_checkSigWithEncoding_ok checked
+  rw [version] at encoded
+  have rekeyed := checkSigEncodingFor_witnessV0_rekey
+    (wellFormed_keys _ sane.checked.wellFormed k member) encoded
+  exact P2WSHNonMalleabilityInversion.signature_ne_pubkey_of_strict
+    (ctx := env.txCtx) strict version (version ▸ rekeyed)
 
 /-- A checked item found in a source fragment's candidate material is either a
     selected signature for this key in that source or a preimage selected there.
@@ -61,24 +82,40 @@ theorem checked_source_material (sane : SaneFragment .p2wsh)
   · rw [sound.emptySignatureInvalid] at valid
     contradiction
   · exact (P2WSHNonMalleabilityKeyChoice.checked_signature_ne_true strict version checked rfl).elim
-  · have encoded := P2WSHNonMalleabilityInversion.encoding_of_checkSigWithEncoding_ok checked
-    rw [version] at encoded
-    have rekeyed := checkSigEncodingFor_witnessV0_rekey
-      (wellFormed_keys _ sane.checked.wellFormed k (keysIn k hk)) encoded
-    exact (P2WSHNonMalleabilityInversion.signature_ne_pubkey_of_strict
-      (ctx := env.txCtx) strict version (version ▸ rekeyed) rfl).elim
+  · exact (checked_ne_key sane version strict (keysIn k hk) checked rfl).elim
   · by_cases same : key = k
     · exact same ▸ Or.inl ⟨hk, selected⟩
     · exact (third.1 item mem key keyMem k (keysIn k hk) same valid (sound.signatureValid selected)).elim
   · exact Or.inr preimage
 
+/-- Disjoint roles identify the source of a checked signature among both
+    satisfaction and dissatisfaction rows of a descendant. -/
+theorem checked_source_signature (sane : SaneFragment .p2wsh)
+    {source : CoreFragment} {env : SatEnv} {flags : ScriptFlags} {arguments other : Witness}
+    {item : StackElement} {key : PubKey} (sound : env.Sound)
+    (version : env.txCtx.sigVersion = .witnessV0) (modeled : ModeledContextFlags .p2wsh flags)
+    (third : ThirdPartyWitness sane.checked.fragment env.txCtx arguments other)
+    (disjoint : LocalPreimageSignatureDisjoint sane.checked.fragment env flags arguments)
+    (mem : item ∈ other) (keyMem : key ∈ sane.checked.fragment.keys)
+    (keysIn : ∀ k ∈ source.keys, k ∈ sane.checked.fragment.keys)
+    (locksIn : ∀ l ∈ source.hashLocks, l ∈ sane.checked.fragment.hashLocks)
+    (material : TapscriptWitness.Material source env item)
+    (checked : checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx item key.bytes = .ok true) :
+    key ∈ source.keys ∧ env.signatureFor key = some item := by
+  rcases checked_source_material sane sound version modeled third mem keyMem keysIn material checked with
+    selected | ⟨lock, hl, lookup⟩
+  · exact selected
+  · have published := third.2.2.1 item mem lock (locksIn lock hl) (sound.preimageMatches lookup)
+    exact (disjoint item published (third.singleton_of_mem mem) ⟨lock, locksIn lock hl, lookup⟩
+      key keyMem checked).elim
+
 /-- On a generated P2WSH satisfaction, agreement on disclosed preimages is necessary
     and sufficient for recovering every eligible, successfully checked signature slot. -/
-theorem publishedPreimageSignatureAgreement_iff (sane : SaneFragment .p2wsh)
+theorem signatureAgreement_iff_of_satisfy (sane : SaneFragment .p2wsh)
     {env : SatEnv} {flags : ScriptFlags} {arguments : Witness}
     (sound : env.Sound) (version : env.txCtx.sigVersion = .witnessV0)
     (modeled : ModeledContextFlags .p2wsh flags)
-    (generated : satisfyFinal sane.checked.fragment env = some arguments) :
+    (generated : satisfy sane.checked.fragment env = some arguments) :
     PublishedPreimageSignatureAgreement sane.checked.fragment env flags arguments ↔
       ∀ other, ThirdPartyWitness sane.checked.fragment env.txCtx arguments other →
         ∀ item ∈ other, ∀ key ∈ sane.checked.fragment.keys,
@@ -88,13 +125,25 @@ theorem publishedPreimageSignatureAgreement_iff (sane : SaneFragment .p2wsh)
   · intro agree other third item mem key keyMem checked
     have valid := P2WSHNonMalleabilitySubcase.verifySigFor_of_checkSigWithEncoding_true checked
     have published := third.2.1 item mem key keyMem valid
-    have material := TapscriptWitness.satisfy_material (satisfyFinal_some_satisfy generated) item published
+    have material := TapscriptWitness.satisfy_material generated item published
     rcases checked_source_material sane sound version modeled third mem keyMem
       (fun _ h => h) material checked with ⟨_, selected⟩ | preimage
     · exact selected
     · exact agree item published (third.singleton_of_mem mem) preimage key keyMem checked
   · intro recover item _ eligible _ key keyMem checked
     exact recover [item] eligible item (.head _) key keyMem checked
+
+theorem publishedPreimageSignatureAgreement_iff (sane : SaneFragment .p2wsh)
+    {env : SatEnv} {flags : ScriptFlags} {arguments : Witness}
+    (sound : env.Sound) (version : env.txCtx.sigVersion = .witnessV0)
+    (modeled : ModeledContextFlags .p2wsh flags)
+    (generated : satisfyFinal sane.checked.fragment env = some arguments) :
+    PublishedPreimageSignatureAgreement sane.checked.fragment env flags arguments ↔
+      ∀ other, ThirdPartyWitness sane.checked.fragment env.txCtx arguments other →
+        ∀ item ∈ other, ∀ key ∈ sane.checked.fragment.keys,
+          checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx item key.bytes = .ok true →
+          env.signatureFor key = some item :=
+  signatureAgreement_iff_of_satisfy sane sound version modeled (satisfyFinal_some_satisfy generated)
 
 /-- A matching legacy CHECKMULTISIG pair passes the same checked-signature boundary
     as CHECKSIG for a compressed key of the sane fragment. -/

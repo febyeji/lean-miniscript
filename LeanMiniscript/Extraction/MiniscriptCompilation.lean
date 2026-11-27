@@ -146,6 +146,15 @@ def LocalHashSlotRecovery (fragment : CoreFragment) (env : SatEnv)
   ∀ item ∈ arguments, ThirdPartyWitness fragment env.txCtx arguments [item] →
     ∀ lock ∈ fragment.hashLocks, lock.Matches item → env.preimageFor lock = some item
 
+/-- A reusable preimage published by this spend cannot pass an encoded
+    signature check for any key of the fragment under the spend's flags. -/
+def LocalPreimageSignatureDisjoint (fragment : CoreFragment) (env : SatEnv)
+    (flags : ScriptFlags) (arguments : Witness) : Prop :=
+  ∀ item ∈ arguments, ThirdPartyWitness fragment env.txCtx arguments [item] →
+    (∃ lock ∈ fragment.hashLocks, env.preimageFor lock = some item) →
+    ∀ key ∈ fragment.keys,
+      checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx item key.bytes ≠ .ok true
+
 /-- Core's resource-limit errors: script size, operation count, stack size,
 push size, and the Tapscript validation-weight budget. -/
 def CoreVerificationError.isResourceLimit : CoreVerificationError → Bool
@@ -199,9 +208,9 @@ VerifyScript accepts on the same spend, is that satisfaction.
 
 Premises: those of `CompiledSatisfaction`, with `arguments` the satisfaction;
 `other` uses only what `arguments` reveals (`ThirdPartyWitness` under the
-transaction context of `env`); the Tapscript case additionally requires
-`LocalHashSlotRecovery` for the published arguments; and Core's VerifyScript accepts `other`
-followed by the spend's suffix. -/
+transaction context of `env`); reusable hash slots satisfy `LocalHashSlotRecovery`.
+P2WSH additionally requires `LocalPreimageSignatureDisjoint`. Core's VerifyScript
+accepts `other` followed by the spend's suffix. -/
 def CompiledNonMalleability (context : ScriptContext) : Prop :=
   ∀ (sane : SaneFragment context) (bytes scriptPubKey : ByteArray)
     (suffix : List ByteArray) (env : SatEnv) (flags : CoreVerificationFlags)
@@ -212,7 +221,9 @@ def CompiledNonMalleability (context : ScriptContext) : Prop :=
     CompiledScriptRun context env flags ctx oracles bytes →
     satisfyFinal sane.checked.fragment env = some arguments →
     (match context with
-     | .p2wsh => ThirdPartyWitness sane.checked.fragment env.txCtx arguments other
+     | .p2wsh => ThirdPartyWitness sane.checked.fragment env.txCtx arguments other ∧
+         LocalHashSlotRecovery sane.checked.fragment env arguments ∧
+         LocalPreimageSignatureDisjoint sane.checked.fragment env flags.script arguments
      | .tapscript => ThirdPartyWitness sane.checked.fragment env.txCtx arguments other ∧
          LocalHashSlotRecovery sane.checked.fragment env arguments) →
     coreVerifyScript flags ctx oracles keyPath ByteArray.empty scriptPubKey
@@ -260,7 +271,8 @@ for Tapscript, with the spend and context of `TapscriptSatisfaction`. -/
 def TapscriptDissatisfaction : Prop := CompiledDissatisfaction .tapscript
 
 /-- P2WSH non-malleability. Premises: those of `CompiledNonMalleability` for
-P2WSH, with the spend and context of `P2WSHSatisfaction`. -/
+P2WSH, with the spend and context of `P2WSHSatisfaction`, local hash-slot
+recovery, and disjoint published preimage and signature roles. -/
 def P2WSHNonMalleability : Prop := CompiledNonMalleability .p2wsh
 
 /-- Tapscript non-malleability. Premises: those of `CompiledNonMalleability`

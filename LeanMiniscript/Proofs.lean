@@ -53,7 +53,7 @@ import LeanMiniscript.Extraction.CoreLoopFallbacks
 import LeanMiniscript.Extraction.EquivalenceObligations
 import LeanMiniscript.Extraction.MiniscriptObligations
 import LeanMiniscript.Extraction.P2WSHNonMalleabilityKeyChoice
-import LeanMiniscript.Extraction.P2WSHRecovery.LegacySignatures
+import LeanMiniscript.Extraction.P2WSHRecovery.LegacyFrames
 import LeanMiniscript.Extraction.ScriptEquivalenceObligations
 import LeanMiniscript.Extraction.BitcoinCoreSatisfactionProofs
 import LeanMiniscript.Extraction.BitcoinCoreVerificationProofs

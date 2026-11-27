@@ -47,6 +47,23 @@ private theorem matched_frame {P : StackElement → PubKey → Prop} {flags : Sc
 
 /-- Each consumed signature is the selected lookup for its matched key. The keys form
     a subsequence of the CHECKMULTISIG input; skipped keys consume no signature. -/
+theorem multisig_lookup_frame_of_satisfy (sane : SaneFragment .p2wsh)
+    {env : SatEnv} {flags : ScriptFlags} {arguments other : Witness} {sigs : Stack}
+    {keys : List PubKey} (sound : env.Sound) (version : env.txCtx.sigVersion = .witnessV0)
+    (modeled : ModeledContextFlags .p2wsh flags)
+    (generated : satisfy sane.checked.fragment env = some arguments)
+    (agreement : PublishedPreimageSignatureAgreement sane.checked.fragment env flags arguments)
+    (third : ThirdPartyWitness sane.checked.fragment env.txCtx arguments other)
+    (consumed : ∀ sig ∈ sigs, sig ∈ other) (members : ∀ key ∈ keys, key ∈ sane.checked.fragment.keys)
+    (matched : checkMultiSigWithEncoding checkSig flags env.txCtx.sigHash sigs
+      (keys.map PubKey.bytes) = .ok true) :
+    ∃ used, used.Sublist keys ∧ SignatureFrame (fun sig key => env.signatureFor key = some sig) sigs used := by
+  apply matched_frame keys sigs _ matched
+  intro sig hs key hk encoded verified
+  exact (signatureAgreement_iff_of_satisfy sane sound version modeled generated).mp agreement
+    other third sig (consumed sig hs) key (members key hk)
+    (checked_of_multisig_match sane version modeled (members key hk) encoded verified)
+
 theorem multisig_lookup_frame (sane : SaneFragment .p2wsh)
     {env : SatEnv} {flags : ScriptFlags} {arguments other : Witness} {sigs : Stack}
     {keys : List PubKey} (sound : env.Sound) (version : env.txCtx.sigVersion = .witnessV0)
@@ -57,11 +74,8 @@ theorem multisig_lookup_frame (sane : SaneFragment .p2wsh)
     (consumed : ∀ sig ∈ sigs, sig ∈ other) (members : ∀ key ∈ keys, key ∈ sane.checked.fragment.keys)
     (matched : checkMultiSigWithEncoding checkSig flags env.txCtx.sigHash sigs
       (keys.map PubKey.bytes) = .ok true) :
-    ∃ used, used.Sublist keys ∧ SignatureFrame (fun sig key => env.signatureFor key = some sig) sigs used := by
-  apply matched_frame keys sigs _ matched
-  intro sig hs key hk encoded verified
-  exact (publishedPreimageSignatureAgreement_iff sane sound version modeled generated).mp agreement
-    other third sig (consumed sig hs) key (members key hk)
-    (checked_of_multisig_match sane version modeled (members key hk) encoded verified)
+    ∃ used, used.Sublist keys ∧ SignatureFrame (fun sig key => env.signatureFor key = some sig) sigs used :=
+  multisig_lookup_frame_of_satisfy sane sound version modeled (satisfyFinal_some_satisfy generated)
+    agreement third consumed members matched
 
 end LeanMiniscript.Extraction.P2WSHRecovery

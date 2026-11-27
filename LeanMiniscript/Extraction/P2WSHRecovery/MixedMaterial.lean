@@ -130,4 +130,41 @@ theorem guardedKey_core_lookup_constraint (sane : SaneFragment .p2wsh)
     · simpa [guardedKey_keys] using keyImage
   exact (List.cons.inj (argsEq.trans ((unique _ eligible accepted).symm.trans observedEq.symm))).1
 
+/-- With a non-DER preimage and a signature of length other than 32, both
+    local premises hold on the generated mixed witness. -/
+theorem guardedKey_separated {env : SatEnv} {flags : ScriptFlags} {lock : HashLock}
+    {key : PubKey} {sig preimage : StackElement}
+    (signed : env.signatureFor key = some sig) (opened : env.preimageFor lock = some preimage)
+    (size : sig.size ≠ 32) (matched : lock.Matches preimage)
+    (nonDER : isValidSignatureEncoding preimage = false)
+    (version : env.txCtx.sigVersion = .witnessV0) (strict : flags.strictEncoding = true) :
+    satisfyFinal (guardedKey lock key) env = some [sig, preimage] ∧
+    LocalHashSlotRecovery (guardedKey lock key) env [sig, preimage] ∧
+    LocalPreimageSignatureDisjoint (guardedKey lock key) env flags [sig, preimage] := by
+  refine ⟨guardedKey_generated signed opened, (guardedKey_lookup_conditions
+    (flags := flags) signed opened).1.mpr (fun _ h => (size h.1).elim), ?_⟩
+  rintro item _ _ ⟨target, ht, lookup⟩ k _ checked
+  obtain rfl : target = lock := by simpa [guardedKey_locks] using ht
+  obtain rfl := Option.some.inj (lookup.symm.trans opened)
+  have encoded := P2WSHNonMalleabilityInversion.encoding_of_checkSigWithEncoding_ok checked
+  simp [version, checkSigEncodingFor, checkECDSAEncoding, checkSignatureEncoding,
+    matched.1, strict, nonDER, bind, Except.bind] at encoded
+
+/-- An explicit 32-byte opening supplies a generated witness with both local
+    premises for a fragment containing a key and a hash lock. -/
+theorem exists_guardedKey_separated (key : PubKey) (ctx : TxContext) (flags : ScriptFlags)
+    (version : ctx.sigVersion = .witnessV0) (strict : flags.strictEncoding = true) :
+    ∃ (env : SatEnv) (lock : HashLock) (sig preimage : StackElement),
+      env.txCtx = ctx ∧ lock.Matches preimage ∧ env.preimageFor lock = some preimage ∧
+      satisfyFinal (guardedKey lock key) env = some [sig, preimage] ∧
+      LocalHashSlotRecovery (guardedKey lock key) env [sig, preimage] ∧
+      LocalPreimageSignatureDisjoint (guardedKey lock key) env flags [sig, preimage] := by
+  let p : StackElement := ⟨Array.replicate 32 0⟩
+  let lock : HashLock := .sha256 ⟨Script.sha256 p⟩
+  let sig : StackElement := ⟨#[0x30, 6, 2, 1, 1, 2, 1, 1, 1]⟩
+  let env : SatEnv := ⟨fun _ => some sig, fun _ => some p, fun _ => falseElement, ctx⟩
+  have matched : lock.Matches p := ⟨rfl, rfl⟩
+  exact ⟨env, lock, sig, p, rfl, matched, rfl, guardedKey_separated
+    (env := env) (key := key) (sig := sig) rfl rfl (by decide) matched (by decide) version strict⟩
+
 end LeanMiniscript.Extraction.P2WSHRecovery
