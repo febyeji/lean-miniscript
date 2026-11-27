@@ -172,7 +172,7 @@ mutual
       if candidateThresholdValid threshold fragments.length then
         let children := satisfactionCandidatesList fragments env
         let states := CandidatePair.countCandidates children
-        { sat := CandidatePair.thresholdSatisfaction threshold children
+        { sat := CandidatePair.thresholdSatisfactionFromCounts threshold children states
           dsat := CandidatePair.thresholdDissatisfaction threshold states }
       else
         {}
