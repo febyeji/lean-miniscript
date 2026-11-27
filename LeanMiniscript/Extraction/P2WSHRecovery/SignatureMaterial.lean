@@ -41,6 +41,37 @@ private theorem wellFormed_keys {ctx : ScriptContext} (root : CoreFragment) :
     simp_all [CoreFragment.keys, CoreFragment.keysList, CoreFragment.WellFormed,
       CoreFragment.allWellFormed] <;> grind
 
+/-- A checked item found in a source fragment's candidate material is either a
+    selected signature for this key in that source or a preimage selected there.
+    In particular, a source with disjoint keys leaves only the preimage case. -/
+theorem checked_source_material (sane : SaneFragment .p2wsh)
+    {source : CoreFragment} {env : SatEnv} {flags : ScriptFlags} {arguments other : Witness}
+    {item : StackElement} {key : PubKey} (sound : env.Sound)
+    (version : env.txCtx.sigVersion = .witnessV0) (modeled : ModeledContextFlags .p2wsh flags)
+    (third : ThirdPartyWitness sane.checked.fragment env.txCtx arguments other)
+    (mem : item ∈ other) (keyMem : key ∈ sane.checked.fragment.keys)
+    (keysIn : ∀ k ∈ source.keys, k ∈ sane.checked.fragment.keys)
+    (material : TapscriptWitness.Material source env item)
+    (checked : checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx item key.bytes = .ok true) :
+    (key ∈ source.keys ∧ env.signatureFor key = some item) ∨
+      ∃ lock ∈ source.hashLocks, env.preimageFor lock = some item := by
+  have valid := P2WSHNonMalleabilitySubcase.verifySigFor_of_checkSigWithEncoding_true checked
+  have strict := modeled.2.2.2.2
+  rcases material with rfl | rfl | ⟨k, hk, rfl⟩ | ⟨k, hk, selected⟩ | preimage
+  · rw [sound.emptySignatureInvalid] at valid
+    contradiction
+  · exact (P2WSHNonMalleabilityKeyChoice.checked_signature_ne_true strict version checked rfl).elim
+  · have encoded := P2WSHNonMalleabilityInversion.encoding_of_checkSigWithEncoding_ok checked
+    rw [version] at encoded
+    have rekeyed := checkSigEncodingFor_witnessV0_rekey
+      (wellFormed_keys _ sane.checked.wellFormed k (keysIn k hk)) encoded
+    exact (P2WSHNonMalleabilityInversion.signature_ne_pubkey_of_strict
+      (ctx := env.txCtx) strict version (version ▸ rekeyed) rfl).elim
+  · by_cases same : key = k
+    · exact same ▸ Or.inl ⟨hk, selected⟩
+    · exact (third.1 item mem key keyMem k (keysIn k hk) same valid (sound.signatureValid selected)).elim
+  · exact Or.inr preimage
+
 /-- On a generated P2WSH satisfaction, agreement on disclosed preimages is necessary
     and sufficient for recovering every eligible, successfully checked signature slot. -/
 theorem publishedPreimageSignatureAgreement_iff (sane : SaneFragment .p2wsh)
@@ -58,23 +89,30 @@ theorem publishedPreimageSignatureAgreement_iff (sane : SaneFragment .p2wsh)
     have valid := P2WSHNonMalleabilitySubcase.verifySigFor_of_checkSigWithEncoding_true checked
     have published := third.2.1 item mem key keyMem valid
     have material := TapscriptWitness.satisfy_material (satisfyFinal_some_satisfy generated) item published
-    have strict := modeled.2.2.2.2
-    rcases material with rfl | rfl | ⟨source, sourceMem, rfl⟩ | ⟨source, sourceMem, selected⟩ | preimage
-    · rw [sound.emptySignatureInvalid] at valid
-      contradiction
-    · exact (P2WSHNonMalleabilityKeyChoice.checked_signature_ne_true strict version checked rfl).elim
-    · have encoded := P2WSHNonMalleabilityInversion.encoding_of_checkSigWithEncoding_ok checked
-      rw [version] at encoded
-      have rekeyed := checkSigEncodingFor_witnessV0_rekey
-        (wellFormed_keys _ sane.checked.wellFormed source sourceMem) encoded
-      exact (P2WSHNonMalleabilityInversion.signature_ne_pubkey_of_strict
-        (ctx := env.txCtx) strict version (version ▸ rekeyed) rfl).elim
-    · by_cases same : key = source
-      · exact same ▸ selected
-      · exact (third.1 item mem key keyMem source sourceMem same valid
-          (sound.signatureValid selected)).elim
+    rcases checked_source_material sane sound version modeled third mem keyMem
+      (fun _ h => h) material checked with ⟨_, selected⟩ | preimage
+    · exact selected
     · exact agree item published (third.singleton_of_mem mem) preimage key keyMem checked
   · intro recover item _ eligible _ key keyMem checked
     exact recover [item] eligible item (.head _) key keyMem checked
+
+/-- A matching legacy CHECKMULTISIG pair passes the same checked-signature boundary
+    as CHECKSIG for a compressed key of the sane fragment. -/
+theorem checked_of_multisig_match (sane : SaneFragment .p2wsh)
+    {env : SatEnv} {flags : ScriptFlags} {key : PubKey} {sig : StackElement}
+    (version : env.txCtx.sigVersion = .witnessV0) (modeled : ModeledContextFlags .p2wsh flags)
+    (member : key ∈ sane.checked.fragment.keys) (encoded : checkECDSAEncoding flags sig key.bytes = .ok ())
+    (matchSig : checkSig sig key.bytes env.txCtx.sigHash = true) :
+    checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx sig key.bytes = .ok true := by
+  apply checkSigWithEncoding_true
+  · have empty := checkSigEncodingFor_empty_of_modeled
+      (wellFormed_keys _ sane.checked.wellFormed key member) version modeled
+    rw [version] at empty ⊢
+    cases pub : checkPubKeyEncoding flags key.bytes with
+    | error err => simp [checkSigEncodingFor, pub, bind, Except.bind] at empty
+    | ok result =>
+        cases result
+        simpa only [checkSigEncodingFor, encoded, checkECDSAEncoding_empty, pub] using empty
+  · rwa [P2WSHNonMalleabilitySubcase.verifySigFor_witnessV0 _ _ version]
 
 end LeanMiniscript.Extraction.P2WSHRecovery
