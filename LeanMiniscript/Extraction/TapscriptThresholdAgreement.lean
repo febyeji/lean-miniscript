@@ -132,7 +132,8 @@ private theorem ExecutedRows.agree {env flags bases children bits blocks}
     (projection : List.zipWith (fun child bit =>
         (if bit then (satisfactionCandidates child env).sat else (satisfactionCandidates child env).dsat).usableWitness?)
       children bits = expected.map some)
-    (recover : ∀ base ∈ bases, ∀ child ∈ children, ∀ block ∈ blocks, ∀ rest top canonical,
+    (recover : ∀ (i : Nat) base child block rest top canonical,
+      bases[i]? = some base → children[i]? = some child → blocks[i]? = some block → bits[i]? = some (castToBool top) →
       ExecutedRow env flags child block rest top base →
       (∀ item ∈ Witness.toInitialStack block ++ rest, item.size ≤ maxScriptElementSize) →
       (if castToBool top then (satisfactionCandidates child env).sat else (satisfactionCandidates child env).dsat).usableWitness? =
@@ -144,8 +145,8 @@ private theorem ExecutedRows.agree {env flags bases children bits blocks}
     | nil => simp at projection
     | cons head expected =>
       obtain ⟨first, later⟩ := List.cons.inj projection
-      rw [recover _ (by simp) _ (by simp) _ (by simp) _ _ head row bounded first,
-        ih later (fun b hb c hc w hw => recover b (by simp [hb]) c (by simp [hc]) w (by simp [hw]))]
+      rw [recover 0 _ _ _ _ _ head rfl rfl rfl rfl row bounded first,
+        ih later (fun i b c w r t e => recover (i + 1) b c w r t e)]
 
 theorem threshold_keys_member {child : CoreFragment} {children : List CoreFragment}
     (member : child ∈ children) : ∀ key ∈ child.keys, key ∈ CoreFragment.keysList children := by
@@ -268,6 +269,25 @@ theorem checked_threshold_position_selected {root : SaneFragment .tapscript} {en
 /-- Lift child row recovery and inclusion of observed signed positions through
     a compiled threshold, keeping the same sane root and third-party witness.
     The execution yields the observed bits, child frames, and both cardinalities. -/
+theorem threshold_type_at {k children cm first tail child base} {i : Nat}
+    (typed : HasType .tapscript (.thresh k children) ⟨.B, cm⟩) (shape : children = first :: tail)
+    (childAt : children[i]? = some child) (baseAt : (BaseType.B :: List.replicate tail.length .W)[i]? = some base) :
+    ∃ mods, HasType .tapscript child ⟨base, mods⟩ ∧ mods.d = true ∧ mods.u = true := by
+  subst children
+  cases typed with
+  | thresh head hd hu rest types _ _ =>
+    cases i with
+    | zero =>
+      cases childAt
+      cases baseAt
+      exact ⟨_, head, hd, hu⟩
+    | succ i =>
+      change tail[i]? = some child at childAt
+      have bound := (List.getElem?_eq_some_iff.mp childAt).1
+      have eb : BaseType.W = base := by simpa [List.getElem?_replicate, bound] using baseAt
+      subst base
+      exact threshold_rest_member_type rest types child (List.mem_of_getElem? childAt)
+
 theorem threshold_frame_of_rows {k children root env flags args other consumed canonical cm rest top}
     (typed : HasType .tapscript (.thresh k children) ⟨.B, cm⟩)
     (wf : (CoreFragment.thresh k children).WellFormed .tapscript)
@@ -282,8 +302,12 @@ theorem threshold_frame_of_rows {k children root env flags args other consumed c
       thresholdPositions k (satisfactionCandidatesList children env) = some positions →
       ∀ (i : Nat) child, children[i]? = some child → bits[i]? = some true →
         (satisfactionCandidates child env).unsignedSat = false → i ∈ positions)
-    (recover : ∀ {child : CoreFragment}, child ∈ children →
-      ∀ {block rest top base canonical}, ExecutionContext root child env flags args other block →
+    (recover : ∀ {i : Nat} {child : CoreFragment} {block rest top base canonical positions},
+      children[i]? = some child →
+      thresholdPositions k (satisfactionCandidatesList children env) = some positions →
+      castToBool top = decide (i ∈ positions) →
+      (∃ mods, HasType .tapscript child ⟨base, mods⟩ ∧ mods.d = true ∧ mods.u = true) →
+      ExecutionContext root child env flags args other block →
       ExecutedRow env flags child block rest top base →
       (∀ item ∈ Witness.toInitialStack block ++ rest, item.size ≤ maxScriptElementSize) →
       (if castToBool top then (satisfactionCandidates child env).sat else (satisfactionCandidates child env).dsat).usableWitness? =
@@ -315,8 +339,13 @@ theorem threshold_frame_of_rows {k children root env flags args other consumed c
   have blocksEq : blocks = frames := by
     apply rows.agree
     · simpa [List.zipWith_map_left] using projection
-    · intro base _ child member block seen tailStack value generated row bound selected
-      apply recover member _ row bound selected
+    · intro i base child block tailStack value generated baseAt childAt blockAt bitAt row bound selected
+      have member := List.mem_of_getElem? childAt
+      have seen := List.mem_of_getElem? blockAt
+      have range : i < table.length := by simpa [table] using (List.getElem?_eq_some_iff.mp childAt).1
+      rw [bitsEq] at bitAt
+      have bitEq : decide (i ∈ positions) = castToBool value := by simpa [positionFlags, List.getElem?_range range] using bitAt
+      apply recover childAt chosen bitEq.symm (threshold_type_at typed shape childAt baseAt) _ row bound selected
       apply ctx.restrict
       · intro key occurs
         exact threshold_keys_member member key occurs
@@ -351,6 +380,6 @@ theorem frameUnique_thresh_of_rows {k : Nat} {children : List CoreFragment}
   intro root env flags args other consumed canonical cm typed wf ctx sel rest bounded top run truth
   exact threshold_frame_of_rows typed wf ctx sel bounded run truth
     (fun shape rows wire chosen => signed ctx sel shape rows wire chosen)
-    (fun member => @recover root env flags args other _ member)
+    (fun childAt _ _ _ => @recover root env flags args other _ (List.mem_of_getElem? childAt) _ _ _ _ _)
 
 end LeanMiniscript.Extraction.TapscriptWitness

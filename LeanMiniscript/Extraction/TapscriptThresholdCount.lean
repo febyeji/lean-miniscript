@@ -74,7 +74,7 @@ theorem decoded_unit_count {value : StackElement} {n : Int} {minimal : Bool}
     have eq := Except.ok.inj (decoded.symm.trans one)
     simpa [truth] using eq
 
-private theorem threshold_rest_member_type {children : List CoreFragment} {types : List MiniType}
+theorem threshold_rest_member_type {children : List CoreFragment} {types : List MiniType}
     (typed : HasTypeList .tapscript children types) (shape : thresholdRestTypes types) :
     ∀ child ∈ children, ∃ cm, HasType .tapscript child ⟨.W, cm⟩ ∧ cm.d = true ∧ cm.u = true := by
   cases typed with

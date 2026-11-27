@@ -316,8 +316,13 @@ theorem KeyHashConjunction.frameUnique {fragment} (shape : KeyHashConjunction fr
   | and_v _ _ left right => exact frameUnique_and_v (frameUnique_verify left) right
 
 /-- Lift a proved B-frame recovery rule through the Core script-path boundary. -/
-theorem nonMalleability_of_frameUnique (sane : SaneFragment .tapscript)
-    (unique : FrameUnique .B sane.checked.fragment)
+theorem nonMalleability_of_rootFrameUnique (sane : SaneFragment .tapscript)
+    (unique : ∀ {env flags arguments other cm},
+      HasType .tapscript sane.checked.fragment ⟨.B, cm⟩ →
+      ExecutionContext sane sane.checked.fragment env flags arguments other other →
+      env.EncodingSound flags → (∀ item ∈ other.toInitialStack, item.size ≤ maxScriptElementSize) →
+      ∀ top, Eval (compile sane.checked.fragment) other.toInitialStack [] flags env.txCtx
+        (.success [top] []) → castToBool top = true → other = arguments)
     (bytes scriptPubKey : ByteArray) (suffix : Witness) (env : SatEnv) (flags : CoreVerificationFlags)
     (ctx : TxContext) (oracles : SignatureVersion → ByteArray → CryptoOracle)
     (keyPath : CoreKeyPathChecker) (arguments other : Witness)
@@ -333,13 +338,34 @@ theorem nonMalleability_of_frameUnique (sane : SaneFragment .tapscript)
   obtain ⟨bounded, modeled, version, top, alt, evaluated, truth⟩ :=
     tapscript_bounded_accepts_of_coreVerifyScript sane bytes scriptPubKey suffix env flags ctx
       oracles keyPath other serialized spend run accepted
-  obtain ⟨_, wf, typed⟩ := sane.validMiniscript
+  obtain ⟨_, _, typed⟩ := sane.validMiniscript
   have ordinary := satisfyFinal_some_satisfy generated
   have context : ExecutionContext sane sane.checked.fragment env flags.script arguments other other :=
     ⟨run.2.2.2.2.2.1, version, modeled, ordinary, third, slots,
       fun _ h => h, fun _ h => h, fun _ h => h⟩
-  apply unique typed wf context ordinary [] (by simpa [Witness.toInitialStack] using bounded) top _ truth
+  apply unique typed context run.2.2.2.2.2.2.1 (by simpa [Witness.toInitialStack] using bounded) top _ truth
   simpa using Miniscript.Eval.compile_erase_altStack (fragment := sane.checked.fragment) evaluated
+
+/-- A frame rule valid in every enclosing fragment also holds at the script root. -/
+theorem nonMalleability_of_frameUnique (sane : SaneFragment .tapscript)
+    (unique : FrameUnique .B sane.checked.fragment)
+    (bytes scriptPubKey : ByteArray) (suffix : Witness) (env : SatEnv) (flags : CoreVerificationFlags)
+    (ctx : TxContext) (oracles : SignatureVersion → ByteArray → CryptoOracle)
+    (keyPath : CoreKeyPathChecker) (arguments other : Witness)
+    (serialized : CompiledScriptBytes sane.checked.fragment bytes)
+    (spend : CompiledScriptSpend .tapscript bytes scriptPubKey suffix)
+    (run : CompiledScriptRun .tapscript env flags ctx oracles bytes)
+    (generated : satisfyFinal sane.checked.fragment env = some arguments)
+    (third : ThirdPartyWitness sane.checked.fragment env.txCtx arguments other)
+    (slots : LocalHashSlotRecovery sane.checked.fragment env arguments)
+    (accepted : coreVerifyScript flags ctx oracles keyPath ByteArray.empty scriptPubKey
+      (other ++ suffix) = .ok ()) :
+    other = arguments := by
+  apply nonMalleability_of_rootFrameUnique sane _ bytes scriptPubKey suffix env flags ctx oracles
+    keyPath arguments other serialized spend run generated third slots accepted
+  intro env flags args observed cm typed context _ bounded top evaluated truth
+  exact unique typed sane.checked.wellFormed context context.canonical [] (by simpa using bounded)
+    top (by simpa using evaluated) truth
 
 /-- A third party cannot change the witness for a sane conjunction of key checks and hash locks. -/
 theorem nonMalleability_keyHashConjunction (sane : SaneFragment .tapscript)

@@ -99,16 +99,24 @@ private theorem localSlot_short {target : CoreFragment} {env : SatEnv} {own expe
   intro _ _ _ _ size
   omega
 
-private theorem foreign_pair {root : SaneFragment .tapscript} {target other : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
-    {pa po own expected : Witness} (context : ExecutionContext root target env flags pa po own)
-    (keysIn : ∀ key ∈ other.keys, key ∈ root.checked.fragment.keys)
+/-- The root facts used to locate a published signature. The active child's
+    stack suffix and the shape of its execution do not affect this lookup. -/
+structure SignatureScope (root child : CoreFragment) (env : SatEnv) (args other : Witness) : Prop where
+  sound : env.Sound
+  keySizes : ∀ key ∈ root.keys, key.bytes.size = 32
+  keys : ∀ key ∈ child.keys, key ∈ root.keys
+  thirdParty : ThirdPartyWitness root env.txCtx args other
+
+private theorem foreign_pair {root : CoreFragment} {target other : CoreFragment} {env : SatEnv}
+    {pa po expected : Witness} (context : SignatureScope root target env pa po)
+    (keysIn : ∀ key ∈ other.keys, key ∈ root.keys)
     (distinct : ∀ key ∈ target.keys, ∀ otherKey ∈ other.keys, key ≠ otherKey) :
     PairItems (LocalSlot target env po expected) (satisfactionCandidates other env) := by
   apply all_items other
   · exact localSlot_short (by decide)
   · exact localSlot_short (by decide)
   · intro key member
-    exact localSlot_short (by rw [(wellFormed_keySizes _ root.checked.wellFormed) key (keysIn key member)]; decide)
+    exact localSlot_short (by rw [context.keySizes key (keysIn key member)]; decide)
   · intro otherKey otherMem sig selected actual key keyMem valid _size
     exact (context.thirdParty.1 sig actual
       key (context.keys key keyMem) otherKey (keysIn otherKey otherMem)
@@ -371,19 +379,19 @@ private theorem c_pair_thresh {P : StackElement → Prop} {env : SatEnv} {k : Na
   · exact ⟨canonical_threshold_sat rows k, c_threshold_dsat k (c_zero (fun row h => (rows row h).2))⟩
   · exact ⟨c_impossible P, c_impossible P⟩
 
-private theorem c_foreign_pair {root : SaneFragment .tapscript} {target other : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
-    {pa po own expected : Witness} (context : ExecutionContext root target env flags pa po own)
-    (keysIn : ∀ key ∈ other.keys, key ∈ root.checked.fragment.keys)
+private theorem c_foreign_pair {root : CoreFragment} {target other : CoreFragment} {env : SatEnv}
+    {pa po expected : Witness} (context : SignatureScope root target env pa po)
+    (keysIn : ∀ key ∈ other.keys, key ∈ root.keys)
     (distinct : ∀ key ∈ target.keys, ∀ otherKey ∈ other.keys, key ≠ otherKey) :
     CanonicalPairItems (LocalSlot target env po expected) (satisfactionCandidates other env) :=
   ⟨c_of_supports (foreign_pair context keysIn distinct).1,
     c_of_supports (foreign_pair context keysIn distinct).2⟩
 
-private theorem c_path_pair {root : SaneFragment .tapscript} {target parent : CoreFragment} {env : SatEnv} {flags : ScriptFlags}
-    {pa po own expected : Witness} (path : FragmentPath target parent)
-    (context : ExecutionContext root target env flags pa po own)
+private theorem c_path_pair {root : CoreFragment} {target parent : CoreFragment} {env : SatEnv}
+    {pa po expected : Witness} (path : FragmentPath target parent)
+    (context : SignatureScope root target env pa po)
     (base : CanonicalPairItems (LocalSlot target env po expected) (satisfactionCandidates target env)) :
-    (∀ key ∈ parent.keys, key ∈ root.checked.fragment.keys) → parent.keys.Nodup →
+    (∀ key ∈ parent.keys, key ∈ root.keys) → parent.keys.Nodup →
     CanonicalPairItems (LocalSlot target env po expected) (satisfactionCandidates parent env) := by
   have empty : LocalSlot target env po expected falseElement := localSlot_short (by decide)
   have one : LocalSlot target env po expected trueElement := localSlot_short (by decide)
@@ -472,6 +480,30 @@ private theorem c_hole {child : CoreFragment} {env : SatEnv} {own expected : Wit
   · exact canonical_dsat_items child env (localSlot_short (by decide))
       (localSlot_short (by decide)) (fun key member => localSlot_short (by rw [sizes key member]; decide))
 
+theorem SignatureScope.signature_in_satisfaction {root child env arguments other expected flags}
+    (scope : SignatureScope root child env arguments other) (version : env.txCtx.sigVersion = .tapscript)
+    (path : FragmentPath child root) (nodup : root.keys.Nodup)
+    (origin : (satisfactionCandidates root env).sat.CanonicalWhenUsable)
+    (projection : satisfy root env = some arguments) (canonical : satisfy child env = some expected)
+    {sig : StackElement} {key : PubKey} (eligible : sig ∈ other) (keyMem : key ∈ child.keys)
+    (checked : checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx sig key.bytes = .ok true) :
+    sig ∈ expected := by
+  have sizes := fun key hk => scope.keySizes key (scope.keys key hk)
+  have supported := c_path_pair path scope (c_hole sizes canonical) (fun _ h => h) nodup
+  have valid := verifySigFor_of_checkSigWithEncoding checked
+  have disclosed := scope.thirdParty.2.1 sig eligible key (scope.keys _ keyMem) valid
+  unfold satisfy at projection
+  cases eq : (satisfactionCandidates root env).sat with
+  | impossible => simp [eq, CandidateResult.usableWitness?] at projection
+  | candidate candidate =>
+    cases status : candidate.status with
+    | dontUse => simp [eq, CandidateResult.usableWitness?, status] at projection
+    | usable =>
+      have same : candidate.witness = arguments := by simpa [eq, CandidateResult.usableWitness?, status] using projection
+      exact supported.1 candidate eq status (origin candidate eq status) sig
+        (same.symm ▸ disclosed) eligible key keyMem valid
+        (successful_slot_size version (sizes key keyMem) checked)
+
 /-- A signature checked for a key of this subfragment and available to the
     third party occurs in the subfragment's own usable satisfaction. -/
 theorem ExecutionContext.signature_in_satisfaction {root child env flags arguments other consumed expected}
@@ -482,21 +514,8 @@ theorem ExecutionContext.signature_in_satisfaction {root child env flags argumen
     sig ∈ expected := by
   obtain ⟨_, wf, typed⟩ := root.validMiniscript
   have origin := (malleabilityCandidateSound env wf typed root.hasMalleability).canonicalSat root.nonMalleable
-  have sizes := fun key hk => wellFormed_keySizes _ wf key (ctx.keys key hk)
-  have supported := c_path_pair path ctx (c_hole sizes canonical) (fun _ h => h) root.noDuplicateKeys
-  have valid := verifySigFor_of_checkSigWithEncoding checked
-  have disclosed := ctx.thirdParty.2.1 sig eligible key (ctx.keys _ keyMem) valid
-  have projection := ctx.canonical
-  unfold satisfy at projection
-  cases eq : (satisfactionCandidates root.checked.fragment env).sat with
-  | impossible => simp [eq, CandidateResult.usableWitness?] at projection
-  | candidate candidate =>
-    cases status : candidate.status with
-    | dontUse => simp [eq, CandidateResult.usableWitness?, status] at projection
-    | usable =>
-      have same : candidate.witness = arguments := by simpa [eq, CandidateResult.usableWitness?, status] using projection
-      exact supported.1 candidate eq status (origin candidate eq status) sig
-        (same.symm ▸ disclosed) eligible key keyMem valid
-        (successful_slot_size ctx.version (sizes key keyMem) checked)
+  have scope : SignatureScope root.checked.fragment child env arguments other :=
+    ⟨ctx.sound, wellFormed_keySizes _ wf, ctx.keys, ctx.thirdParty⟩
+  exact scope.signature_in_satisfaction ctx.version path root.noDuplicateKeys origin ctx.canonical canonical eligible keyMem checked
 
 end LeanMiniscript.Extraction.TapscriptWitness

@@ -79,7 +79,7 @@ theorem checked_threshold_position_of_path {k children root env flags args other
 private theorem ExecutedRows.true_at {env flags bases children bits blocks}
     (rows : ExecutedRows env flags bases children bits blocks) {i : Nat} {child : CoreFragment}
     (childAt : children[i]? = some child) (positive : bits[i]? = some true) :
-    ∃ base block rest top, block ∈ blocks ∧ ExecutedRow env flags child block rest top base ∧
+    ∃ base block rest top, bases[i]? = some base ∧ block ∈ blocks ∧ ExecutedRow env flags child block rest top base ∧
       (∀ item ∈ block.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) ∧ castToBool top = true := by
   induction rows generalizing i with
   | nil => simp at childAt
@@ -88,10 +88,10 @@ private theorem ExecutedRows.true_at {env flags bases children bits blocks}
     | zero =>
       simp only [List.getElem?_cons_zero, Option.some.injEq] at childAt positive
       subst child
-      exact ⟨_, _, _, _, .head _, row, bound, positive⟩
+      exact ⟨_, _, _, _, rfl, .head _, row, bound, positive⟩
     | succ i =>
-      obtain ⟨base, block, rest, top, mem, run, bounded, truth⟩ := ih childAt positive
-      exact ⟨base, block, rest, top, .tail _ mem, run, bounded, truth⟩
+      obtain ⟨base, block, rest, top, baseAt, mem, run, bounded, truth⟩ := ih childAt positive
+      exact ⟨base, block, rest, top, baseAt, .tail _ mem, run, bounded, truth⟩
 
 /-- The child induction hypotheses concern only the execution of the child
     itself. Selection, disjointness, and disclosure are discharged at the parent. -/
@@ -105,22 +105,33 @@ theorem threshold_frame_of_children {k children root env flags args other consum
     (bounded : ∀ item ∈ consumed.toInitialStack ++ rest, item.size ≤ maxScriptElementSize)
     (run : Eval (compile (.thresh k children)) (consumed.toInitialStack ++ rest) [] flags env.txCtx
       (.success (top :: rest) [])) (truth : castToBool top = true)
-    (evidence : ∀ child ∈ children, ∀ {block rest top base},
-      ExecutionContext root child env flags args other block →
+    (evidence : ∀ child ∈ children, ∀ {block rest top base mods},
+      HasType .tapscript child ⟨base, mods⟩ → ExecutionContext root child env flags args other block →
       ExecutedRow env flags child block rest top base →
       (∀ item ∈ block.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) → castToBool top = true →
       (satisfactionCandidates child env).unsignedSat = true ∨
         ∃ sig ∈ block, ∃ key ∈ child.keys,
           checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx sig key.bytes = .ok true)
     (recover : ∀ {child : CoreFragment}, child ∈ children →
-      ∀ {block rest top base expected}, ExecutionContext root child env flags args other block →
+      ∀ {block rest top base mods expected}, HasType .tapscript child ⟨base, mods⟩ →
+      mods.d = true → mods.u = true →
+      (castToBool top = false → ∀ sig ∈ block, ∀ key ∈ child.keys,
+        checkSigWithEncoding checkSig checkSchnorrSig flags env.txCtx sig key.bytes ≠ .ok true) →
+      ExecutionContext root child env flags args other block →
       ExecutedRow env flags child block rest top base →
       (∀ item ∈ block.toInitialStack ++ rest, item.size ≤ maxScriptElementSize) →
       (if castToBool top then (satisfactionCandidates child env).sat else (satisfactionCandidates child env).dsat).usableWitness? =
         some expected → block = expected) : consumed = canonical := by
-  apply threshold_frame_of_rows typed wf ctx sat bounded run truth _ recover
-  intro first tail bits blocks positions _ rows wire chosen i child childAt positive signed
-  obtain ⟨_, block, _, _, seen, row, bound, childTruth⟩ := rows.true_at childAt positive
+  apply threshold_frame_of_rows typed wf ctx sat bounded run truth
+  case recover =>
+    intro i child block rest top base own positions childAt chosen matched typedChild childCtx row bound selected
+    obtain ⟨mods, ct, cd, cu⟩ := typedChild
+    apply recover (List.mem_of_getElem? childAt) ct cd cu _ childCtx row bound selected
+    intro neg sig hs key hk checked
+    have selected := checked_threshold_position_of_path typed wf mal nm ctx path sat chosen childAt hk (childCtx.items _ hs) checked
+    simp [neg, selected] at matched
+  intro first tail bits blocks positions shape rows wire chosen i child childAt positive signed
+  obtain ⟨_, block, _, _, baseAt, seen, row, bound, childTruth⟩ := rows.true_at childAt positive
   have member := List.mem_of_getElem? childAt
   have childCtx : ExecutionContext root child env flags args other block := by
     apply ctx.restrict (threshold_keys_member member) (threshold_locks_member member)
@@ -129,7 +140,8 @@ theorem threshold_frame_of_children {k children root env flags args other consum
       List.mem_flatten.mpr ⟨_, List.mem_map.mpr ⟨_, seen, rfl⟩, by simpa [Witness.toInitialStack] using occurs⟩
     rw [← wire] at inside
     simpa [Witness.toInitialStack] using inside
-  rcases evidence child member childCtx row bound childTruth with unsigned | ⟨sig, hs, key, hk, checked⟩
+  obtain ⟨_, ct, _, _⟩ := threshold_type_at typed shape childAt baseAt
+  rcases evidence child member ct childCtx row bound childTruth with unsigned | ⟨sig, hs, key, hk, checked⟩
   · simp [signed] at unsigned
   · exact checked_threshold_position_of_path typed wf mal nm ctx path sat chosen childAt hk (childCtx.items _ hs) checked
 
