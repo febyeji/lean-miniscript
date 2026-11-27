@@ -129,7 +129,7 @@ the fragment's compiled script runs the witness to a truthy singleton under
 the transaction context Core assigns to the leaf. Every premise is one the
 `TapscriptNonMalleability` proof already has; this is the inversion of
 `verifyCoreScripts_of_taproot_runtime` for an arbitrary accepted witness. -/
-theorem tapscript_accepts_of_coreVerifyScript
+theorem tapscript_bounded_accepts_of_coreVerifyScript
     (sane : SaneFragment .tapscript) (bytes scriptPubKey : ByteArray)
     (suffix : List ByteArray) (env : SatEnv) (flags : CoreVerificationFlags)
     (ctx : TxContext) (oracles : SignatureVersion → ByteArray → CryptoOracle)
@@ -139,6 +139,7 @@ theorem tapscript_accepts_of_coreVerifyScript
     (run : CompiledScriptRun .tapscript env flags ctx oracles bytes)
     (accepted : coreVerifyScript flags ctx oracles keyPath ByteArray.empty scriptPubKey
       (other ++ suffix) = .ok ()) :
+    (∀ item ∈ other, item.size ≤ maxScriptElementSize) ∧
     Accepts .tapscript (compile sane.checked.fragment) other flags.script env.txCtx := by
   obtain ⟨serializedScript, hashes⟩ := serialized
   obtain ⟨output, control, root, spendKey, rest, committed, outputTruth⟩ := spend
@@ -157,7 +158,7 @@ theorem tapscript_accepts_of_coreVerifyScript
   have witnessScript := verifyCoreWitnessProgram_scriptPath_inversion
     (executeCoreScript flags ctx oracles) flags other bytes control output root keyPath
     (taproot rfl) committed program
-  obtain ⟨_count, _sizes, top, executed, truth⟩ :=
+  obtain ⟨_count, sizes, top, executed, truth⟩ :=
     executeCoreWitnessScript_tapscript_inversion (executeCoreScript flags ctx oracles) flags
       (coreTaprootRequest other bytes control) (compile sane.checked.fragment) rfl encoded
       witnessScript
@@ -169,8 +170,25 @@ theorem tapscript_accepts_of_coreVerifyScript
     rw [context]
     rfl
   rw [← leafContext] at evaluated
+  constructor
+  · simpa [coreTaprootRequest, Witness.toInitialStack] using sizes
   refine ⟨modeled, ?_, top, alt, ?_, truth⟩
   · simp [ModeledContextVersion, context, compiledScriptContext]
   · simpa [Executes, coreTaprootRequest, Witness.toInitialStack] using evaluated
+
+/-- Project checked-model acceptance of the third-party witness. -/
+theorem tapscript_accepts_of_coreVerifyScript
+    (sane : SaneFragment .tapscript) (bytes scriptPubKey : ByteArray)
+    (suffix : List ByteArray) (env : SatEnv) (flags : CoreVerificationFlags)
+    (ctx : TxContext) (oracles : SignatureVersion → ByteArray → CryptoOracle)
+    (keyPath : CoreKeyPathChecker) (other : Witness)
+    (serialized : CompiledScriptBytes sane.checked.fragment bytes)
+    (spend : CompiledScriptSpend .tapscript bytes scriptPubKey suffix)
+    (run : CompiledScriptRun .tapscript env flags ctx oracles bytes)
+    (accepted : coreVerifyScript flags ctx oracles keyPath ByteArray.empty scriptPubKey
+      (other ++ suffix) = .ok ()) :
+    Accepts .tapscript (compile sane.checked.fragment) other flags.script env.txCtx :=
+  (tapscript_bounded_accepts_of_coreVerifyScript sane bytes scriptPubKey suffix env flags ctx
+    oracles keyPath other serialized spend run accepted).2
 
 end LeanMiniscript.Extraction

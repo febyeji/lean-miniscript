@@ -137,6 +137,15 @@ def ThirdPartyWitness (fragment : CoreFragment) (txCtx : TxContext)
       LeanMiniscript.Script.hash160 item = LeanMiniscript.Script.hash160 key.bytes →
         item = key.bytes)
 
+/-- On the published arguments of this spend, any item eligible for reuse by
+    a third party that opens a lock of the fragment is the environment's
+    preimage for that lock. The same bytes may serve several roles when the
+    corresponding lookups agree. -/
+def LocalHashSlotRecovery (fragment : CoreFragment) (env : SatEnv)
+    (arguments : Witness) : Prop :=
+  ∀ item ∈ arguments, ThirdPartyWitness fragment env.txCtx arguments [item] →
+    ∀ lock ∈ fragment.hashLocks, lock.Matches item → env.preimageFor lock = some item
+
 /-- Core's resource-limit errors: script size, operation count, stack size,
 push size, and the Tapscript validation-weight budget. -/
 def CoreVerificationError.isResourceLimit : CoreVerificationError → Bool
@@ -190,7 +199,8 @@ VerifyScript accepts on the same spend, is that satisfaction.
 
 Premises: those of `CompiledSatisfaction`, with `arguments` the satisfaction;
 `other` uses only what `arguments` reveals (`ThirdPartyWitness` under the
-transaction context of `env`); and Core's VerifyScript accepts `other`
+transaction context of `env`); the Tapscript case additionally requires
+`LocalHashSlotRecovery` for the published arguments; and Core's VerifyScript accepts `other`
 followed by the spend's suffix. -/
 def CompiledNonMalleability (context : ScriptContext) : Prop :=
   ∀ (sane : SaneFragment context) (bytes scriptPubKey : ByteArray)
@@ -201,7 +211,10 @@ def CompiledNonMalleability (context : ScriptContext) : Prop :=
     CompiledScriptSpend context bytes scriptPubKey suffix →
     CompiledScriptRun context env flags ctx oracles bytes →
     satisfyFinal sane.checked.fragment env = some arguments →
-    ThirdPartyWitness sane.checked.fragment env.txCtx arguments other →
+    (match context with
+     | .p2wsh => ThirdPartyWitness sane.checked.fragment env.txCtx arguments other
+     | .tapscript => ThirdPartyWitness sane.checked.fragment env.txCtx arguments other ∧
+         LocalHashSlotRecovery sane.checked.fragment env arguments) →
     coreVerifyScript flags ctx oracles keyPath ByteArray.empty scriptPubKey
       (other ++ suffix) = .ok () →
     other = arguments
@@ -252,7 +265,8 @@ def P2WSHNonMalleability : Prop := CompiledNonMalleability .p2wsh
 
 /-- Tapscript non-malleability. Premises: those of `CompiledNonMalleability`
 for Tapscript, with the spend and context of `TapscriptSatisfaction`; the
-other witness keeps the same leaf and control block. -/
+other witness keeps the same leaf and control block. Hash-slot recovery is
+restricted to reusable items in the generated arguments and locks in this fragment. -/
 def TapscriptNonMalleability : Prop := CompiledNonMalleability .tapscript
 
 /-- P2WSH resource limits. Premises: those of `CompiledResourceLimits` for

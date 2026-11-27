@@ -101,6 +101,31 @@ theorem valid_sig_size {flags : ScriptFlags} {txCtx : TxContext}
   · exact Or.inl size
   · exact Or.inr size
 
+/-- Invert a successful key check above an arbitrary stack suffix. -/
+theorem c_pk_k_frame {flags : ScriptFlags} {txCtx : TxContext} {key : PubKey}
+    {input rest alt finalAlt : Stack} {top : StackElement}
+    (executed : Eval (compile (.c (.pk_k key))) input alt flags txCtx
+      (.success (top :: rest) finalAlt)) (truth : castToBool top = true) :
+    ∃ sig, input = sig :: rest ∧
+      checkSigWithEncoding checkSig checkSchnorrSig flags txCtx sig key.bytes = .ok true := by
+  change Eval [.pushData key.bytes, .op .OP_CHECKSIG] input alt
+    flags txCtx (.success (top :: rest) finalAlt) at executed
+  cases executed with
+  | pushData data rest initStack altStack flags ctx result inner =>
+      cases inner with
+      | checksig_success pubkey sig rest' script' altStack' flags' ctx' result'
+          sigOK final =>
+          cases final with
+          | empty lastStack lastAlt lastFlags lastCtx =>
+              exact ⟨sig, rfl, sigOK⟩
+      | checksig_failure pubkey sig rest' script' altStack' flags' ctx' result'
+          sigFalse final =>
+          cases final with
+          | empty lastStack lastAlt lastFlags lastCtx =>
+              simp [castToBool, falseElement] at truth
+      | upgradeableNop _ _ _ _ _ _ _ upgradable _ _ =>
+          simp [Opcode.isUpgradeableNop] at upgradable
+
 /-- Value inversion for the compiled `c:pk_k` script `[<key>, CHECKSIG]`:
 every accepted witness is exactly one signature valid for the key. This is
 the per-constructor inversion pattern the general uniqueness proof needs;
@@ -110,26 +135,9 @@ theorem accepts_c_pk_k_inversion {flags : ScriptFlags} {txCtx : TxContext}
     (accepts : Accepts .tapscript (compile (.c (.pk_k key))) other flags txCtx) :
     ∃ sig, other = [sig] ∧
       verifySigFor checkSig checkSchnorrSig txCtx sig key.bytes = true := by
-  obtain ⟨_modeled, _version, top, finalAlt, executed, truth⟩ := accepts
-  change Eval [.pushData key.bytes, .op .OP_CHECKSIG] other.toInitialStack []
-    flags txCtx (.success [top] finalAlt) at executed
-  generalize stackEq : other.toInitialStack = stack at executed
-  cases executed with
-  | pushData data rest initStack altStack flags ctx result inner =>
-      cases inner with
-      | checksig_success pubkey sig rest' script' altStack' flags' ctx' result'
-          sigOK final =>
-          cases final with
-          | empty lastStack lastAlt lastFlags lastCtx =>
-              exact ⟨sig, witness_eq_singleton_of_toInitialStack stackEq,
-                verifySigFor_of_checkSigWithEncoding sigOK⟩
-      | checksig_failure pubkey sig rest' script' altStack' flags' ctx' result'
-          sigFalse final =>
-          cases final with
-          | empty lastStack lastAlt lastFlags lastCtx =>
-              simp [castToBool, falseElement] at truth
-      | upgradeableNop _ _ _ _ _ _ _ upgradable _ _ =>
-          simp [Opcode.isUpgradeableNop] at upgradable
+  obtain ⟨_, _, top, alt, executed, truth⟩ := accepts
+  obtain ⟨sig, stack, checked⟩ := c_pk_k_frame executed truth
+  exact ⟨sig, witness_eq_singleton_of_toInitialStack stack, verifySigFor_of_checkSigWithEncoding checked⟩
 
 /-- The canonical satisfaction of `c:pk_k` is the single environment
 signature for the key. -/
@@ -166,24 +174,18 @@ theorem unique_c_pk_k {env : SatEnv} {flags : ScriptFlags} {key : PubKey}
   have sigEq : sig = sig₀ := List.mem_singleton.mp sigIn
   rw [otherEq, argumentsEq, sigEq]
 
-/-- Value inversion for the compiled `c:pk_h` script
-`[DUP, HASH160, <hash160(key)>, EQUALVERIFY, CHECKSIG]`: every accepted
-witness is a signature and a public key whose HASH160 matches the key image,
-with a successful checked signature for that public key. -/
-theorem accepts_c_pk_h_inversion {flags : ScriptFlags} {txCtx : TxContext}
-    {key : PubKey} {other : Witness}
-    (accepts : Accepts .tapscript (compile (.c (.pk_h key))) other flags txCtx) :
-    ∃ sig pubkey, other = [sig, pubkey] ∧
-      LeanMiniscript.Script.hash160 pubkey =
-        LeanMiniscript.Script.hash160 key.bytes ∧
-      checkSigWithEncoding checkSig checkSchnorrSig flags txCtx sig pubkey =
-        .ok true := by
-  obtain ⟨_modeled, _version, top, finalAlt, executed, truth⟩ := accepts
+/-- Invert a successful key check above an arbitrary stack suffix. -/
+theorem c_pk_h_frame {flags : ScriptFlags} {txCtx : TxContext} {key : PubKey}
+    {input rest alt finalAlt : Stack} {top : StackElement}
+    (executed : Eval (compile (.c (.pk_h key))) input alt flags txCtx
+      (.success (top :: rest) finalAlt)) (truth : castToBool top = true) :
+    ∃ sig pubkey, input = pubkey :: sig :: rest ∧
+      LeanMiniscript.Script.hash160 pubkey = LeanMiniscript.Script.hash160 key.bytes ∧
+      checkSigWithEncoding checkSig checkSchnorrSig flags txCtx sig pubkey = .ok true := by
   change Eval [.op .OP_DUP, .op .OP_HASH160,
     .pushData (LeanMiniscript.Script.hash160 key.bytes), .op .OP_EQUALVERIFY,
-    .op .OP_CHECKSIG] other.toInitialStack [] flags txCtx
-    (.success [top] finalAlt) at executed
-  generalize stackEq : other.toInitialStack = stack at executed
+    .op .OP_CHECKSIG] input alt flags txCtx
+    (.success (top :: rest) finalAlt) at executed
   cases executed with
   | dup x rest script' altStack' flags' ctx' result' inner =>
       cases inner with
@@ -198,9 +200,7 @@ theorem accepts_c_pk_h_inversion {flags : ScriptFlags} {txCtx : TxContext}
                       ctx5 result5 sigOK final =>
                       cases final with
                       | empty lastStack lastAlt lastFlags lastCtx =>
-                          exact ⟨sig, x,
-                            witness_eq_pair_of_toInitialStack stackEq,
-                            imageEq.symm, sigOK⟩
+                          exact ⟨sig, x, rfl, imageEq.symm, sigOK⟩
                   | checksig_failure pubkey sig rest5 script5 altStack5 flags5
                       ctx5 result5 sigFalse final =>
                       cases final with
@@ -214,6 +214,22 @@ theorem accepts_c_pk_h_inversion {flags : ScriptFlags} {txCtx : TxContext}
           simp [Opcode.isUpgradeableNop] at upgradable
   | upgradeableNop _ _ _ _ _ _ _ upgradable _ _ =>
       simp [Opcode.isUpgradeableNop] at upgradable
+
+/-- Value inversion for the compiled `c:pk_h` script
+`[DUP, HASH160, <hash160(key)>, EQUALVERIFY, CHECKSIG]`: every accepted
+witness is a signature and a public key whose HASH160 matches the key image,
+with a successful checked signature for that public key. -/
+theorem accepts_c_pk_h_inversion {flags : ScriptFlags} {txCtx : TxContext}
+    {key : PubKey} {other : Witness}
+    (accepts : Accepts .tapscript (compile (.c (.pk_h key))) other flags txCtx) :
+    ∃ sig pubkey, other = [sig, pubkey] ∧
+      LeanMiniscript.Script.hash160 pubkey =
+        LeanMiniscript.Script.hash160 key.bytes ∧
+      checkSigWithEncoding checkSig checkSchnorrSig flags txCtx sig pubkey =
+        .ok true := by
+  obtain ⟨_, _, top, alt, executed, truth⟩ := accepts
+  obtain ⟨sig, pubkey, stack, imageEq, checked⟩ := c_pk_h_frame executed truth
+  exact ⟨sig, pubkey, witness_eq_pair_of_toInitialStack stack, imageEq, checked⟩
 
 /-- The canonical satisfaction of `c:pk_h` is the environment signature
 followed by the key bytes. -/
